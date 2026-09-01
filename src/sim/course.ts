@@ -276,16 +276,24 @@ const STRAIGHT_FILL = 0.92;
 const APEX_FILL = 0.85;
 
 /**
- * One candidate layout. Deterministic in (courseSeed, index, par, attempt) and does no
- * validation -- generateHole owns the accept/reject decision.
+ * One candidate layout, before validation. Deterministic in (courseSeed, index, par, attempt).
  *
  * Target-first: draw the corridor length, take whatever straight distance the box allows along
  * a random bearing, then SOLVE for the apex offset that makes up the difference. Drawing the
  * apex directly instead lets the worst case fall short of its band -- a par 5 in a 300 m field
  * aligned with an axis has only 238 m of straight available and needs a ~75 m dog-leg to reach
  * 265 m. This is the sense in which the dog-leg is load-bearing rather than decorative.
+ *
+ * Exported so `npm run probe` can measure the acceptance rate: calling generateHole and
+ * counting throws measures whether a *course* can be built, which is a different and much
+ * coarser question than what fraction of candidates are playable.
  */
-function attemptSpec(courseSeed: number, index: number, par: number, attempt: number): HoleSpec {
+export function draftHole(
+  courseSeed: number,
+  index: number,
+  par: number,
+  attempt: number,
+): HoleSpec {
   const seed = hashChannel(courseSeed, index, attempt);
   const random = mulberry32(hashChannel(seed, index, 2));
 
@@ -351,7 +359,7 @@ export function generateHole(
   let last: HoleRejection = { check: 0, reason: "no attempt was made" };
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const candidate = attemptSpec(courseSeed, index, intendedPar, attempt);
+    const candidate = draftHole(courseSeed, index, intendedPar, attempt);
     const terrain = createTerrain(candidate);
     // par is the only field the terrain does not depend on, so deriving it after construction
     // costs nothing and keeps "par is never authored" true.

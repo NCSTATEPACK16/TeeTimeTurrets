@@ -3,9 +3,19 @@
  * carry / rollout / settle time / out-of-bounds for each club, plus terrain slope stats.
  * Run via a vite SSR build (see build-probe.config.ts) then `node out/probe.js`.
  */
+import { createNoise2D } from "simplex-noise";
 import { Sim, FIXED_DT } from "../src/sim/world";
+import { mulberry32 } from "../src/sim/rng";
 import { fixedHoleSpec } from "../src/sim/course";
-import { CUP_RADIUS, createTerrain } from "../src/sim/terrain";
+import { CUP_RADIUS, NOISE_MAX_GRADIENT, createTerrain } from "../src/sim/terrain";
+import {
+  REFERENCE_CARRY_M,
+  derivePar,
+  draftHole,
+  generateCourse,
+  parForIndex,
+  validateHole,
+} from "../src/sim/course";
 import { createSurfaces } from "../src/sim/surfaces";
 import { SurfaceId } from "../src/sim/surfaces";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../src/physics/Ballistics";
@@ -260,6 +270,116 @@ function findWater(): { x: number; z: number } | null {
   return null;
 }
 
+/** Fixed so the measurement is comparable run to run; the band's job is to catch a library bump. */
+const K_PROBE_SEED = 20260901;
+const PROBE_COURSE_SEED = 2026;
+
+let probeFailed = false;
+
+function report(name: string, ok: boolean, detail: string): void {
+  if (!ok) probeFailed = true;
+  console.log(`  ${name.padEnd(22)} ${ok ? "PASS" : "FAIL"} - ${detail}`);
+}
+
+/**
+ * 1. The measured constant. Every terrain amplitude solves A = G / (f * k) with this k, so it
+ *    is a property of the installed simplex-noise build that a version bump can silently
+ *    invalidate -- which is why it is an assertion here rather than a number in a document.
+ *
+ *    Central differences at h = 1e-4 over 1,002,001 samples of a 20x20 domain, matching how
+ *    7.333 was measured in the first place.
+ */
+function noiseGradientCheck(): void {
+  const noise = createNoise2D(mulberry32(K_PROBE_SEED));
+  const h = 1e-4;
+  const steps = 1000;
+  let max = 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i <= steps; i++) {
+    const x = -10 + (20 * i) / steps;
+    for (let j = 0; j <= steps; j++) {
+      const z = -10 + (20 * j) / steps;
+      const dx = (noise(x + h, z) - noise(x - h, z)) / (2 * h);
+      const dz = (noise(x, z + h) - noise(x, z - h)) / (2 * h);
+      const g = Math.hypot(dx, dz);
+      if (g > max) max = g;
+      sum += g;
+      count++;
+    }
+  }
+  const tolerance = NOISE_MAX_GRADIENT * 0.05;
+  report(
+    "noise gradient k",
+    Math.abs(max - NOISE_MAX_GRADIENT) <= tolerance,
+    `max ${max.toFixed(3)} (mean ${(sum / count).toFixed(3)}, n=${count}), ` +
+      `expected ${NOISE_MAX_GRADIENT} +-5%`,
+  );
+}
+
+/**
+ * 2. Closes the par-derivation loop. REFERENCE_CARRY_M is the driver's measured full-power
+ *    TOTAL distance -- carry plus roll-out -- and is not a second copy of CLUB_STATS. A club
+ *    rebalance that invalidates par fails here instead of silently mis-parring every hole.
+ */
+async function driverDistanceCheck(sim: Sim): Promise<void> {
+  const r = await shoot(sim, ClubType.Driver);
+  const drift = Math.abs(r.totalM - REFERENCE_CARRY_M) / REFERENCE_CARRY_M;
+  report(
+    "driver distance",
+    drift <= 0.15,
+    `${r.totalM.toFixed(1)} m total (${r.carryM.toFixed(1)} carry + ${r.rollM.toFixed(1)} roll) ` +
+      `vs REFERENCE_CARRY_M ${REFERENCE_CARRY_M}, drift ${(drift * 100).toFixed(1)}% (limit 15%)`,
+  );
+}
+
+/** 3. The generator's own criteria, re-run from outside it against a full nine. */
+function coursePlayabilityCheck(): void {
+  let failures = 0;
+  const course = generateCourse(PROBE_COURSE_SEED, 9);
+  for (const hole of course.holes) {
+    const rejection = validateHole(hole, createTerrain(hole));
+    if (rejection === null) continue;
+    failures++;
+    console.log(`    hole ${hole.index}: check ${rejection.check} - ${rejection.reason}`);
+  }
+  const pars = course.holes.map((h) => h.par).join("");
+  report(
+    "course playability",
+    failures === 0,
+    `${course.holes.length} holes, pars ${pars} (total ${course.holes.reduce((s, h) => s + h.par, 0)}), ` +
+      `${failures} failing`,
+  );
+}
+
+/**
+ * 4. Reports rather than asserts. The research claims 80-85%, computed from its miscalibrated
+ *    amplitudes; that figure carries no weight here and the real number is what this run
+ *    records. The per-check breakdown is the useful part -- it names which threshold is
+ *    actually binding.
+ */
+function acceptanceReport(): void {
+  const samples = 200;
+  let accepted = 0;
+  const byCheck = new Map<number, number>();
+  for (let i = 0; i < samples; i++) {
+    const candidate = draftHole(PROBE_COURSE_SEED, i, parForIndex(i), 0);
+    const terrain = createTerrain(candidate);
+    const spec = { ...candidate, par: derivePar(terrain.spline.length) };
+    const rejection = validateHole(spec, terrain);
+    if (rejection === null) accepted++;
+    else byCheck.set(rejection.check, (byCheck.get(rejection.check) ?? 0) + 1);
+  }
+  const breakdown = [...byCheck.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([check, n]) => `check ${check}: ${n}`)
+    .join(", ");
+  console.log(
+    `  acceptance rate         ${((accepted / samples) * 100).toFixed(1)}% ` +
+      `(${accepted}/${samples})${breakdown ? ` - rejections by ${breakdown}` : ""}`,
+  );
+}
+
 async function main(): Promise<void> {
   const t = terrainStats();
   console.log("=== TERRAIN ===");
@@ -300,6 +420,17 @@ async function main(): Promise<void> {
   }
   hazardAndHoleOutChecks(sim);
   console.log("\n  club stats:", JSON.stringify(CLUB_STATS));
+
+  console.log("\n=== COURSE CHECKS ===");
+  noiseGradientCheck();
+  await driverDistanceCheck(sim);
+  coursePlayabilityCheck();
+  acceptanceReport();
+
+  if (probeFailed) {
+    console.error("\nprobe: one or more course checks failed");
+    process.exitCode = 1;
+  }
 }
 
 main().catch((e: unknown) => {
