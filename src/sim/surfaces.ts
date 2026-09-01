@@ -122,6 +122,3 @@ export function createSurfaces(
 
   return { surfaceAt, tuningAt };
 }
-
-/** The shipped hole's literal sand noise source: createNoise2D(() => 0.77). */
-export const LEGACY_SURFACE_SOURCES: SurfaceSources = { sand: () => 0.77 };

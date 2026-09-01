@@ -5,7 +5,7 @@ import { RenderScene } from "./render/scene";
 import type { FrameView } from "./render/scene";
 import { FIXED_DT, Sim, SwingMode } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
-import { legacyHoleSpec } from "./sim/course";
+import { fixedHoleSpec } from "./sim/course";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
@@ -13,7 +13,7 @@ async function main(): Promise<void> {
   if (!container || !hud) throw new Error("expected #app and the #hud elements in index.html");
 
   // One hole, hard-coded, until generateCourse exists. Replaced in Task 14.
-  const sim = await Sim.create(legacyHoleSpec());
+  const sim = await Sim.create(fixedHoleSpec());
   const render = new RenderScene(container, sim.terrain);
   const input = new KeyboardMouseSource(render.renderer.domElement);
 

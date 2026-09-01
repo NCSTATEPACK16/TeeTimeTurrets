@@ -4,7 +4,7 @@
  * Run via a vite SSR build (see build-probe.config.ts) then `node out/probe.js`.
  */
 import { Sim, FIXED_DT } from "../src/sim/world";
-import { legacyHoleSpec } from "../src/sim/course";
+import { fixedHoleSpec } from "../src/sim/course";
 import { CUP_RADIUS, createTerrain } from "../src/sim/terrain";
 import { createSurfaces } from "../src/sim/surfaces";
 import { SurfaceId } from "../src/sim/surfaces";
@@ -15,13 +15,12 @@ import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../src/physics/Ball
  * module constants any more. Same spec the game boots with, so the numbers below stay
  * comparable to the Phase 0 baseline.
  *
- * Uses the shipped hole's literal noise sources (not the default hashed noise) so this
- * refactor's probe diff is meaningful. Task 9 removes both, at which point the numbers move
- * for a stated reason.
+ * Uses the hashed defaults, not injected noise sources: Task 9 retired the shipped hole's
+ * literal sources, so the probe now measures what the game actually ships.
  */
-const HOLE = legacyHoleSpec();
-const terrain = createTerrain(HOLE, { height: () => 0.42 });
-const surfaces = createSurfaces(HOLE, terrain, { sand: () => 0.77 });
+const HOLE = fixedHoleSpec();
+const terrain = createTerrain(HOLE);
+const surfaces = createSurfaces(HOLE, terrain);
 
 const FIELD_SIZE = HOLE.fieldSize;
 const NROWS = HOLE.cells;

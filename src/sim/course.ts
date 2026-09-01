@@ -56,35 +56,30 @@ export interface Course {
   readonly holes: readonly HoleSpec[];
 }
 
-/**
- * Arbitrary but fixed. The legacy fixture injects its noise sources directly (see
- * `createTerrain`'s `sources` parameter), so this seed is never actually hashed during the
- * behaviour-preserving refactor -- it exists so the fixture is a complete HoleSpec.
- */
-const LEGACY_HOLE_SEED = 0x7ee71e5;
+/** Arbitrary but fixed, so `fixedHoleSpec()` is the same hole on every machine and every run. */
+const FIXED_HOLE_SEED = 0x7ee71e5;
 
 /**
- * The hole the game shipped with, expressed as data.
+ * One hand-built hole. Not generated: it is the deterministic spec that `world.cart.test.ts`
+ * and the probe run against, so a cart or ballistics regression is never confused with a
+ * different draw from the generator.
  *
- * This is the refactor's proof, not a feature: while §3 lands, `terrain.ts` and `surfaces.ts`
- * are driven by this fixture and their outputs must stay bit-identical to the module constants
- * they replace. `control` is a straight three-point line because nothing consumes the corridor
- * spline until §5 -- today's fairway is the straight tee->cup segment in `surfaces.ts`.
- *
- * `par` is 3 by the same formula generateHole will use: the 123 m tee->cup separation is under
- * one REFERENCE_CARRY_M.
+ * Its geometry is a legal hole -- tee and cup inside the corridor box for a 160 m field, a
+ * dog-leg apex, and a 90 m tee-to-cup separation -- so it passes the §6 checks rather than
+ * merely existing. `par` is 3 by the same formula generateHole uses: the corridor is ~105 m,
+ * under one REFERENCE_CARRY_M.
  */
-export function legacyHoleSpec(): HoleSpec {
-  const tee: Vec2 = { x: -68, z: 0 };
-  const cup: Vec2 = { x: 55, z: 8 };
+export function fixedHoleSpec(): HoleSpec {
+  const tee: Vec2 = { x: -45, z: 0 };
+  const cup: Vec2 = { x: 45, z: 8 };
   return {
-    seed: LEGACY_HOLE_SEED,
+    seed: FIXED_HOLE_SEED,
     index: 0,
     fieldSize: 160,
     cells: 160,
     tee,
     cup,
-    control: [tee, { x: (tee.x + cup.x) / 2, z: (tee.z + cup.z) / 2 }, cup],
+    control: [tee, { x: 0, z: -25 }, cup],
     par: 3,
     waterLevel: -0.72,
   };
