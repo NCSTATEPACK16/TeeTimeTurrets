@@ -118,7 +118,15 @@ describe("corridor carving", () => {
     // The failure this catches is a mask whose derivative jumps -- the ramp failure the
     // research warns about. Sample the second difference of H along the corridor normal.
     const normal = { x: 0, z: 0 };
-    const t = 0.5;
+    // t = 0.5 sits right at fixedHoleSpec's dog-leg apex (~1.7-3 m turning radius against the
+    // spline's 1 m polyline chord -- see the camber test above), where curvature-driven
+    // nearest-t jitter across a 25 m offset is the same order of magnitude as the signal this
+    // test is trying to isolate, so it can't discriminate a genuine C0-but-not-C1 mask there
+    // (measured: a raw clamp in place of smoothstep01 gives ~4.67e-2, indistinguishable from the
+    // correct ~4.84e-2). t = 0.7 sits on a gentler stretch of the corridor -- measured turning
+    // radius well past the apex's -- where the same swap gives ~1.94e-2 against a correct ~2.9e-3,
+    // a clean 6-7x separation.
+    const t = 0.7;
     const centre = terrain.spline.pointAt(t);
     terrain.spline.tangentInto(t, normal);
     const nx = -normal.z;
@@ -133,13 +141,8 @@ describe("corridor carving", () => {
     for (const edge of [HALF_WIDTH, HALF_WIDTH + BLEND_WIDTH]) {
       const before = slopeAt(edge - 0.25);
       const after = slopeAt(edge + 0.25);
-      // A C0-but-not-C1 mask steps the slope; a C1 one changes it smoothly over 0.5 m. t = 0.5
-      // sits right at fixedHoleSpec's dog-leg apex (~1.7 m turning radius against the spline's
-      // 1 m polyline chord -- see the camber test above), which adds its own small nearest-t
-      // jitter across a 25 m offset on top of whatever the mask itself contributes. A true
-      // C0-but-not-C1 mask produces a jump an order of magnitude past this: this bound would
-      // still fail hard on a raw clamp in place of smoothstep01.
-      expect(Math.abs(after - before)).toBeLessThan(0.06);
+      // A C0-but-not-C1 mask steps the slope; a C1 one changes it smoothly over 0.5 m.
+      expect(Math.abs(after - before)).toBeLessThan(0.008);
     }
   });
 
