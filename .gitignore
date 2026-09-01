@@ -4,3 +4,4 @@ tools/.probe-out/
 tools/.smoke-out/
 *.log
 .DS_Store
+.worktrees/
