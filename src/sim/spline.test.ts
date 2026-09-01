@@ -121,7 +121,7 @@ describe("createSpline", () => {
     }
   });
 
-  it("nearestInto and pointInto write into the caller's object and allocate nothing", () => {
+  it("nearestInto and pointInto write into the caller's object and match the allocating variants' results", () => {
     const s = createSpline(ADVERSARIAL);
     const hit = createNearestPoint();
     const point = { x: 0, z: 0 };

@@ -1,5 +1,5 @@
 /**
- * The course data model. Plain data: DOM-free, no Rapier, no Three, no imports at all yet.
+ * The course data model. Plain data: DOM-free, no Rapier, no Three.
  *
  * A course is nine holes, not one nine-hole map. Each HoleSpec owns its own field, terrain and
  * surfaces, and playing a round loads one at a time -- which is what makes "multiple courses,

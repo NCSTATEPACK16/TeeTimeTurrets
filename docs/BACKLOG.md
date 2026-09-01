@@ -67,6 +67,7 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 | 26 | Dog-leg holes | IDEA | `surfaces.ts` fairway corridor is currently a straight tee→cup segment; make it a polyline. |
 | 27 | Wind | IDEA | Cheap and very golf. A constant force in the ball integrator. |
 | 28 | Elevated tees / greens | IDEA | Pads already support arbitrary height; currently they inherit local terrain. |
+| 28a | Blend-band gradient cap | IDEA | The corridor's 10 m blend band (between `HALF_WIDTH` and `HALF_WIDTH + BLEND_WIDTH`) — the carving lerp in `terrain.ts`'s `heightAt`, between centreline height and free noise — can locally exceed 40° of gradient where macro-noise relief is large. Measured on a shipped nine-hole course, roughly 6–7% of fairway-classified ground in that band is steeper than its own blended `crr` (surfaces.ts) can arrest, so a ball landing there never settles there. Found in the final whole-branch review of Phase 2.5; not an explicit design target of the Task 9 slope-budget system, which only bounds the green and corridor interior — the blend band was never budgeted or tested. Accepted as-is for now (arguably desirable "fairway edges roll you toward the rough" flavor), not a bug to fix. Needs its own design decision later: either a dedicated blend-band gradient cap, or formally accepting the current behaviour. |
 
 ## Presentation
 

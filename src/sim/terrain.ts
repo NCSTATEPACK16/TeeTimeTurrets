@@ -78,7 +78,8 @@ export function smoothstep01(t: number): number {
 /**
  * Injected randomness for the noise permutation. Defaulted from the spec's seed channel; the
  * parameter exists because AGENTS.md wants seeded randomness injected rather than reached for,
- * and because the §3 refactor has to reproduce the shipped hole's literal noise source exactly.
+ * and because it keeps `createTerrain` testable -- a test can substitute a fixed or scripted
+ * source instead of depending on the spec's seed-derived channel.
  */
 export interface TerrainSources {
   readonly height: () => number;

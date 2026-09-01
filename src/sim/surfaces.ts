@@ -106,7 +106,7 @@ export interface SurfaceSources {
 export interface Surfaces {
   /** Discrete. Feeds the HUD readout, Phase 4's minimap, and render colouring. */
   surfaceAt(worldX: number, worldZ: number): SurfaceId;
-  /** Continuous from §5 onward; still a table lookup here. */
+  /** Continuous, per Task 11: a blended value, not a table lookup. */
   tuningAt(worldX: number, worldZ: number, out: MutableSurfaceTuning): void;
 }
 

@@ -296,7 +296,10 @@ The Blender primitive-graph prop exporter pairs with that deferred phase, not th
 
 **The measured constant.** The per-octave max gradient `k` in `A = G / (f * k)` was measured
 directly against the installed `simplex-noise` build: max ‖∇S‖ = **7.333** (rms 2.955, mean
-2.672), over 1,002,001 samples. Neither prior source was right — this module used 2π, and
+2.672), over 1,002,001 samples (rms and mean as first measured in the original derivation
+sweep; `npm run probe`'s own assertion re-derives and asserts only `max`, at a different PRNG
+seed, and currently reports mean 2.712 for that run — the two means differ only because of the
+seed, not a real discrepancy). Neither prior source was right — this module used 2π, and
 the research's 2.5 is the *mean* gradient, not the max. The research's published amplitudes
 (0.12 / 1.40 / 14.40 m) are 2.9× too large and would bust the green's budget on the micro octave
 alone, so they were not used. `k` is asserted in `npm run probe` because a dependency bump can
@@ -309,7 +312,7 @@ reasons. Phase 0 / Phase 1.5 → Phase 2.5:
 | | Phase 0/1.5 | Phase 2.5 | cause |
 |---|---|---|---|
 | terrain mean slope | 4.3° | 4.9° | three-octave budget masking replaces the two-octave field |
-| terrain max slope | 12.5° | 44.5° | the rough runs unbudgeted at GRAD_ROUGH = 0.28 |
+| terrain max slope | 12.5° | 44.5° | the corridor-carving lerp in `terrain.ts`'s `heightAt` blends centreline height into free noise across the 10 m `BLEND_WIDTH` band, and that blend can approach a 45° gradient where macro relief is large (the rough itself stays inside its own `GRAD_ROUGH` budget everywhere measured) |
 | driver total | 129 m | 106.4 m | terrain relief and continuous crr |
 | driver carry / roll | 69.5 / 59.5 m | 65.3 / 41.0 m | as above |
 | putter settle | 3.2 s | 2.85 s | crr no longer steps at the fairway edge |
