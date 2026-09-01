@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import { fixedHoleSpec } from "./course";
 import {
   EDGE_MARGIN,
+  MAX_ATTEMPTS,
   MAX_CAMBER_GRAD,
   MIN_HOLE_LENGTH,
   REFERENCE_CARRY_M,
   derivePar,
+  generateCourse,
+  generateHole,
+  parForIndex,
   validateHole,
 } from "./course";
 import type { HoleSpec } from "./course";
-import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH } from "./terrain";
+import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { createSpline } from "./spline";
 
@@ -162,5 +166,101 @@ describe("derivePar", () => {
     expect(derivePar(REFERENCE_CARRY_M + 1)).toBe(4);
     expect(derivePar(2 * REFERENCE_CARRY_M + 1)).toBe(5);
     expect(derivePar(10 * REFERENCE_CARRY_M)).toBe(5);
+  });
+});
+
+describe("generateHole", () => {
+  it("is byte-identical across repeated calls", () => {
+    expect(generateHole(4242, 3)).toEqual(generateHole(4242, 3));
+  });
+
+  it("is independent of call order", () => {
+    const first = generateHole(4242, 3);
+    generateHole(4242, 0);
+    generateHole(99, 3);
+    generateHole(4242, 7);
+    expect(generateHole(4242, 3)).toEqual(first);
+  });
+
+  it("differs between holes of the same course and between courses", () => {
+    expect(generateHole(4242, 0)).not.toEqual(generateHole(4242, 1));
+    expect(generateHole(4242, 0)).not.toEqual(generateHole(4243, 0));
+  });
+
+  it("produces a hole that passes its own checks", () => {
+    const spec = generateHole(4242, 3);
+    expect(validateHole(spec, createTerrain(spec))).toBeNull();
+  });
+
+  it("derives par from the corridor rather than copying the intended par", () => {
+    const spec = generateHole(4242, 3);
+    expect(spec.par).toBe(derivePar(createTerrain(spec).spline.length));
+  });
+
+  it("sizes the field from the intended par and keeps the cell near 1 m", () => {
+    for (const [par, fieldSize] of [[3, 160], [4, 220], [5, 300]] as const) {
+      const spec = generateHole(777, 0, par);
+      expect(spec.fieldSize).toBe(fieldSize);
+      expect(spec.fieldSize / spec.cells).toBeCloseTo(1.0, 3);
+      expect(spec.par).toBe(par);
+    }
+  });
+
+  it("always produces a dog-legged corridor of at least three control points", () => {
+    const spec = generateHole(4242, 3);
+    expect(spec.control.length).toBe(3);
+    expect(spec.control[0]).toEqual(spec.tee);
+    expect(spec.control[2]).toEqual(spec.cup);
+  });
+
+  it("throws rather than returning an invalid hole when attempts run out", () => {
+    expect(() =>
+      generateHole(1, 0, 4, { validate: () => ({ check: 99, reason: "always rejects" }) }),
+    ).toThrow(new RegExp(`${MAX_ATTEMPTS}`));
+  });
+
+  it("names the last rejection when it throws, so exhaustion is diagnosable", () => {
+    expect(() =>
+      generateHole(1, 0, 4, { validate: () => ({ check: 99, reason: "always rejects" }) }),
+    ).toThrow(/always rejects/);
+  });
+});
+
+describe("generateCourse", () => {
+  it("builds a par-36 front nine", () => {
+    const course = generateCourse(2026, 9);
+    expect(course.holes).toHaveLength(9);
+    expect(course.holes.reduce((sum, h) => sum + h.par, 0)).toBe(36);
+  });
+
+  it("indexes every hole by its position", () => {
+    const course = generateCourse(2026, 9);
+    course.holes.forEach((hole, i) => expect(hole.index).toBe(i));
+  });
+
+  it("is deterministic", () => {
+    expect(generateCourse(2026, 9)).toEqual(generateCourse(2026, 9));
+  });
+
+  it("gives a different course a different set of holes", () => {
+    expect(generateCourse(2026, 9).holes[0]).not.toEqual(generateCourse(2027, 9).holes[0]);
+  });
+
+  it("carries an id and a name derived from the seed", () => {
+    const course = generateCourse(2026, 9);
+    expect(course.seed).toBe(2026);
+    expect(course.id).toContain("2026");
+    expect(course.name.length).toBeGreaterThan(0);
+  });
+
+  it("every hole passes all seven checks", () => {
+    for (const hole of generateCourse(2026, 9).holes) {
+      expect(validateHole(hole, createTerrain(hole))).toBeNull();
+    }
+  });
+
+  it("cycles the par mix for a course that is not nine holes", () => {
+    expect(generateCourse(2026, 18).holes).toHaveLength(18);
+    expect(parForIndex(9)).toBe(parForIndex(0));
   });
 });

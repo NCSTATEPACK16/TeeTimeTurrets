@@ -7,9 +7,10 @@
  * a level format. A second course is a second list.
  */
 
-import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH } from "./terrain";
+import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import type { MutableVec2 } from "./spline";
+import { hashChannel, mulberry32 } from "./rng";
 
 export interface Vec2 {
   readonly x: number;
@@ -244,4 +245,137 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
   }
 
   return null;
+}
+
+/**
+ * A par-36 front nine. Cycled for courses that are not nine holes, so an 18-hole course is two
+ * nines rather than an error.
+ */
+const PAR_MIX: readonly number[] = [4, 3, 4, 5, 4, 3, 4, 4, 5];
+
+export function parForIndex(index: number): number {
+  return PAR_MIX[((index % PAR_MIX.length) + PAR_MIX.length) % PAR_MIX.length];
+}
+
+/**
+ * Field size scales with the par being aimed at, which is why fieldSize lives on HoleSpec
+ * rather than being global. `cells` tracks it to hold the cell near 1.0 m: a coarser cell makes
+ * heightfield triangle seams large enough for the 0.15 m ball to trip over.
+ */
+const FIELD_FOR_PAR: Readonly<Record<number, number>> = { 3: 160, 4: 220, 5: 300 };
+
+/** Corridor length bands, chosen so derivePar returns the par the field was sized for. */
+const CORRIDOR_BAND: Readonly<Record<number, { min: number; max: number }>> = {
+  3: { min: 70, max: 125 },
+  4: { min: 135, max: 250 },
+  5: { min: 265, max: 375 },
+};
+
+/** How much of the usable box a straight run and a dog-leg apex are allowed to consume. */
+const STRAIGHT_FILL = 0.92;
+const APEX_FILL = 0.85;
+
+/**
+ * One candidate layout. Deterministic in (courseSeed, index, par, attempt) and does no
+ * validation -- generateHole owns the accept/reject decision.
+ *
+ * Target-first: draw the corridor length, take whatever straight distance the box allows along
+ * a random bearing, then SOLVE for the apex offset that makes up the difference. Drawing the
+ * apex directly instead lets the worst case fall short of its band -- a par 5 in a 300 m field
+ * aligned with an axis has only 238 m of straight available and needs a ~75 m dog-leg to reach
+ * 265 m. This is the sense in which the dog-leg is load-bearing rather than decorative.
+ */
+function attemptSpec(courseSeed: number, index: number, par: number, attempt: number): HoleSpec {
+  const seed = hashChannel(courseSeed, index, attempt);
+  const random = mulberry32(hashChannel(seed, index, 2));
+
+  const fieldSize = FIELD_FOR_PAR[par];
+  const half = fieldSize / 2 - (HALF_WIDTH + BLEND_WIDTH) - EDGE_MARGIN;
+
+  const bearing = random() * Math.PI * 2;
+  const dirX = Math.cos(bearing);
+  const dirZ = Math.sin(bearing);
+  // Distance from the centre to the wall of a square box along +-bearing. The perpendicular
+  // bearing swaps |dirX| and |dirZ|, so max() of the pair gives the same reach for both.
+  const reach = half / Math.max(Math.abs(dirX), Math.abs(dirZ));
+
+  const band = CORRIDOR_BAND[par];
+  const target = band.min + (band.max - band.min) * random();
+  const straight = Math.min(reach * 2 * STRAIGHT_FILL, target);
+
+  const tee: Vec2 = { x: (-dirX * straight) / 2, z: (-dirZ * straight) / 2 };
+  const cup: Vec2 = { x: (dirX * straight) / 2, z: (dirZ * straight) / 2 };
+
+  // Solve 2 * hypot(straight / 2, apex) = target, then clamp to the box.
+  const wanted = Math.sqrt(Math.max(0, (target / 2) ** 2 - (straight / 2) ** 2));
+  const offset = Math.min(wanted, reach * APEX_FILL) * (random() < 0.5 ? -1 : 1);
+  const apex: Vec2 = { x: -dirZ * offset, z: dirX * offset };
+
+  return {
+    seed,
+    index,
+    fieldSize,
+    cells: fieldSize,
+    tee,
+    cup,
+    control: [tee, apex, cup],
+    // Placeholder: replaced with the derived value in generateHole, which has the spline.
+    par,
+    waterLevel: -0.72,
+  };
+}
+
+export interface GenerateOptions {
+  /**
+   * Overrides the playability validator. Exists so the MAX_ATTEMPTS exhaustion path is
+   * testable; production never passes it.
+   */
+  readonly validate?: (spec: HoleSpec, terrain: Terrain) => HoleRejection | null;
+}
+
+/**
+ * Rejection sampling: hash (courseSeed, index, attempt) into a seed, draw a layout, build its
+ * terrain, and run every check. On rejection, increment `attempt`. On exhausting MAX_ATTEMPTS,
+ * throw -- deterministic and bounded, never an unbounded search.
+ *
+ * `intendedPar` only picks the field size. The par on the returned spec is derived from the
+ * corridor the spline actually produced.
+ */
+export function generateHole(
+  courseSeed: number,
+  index: number,
+  intendedPar: number = parForIndex(index),
+  options: GenerateOptions = {},
+): HoleSpec {
+  const validate = options.validate ?? validateHole;
+  let last: HoleRejection = { check: 0, reason: "no attempt was made" };
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const candidate = attemptSpec(courseSeed, index, intendedPar, attempt);
+    const terrain = createTerrain(candidate);
+    // par is the only field the terrain does not depend on, so deriving it after construction
+    // costs nothing and keeps "par is never authored" true.
+    const spec: HoleSpec = { ...candidate, par: derivePar(terrain.spline.length) };
+    const rejection = validate(spec, terrain);
+    if (rejection === null) return spec;
+    last = rejection;
+  }
+
+  throw new Error(
+    `generateHole(${courseSeed}, ${index}) exhausted ${MAX_ATTEMPTS} attempts; ` +
+      `the last rejection was check ${last.check}: ${last.reason}`,
+  );
+}
+
+export function generateCourse(courseSeed: number, holeCount: number): Course {
+  const holes: HoleSpec[] = [];
+  for (let index = 0; index < holeCount; index++) {
+    holes.push(generateHole(courseSeed, index));
+  }
+  return {
+    id: `course-${courseSeed >>> 0}`,
+    name: `Course ${(courseSeed >>> 0).toString(16).toUpperCase()}`,
+    seed: courseSeed >>> 0,
+    holes,
+  };
 }
