@@ -20,9 +20,9 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 |---|---|---|---|
 | 1 | Par per hole + scorecard | **→ Phase 1.75** | `Sim.strokes` and `holedOut` exist. Needs `par` on the hole and a per-round tally. Pulled forward: image 13's results screen has nothing to display without it. |
 | 2 | Multi-hole course (front 9) | READY | `terrain.ts` already supports N pads; generalise tee/cup from one pair to a list. Phase 1.75 ships the nine-column scorecard layout with one hole live, so this fills columns without touching UI. |
-| 3 | Club selection wired to the swing | READY | `CLUB_STATS` exists, `Sim.launch` hardcodes `DEFAULT_CLUB`. |
-| 4 | Reload timers gating re-fire | READY | `reloadSeconds` in `CLUB_STATS`, unused. |
-| 5 | Aim spread wired with a seeded RNG | READY | `applyAimSpread` takes an injected `random` and nothing injects one. Port `mulberry32` (see REUSE-MAP). |
+| 3 | Club selection wired to the swing | **DONE** | Phase 2. `Sim.launch` takes a `club` param; the cart owns the equipped club and 1/2/3 select it. |
+| 4 | Reload timers gating re-fire | **DONE** | Phase 2. Owned by `Cart`. Club-swap deliberately does *not* cancel a reload, or swapping away and back would be the game's fastest fire rate. |
+| 5 | Aim spread wired with a seeded RNG | READY | `applyAimSpread` takes an injected `random` and nothing injects one. Port `mulberry32` (see REUSE-MAP). Still true after Phase 2 — the cart fires with no spread at all. |
 | 6 | Lie affects the shot, not just the roll | IDEA | Ball in rough/sand should lose launch power. Natural extension of `surfaces.ts`. |
 | 7 | Backspin / descent-angle model | IDEA | Would fix the driver's 0.86 roll/carry ratio at the source rather than via loft. |
 | 8 | Mulligan / undo last stroke | IDEA | Cheap with `lastSafePosition` already tracked. |
@@ -31,18 +31,18 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 9 | Kinematic cart controller | READY | Rapier `KinematicCharacterController`, verified present in 0.20. |
-| 10 | **Recoil as self-propulsion** | READY | Firing the driver backward boosts the cart. **A KCC receives no impulses** — recoil must be integrated as a velocity term in our own cart state and decayed manually. This will be missed if it is not written down. |
-| 11 | `cartSpeedScale` per surface | READY | Already in `surfaces.ts`, unconsumed. Sand and water bog the cart. |
-| 12 | Turret yaw independent of chassis heading | READY | `GolfClub.ts` already models this; needs `Cart.ts` to read from. |
+| 9 | Kinematic cart controller | **DONE** | Phase 2. KCC in `world.ts`; `Cart.ts` stays Rapier-free and emits a desired translation. Gravity and ground-follow are the controller's, not the cart's. |
+| 10 | **Recoil as self-propulsion** | **DONE** | Phase 2, and it grew a rule: a shot only counts as a stroke inside `STRIKE_RANGE` of the ball, so firing away from it is free propulsion. Same button, two uses. |
+| 11 | `cartSpeedScale` per surface | **DONE** | Phase 2. Tire type scales how much of the penalty reaches the cart, which is what makes tire choice a trade. |
+| 12 | Turret yaw independent of chassis heading | **DONE** | Phase 2. Chase camera tracks the turret, not the chassis. |
 | 13 | Ragdoll targets | READY | Unblocked, and the previous shape was **wrong** — joint stiffness/damping are inert in this binding. Pose is held by body type (`Fixed`→`Dynamic` via `setBodyType`), joints only shape the collapse. Read `DECISIONS.md` "Ragdolls" first. |
 | 13a | Raise `BALL_DENSITY` for the ragdoll mass ratio | READY | Blocks #13 landing well. 46 g vs a multi-kg limb is ~1:100 and unfixable by joint tuning; target ≤ 1:20. Free in ball flight (mass-independent) — confirm with `npm run probe`. See `DECISIONS.md` "Ball mass". |
 | 14 | Cart rollover + auto-right | READY | Port `src/sim/rollover.ts` (65 lines, MIT). |
 | 15 | Cart-vs-cart collision and shunting | IDEA | `setApplyImpulsesToDynamicBodies` makes the KCC push dynamic bodies. |
 | 16 | Damage / health model | **→ Phase 3** | Reference `src/sim/damage.ts` is MIT but 83k — take the shape only. Every cart-mode concept shot (03, 07, 08, 09, 14) has shown a health bar with nothing behind it. |
 | 16a | Ammo per club | **→ Phase 3** | Image 06 shows the counter; bucket pickup replenishes. **Disabled in `STROKE`** — finite ammo can strand a player mid-hole with no legal way to finish. See `UI-SPEC.md` §5. |
-| 16b | Input abstraction (`InputSource`) | **→ Phase 2** | Interface written against image 14's control inventory, not against a keyboard. Touch is then a new implementation in Phase 4, not a refactor of every input path. |
-| 16c | Cart cosmetics: turret skin, chassis paint, tire type | **→ Phase 2** (stats) / **3.5** (UI) | Images 11 and 00. Skin and paint are material params; **tire type is a stat** feeding grip and `cartSpeedScale`, so it enters the cart tuning table while that tuning is being written. |
+| 16b | Input abstraction (`InputSource`) | **DONE** | Phase 2. Binding table is a pure function (`input/mapping.ts`); `ScriptedInputSource` is the second implementation and drives the whole Phase 2 gate headlessly, which is what proves the interface is not keyboard-shaped. |
+| 16c | Cart cosmetics: turret skin, chassis paint, tire type | **PART DONE** / **3.5** (UI) | Phase 2 landed `TIRE_TUNING` as a real trade (turf fastest on fairway, worst in sand; knobby the reverse). Turret skin and chassis paint are still unbuilt — no reader and no UI until 3.5. |
 
 ## CTF and modes
 
@@ -74,7 +74,7 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 |---|---|---|---|
 | 29 | Hit markers / floating text | **→ Phase 4** | Ease-out, 0.8–1.5 s, rise-and-fade. Projection formula in `ARCHITECTURE.md` §2c. Copy from image 00: `+100`, `DIRECT HIT!`, `HOLE IN ONE!`, `CRITICAL HIT!`, `SAND TRAP!`. |
 | 30 | Marker cluster manager | **→ Phase 4** | Vertical stacking + randomised X drift when several land together. |
-| 31 | Chase camera behind the cart | **→ Phase 2** | Unblocked by `Cart.ts` in that phase. Image 03 is the framing reference. The current fixed-offset camera will not survive a 160 m course. |
+| 31 | Chase camera behind the cart | **DONE** | Phase 2. Tracks the **chassis**, not the turret: behind the turret the club-barrel is permanently foreshortened to a stub, and the club is the read. Clamps the eye above terrain so reversing into a slope does not put the camera inside the heightfield. Stationary mode keeps Phase 0's ball-follow framing. |
 | 32 | Ball-flight tracer | IDEA | A fading line behind the ball reads well on a long drive (images 00, 04, 15). Optional inside Phase 4; first thing to cut if it runs long. |
 | 33 | Shot-power HUD showing the club | **→ Phase 4** | `#power-fill` exists; needs club identity and reload state. Vertical orientation per images 02/08, not 00's horizontal. |
 | 34 | Minimap / hole overview | **→ Phase 4** | `surfaceAt` renders a top-down course map for free — no authored data, nothing to sync or replicate. Promoted from `IDEA` because it is in **every** in-game concept shot (02, 03, 08, 09, 14) while sitting unscheduled here. |
@@ -105,7 +105,7 @@ clubhouse; until now no document contained the idea that the game has screens at
 |---|---|---|---|
 | 35 | Colyseus room + schema | PARKED | Phase 5. Do not start early. |
 | 36 | ~~Dual licence~~ | **DONE** | Enacted 31 Aug 2026: Apache-2.0 `src/**`+`tools/**`, AGPL-3.0-or-later `server/**`, DCO in `CONTRIBUTING.md`. See `LICENSES.md`. Apache over MIT for the patent grant. |
-| 37 | Self-test runner | READY | `npm run probe` proves the pattern; generalise to `*.selftest.mjs` + a runner. Phase 3's ragdoll gate now needs recorded, diffable pose baselines — this is on that critical path. |
+| 37 | Self-test runner | **PART DONE** | Vitest landed in Phase 2 (`npm test`, node environment, colocated `*.test.ts`) and Rapier runs inside it, so `Sim`-level integration tests are cheap. Still open: recorded, diffable **pose baselines** for Phase 3's ragdoll gate — a runner exists now, the baseline format does not. |
 | 38 | ~~`docs/ATTRIBUTION.md`~~ | **DONE** | Superseded by root `NOTICE`, which is the Apache-2.0 convention and already has the entry template. Fill it in on the first port; do not create a second attribution file. |
 | 41 | `Dockerfile` + `docker-compose.yml` | READY | The documented self-host path, per `DECISIONS.md` "Hosting". Caddy for TLS/WS proxy. `fly.toml`/`railway.json` optional alongside, never primary. |
 | 39 | Trademark search for "TeeTimeTurrets" | IDEA | Flagged in `RESEARCH-NEEDED.md`; needs a real search, not a guess. **Downgraded** by the 31 Aug 2026 rename from "CallofGolf" — the ordinary pre-users check now, not an urgent one. |

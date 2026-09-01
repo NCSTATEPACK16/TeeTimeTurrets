@@ -1,93 +1,161 @@
 import * as THREE from "three";
 import { GameLoop } from "./engine/GameLoop";
+import { KeyboardMouseSource } from "./input/KeyboardMouseSource";
 import { RenderScene } from "./render/scene";
-import { FIXED_DT, Sim } from "./sim/world";
-import type { BallTransform } from "./sim/world";
-
-const CHARGE_DURATION_SECONDS = 1.1;
-const AIM_TURN_RATE = 1.6; // radians per second, applied once per fixed tick (see stepInput)
+import type { FrameView } from "./render/scene";
+import { FIXED_DT, Sim, SwingMode } from "./sim/world";
+import type { BallTransform, CartTransform } from "./sim/world";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
-  const powerFillEl = document.getElementById("power-fill");
-  if (!container || !powerFillEl) throw new Error("expected #app and #power-fill in index.html");
-  const powerFill: HTMLElement = powerFillEl;
+  const hud = readHud();
+  if (!container || !hud) throw new Error("expected #app and the #hud elements in index.html");
 
   const sim = await Sim.create();
   const render = new RenderScene(container);
+  const input = new KeyboardMouseSource(render.renderer.domElement);
 
   // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
-  (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = { sim };
+  (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = { sim, render };
 
-  let aimYaw = 0;
-  let charging = false;
-  let chargeStartMs = 0;
-  let power = 0;
-
-  const keysDown = new Set<string>();
+  // Not part of PlayerIntent: "start the hole again" is a screen-level action that Phase 1.75's
+  // ScreenManager will own via the results screen's NEXT HOLE. This is a dev affordance until then.
   window.addEventListener("keydown", (event) => {
-    keysDown.add(event.code);
-    if (event.repeat) return;
-    if (event.code === "Space" && !charging && sim.isResting()) {
-      charging = true;
-      chargeStartMs = performance.now();
-    }
-    if (event.code === "KeyR") {
-      sim.reset();
-      charging = false;
-      power = 0;
-    }
-  });
-  window.addEventListener("keyup", (event) => {
-    keysDown.delete(event.code);
-    if (event.code === "Space" && charging) {
-      sim.launch(aimYaw, power);
-      charging = false;
-      power = 0;
-    }
+    if (event.code === "KeyR") sim.reset();
   });
 
-  // Fixed-tick-rate input: aim turns at a rate defined in radians-per-tick, not radians-per-
-  // render-frame, so it stays frame-rate independent and (once networked) reproducible from
-  // replayed input alone -- the same reason ballistics live in the sim tick, not the render tick.
-  function stepInput(): void {
-    if (keysDown.has("ArrowLeft")) aimYaw -= AIM_TURN_RATE * FIXED_DT;
-    if (keysDown.has("ArrowRight")) aimYaw += AIM_TURN_RATE * FIXED_DT;
-  }
+  // Reused across frames rather than rebuilt -- GameLoop's frame callback is covered by the
+  // AGENTS.md no-allocation rule just as the fixed step is.
+  const view: FrameView = {
+    ball: cloneBall(sim.current),
+    cart: cloneCart(sim.currentCart),
+    aimYaw: 0,
+    charge01: 0,
+    club: sim.cart.equippedClub,
+    mode: sim.mode,
+    ballLoaded: sim.ballLoaded,
+  };
 
   const loop = new GameLoop({
     fixedDt: FIXED_DT,
     step: () => {
-      stepInput();
-      sim.step();
+      sim.step(input.sample());
+      input.endTick();
     },
     render: (alpha) => {
-      if (charging) {
-        power = Math.min(1, (performance.now() - chargeStartMs) / 1000 / CHARGE_DURATION_SECONDS);
-      }
-      render.draw(interpolate(sim.previous, sim.current, alpha), aimYaw, power);
-      powerFill.style.width = `${Math.round(power * 100)}%`;
+      interpolateBall(sim.previous, sim.current, alpha, view.ball);
+      interpolateCart(sim.previousCart, sim.currentCart, alpha, view.cart);
+      view.aimYaw = view.cart.turretYaw;
+      view.charge01 = sim.cart.charge;
+      view.club = sim.cart.equippedClub;
+      view.mode = sim.mode;
+      view.ballLoaded = sim.ballLoaded;
+
+      render.draw(view);
+      drawHud(hud, sim);
     },
   });
   loop.start();
+}
+
+interface Hud {
+  powerFill: HTMLElement;
+  mode: HTMLElement;
+  club: HTMLElement;
+  strokes: HTMLElement;
+  status: HTMLElement;
+}
+
+function readHud(): Hud | null {
+  const powerFill = document.getElementById("power-fill");
+  const mode = document.getElementById("hud-mode");
+  const club = document.getElementById("hud-club");
+  const strokes = document.getElementById("hud-strokes");
+  const status = document.getElementById("hud-status");
+  if (!powerFill || !mode || !club || !strokes || !status) return null;
+  return { powerFill, mode, club, strokes, status };
+}
+
+/**
+ * A deliberately minimal readout, not the image-08 HUD -- that is Phase 4's job and wants the
+ * layout done properly rather than grown one span at a time. This is only what a player needs to
+ * understand what the cart is doing.
+ */
+function drawHud(hud: Hud, sim: Sim): void {
+  const cart = sim.cart;
+  hud.powerFill.style.width = `${Math.round(cart.charge * 100)}%`;
+  setText(hud.mode, sim.mode === SwingMode.Cart ? "CART" : "STANDING");
+  setText(hud.club, cart.equippedClub.toUpperCase());
+  setText(hud.strokes, `STROKES ${sim.strokes}`);
+  setText(hud.status, statusText(sim));
+}
+
+function statusText(sim: Sim): string {
+  if (sim.holedOut) return "HOLED OUT — R to reset";
+  if (!sim.cart.canFire) return `RELOADING ${sim.cart.reloadRemaining.toFixed(1)}s`;
+  if (sim.lastShotInWater) return "WATER HAZARD — plus one stroke";
+  if (sim.lastShotOutOfBounds) return "OUT OF BOUNDS — returned to the tee";
+  if (sim.mode !== SwingMode.Cart) return "READY";
+  if (sim.ballLoaded) return "BALL LOADED — fire to play it";
+  return sim.ballInReach ? "BALL SETTLING…" : "NO BALL — fire a blank to boost";
+}
+
+/** Guarded so an unchanged string does not dirty the DOM every frame at 60fps. */
+function setText(element: HTMLElement, text: string): void {
+  if (element.textContent !== text) element.textContent = text;
 }
 
 const scratchA = new THREE.Quaternion();
 const scratchB = new THREE.Quaternion();
 const scratchOut = new THREE.Quaternion();
 
-function interpolate(previous: BallTransform, current: BallTransform, alpha: number): BallTransform {
+function interpolateBall(
+  previous: BallTransform,
+  current: BallTransform,
+  alpha: number,
+  out: BallTransform,
+): void {
   scratchA.set(previous.rotation.x, previous.rotation.y, previous.rotation.z, previous.rotation.w);
   scratchB.set(current.rotation.x, current.rotation.y, current.rotation.z, current.rotation.w);
   scratchOut.slerpQuaternions(scratchA, scratchB, alpha);
-  return {
-    position: {
-      x: previous.position.x + (current.position.x - previous.position.x) * alpha,
-      y: previous.position.y + (current.position.y - previous.position.y) * alpha,
-      z: previous.position.z + (current.position.z - previous.position.z) * alpha,
-    },
-    rotation: { x: scratchOut.x, y: scratchOut.y, z: scratchOut.z, w: scratchOut.w },
-  };
+
+  out.position.x = lerp(previous.position.x, current.position.x, alpha);
+  out.position.y = lerp(previous.position.y, current.position.y, alpha);
+  out.position.z = lerp(previous.position.z, current.position.z, alpha);
+  out.rotation.x = scratchOut.x;
+  out.rotation.y = scratchOut.y;
+  out.rotation.z = scratchOut.z;
+  out.rotation.w = scratchOut.w;
+}
+
+/**
+ * Plain lerp on the angles is correct here rather than a shortest-arc slerp: heading and turret
+ * yaw accumulate without ever being wrapped to [-PI, PI], so successive values never straddle a
+ * discontinuity and a naive interpolation cannot take the long way round.
+ */
+function interpolateCart(
+  previous: CartTransform,
+  current: CartTransform,
+  alpha: number,
+  out: CartTransform,
+): void {
+  out.position.x = lerp(previous.position.x, current.position.x, alpha);
+  out.position.y = lerp(previous.position.y, current.position.y, alpha);
+  out.position.z = lerp(previous.position.z, current.position.z, alpha);
+  out.heading = lerp(previous.heading, current.heading, alpha);
+  out.turretYaw = lerp(previous.turretYaw, current.turretYaw, alpha);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function cloneBall(t: BallTransform): BallTransform {
+  return { position: { ...t.position }, rotation: { ...t.rotation } };
+}
+
+function cloneCart(t: CartTransform): CartTransform {
+  return { position: { ...t.position }, heading: t.heading, turretYaw: t.turretYaw };
 }
 
 main().catch((err: unknown) => {

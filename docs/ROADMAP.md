@@ -65,11 +65,16 @@ gameplay.
 
 - [x] Extract `Ballistics.ts` (club stats, launch math) out of `world.ts`.
 - [x] Extract `GameLoop.ts` (fixed-step accumulator) out of `main.ts`.
-- [ ] Add a test runner (Vitest — fits the existing Vite toolchain) and colocate tests for
-      every pure function in `Ballistics.ts`.
+- [x] Add a test runner (Vitest — fits the existing Vite toolchain) and colocate tests for
+      every pure function in `Ballistics.ts`. Runs in the **node** environment, which turns the
+      DOM-free rule for `src/sim/**` and `src/physics/**` into something the suite enforces
+      rather than something a reviewer has to notice.
 - [ ] Add `tools/sceneGate.mjs` v1 (see `AGENTS.md` "Visual Critic / Scene Gate") — even a
       version that only checks the ball and ground mesh is worth having before Phase 2 adds
-      more geometry to regress.
+      more geometry to regress. **Still open.** `tools/smoke.mjs` (`npm run smoke`) was added
+      alongside Phase 2 and is *not* this: it drives the real browser input path and asserts no
+      console errors, but has no geometry baseline and no perceptual diff. The cart and three
+      club heads are now in the scene and unguarded by any baseline.
 
 **Gate:** `tsc --noEmit` clean; the Phase 0 headless trajectory check still passes
 unchanged (regression check for the extraction, already re-run once after this refactor —
@@ -151,40 +156,61 @@ title screen's course backdrop renders without stalling the first frame of a rou
 different range/power/reload" mechanic, layered on top of the still-working stationary
 swing (both modes coexist — see design decision below).
 
-- [ ] `src/sim/entities/Cart.ts`: authoritative chassis position/heading via Rapier's
+- [x] `src/sim/entities/Cart.ts`: authoritative chassis position/heading via Rapier's
       `KinematicCharacterController` (settled by research — see `DECISIONS.md`; the
       hand-rolled alternative is withdrawn), turret yaw (independent of chassis heading),
       equipped `ClubType`, reload timer gated by `CLUB_STATS[club].reloadSeconds`.
-- [ ] Recoil as self-propulsion: firing the driver backward boosts the cart. **A kinematic
+      Built as a Rapier-free state machine that emits a *desired* translation, with `world.ts`
+      owning the controller and everything vertical. That split is what makes the whole thing
+      unit-testable and is the same split Phase 5 replays intents through.
+- [x] Recoil as self-propulsion: firing the driver backward boosts the cart. **A kinematic
       character controller receives no impulses** — recoil is a velocity term `Cart.ts` owns
       and decays itself. Budget for this; it is not `applyImpulse`.
       **Direction is settled: recoil opposes the shot**, so a forward-facing driver shoves the
       cart backward. Image 04 appears to show the opposite; `UI-SPEC.md` §7 explains why the
-      image is read as a rear-end squat rather than a forward boost. Delete that note once the
-      code exists.
-- [ ] `src/input/InputSource.ts`: an input *interface* — throttle/steer as a normalised
+      image is read as a rear-end squat rather than a forward boost.
+      **Now implemented, so `UI-SPEC.md` §7's note can be deleted.** It gained a rule the plan
+      did not have: a shot only counts as a stroke if the cart is within `STRIKE_RANGE` of the
+      ball, so firing away from your ball is *pure propulsion at no stroke cost*. One button is
+      both the golf swing and the engine, and where you park decides which.
+- [x] `src/input/InputSource.ts`: an input *interface* — throttle/steer as a normalised
       vector, brake, turret aim, fire, club select, mode toggle — with `KeyboardMouseSource`
       as the only implementation in this phase. **Write the interface against image 14's
       control inventory** (`UI-SPEC.md` §4), not against a keyboard. Touch lands in Phase 4;
       if the interface assumes key states now, that becomes a refactor of every input path
       instead of one new class. This is the cheap version of the same mistake Phase 5 warns
-      about.
-- [ ] Consume `surfaces.ts` `cartSpeedScale` so sand and water bog the cart down.
-- [ ] Cart cosmetics as **data on the cart, not a clubhouse feature** (image 11, image 00):
-      turret skin and chassis paint are material parameters, but **tire type is a stat** —
-      it scales grip and interacts with `cartSpeedScale`. It belongs in the cart tuning table
-      now, while the tuning is being written, even though the UI that sets it is Phase 3.5.
+      about. Binding table is a pure function (`src/input/mapping.ts`) so it tests without a DOM;
+      `KeyboardMouseSource` is listener bookkeeping only.
+- [x] Consume `surfaces.ts` `cartSpeedScale` so sand and water bog the cart down.
+- [x] Cart cosmetics as **data on the cart, not a clubhouse feature** (image 11, image 00):
+      **tire type is a stat** — it scales grip and interacts with `cartSpeedScale`. `TIRE_TUNING`
+      in `Cart.ts` is a genuine trade rather than a ladder: turf is fastest and grippiest on
+      fairway and worst in a bunker, knobby gives up top speed to barely notice rough and sand.
+      A tire scales how much of a surface's penalty *reaches* the cart, not the surface itself.
+      **Partial:** turret skin and chassis paint (material parameters) are not built — no UI sets
+      them until Phase 3.5 and nothing else reads them.
 - [ ] Port `terrainMobility.ts` (159 lines, MIT, zero imports — see `REUSE-MAP.md`) as the
-      slope/grip tuning layer over the controller.
-- [ ] Wire `src/entities/GolfClub.ts` (already built, not yet wired) to read `Cart.ts`
-      snapshots instead of its current standalone local state.
-- [ ] Input: throttle/steer for the cart, separate aim input for the turret, a club-select
-      key/button, reload gauge feeding the existing power-bar-style HUD element.
-- [ ] Camera: third-person chase behind the cart (extend `RenderScene`'s existing lerp-follow
+      slope/grip tuning layer over the controller. **Still open** — the KCC's own
+      `setMaxSlopeClimbAngle`/`setMinSlopeSlideAngle` cover enough for the spike, so this is
+      now a tuning refinement rather than a prerequisite. Needs a `NOTICE` entry when ported.
+- [x] Wire `src/entities/GolfClub.ts` (already built, not yet wired) to read `Cart.ts`
+      snapshots instead of its current standalone local state. Note the yaw-convention
+      conversion this needed: sim yaw 0 is world +X, a Three object's local +Z is its forward,
+      so the group's `rotation.y = PI/2 - heading` and the turret pivot (a child) is
+      `heading - turretYaw`. Documented in `render/scene.ts`.
+- [x] Input: throttle/steer for the cart, separate aim input for the turret, a club-select
+      key/button, reload gauge feeding the existing power-bar-style HUD element. **Partial:**
+      the power bar shows swing charge and reload state is a text readout, not a gauge — the
+      proper meter is Phase 4's, built to image 08 rather than grown one span at a time.
+- [x] Camera: third-person chase behind the cart (extend `RenderScene`'s existing lerp-follow
       camera, which already follows a moving target). Image 03 is the framing reference —
       cart low in frame, horizon high, enough lead to see the next hazard. Unblocks
       BACKLOG #31; the current fixed-offset camera will not survive a 160 m course.
+      Tracks the *turret*, not the chassis, and clamps the eye above the terrain so reversing
+      into a slope does not put the camera inside the heightfield.
 - [ ] `tools/sceneGate.mjs` baseline extended to cover the cart + all three club heads.
+      **Still open, and now overdue** — the cart and three club heads are in the scene with no
+      geometry baseline guarding them.
 
 **Gate:** drive the cart around the terrain patch without falling through it or getting
 stuck on a slope it shouldn't; swap all three clubs and confirm each fires with visibly
@@ -195,6 +221,59 @@ and the mode toggle moves between them cleanly, since `UI-SPEC.md` §1 shows the
 carry different HUDs rather than the same one with elements greyed out. A second
 `InputSource` implementation that only replays a scripted array of intents drives the whole
 gate headlessly — if it can't, the interface is still keyboard-shaped and Phase 4 will pay.
+
+**Gate status — passed except the HUD split.** `src/sim/world.cart.test.ts` is the gate, and it
+is driven entirely through `ScriptedInputSource` with no direct `Sim` calls, which is the part
+that actually proves the interface. 82 tests green, `tsc --noEmit` clean, `npm run probe`
+unchanged from Phase 1.5 (terrain 4.3°/12.5°, surface mix 27.9/63.2/5.0/2.5/1.4, water and
+hole-out both PASS), `npm run smoke` green through the real browser input path.
+
+Two carve-outs, both deliberate:
+
+1. **The two modes share one HUD**, where `UI-SPEC.md` §1 wants two. The current readout is a
+   minimal mode/club/strokes/status line, not image 08. Splitting it belongs with Phase 4
+   building the real HUD, not with growing this one.
+2. **No geometry baseline** covers the cart or the club heads — Phase 1's `sceneGate.mjs` is
+   still unbuilt, so nothing catches a silent geometry regression.
+
+### The turret carries the ball — corrected against the concept art
+
+The first pass had the cart drive up to a ball lying on the course and strike it where it lay.
+**That is not what images 03 and 04 show, and it is not the game.** Re-read against the art and
+corrected in the same phase:
+
+- **The turret sits on the cart's roof and its barrel *is* a golf club** — a shaft with the club
+  head as the muzzle (image 03). Swapping clubs swaps the head, and the barrel's elevation is
+  that club's own `loftDeg`, so the putter lies almost flat and the iron cocks up. One number
+  drives both the silhouette and the ballistics, so they cannot disagree.
+- **The ball rides on the turret and is fired out of the club head** (images 03, 04), not struck
+  off the turf. `computeMuzzle` in `Cart.ts` is the single source for where that is; `world.ts`
+  lifts the ball there before launching.
+- **Strike range became pickup range.** Drive within `PICKUP_RANGE` of a settled ball and it is
+  scooped onto the turret; fire with it loaded and you play a stroke; fire without it and you
+  fire a blank that shoves the cart and costs nothing. Fire the ball down the fairway, then fire
+  blanks to drive after it.
+- **Turret aim is stored relative to the chassis**, so aiming is optional: a player who never
+  touches the aim control always fires straight over the bonnet, and one who does aim keeps that
+  angle through every turn. This replaced an absolute world yaw, and the test that asserted the
+  old behaviour was rewritten rather than patched.
+- **The chase camera tracks the chassis, not the turret.** Behind the turret the club-barrel is
+  permanently foreshortened to a stub pointing away from the viewer — the one thing the shot has
+  to show. Behind the chassis, swinging the turret sweeps the club across frame, which is image
+  03's framing.
+
+**Three things found by building it, all worth keeping:**
+
+1. `CART_SPAWN_OFFSET` and `PICKUP_RANGE` are coupled. The cart first spawned 3.5 m behind the
+   tee with a 3.0 m range, so every hole opened with the player unable to play their own tee
+   shot. A human would have called that a bug in the strike rule rather than in the spawn point.
+2. **Firing from a ~2.3 m muzzle adds substantial carry.** A full-charge *putt* from up there
+   reaches the water at 41 m and takes a penalty — it plays nothing like the 13 m ground putt the
+   probe measures. Cart-mode distances are their own tuning problem and `CLUB_STATS` was balanced
+   for the ground game; this wants a play session before any numbers move.
+3. **The tee ball spawns 0.3 m up and takes about half a second to settle** before it can be
+   scooped. Firing in that window gets a blank. Harmless, but it is why the hole opens with a
+   brief unloaded moment rather than a loaded turret.
 
 ## Phase 3 — Targets, ragdolls, pickups
 

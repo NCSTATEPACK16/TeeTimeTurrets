@@ -140,11 +140,12 @@ Recorded so none of it is mistaken for a requirement. The first two also appear 
 - **01 renders the flag-ball at ~⅓ cart height** and golf dimples as carved indentations.
   The capture mechanic needs the ball too big to carry, so build it at roof height; dimples
   become a flat dot pattern or nothing.
-- **04's recoil direction is ambiguous.** The cart is nose-up and airborne with the ball
-  leaving *forward*, but the mechanic in `ROADMAP.md` is that firing *backward* boosts the
-  cart. Both cannot be true. **Resolution: the roadmap wins** — recoil opposes the shot, so a
-  forward-firing driver shoves the cart backward, and the image is read as a nose-up rear-end
-  squat rather than a forward boost. Settle it in code in Phase 2 and delete this bullet.
+- ~~**04's recoil direction is ambiguous.**~~ **Settled in code, Phase 2.** Recoil opposes the
+  shot: a forward-firing driver shoves the cart backward, and image 04 is a nose-up rear-end
+  squat rather than a forward boost. Asserted by `Cart.test.ts` ("pushes the cart opposite the
+  direction the turret is aiming"), so it cannot drift back. The image is now read as
+  *confirming* this — the barrel points right, the muzzle flash is right, and the cart is thrown
+  up and to the left.
 - **05 shows a caddie as the ragdoll target.** Fine, and it means targets are humanoid
   capsule assemblies — but note the ball-to-limb mass ratio decision (`DECISIONS.md`
   "Ball mass") before expecting the pictured launch height.

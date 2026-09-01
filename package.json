@@ -7,9 +7,18 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "vite build && node tools/smoke.mjs",
     "probe": "vite build -c tools/probe.vite.config.ts && node tools/.probe-out/feelProbe.mjs"
   },
-  "keywords": ["golf", "three.js", "rapier", "webgl", "game"],
+  "keywords": [
+    "golf",
+    "three.js",
+    "rapier",
+    "webgl",
+    "game"
+  ],
   "author": "",
   "license": "Apache-2.0 AND AGPL-3.0-or-later",
   "type": "module",
@@ -20,7 +29,9 @@
   },
   "devDependencies": {
     "@types/three": "^0.185.4",
+    "puppeteer": "^25.9.0",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }

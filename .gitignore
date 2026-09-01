@@ -1,5 +1,6 @@
 node_modules/
 dist/
 tools/.probe-out/
+tools/.smoke-out/
 *.log
 .DS_Store

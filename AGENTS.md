@@ -64,11 +64,17 @@ now has a repository and agents may commit. Two rules replace the prohibition:
   **the reverse must never happen.** Shared logic lives in `src/sim/**` or `src/physics/**`.
   See `LICENSES.md`. Every commit needs a DCO sign-off (`git commit -s`) — see the Git section
   above.
-- New sim/physics logic gets a colocated test. This project doesn't have a test runner wired
-  up yet (Phase 1 should add one — Vitest is the natural fit given the Vite toolchain); until
-  then, any new pure function in `Ballistics.ts` should at minimum be exercised by the
-  headless-browser trajectory check pattern used to validate Phase 0 (see git-free session
-  history / ask the user for the verify.mjs pattern) before being declared done.
+- New sim/physics logic gets a colocated test. The runner is **Vitest** (`npm test`, watch with
+  `npm run test:watch`), config in `vitest.config.ts`, tests colocated as `src/**/*.test.ts`.
+  It runs in the **node** environment deliberately: that is the DOM-free invariant made
+  executable, so a stray `three`/`window`/`document` import into `src/sim/**` or
+  `src/physics/**` fails the suite instead of quietly working. Rapier itself runs fine there,
+  so integration tests against a real `Sim` are cheap — see `src/sim/world.cart.test.ts`.
+- Three verification layers, and they answer different questions. Do not substitute one for
+  another: `npm test` (rules and state machines), `npm run probe` (feel and trajectory numbers,
+  `tools/feelProbe.ts`), `npm run smoke` (the real browser path from a key event through
+  `KeyboardMouseSource` into `Sim` and back out to the HUD, `tools/smoke.mjs`). The smoke check
+  is **not** the Scene Gate below — it has no geometry baseline and no perceptual diff.
 - `tsc --noEmit` (aliased as part of `npm run build`) must be clean before any change is
   considered finished. `strict: true`, `noUnusedLocals`, `noUnusedParameters` are all on —
   don't relax them to make an error go away.

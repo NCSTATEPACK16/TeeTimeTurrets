@@ -1,8 +1,58 @@
 import * as THREE from "three";
+import { GolfClub } from "../entities/GolfClub";
+import type { ClubType } from "../physics/Ballistics";
 import { FIELD_SIZE, NCOLS, NROWS, heightAt } from "../sim/terrain";
-import type { BallTransform } from "../sim/world";
+import { CART_COLLIDER } from "../sim/entities/Cart";
+import { SwingMode } from "../sim/world";
+import type { BallTransform, CartTransform } from "../sim/world";
 
 const BALL_RADIUS = 0.15;
+
+/**
+ * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
+ * hazard.
+ *
+ * The camera tracks the **chassis**, not the turret. Tracking the turret is the usual choice for
+ * a tank game, but here it hides the thing the game is about: the barrel is a golf club, and a
+ * camera welded behind the turret keeps that club permanently foreshortened to a stub pointing
+ * away from the viewer. Behind the chassis instead, swinging the turret sweeps the club across
+ * frame -- image 03 exactly, and the reason that shot reads as golf rather than as artillery.
+ * Aiming costs nothing in orientation either, since the turret defaults to the chassis heading.
+ */
+const CHASE_DISTANCE = 6.5;
+const CHASE_HEIGHT = 3.6;
+const CHASE_LOOK_AHEAD = 8;
+/**
+ * The look target sits *below* the cart, not above it. That pitches the camera down, which is
+ * what pushes the cart into the lower third of the frame and leaves the horizon high -- image
+ * 03's framing. Aiming at or above the cart pitches up and centres it instead.
+ */
+const CHASE_LOOK_DROP = 0.3;
+/** Per-frame lerp factors. Position lags further than the look target so turns read as weight. */
+const CHASE_POSITION_LERP = 0.12;
+const CHASE_TARGET_LERP = 0.2;
+/** Keeps the chase eye out of the terrain when the cart backs toward a slope. */
+const CHASE_MIN_GROUND_CLEARANCE = 1.5;
+
+/** The sim's cart position is the capsule centre; the cart model's origin is at ground level. */
+const CART_BODY_OFFSET_Y = CART_COLLIDER.groundOffset;
+
+/**
+ * Everything the renderer needs for one frame. Passed as one object the caller reuses rather
+ * than as a growing positional argument list -- and reused rather than rebuilt, because
+ * GameLoop's frame callback is covered by the AGENTS.md no-allocation rule.
+ */
+export interface FrameView {
+  ball: BallTransform;
+  cart: CartTransform;
+  /** World-space aim yaw, 0 = +X. The turret's in cart mode, the player's in stationary mode. */
+  aimYaw: number;
+  charge01: number;
+  club: ClubType;
+  mode: SwingMode;
+  /** True while the ball rides the turret: the course ball is hidden and the turret's is shown. */
+  ballLoaded: boolean;
+}
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
 export class RenderScene {
@@ -11,8 +61,11 @@ export class RenderScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly ball: THREE.Mesh;
   private readonly aimArrow: THREE.ArrowHelper;
+  private readonly cart: GolfClub;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly aimDirScratch = new THREE.Vector3();
+  private readonly chaseEyeScratch = new THREE.Vector3();
+  private readonly chaseLookScratch = new THREE.Vector3();
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -48,30 +101,99 @@ export class RenderScene {
     this.aimArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 2, 0xffee55, 0.5, 0.3);
     this.scene.add(this.aimArrow);
 
+    this.cart = new GolfClub();
+    this.scene.add(this.cart);
+
     this.cameraTarget.set(0, 0, 0);
     window.addEventListener("resize", () => this.onResize());
   }
 
-  draw(interpolated: BallTransform, aimYawRadians: number, power: number): void {
-    this.ball.position.set(interpolated.position.x, interpolated.position.y, interpolated.position.z);
+  draw(view: FrameView): void {
+    this.ball.position.set(view.ball.position.x, view.ball.position.y, view.ball.position.z);
     this.ball.quaternion.set(
-      interpolated.rotation.x,
-      interpolated.rotation.y,
-      interpolated.rotation.z,
-      interpolated.rotation.w,
+      view.ball.rotation.x,
+      view.ball.rotation.y,
+      view.ball.rotation.z,
+      view.ball.rotation.w,
     );
 
-    this.aimArrow.position.copy(this.ball.position);
-    this.aimArrow.position.y += BALL_RADIUS;
-    this.aimDirScratch.set(Math.cos(aimYawRadians), 0, Math.sin(aimYawRadians));
-    this.aimArrow.setDirection(this.aimDirScratch);
-    this.aimArrow.setLength(1.2 + power * 2, 0.4, 0.25);
+    this.drawCart(view);
 
+    // Exactly one ball is ever visible. While loaded it is the turret's, so it tracks the
+    // barrel perfectly instead of being chased there by an interpolated world position.
+    this.ball.visible = !view.ballLoaded;
+
+    // The ground aim arrow belongs to stationary mode, where the player is lining up a lie. In
+    // cart mode the barrel itself shows where the shot is going.
+    this.aimArrow.visible = view.mode === SwingMode.Stationary;
+    if (this.aimArrow.visible) {
+      this.aimArrow.position.copy(this.ball.position);
+      this.aimArrow.position.y += BALL_RADIUS;
+      this.aimDirScratch.set(Math.cos(view.aimYaw), 0, Math.sin(view.aimYaw));
+      this.aimArrow.setDirection(this.aimDirScratch);
+      this.aimArrow.setLength(1.2 + view.charge01 * 2, 0.4, 0.25);
+    }
+
+    if (view.mode === SwingMode.Cart) this.frameChase(view);
+    else this.frameBall();
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  /** Frees the cart's geometries and materials. See the AGENTS.md resource-cleanup rule. */
+  dispose(): void {
+    this.cart.dispose();
+    this.renderer.dispose();
+  }
+
+  /**
+   * Sim yaw and Three yaw are different conventions and the conversion is easy to get subtly
+   * wrong. Sim yaw 0 points down world +X; a Three object with `rotation.y = t` points its local
+   * +Z (the cart's forward) at world (sin t, 0, cos t). Setting those equal gives
+   * t = PI/2 - yaw. The turret pivot is a *child* of the cart group, so its local rotation is
+   * the difference of the two converted angles, which simplifies to (heading - turretYaw).
+   */
+  private drawCart(view: FrameView): void {
+    const c = view.cart;
+    this.cart.position.set(c.position.x, c.position.y - CART_BODY_OFFSET_Y, c.position.z);
+    this.cart.rotation.y = Math.PI / 2 - c.heading;
+    this.cart.setAimYaw(c.heading - c.turretYaw);
+    this.cart.setClub(view.club);
+    this.cart.setChargeVisual(view.charge01);
+    this.cart.setBallLoaded(view.ballLoaded);
+  }
+
+  private frameChase(view: FrameView): void {
+    const c = view.cart;
+    const forwardX = Math.cos(c.heading);
+    const forwardZ = Math.sin(c.heading);
+
+    this.chaseEyeScratch.set(
+      c.position.x - forwardX * CHASE_DISTANCE,
+      c.position.y + CHASE_HEIGHT,
+      c.position.z - forwardZ * CHASE_DISTANCE,
+    );
+    this.chaseLookScratch.set(
+      c.position.x + forwardX * CHASE_LOOK_AHEAD,
+      c.position.y - CHASE_LOOK_DROP,
+      c.position.z + forwardZ * CHASE_LOOK_AHEAD,
+    );
+
+    // Keep the eye above the terrain it is flying over, or a chase camera reversing into a
+    // hillside ends up underground looking at the inside of the heightfield.
+    const groundAtEye = heightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
+    this.chaseEyeScratch.y = Math.max(this.chaseEyeScratch.y, groundAtEye + CHASE_MIN_GROUND_CLEARANCE);
+
+    this.camera.position.lerp(this.chaseEyeScratch, CHASE_POSITION_LERP);
+    this.cameraTarget.lerp(this.chaseLookScratch, CHASE_TARGET_LERP);
+    this.camera.lookAt(this.cameraTarget);
+  }
+
+  /** Phase 0's framing, unchanged: a fixed offset that follows the ball. */
+  private frameBall(): void {
     this.cameraTarget.lerp(this.ball.position, 0.08);
     this.camera.position.set(this.cameraTarget.x - 6, this.cameraTarget.y + 4.5, this.cameraTarget.z + 7);
     this.camera.lookAt(this.cameraTarget);
-
-    this.renderer.render(this.scene, this.camera);
   }
 
   private onResize(): void {

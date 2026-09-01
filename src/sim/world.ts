@@ -1,5 +1,8 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
+import { neutralIntent } from "../input/InputSource";
+import type { PlayerIntent } from "../input/InputSource";
+import { CART_COLLIDER, Cart, computeMuzzle } from "./entities/Cart";
 import {
   CUP_POSITION,
   CUP_RADIUS,
@@ -96,8 +99,33 @@ const REST_HOLD_TICKS = 12;
 /** Past this the ball has left the heightfield and is in free fall over nothing. */
 const OUT_OF_BOUNDS_Y = -20;
 
-/** Phase 0 has one club equipped permanently; club selection lands in Phase 2 (see docs/ROADMAP.md). */
+/** The club a stroke uses when the caller does not name one. The cart carries its own equipped club. */
 const DEFAULT_CLUB = ClubType.Driver;
+
+/**
+ * Where the cart waits at the start of a hole: behind the tee, close enough to pick the ball up
+ * immediately so the hole opens with the ball already loaded on the turret. Coupled to
+ * PICKUP_RANGE -- a spawn outside it makes every hole start with a pointless nudge forward.
+ */
+const CART_SPAWN_OFFSET = 2.5;
+
+/**
+ * How close the cart has to be to a resting ball to scoop it onto the turret.
+ *
+ * This is the rule that makes driving matter, and it gives one button two jobs. With the ball
+ * loaded, firing plays a stroke. With the ball still out on the course, firing is a blank: the
+ * recoil shoves the cart and no stroke is counted (roadmap Phase 2, "recoil as self-propulsion").
+ * So you fire your ball down the fairway, then fire blanks to drive yourself after it.
+ */
+const PICKUP_RANGE = 3.0;
+
+/** KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one. */
+const CHARACTER_OFFSET = 0.02;
+const CART_MAX_SLOPE_CLIMB_DEG = 45;
+const CART_MIN_SLOPE_SLIDE_DEG = 32;
+const CART_AUTOSTEP_HEIGHT = 0.45;
+const CART_AUTOSTEP_MIN_WIDTH = 0.25;
+const CART_SNAP_TO_GROUND = 0.6;
 
 export interface Vec3 {
   x: number;
@@ -117,13 +145,58 @@ export interface BallTransform {
   rotation: Quat;
 }
 
+export interface CartTransform {
+  position: Vec3;
+  /** Chassis yaw, radians. */
+  heading: number;
+  /** Turret yaw, radians, absolute in world space. */
+  turretYaw: number;
+}
+
+/**
+ * Both modes are kept rather than one replacing the other. Stationary is Phase 0's mechanic --
+ * you stand at your ball and swing. Cart is Phase 2's -- you drive to it and the turret does the
+ * hitting. They share one swing state machine (the cart's) so charge, reload and club selection
+ * cannot drift apart between them; stationary mode simply ignores the driving axes and the
+ * strike-range check, because you are by definition standing at the ball.
+ */
+export enum SwingMode {
+  Stationary = "stationary",
+  Cart = "cart",
+}
+
 export class Sim {
   private world!: RAPIER.World;
   private ball!: RAPIER.RigidBody;
+  private cartBody!: RAPIER.RigidBody;
+  private cartCollider!: RAPIER.Collider;
+  private controller!: RAPIER.KinematicCharacterController;
   /** State from the previous fixed step, kept for render interpolation. */
   previous: BallTransform;
   /** State from the most recent fixed step. */
   current: BallTransform;
+  /** Cart state from the previous fixed step, for render interpolation. */
+  previousCart: CartTransform;
+  /** Cart state from the most recent fixed step. */
+  currentCart: CartTransform;
+  /** The cart's authoritative state machine. Read for the HUD; drive it through `step`. */
+  readonly cart = new Cart();
+  mode: SwingMode = SwingMode.Stationary;
+  /** True when the cart is close enough to a resting ball to scoop it up. */
+  ballInReach = false;
+  /**
+   * True when the ball is riding the turret rather than lying on the course. While loaded it is
+   * rendered at the muzzle and a shot plays it; while not loaded a shot is a blank.
+   */
+  ballLoaded = false;
+  /** True when the last shot played the ball rather than being a blank fired for propulsion. */
+  lastShotWasStrike = false;
+  /** Vertical velocity of the cart, integrated here because a KCC has no gravity of its own. */
+  private cartFallSpeed = 0;
+  /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
+  private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly parkedScratch: PlayerIntent = neutralIntent();
   /** True when the last shot left the field and was returned to the tee. UI can read this. */
   lastShotOutOfBounds = false;
   /** True when the last shot found water and was returned with a penalty. */
@@ -142,6 +215,8 @@ export class Sim {
   private constructor() {
     this.previous = restTransform();
     this.current = restTransform();
+    this.previousCart = restCartTransform();
+    this.currentCart = restCartTransform();
   }
 
   static async create(): Promise<Sim> {
@@ -174,13 +249,50 @@ export class Sim {
       .setRestitution(BALL_RESTITUTION);
     sim.world.createCollider(ballColliderDesc, sim.ball);
 
+    const spawn = cartSpawnPosition();
+    sim.cartBody = sim.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z),
+    );
+    sim.cartCollider = sim.world.createCollider(
+      RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius),
+      sim.cartBody,
+    );
+    sim.cart.position.x = spawn.x;
+    sim.cart.position.y = spawn.y;
+    sim.cart.position.z = spawn.z;
+
+    sim.controller = sim.world.createCharacterController(CHARACTER_OFFSET);
+    sim.controller.setUp({ x: 0, y: 1, z: 0 });
+    sim.controller.setMaxSlopeClimbAngle((CART_MAX_SLOPE_CLIMB_DEG * Math.PI) / 180);
+    sim.controller.setMinSlopeSlideAngle((CART_MIN_SLOPE_SLIDE_DEG * Math.PI) / 180);
+    sim.controller.enableAutostep(CART_AUTOSTEP_HEIGHT, CART_AUTOSTEP_MIN_WIDTH, true);
+    sim.controller.enableSnapToGround(CART_SNAP_TO_GROUND);
+    // Phase 3.5's flag-ball has to be shovable by the cart, and a KCC ignores dynamic bodies
+    // unless told otherwise. Enabling it now costs nothing -- the only dynamic body today is
+    // the ball, and nudging your own ball by driving into it is correct behaviour anyway.
+    sim.controller.setApplyImpulsesToDynamicBodies(true);
+
     sim.syncCurrent();
     sim.previous = sim.current;
+    sim.syncCurrentCart();
+    sim.previousCart = sim.currentCart;
     return sim;
   }
 
-  /** Advance exactly one fixed tick. Call in a while-loop from an accumulator, never per render frame. */
-  step(): void {
+  /**
+   * Advance exactly one fixed tick. Call in a while-loop from an accumulator, never per render
+   * frame. The intent defaults to neutral so headless callers that only care about ball flight
+   * (tools/feelProbe.ts) do not have to synthesise one.
+   *
+   * The cart is stepped before `world.step()` on purpose: `computeColliderMovement` is a query
+   * against the current world, and `setNextKinematicTranslation` is consumed by the step that
+   * follows it.
+   */
+  step(intent: PlayerIntent = IDLE_INTENT): void {
+    this.previousCart = this.currentCart;
+    this.stepCart(intent);
+    this.syncCurrentCart();
+
     this.previous = this.current;
     this.world.step();
     this.syncCurrent();
@@ -221,6 +333,113 @@ export class Sim {
     if (this.restTicks === REST_HOLD_TICKS && !SURFACES[this.surfaceUnderBall].isHazard) {
       this.lastSafePosition = { x: p.x, y: p.y, z: p.z };
     }
+  }
+
+  /**
+   * Intent -> cart state -> body movement -> shot resolution, in that order. Runs in both modes:
+   * stationary mode zeroes the driving axes rather than skipping the call, so charge, reload and
+   * club selection go through exactly one state machine and cannot drift between modes.
+   */
+  private stepCart(intent: PlayerIntent): void {
+    if (intent.toggleMode) {
+      this.mode = this.mode === SwingMode.Cart ? SwingMode.Stationary : SwingMode.Cart;
+    }
+    if (intent.selectClub !== null) this.cart.selectClub(intent.selectClub);
+
+    const driving = this.mode === SwingMode.Cart;
+    const c = this.cart.position;
+    this.cart.step(driving ? intent : this.parkedIntent(intent), FIXED_DT, tuningAt(c.x, c.z));
+
+    if (driving) this.moveCartBody();
+
+    const b = this.current.position;
+    this.ballInReach = Math.hypot(b.x - c.x, b.z - c.z) <= PICKUP_RANGE;
+    // The ball only rides the turret while it is settled: scooping one still rolling would let
+    // a player cancel their own shot by chasing it.
+    this.ballLoaded = driving && this.ballInReach && this.isResting() && !this.holedOut;
+
+    if (this.cart.shot.fired) {
+      this.cart.shot.fired = false;
+      this.resolveShot();
+    }
+  }
+
+  /** The player's intent with the driving axes removed, reusing one object per the no-alloc rule. */
+  private parkedIntent(intent: PlayerIntent): PlayerIntent {
+    const parked = this.parkedScratch;
+    parked.throttle = 0;
+    parked.steer = 0;
+    parked.brake = false;
+    parked.aimDelta = intent.aimDelta;
+    parked.fire = intent.fire;
+    parked.selectClub = null;
+    parked.toggleMode = false;
+    return parked;
+  }
+
+  /**
+   * A KCC has no gravity and receives no impulses, so both are this class's problem: fall speed
+   * is integrated here, and the recoil that shoves the cart arrives already baked into
+   * `cart.desiredTranslation` as a velocity term the cart decays itself.
+   *
+   * `computedMovement()` allocates inside the binding. That is the one unavoidable per-tick
+   * allocation in this loop; everything on our side of the call reuses `moveScratch`.
+   */
+  private moveCartBody(): void {
+    this.cartFallSpeed -= GRAVITY * FIXED_DT;
+    this.moveScratch.x = this.cart.desiredTranslation.x;
+    this.moveScratch.y = this.cartFallSpeed * FIXED_DT;
+    this.moveScratch.z = this.cart.desiredTranslation.z;
+
+    this.controller.computeColliderMovement(this.cartCollider, this.moveScratch);
+    const corrected = this.controller.computedMovement();
+
+    const p = this.cart.position;
+    const half = FIELD_SIZE / 2 - CART_COLLIDER.radius;
+    p.x = Math.min(half, Math.max(-half, p.x + corrected.x));
+    p.y += corrected.y;
+    p.z = Math.min(half, Math.max(-half, p.z + corrected.z));
+
+    if (this.controller.computedGrounded()) this.cartFallSpeed = 0;
+    this.cartBody.setNextKinematicTranslation(p);
+  }
+
+  /**
+   * A shot plays the ball only if the ball is actually loaded. Otherwise it is a blank: the
+   * recoil has already been applied by the cart, and no stroke is counted.
+   *
+   * In cart mode the ball leaves from the club head on top of the turret (concept images 03 and
+   * 04), not from where it was lying -- so it is teleported to the muzzle first. Stationary mode
+   * keeps golf's own rule and plays it where it lies (image 02).
+   */
+  private resolveShot(): void {
+    const playable =
+      this.mode === SwingMode.Cart ? this.ballLoaded : this.isResting() && !this.holedOut;
+    this.lastShotWasStrike = playable;
+    if (!playable) return;
+
+    if (this.mode === SwingMode.Cart) this.moveBallToMuzzle();
+    this.launch(this.cart.shot.yaw, this.cart.shot.charge01, this.cart.shot.club);
+    this.ballLoaded = false;
+  }
+
+  /**
+   * Lifts the ball to the club head before launch. `previous` is overwritten alongside `current`
+   * so the renderer interpolates from the muzzle rather than smearing the ball across the course
+   * from wherever it was lying.
+   */
+  private moveBallToMuzzle(): void {
+    computeMuzzle(this.cart, this.muzzleScratch);
+    this.ball.setTranslation(this.muzzleScratch, true);
+    this.ball.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+    this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.syncCurrent();
+    this.previous = this.current;
+  }
+
+  /** Where the ball is riding when loaded -- the renderer draws it there instead of on the course. */
+  muzzle(out: Vec3): void {
+    computeMuzzle(this.cart, out);
   }
 
   /**
@@ -265,9 +484,9 @@ export class Sim {
   }
 
   /** yawRadians 0 aims down +X. power is a 0..1 charge fraction from hold duration. */
-  launch(yawRadians: number, power: number): void {
+  launch(yawRadians: number, power: number, club: ClubType = DEFAULT_CLUB): void {
     if (this.holedOut) return;
-    const velocity = computeLaunchVelocity(DEFAULT_CLUB, power, yawRadians);
+    const velocity = computeLaunchVelocity(club, power, yawRadians);
     this.ball.setLinvel(velocity, true);
     this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.strokes += 1;
@@ -276,7 +495,7 @@ export class Sim {
     this.lastShotInWater = false;
   }
 
-  /** Full reset back to the tee: new hole, stroke count included. */
+  /** Full reset back to the tee: new hole, stroke count and cart position included. */
   reset(): void {
     this.lastSafePosition = { ...TEE_POSITION };
     this.dropAtLastSafePosition();
@@ -284,6 +503,21 @@ export class Sim {
     this.holedOut = false;
     this.lastShotOutOfBounds = false;
     this.lastShotInWater = false;
+    this.lastShotWasStrike = false;
+
+    const spawn = cartSpawnPosition();
+    this.cart.position.x = spawn.x;
+    this.cart.position.y = spawn.y;
+    this.cart.position.z = spawn.z;
+    this.cart.heading = 0;
+    this.cart.turretOffset = 0;
+    this.cart.speed = 0;
+    this.cart.recoil.x = 0;
+    this.cart.recoil.z = 0;
+    this.cartFallSpeed = 0;
+    this.cartBody.setTranslation(spawn, true);
+    this.syncCurrentCart();
+    this.previousCart = this.currentCart;
   }
 
   isResting(): boolean {
@@ -310,8 +544,36 @@ export class Sim {
       rotation: { x: r.x, y: r.y, z: r.z, w: r.w },
     };
   }
+
+  /**
+   * Snapshots the cart's own position rather than the rigid body's: a kinematic body only moves
+   * when `world.step()` consumes the queued translation, so reading the body here would render
+   * the cart one tick behind everything else.
+   */
+  private syncCurrentCart(): void {
+    const p = this.cart.position;
+    this.currentCart = {
+      position: { x: p.x, y: p.y, z: p.z },
+      heading: this.cart.heading,
+      turretYaw: this.cart.turretYaw,
+    };
+  }
 }
+
+/** Neutral intent for callers that only care about ball flight. Frozen: `Sim` never writes to it. */
+const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
 
 function restTransform(): BallTransform {
   return { position: { ...TEE_POSITION }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+}
+
+/** Behind the tee along -X, so a new hole never spawns the cart sitting on its own ball. */
+function cartSpawnPosition(): Vec3 {
+  const x = TEE_POSITION.x - CART_SPAWN_OFFSET;
+  const z = TEE_POSITION.z;
+  return { x, y: heightAt(x, z) + CART_COLLIDER.groundOffset, z };
+}
+
+function restCartTransform(): CartTransform {
+  return { position: cartSpawnPosition(), heading: 0, turretYaw: 0 };
 }
