@@ -2,7 +2,7 @@ import { createNoise2D } from "simplex-noise";
 import type { HoleSpec, Vec3 } from "./course";
 import { hashChannel, mulberry32 } from "./rng";
 import { createNearestPoint, createSpline } from "./spline";
-import type { NearestPoint, Spline } from "./spline";
+import type { MutableVec2, NearestPoint, Spline } from "./spline";
 
 /**
  * The height field, as a factory over one HoleSpec.
@@ -113,6 +113,7 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
 
   // Closure-owned scratch: heightAt runs inside the fixed tick, where allocation is banned.
   const nearestScratch: NearestPoint = createNearestPoint();
+  const centreScratch: MutableVec2 = { x: 0, z: 0 };
 
   /**
    * The slope a point is allowed, blended green -> fairway -> rough. `corridorDistance` is the
@@ -153,22 +154,59 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
 
   // Pad heights are sampled from the base noise once at construction so heightAt can flatten
   // toward the terrain's own local height without recursing into itself. The pad centres sit on
-  // the corridor, so distance 0 is correct and avoids a second spline query at construction.
+  // the corridor, so distance 0 is correct and matches the carved corridor height by
+  // construction -- it is the same value the carving in heightAt gives a point on the centreline.
   const pads: readonly Pad[] = [
     { ...spec.tee, radius: TEE_PAD_RADIUS, height: noiseHeightAt(spec.tee.x, spec.tee.z, 0) },
     { ...spec.cup, radius: GREEN_RADIUS, height: noiseHeightAt(spec.cup.x, spec.cup.z, 0) },
   ];
 
   /**
+   * Carving. Every point in the corridor is handed the height of the centreline point it is
+   * nearest to, so lateral camber inside the corridor is exactly zero by construction while the
+   * longitudinal profile is inherited from the noise and stays interesting. Outside the blend
+   * band the point keeps its own height.
+   *
+   * H_spline(t) is `noiseHeightAt` evaluated at the centreline point with a corridor distance of
+   * ZERO -- the corridor's budget, not the querying point's. Reusing the caller's masks here
+   * gives the corridor rough-grade undulation and fails the camber test; it is the one trap in
+   * this function.
+   *
    * Pads blend toward the terrain height *at the pad*, not toward absolute 0. Multiplying the
    * whole height by (1 - flatten) pins a pad to y=0 regardless of where the surrounding ground
    * sits -- that left the tee on a 1.1 m pinnacle with a 26 deg drop-off inside the first 4 m.
    */
   function heightAt(worldX: number, worldZ: number): number {
     spline.nearestInto(worldX, worldZ, nearestScratch);
-    let height = noiseHeightAt(worldX, worldZ, nearestScratch.distance);
+    const mask = smoothstep01((nearestScratch.distance - HALF_WIDTH) / BLEND_WIDTH);
+
+    let height: number;
+    // Pad flattening keys off this point rather than (worldX, worldZ) directly. Inside the
+    // corridor the query point's own coordinates are the wrong key: a point on the centreline
+    // near the tee sits inside TEE_PAD_RADIUS while a point at the same t but offset 12 m
+    // laterally does not, so flattening by raw distance would reintroduce the exact lateral
+    // camber the carving above just eliminated. Blending this key point from the centreline
+    // (mask 0) to the query point (mask 1) the same way the height blends keeps the pad weight
+    // C1 across the corridor edge too.
+    let padX = worldX;
+    let padZ = worldZ;
+    if (mask >= 1) {
+      height = noiseHeightAt(worldX, worldZ, nearestScratch.distance);
+    } else {
+      spline.pointInto(nearestScratch.t, centreScratch);
+      const centre = noiseHeightAt(centreScratch.x, centreScratch.z, 0);
+      height =
+        mask <= 0
+          ? centre
+          : centre + (noiseHeightAt(worldX, worldZ, nearestScratch.distance) - centre) * mask;
+      padX = centreScratch.x + (worldX - centreScratch.x) * mask;
+      padZ = centreScratch.z + (worldZ - centreScratch.z) * mask;
+    }
+
+    // Tee and green keep an additional local flattening on top of the corridor: a putting
+    // surface needs to be flatter than the corridor alone delivers.
     for (const pad of pads) {
-      const distance = Math.hypot(worldX - pad.x, worldZ - pad.z);
+      const distance = Math.hypot(padX - pad.x, padZ - pad.z);
       if (distance >= pad.radius) continue;
       const weight = smoothstep01(1 - distance / pad.radius);
       height += (pad.height - height) * weight;
