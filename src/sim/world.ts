@@ -3,17 +3,13 @@ import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
 import { CART_COLLIDER, Cart, computeMuzzle } from "./entities/Cart";
-import {
-  CUP_POSITION,
-  CUP_RADIUS,
-  FIELD_SIZE,
-  NCOLS,
-  NROWS,
-  TEE_POSITION,
-  buildHeightfield,
-  heightAt,
-} from "./terrain";
-import { SURFACES, SurfaceId, surfaceAt, tuningAt } from "./surfaces";
+import type { HoleSpec, Vec3 } from "./course";
+import { CUP_RADIUS, createTerrain } from "./terrain";
+import type { Terrain } from "./terrain";
+import { SURFACES, SurfaceId, createSurfaces } from "./surfaces";
+import type { Surfaces } from "./surfaces";
+
+export type { Vec3 } from "./course";
 
 /** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
 export const FIXED_DT = 1 / 60;
@@ -127,12 +123,6 @@ const CART_AUTOSTEP_HEIGHT = 0.45;
 const CART_AUTOSTEP_MIN_WIDTH = 0.25;
 const CART_SNAP_TO_GROUND = 0.6;
 
-export interface Vec3 {
-  x: number;
-  y: number;
-  z: number;
-}
-
 export interface Quat {
   x: number;
   y: number;
@@ -171,6 +161,10 @@ export class Sim {
   private cartBody!: RAPIER.RigidBody;
   private cartCollider!: RAPIER.Collider;
   private controller!: RAPIER.KinematicCharacterController;
+  private groundCollider!: RAPIER.Collider;
+  /** The hole this sim is playing. Swapped wholesale by `loadHole`. */
+  terrain: Terrain;
+  surfaces: Surfaces;
   /** State from the previous fixed step, kept for render interpolation. */
   previous: BallTransform;
   /** State from the most recent fixed step. */
@@ -208,36 +202,32 @@ export class Sim {
   /** Surface under the ball as of the last tick. Drives roll-out, and later the cart and HUD. */
   surfaceUnderBall: SurfaceId = SurfaceId.Fairway;
   /** Where the ball last came to rest on playable ground -- the drop point after a hazard. */
-  private lastSafePosition = { ...TEE_POSITION };
+  private lastSafePosition: Vec3;
   /** Consecutive ticks the ball has been slow and grounded; see REST_HOLD_TICKS. */
   private restTicks = REST_HOLD_TICKS;
 
-  private constructor() {
-    this.previous = restTransform();
-    this.current = restTransform();
-    this.previousCart = restCartTransform();
-    this.currentCart = restCartTransform();
+  private constructor(terrain: Terrain, surfaces: Surfaces) {
+    this.terrain = terrain;
+    this.surfaces = surfaces;
+    this.lastSafePosition = { ...terrain.teePosition };
+    this.previous = restTransform(terrain);
+    this.current = restTransform(terrain);
+    this.previousCart = restCartTransform(terrain);
+    this.currentCart = restCartTransform(terrain);
   }
 
-  static async create(): Promise<Sim> {
+  static async create(hole: HoleSpec): Promise<Sim> {
     await RAPIER.init();
-    const sim = new Sim();
+    const terrain = createTerrain(hole);
+    const sim = new Sim(terrain, createSurfaces(hole, terrain));
 
     sim.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     sim.world.timestep = FIXED_DT;
+    sim.buildGround();
 
-    const heights = buildHeightfield();
-    const groundDesc = RAPIER.ColliderDesc.heightfield(NROWS, NCOLS, heights, {
-      x: FIELD_SIZE,
-      y: 1,
-      z: FIELD_SIZE,
-    })
-      .setFriction(0.8)
-      .setRestitution(0.15);
-    sim.world.createCollider(groundDesc);
-
+    const tee = terrain.teePosition;
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(TEE_POSITION.x, TEE_POSITION.y, TEE_POSITION.z)
+      .setTranslation(tee.x, tee.y, tee.z)
       .setCcdEnabled(true)
       .setLinearDamping(LINEAR_DAMPING)
       .setAngularDamping(ANGULAR_DAMPING);
@@ -249,7 +239,7 @@ export class Sim {
       .setRestitution(BALL_RESTITUTION);
     sim.world.createCollider(ballColliderDesc, sim.ball);
 
-    const spawn = cartSpawnPosition();
+    const spawn = cartSpawnPosition(terrain);
     sim.cartBody = sim.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z),
     );
@@ -280,6 +270,41 @@ export class Sim {
   }
 
   /**
+   * Builds the heightfield collider for the current terrain. Split out of `create` because
+   * `loadHole` has to redo exactly this and nothing else about the world.
+   */
+  private buildGround(): void {
+    const spec = this.terrain.spec;
+    const groundDesc = RAPIER.ColliderDesc.heightfield(
+      spec.cells,
+      spec.cells,
+      this.terrain.buildHeightfield(),
+      { x: spec.fieldSize, y: 1, z: spec.fieldSize },
+    )
+      .setFriction(0.8)
+      .setRestitution(0.15);
+    this.groundCollider = this.world.createCollider(groundDesc);
+  }
+
+  /**
+   * Swap in a different hole. The ball, cart and controller are reused -- only the terrain,
+   * the surfaces and the ground collider are rebuilt, then everything is re-teed.
+   *
+   * Nothing in this phase calls it during play: `main.ts` loads hole 0 and stays there, and the
+   * renderer's ground mesh is built once at construction, so advancing a round mid-session is
+   * Phase 1.75's job (spec §9). It exists and is tested now because the collider swap is the
+   * part that is easy to get wrong later.
+   */
+  loadHole(spec: HoleSpec): void {
+    this.world.removeCollider(this.groundCollider, false);
+    this.terrain = createTerrain(spec);
+    this.surfaces = createSurfaces(spec, this.terrain);
+    this.buildGround();
+    this.lastSafePosition = { ...this.terrain.teePosition };
+    this.reset();
+  }
+
+  /**
    * Advance exactly one fixed tick. Call in a while-loop from an accumulator, never per render
    * frame. The intent defaults to neutral so headless callers that only care about ball flight
    * (tools/feelProbe.ts) do not have to synthesise one.
@@ -307,7 +332,7 @@ export class Sim {
     }
 
     const p = this.current.position;
-    this.surfaceUnderBall = surfaceAt(p.x, p.z);
+    this.surfaceUnderBall = this.surfaces.surfaceAt(p.x, p.z);
 
     if (this.isInCup()) {
       this.holedOut = true;
@@ -348,7 +373,11 @@ export class Sim {
 
     const driving = this.mode === SwingMode.Cart;
     const c = this.cart.position;
-    this.cart.step(driving ? intent : this.parkedIntent(intent), FIXED_DT, tuningAt(c.x, c.z));
+    this.cart.step(
+      driving ? intent : this.parkedIntent(intent),
+      FIXED_DT,
+      this.surfaces.tuningAt(c.x, c.z),
+    );
 
     if (driving) this.moveCartBody();
 
@@ -395,7 +424,7 @@ export class Sim {
     const corrected = this.controller.computedMovement();
 
     const p = this.cart.position;
-    const half = FIELD_SIZE / 2 - CART_COLLIDER.radius;
+    const half = this.terrain.spec.fieldSize / 2 - CART_COLLIDER.radius;
     p.x = Math.min(half, Math.max(-half, p.x + corrected.x));
     p.y += corrected.y;
     p.z = Math.min(half, Math.max(-half, p.z + corrected.z));
@@ -454,7 +483,7 @@ export class Sim {
    */
   private applySurfaceResistance(): void {
     const p = this.current.position;
-    const tuning = tuningAt(p.x, p.z);
+    const tuning = this.surfaces.tuningAt(p.x, p.z);
     const v = this.ball.linvel();
 
     const horizontalSpeed = Math.hypot(v.x, v.z);
@@ -468,7 +497,8 @@ export class Sim {
   /** Ball is inside the cup mouth and slow enough to drop rather than lip out. */
   private isInCup(): boolean {
     const p = this.current.position;
-    if (Math.hypot(p.x - CUP_POSITION.x, p.z - CUP_POSITION.z) > CUP_RADIUS) return false;
+    const cup = this.terrain.cupPosition;
+    if (Math.hypot(p.x - cup.x, p.z - cup.z) > CUP_RADIUS) return false;
     const v = this.ball.linvel();
     return Math.hypot(v.x, v.y, v.z) < HOLE_OUT_SPEED;
   }
@@ -497,7 +527,7 @@ export class Sim {
 
   /** Full reset back to the tee: new hole, stroke count and cart position included. */
   reset(): void {
-    this.lastSafePosition = { ...TEE_POSITION };
+    this.lastSafePosition = { ...this.terrain.teePosition };
     this.dropAtLastSafePosition();
     this.strokes = 0;
     this.holedOut = false;
@@ -505,7 +535,7 @@ export class Sim {
     this.lastShotInWater = false;
     this.lastShotWasStrike = false;
 
-    const spawn = cartSpawnPosition();
+    const spawn = cartSpawnPosition(this.terrain);
     this.cart.position.x = spawn.x;
     this.cart.position.y = spawn.y;
     this.cart.position.z = spawn.z;
@@ -527,12 +557,12 @@ export class Sim {
   /** Ball is within one radius of the terrain surface, i.e. not mid-bounce. */
   private isGrounded(): boolean {
     const p = this.current.position;
-    return p.y - heightAt(p.x, p.z) < BALL_RADIUS * 2;
+    return p.y - this.terrain.heightAt(p.x, p.z) < BALL_RADIUS * 2;
   }
 
   private isPastFieldEdge(): boolean {
     const p = this.current.position;
-    const half = FIELD_SIZE / 2;
+    const half = this.terrain.spec.fieldSize / 2;
     return Math.abs(p.x) > half || Math.abs(p.z) > half || p.y < OUT_OF_BOUNDS_Y;
   }
 
@@ -563,17 +593,17 @@ export class Sim {
 /** Neutral intent for callers that only care about ball flight. Frozen: `Sim` never writes to it. */
 const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
 
-function restTransform(): BallTransform {
-  return { position: { ...TEE_POSITION }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+function restTransform(terrain: Terrain): BallTransform {
+  return { position: { ...terrain.teePosition }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
 }
 
 /** Behind the tee along -X, so a new hole never spawns the cart sitting on its own ball. */
-function cartSpawnPosition(): Vec3 {
-  const x = TEE_POSITION.x - CART_SPAWN_OFFSET;
-  const z = TEE_POSITION.z;
-  return { x, y: heightAt(x, z) + CART_COLLIDER.groundOffset, z };
+function cartSpawnPosition(terrain: Terrain): Vec3 {
+  const x = terrain.teePosition.x - CART_SPAWN_OFFSET;
+  const z = terrain.teePosition.z;
+  return { x, y: terrain.heightAt(x, z) + CART_COLLIDER.groundOffset, z };
 }
 
-function restCartTransform(): CartTransform {
-  return { position: cartSpawnPosition(), heading: 0, turretYaw: 0 };
+function restCartTransform(terrain: Terrain): CartTransform {
+  return { position: cartSpawnPosition(terrain), heading: 0, turretYaw: 0 };
 }

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GolfClub } from "../entities/GolfClub";
 import type { ClubType } from "../physics/Ballistics";
-import { FIELD_SIZE, NCOLS, NROWS, heightAt } from "../sim/terrain";
+import type { Terrain } from "../sim/terrain";
 import { CART_COLLIDER } from "../sim/entities/Cart";
 import { SwingMode } from "../sim/world";
 import type { BallTransform, CartTransform } from "../sim/world";
@@ -57,6 +57,7 @@ export interface FrameView {
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
 export class RenderScene {
   readonly renderer: THREE.WebGLRenderer;
+  private readonly terrain: Terrain;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly ball: THREE.Mesh;
@@ -67,7 +68,10 @@ export class RenderScene {
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, terrain: Terrain) {
+    this.terrain = terrain;
+    const fieldSize = terrain.spec.fieldSize;
+
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -75,15 +79,15 @@ export class RenderScene {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8fc7ff);
-    // Fog and far plane are sized to FIELD_SIZE: at the old 25/65 the fog closed in well
+    // Fog and far plane are sized to fieldSize: at the old 25/65 the fog closed in well
     // inside the playable area and hid most of a full drive's landing zone.
-    this.scene.fog = new THREE.Fog(0x8fc7ff, FIELD_SIZE * 0.5, FIELD_SIZE * 2);
+    this.scene.fog = new THREE.Fog(0x8fc7ff, fieldSize * 0.5, fieldSize * 2);
 
     this.camera = new THREE.PerspectiveCamera(
       60,
       window.innerWidth / window.innerHeight,
       0.1,
-      FIELD_SIZE * 2.5,
+      fieldSize * 2.5,
     );
 
     const sun = new THREE.DirectionalLight(0xffffff, 2.4);
@@ -91,7 +95,7 @@ export class RenderScene {
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
-    this.scene.add(buildGroundMesh());
+    this.scene.add(buildGroundMesh(terrain));
 
     const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 20, 16);
     const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
@@ -181,7 +185,7 @@ export class RenderScene {
 
     // Keep the eye above the terrain it is flying over, or a chase camera reversing into a
     // hillside ends up underground looking at the inside of the heightfield.
-    const groundAtEye = heightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
+    const groundAtEye = this.terrain.heightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
     this.chaseEyeScratch.y = Math.max(this.chaseEyeScratch.y, groundAtEye + CHASE_MIN_GROUND_CLEARANCE);
 
     this.camera.position.lerp(this.chaseEyeScratch, CHASE_POSITION_LERP);
@@ -204,21 +208,24 @@ export class RenderScene {
 }
 
 /**
- * Vertex layout matches Rapier's heightfield exactly: PlaneGeometry iterates
- * row-major (row = heightSegments, col = widthSegments) and after rotateX(-90deg)
- * row maps to world Z, col maps to world X -- the same mapping terrain.ts uses
- * for the physics heightfield's column-major heights array (verified empirically,
- * not assumed, against the installed Rapier build).
+ * Vertex layout matches Rapier's heightfield exactly: PlaneGeometry iterates row-major
+ * (row = heightSegments, col = widthSegments) and after rotateX(-90deg) row maps to world Z,
+ * col maps to world X -- the same mapping terrain.ts uses for the physics heightfield's
+ * column-major heights array (verified empirically against the installed Rapier build).
+ *
+ * Built once, from the terrain handed in at construction. Rebuilding it for a new hole is
+ * Phase 1.75's job along with the rest of the round flow.
  */
-function buildGroundMesh(): THREE.Mesh {
-  const geometry = new THREE.PlaneGeometry(FIELD_SIZE, FIELD_SIZE, NCOLS, NROWS);
+function buildGroundMesh(terrain: Terrain): THREE.Mesh {
+  const { fieldSize, cells } = terrain.spec;
+  const geometry = new THREE.PlaneGeometry(fieldSize, fieldSize, cells, cells);
   const position = geometry.attributes.position;
-  for (let row = 0; row <= NROWS; row++) {
-    for (let col = 0; col <= NCOLS; col++) {
-      const index = row * (NCOLS + 1) + col;
-      const worldX = (col / NCOLS - 0.5) * FIELD_SIZE;
-      const worldZ = (row / NROWS - 0.5) * FIELD_SIZE;
-      position.setZ(index, heightAt(worldX, worldZ));
+  for (let row = 0; row <= cells; row++) {
+    for (let col = 0; col <= cells; col++) {
+      const index = row * (cells + 1) + col;
+      const worldX = (col / cells - 0.5) * fieldSize;
+      const worldZ = (row / cells - 0.5) * fieldSize;
+      position.setZ(index, terrain.heightAt(worldX, worldZ));
     }
   }
   geometry.computeVertexNormals();
