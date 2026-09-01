@@ -1,5 +1,4 @@
 import { createNoise2D } from "simplex-noise";
-import { legacyHoleSpec } from "./course";
 import type { HoleSpec, Vec3 } from "./course";
 import { hashChannel, mulberry32 } from "./rng";
 
@@ -134,31 +133,5 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
   };
 }
 
-// ---------------------------------------------------------------------------------------
-// Temporary compatibility shims. Every export below is the pre-refactor module surface, now
-// served from one legacy Terrain instance so the build and the probe stay green while
-// consumers migrate one file at a time. All of it is deleted in Task 7.
-// ---------------------------------------------------------------------------------------
-
 /** The shipped hole's literal noise source: createNoise2D(() => 0.42). */
 export const LEGACY_TERRAIN_SOURCES: TerrainSources = { height: () => 0.42 };
-
-const legacySpec = legacyHoleSpec();
-const legacyTerrain = createTerrain(legacySpec, LEGACY_TERRAIN_SOURCES);
-
-export const FIELD_SIZE = legacySpec.fieldSize;
-export const NROWS = legacySpec.cells;
-export const NCOLS = legacySpec.cells;
-export const WATER_LEVEL = legacySpec.waterLevel;
-export const TEE_XZ = legacySpec.tee;
-export const CUP_XZ = legacySpec.cup;
-export const TEE_POSITION = legacyTerrain.teePosition;
-export const CUP_POSITION = legacyTerrain.cupPosition;
-
-export function heightAt(worldX: number, worldZ: number): number {
-  return legacyTerrain.heightAt(worldX, worldZ);
-}
-
-export function buildHeightfield(): Float32Array {
-  return legacyTerrain.buildHeightfield();
-}

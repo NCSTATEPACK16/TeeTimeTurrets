@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { heightAt } from "./terrain";
+import { LEGACY_TERRAIN_SOURCES, createTerrain } from "./terrain";
+import { legacyHoleSpec } from "./course";
+
+const legacy = createTerrain(legacyHoleSpec(), LEGACY_TERRAIN_SOURCES);
+const heightAt = (x: number, z: number): number => legacy.heightAt(x, z);
 
 /**
  * The §3 refactor's proof. These are the heights the shipped terrain produced before

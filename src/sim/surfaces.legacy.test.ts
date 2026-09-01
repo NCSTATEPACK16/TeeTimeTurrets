@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { surfaceAt } from "./surfaces";
+import { legacyHoleSpec } from "./course";
+import { LEGACY_TERRAIN_SOURCES, createTerrain } from "./terrain";
+import { LEGACY_SURFACE_SOURCES, createSurfaces } from "./surfaces";
+
+const spec = legacyHoleSpec();
+const legacy = createSurfaces(
+  spec,
+  createTerrain(spec, LEGACY_TERRAIN_SOURCES),
+  LEGACY_SURFACE_SOURCES,
+);
+const surfaceAt = (x: number, z: number): string => legacy.surfaceAt(x, z);
 
 /**
  * The §3 refactor's proof for surfaces, matching terrain.legacy.test.ts. A 40x40 sample of the

@@ -4,9 +4,33 @@
  * Run via a vite SSR build (see build-probe.config.ts) then `node out/probe.js`.
  */
 import { Sim, FIXED_DT } from "../src/sim/world";
-import { CUP_POSITION, CUP_RADIUS, FIELD_SIZE, NROWS, NCOLS, TEE_POSITION, WATER_LEVEL, heightAt } from "../src/sim/terrain";
-import { SurfaceId, surfaceAt } from "../src/sim/surfaces";
+import { legacyHoleSpec } from "../src/sim/course";
+import { CUP_RADIUS, createTerrain } from "../src/sim/terrain";
+import { createSurfaces } from "../src/sim/surfaces";
+import { SurfaceId } from "../src/sim/surfaces";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../src/physics/Ballistics";
+
+/**
+ * The probe builds its own hole rather than reading module constants, because there are no
+ * module constants any more. Same spec the game boots with, so the numbers below stay
+ * comparable to the Phase 0 baseline.
+ *
+ * Uses the shipped hole's literal noise sources (not the default hashed noise) so this
+ * refactor's probe diff is meaningful. Task 9 removes both, at which point the numbers move
+ * for a stated reason.
+ */
+const HOLE = legacyHoleSpec();
+const terrain = createTerrain(HOLE, { height: () => 0.42 });
+const surfaces = createSurfaces(HOLE, terrain, { sand: () => 0.77 });
+
+const FIELD_SIZE = HOLE.fieldSize;
+const NROWS = HOLE.cells;
+const NCOLS = HOLE.cells;
+const WATER_LEVEL = HOLE.waterLevel;
+const TEE_POSITION = terrain.teePosition;
+const CUP_POSITION = terrain.cupPosition;
+const heightAt = (x: number, z: number): number => terrain.heightAt(x, z);
+const surfaceAt = (x: number, z: number): SurfaceId => surfaces.surfaceAt(x, z);
 
 /** Surface mix across the course, and whether the tee->cup line is actually playable. */
 function surfaceReport(): void {
@@ -264,7 +288,7 @@ async function main(): Promise<void> {
 
   surfaceReport();
 
-  const sim = await Sim.create();
+  const sim = await Sim.create(HOLE);
   console.log("\n=== FULL-POWER SHOTS (charge = 1.0, flat aim down +X) ===");
   console.log("  club      v0   carry    roll   total    apex  flight  settle  bnc  result");
   for (const club of [ClubType.Putter, ClubType.Iron, ClubType.Driver]) {

@@ -1,8 +1,7 @@
 import { createNoise2D } from "simplex-noise";
-import { legacyHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
 import { hashChannel, mulberry32 } from "./rng";
-import { GREEN_RADIUS, LEGACY_TERRAIN_SOURCES, createTerrain } from "./terrain";
+import { GREEN_RADIUS } from "./terrain";
 import type { Terrain } from "./terrain";
 
 /**
@@ -124,24 +123,5 @@ export function createSurfaces(
   return { surfaceAt, tuningAt };
 }
 
-// ---------------------------------------------------------------------------------------
-// Temporary compatibility shims, matching terrain.ts's. Deleted in Task 7.
-// ---------------------------------------------------------------------------------------
-
 /** The shipped hole's literal sand noise source: createNoise2D(() => 0.77). */
 export const LEGACY_SURFACE_SOURCES: SurfaceSources = { sand: () => 0.77 };
-
-const legacySpec = legacyHoleSpec();
-const legacySurfaces = createSurfaces(
-  legacySpec,
-  createTerrain(legacySpec, LEGACY_TERRAIN_SOURCES),
-  LEGACY_SURFACE_SOURCES,
-);
-
-export function surfaceAt(worldX: number, worldZ: number): SurfaceId {
-  return legacySurfaces.surfaceAt(worldX, worldZ);
-}
-
-export function tuningAt(worldX: number, worldZ: number): SurfaceTuning {
-  return legacySurfaces.tuningAt(worldX, worldZ);
-}
