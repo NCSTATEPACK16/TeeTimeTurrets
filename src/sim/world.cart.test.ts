@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
-import { FIELD_SIZE, heightAt } from "./terrain";
+import { legacyHoleSpec } from "./course";
+import type { HoleSpec } from "./course";
+import { SurfaceId } from "./surfaces";
 import { Sim, SwingMode } from "./world";
 
 /**
@@ -44,7 +46,7 @@ function fullShotDistance(sim: Sim): number {
 describe("cart in the world", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create();
+    sim = await Sim.create(legacyHoleSpec());
   });
 
   it("starts in stationary mode and toggles to cart mode on the mode key", () => {
@@ -58,8 +60,8 @@ describe("cart in the world", () => {
   it("spawns the cart resting on the terrain rather than inside or above it", () => {
     play(sim, [ENTER_CART_MODE, { ticks: seconds(1), intent: {} }]);
     const p = sim.cart.position;
-    expect(p.y).toBeGreaterThan(heightAt(p.x, p.z));
-    expect(p.y - heightAt(p.x, p.z)).toBeLessThan(2);
+    expect(p.y).toBeGreaterThan(sim.terrain.heightAt(p.x, p.z));
+    expect(p.y - sim.terrain.heightAt(p.x, p.z)).toBeLessThan(2);
   });
 
   it("drives forward under throttle without falling through the ground", () => {
@@ -70,7 +72,7 @@ describe("cart in the world", () => {
     expect(Math.hypot(p.x - start.x, p.z - start.z)).toBeGreaterThan(5);
     // The tunneling check the AGENTS.md testing invariants ask for, applied to the cart:
     // a body that fell through the heightfield diverges downward instead of tracking it.
-    expect(p.y).toBeGreaterThan(heightAt(p.x, p.z) - 0.5);
+    expect(p.y).toBeGreaterThan(sim.terrain.heightAt(p.x, p.z) - 0.5);
   });
 
   it("steers the chassis while driving", () => {
@@ -81,8 +83,8 @@ describe("cart in the world", () => {
   it("stays on the field when driven at the edge for a long time", () => {
     play(sim, [ENTER_CART_MODE, { ticks: seconds(30), intent: { throttle: -1 } }]);
     const p = sim.cart.position;
-    expect(Math.abs(p.x)).toBeLessThanOrEqual(FIELD_SIZE / 2);
-    expect(Math.abs(p.z)).toBeLessThanOrEqual(FIELD_SIZE / 2);
+    expect(Math.abs(p.x)).toBeLessThanOrEqual(sim.terrain.spec.fieldSize / 2);
+    expect(Math.abs(p.z)).toBeLessThanOrEqual(sim.terrain.spec.fieldSize / 2);
     expect(Number.isFinite(p.y)).toBe(true);
   });
 
@@ -100,12 +102,37 @@ describe("cart in the world", () => {
     expect(sim.cart.heading).toBeLessThan(-0.3);
     expect(sim.cart.turretYaw).toBeCloseTo(sim.cart.heading, 9);
   });
+
+  it("exposes the terrain and surfaces built from the hole it was created with", () => {
+    expect(sim.terrain.spec.fieldSize).toBe(160);
+    expect(sim.terrain.spec.tee).toEqual({ x: -68, z: 0 });
+    expect(sim.surfaces.surfaceAt(sim.terrain.cupPosition.x, sim.terrain.cupPosition.z)).toBe(
+      SurfaceId.Green,
+    );
+  });
+
+  it("loadHole swaps the ground collider and re-tees onto the new hole", () => {
+    const next: HoleSpec = { ...legacyHoleSpec(), seed: 999, tee: { x: 20, z: -20 } };
+    sim.loadHole(next);
+
+    expect(sim.terrain.spec.seed).toBe(999);
+    expect(sim.current.position.x).toBeCloseTo(20, 5);
+    expect(sim.current.position.z).toBeCloseTo(-20, 5);
+    expect(sim.strokes).toBe(0);
+
+    // The ball must be standing on the *new* heightfield, not the old one: step it and confirm
+    // it settles rather than falling through to the out-of-bounds floor.
+    for (let i = 0; i < 180; i++) sim.step();
+    expect(sim.current.position.y).toBeGreaterThan(
+      sim.terrain.heightAt(sim.current.position.x, sim.current.position.z) - 0.5,
+    );
+  });
 });
 
 describe("striking the ball from the cart", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create();
+    sim = await Sim.create(legacyHoleSpec());
   });
 
   it("counts a stroke and launches the ball when the cart is parked next to it", () => {
@@ -180,7 +207,7 @@ describe("striking the ball from the cart", () => {
 
     const muzzle = { x: 0, y: 0, z: 0 };
     sim.muzzle(muzzle);
-    const groundHeight = heightAt(sim.cart.position.x, sim.cart.position.z);
+    const groundHeight = sim.terrain.heightAt(sim.cart.position.x, sim.cart.position.z);
     expect(muzzle.y).toBeGreaterThan(groundHeight + 2);
 
     play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 1, intent: {} }]);
@@ -253,7 +280,7 @@ describe("striking the ball from the cart", () => {
     // `Sim.launch` used to hardcode DEFAULT_CLUB, so what needs proving is that selection
     // reaches Ballistics at all, and the two clubs' relative carry is what shows it.
     const putterDistance = fullShotDistance(sim);
-    const driverSim = await Sim.create();
+    const driverSim = await Sim.create(legacyHoleSpec());
     play(driverSim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
     const driverDistance = fullShotDistance(driverSim);
 
