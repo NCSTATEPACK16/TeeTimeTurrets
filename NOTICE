@@ -1,0 +1,52 @@
+TeeTimeTurrets
+Copyright 2026 TeeTimeTurrets Contributors
+
+This product includes software developed by the TeeTimeTurrets Contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+--------------------------------------------------------------------------------
+Scope note
+
+The Apache-2.0 grant above covers the client, engine, simulation, and tooling.
+It does NOT cover `server/`, which is licensed AGPL-3.0-or-later under its own
+`server/LICENSE`. See `LICENSES.md` for the full per-directory map.
+
+--------------------------------------------------------------------------------
+Third-party attributions
+
+No third-party source has been vendored into this repository yet. Runtime
+dependencies are consumed through npm and carry their own licenses (see
+`package-lock.json` and each package's own LICENSE file):
+
+  three                        MIT
+  @dimforge/rapier3d-compat    Apache-2.0
+  simplex-noise                MIT
+
+ATTRIBUTION IS REQUIRED BEFORE MERGING ANY PORTED CODE. `docs/REUSE-MAP.md`
+identifies files in the Claude of Tanks reference repository as candidates for
+porting (notably `src/sim/terrainMobility.ts` and `src/sim/consumables.ts`,
+both MIT in that project). MIT permits reuse but requires that the copyright
+and permission notice travel with the code. When a port lands, add an entry
+here in this form:
+
+  <path in this repo>
+    Derived from <upstream path> in Claude of Tanks.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    <one line: ported verbatim / adapted / reimplemented from public interface>
+
+A same-shape reimplementation written from a public interface is not a
+derivative work and does not require an entry. A close port does. If you are
+unsure which you wrote, assume it is a port and add the entry.
+
+Nothing may be ported from that project's Reserved Content paths under any
+circumstances — see the License note in `AGENTS.md` for the enumerated list.

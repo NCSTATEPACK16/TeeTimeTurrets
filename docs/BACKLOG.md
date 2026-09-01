@@ -1,0 +1,112 @@
+# Backlog
+
+Running list of features and improvements, kept deliberately separate from `ROADMAP.md`.
+The roadmap is the committed critical path with pass/fail gates; this is everything else.
+Nothing here is scheduled. Add freely; promote to the roadmap only when it is next.
+
+Status key: `IDEA` not designed · `READY` designed, unblocked · `BLOCKED` waiting on
+something named · `PARKED` deliberately deferred · **`→ Phase N`** promoted, now owned by that
+phase in `ROADMAP.md` — the row stays for its notes, but the roadmap is authoritative.
+
+Revised 31 Aug 2026 against `docs/concept/`. Reading the concept art promoted eight rows and
+added twelve, most of them UI the art had always shown and no document had ever claimed. The
+element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line notes.
+
+---
+
+## Core loop and rules
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Par per hole + scorecard | **→ Phase 1.75** | `Sim.strokes` and `holedOut` exist. Needs `par` on the hole and a per-round tally. Pulled forward: image 13's results screen has nothing to display without it. |
+| 2 | Multi-hole course (front 9) | READY | `terrain.ts` already supports N pads; generalise tee/cup from one pair to a list. Phase 1.75 ships the nine-column scorecard layout with one hole live, so this fills columns without touching UI. |
+| 3 | Club selection wired to the swing | READY | `CLUB_STATS` exists, `Sim.launch` hardcodes `DEFAULT_CLUB`. |
+| 4 | Reload timers gating re-fire | READY | `reloadSeconds` in `CLUB_STATS`, unused. |
+| 5 | Aim spread wired with a seeded RNG | READY | `applyAimSpread` takes an injected `random` and nothing injects one. Port `mulberry32` (see REUSE-MAP). |
+| 6 | Lie affects the shot, not just the roll | IDEA | Ball in rough/sand should lose launch power. Natural extension of `surfaces.ts`. |
+| 7 | Backspin / descent-angle model | IDEA | Would fix the driver's 0.86 roll/carry ratio at the source rather than via loft. |
+| 8 | Mulligan / undo last stroke | IDEA | Cheap with `lastSafePosition` already tracked. |
+
+## Cart and combat
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 9 | Kinematic cart controller | READY | Rapier `KinematicCharacterController`, verified present in 0.20. |
+| 10 | **Recoil as self-propulsion** | READY | Firing the driver backward boosts the cart. **A KCC receives no impulses** — recoil must be integrated as a velocity term in our own cart state and decayed manually. This will be missed if it is not written down. |
+| 11 | `cartSpeedScale` per surface | READY | Already in `surfaces.ts`, unconsumed. Sand and water bog the cart. |
+| 12 | Turret yaw independent of chassis heading | READY | `GolfClub.ts` already models this; needs `Cart.ts` to read from. |
+| 13 | Ragdoll targets | READY | Unblocked, and the previous shape was **wrong** — joint stiffness/damping are inert in this binding. Pose is held by body type (`Fixed`→`Dynamic` via `setBodyType`), joints only shape the collapse. Read `DECISIONS.md` "Ragdolls" first. |
+| 13a | Raise `BALL_DENSITY` for the ragdoll mass ratio | READY | Blocks #13 landing well. 46 g vs a multi-kg limb is ~1:100 and unfixable by joint tuning; target ≤ 1:20. Free in ball flight (mass-independent) — confirm with `npm run probe`. See `DECISIONS.md` "Ball mass". |
+| 14 | Cart rollover + auto-right | READY | Port `src/sim/rollover.ts` (65 lines, MIT). |
+| 15 | Cart-vs-cart collision and shunting | IDEA | `setApplyImpulsesToDynamicBodies` makes the KCC push dynamic bodies. |
+| 16 | Damage / health model | **→ Phase 3** | Reference `src/sim/damage.ts` is MIT but 83k — take the shape only. Every cart-mode concept shot (03, 07, 08, 09, 14) has shown a health bar with nothing behind it. |
+| 16a | Ammo per club | **→ Phase 3** | Image 06 shows the counter; bucket pickup replenishes. **Disabled in `STROKE`** — finite ammo can strand a player mid-hole with no legal way to finish. See `UI-SPEC.md` §5. |
+| 16b | Input abstraction (`InputSource`) | **→ Phase 2** | Interface written against image 14's control inventory, not against a keyboard. Touch is then a new implementation in Phase 4, not a refactor of every input path. |
+| 16c | Cart cosmetics: turret skin, chassis paint, tire type | **→ Phase 2** (stats) / **3.5** (UI) | Images 11 and 00. Skin and paint are material params; **tire type is a stat** feeding grip and `cartSpeedScale`, so it enters the cart tuning table while that tuning is being written. |
+
+## CTF and modes
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 17 | Heavy flag-ball as a dynamic body | READY | Giant golf ball, high mass, own rolling resistance. Cannot be picked up — must be struck. |
+| 18 | Base zones + capture scoring | READY | Sensor colliders. |
+| 19 | Flag-ball reset on stalemate | IDEA | If it ends up somewhere unreachable. |
+| 20 | Stroke-play race mode | READY | Non-combat: first to hole out wins. Good low-risk mode to ship first, and the one already playable. Named `STROKE` in image 12. |
+| 20a | `TARGETS` mode | IDEA | The third tab in image 12's lobby — Phase 3's ragdoll work promoted to a mode with its own scoring. Image 13's `TARGETS DOWN` tile is its round stat. Named for the first time in `UI-SPEC.md` §5. |
+| 20b | Mode-scoped rulesets | **→ Phase 3** | One switch deciding whether damage and ammo are live. `STROKE` off, `CTF`/`TARGETS` on. Cheap now; retrofitting a mode concept after three modes exist is not. |
+
+## Course features
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 21 | Water surface rendering | READY | Sim side done (`WATER_LEVEL`, hazard rule). Needs one translucent plane + a splash effect. |
+| 22 | Sand visual distinction | READY | Sim side done. `surfaceAt` can drive per-vertex mesh colour. |
+| 23 | **Clubhouse / HQ hub** | IDEA | Main screen, upgrades, loadout (image 11). Registers into the Phase 1.75 screen manager rather than inventing a lifecycle; build all geometry fresh — the reference garage contributes its *phase pattern* only (see REUSE-MAP). |
+| 24 | **Food & drink carts (pickups)** | **→ Phase 3** | Bucket = ammo, drink = shield, hotdog = health (image 06). Item floats and rotates in a translucent glow cylinder, food-cart prop as spawn anchor. Port `consumables.ts` (42 lines, MIT) for the cooldown model. |
+| 25 | Trees / obstacles | **→ Phase 3** | Procedural cone-stack + cylinder trunk per image 01. Promoted because they are **collision geometry** in every environment shot, not decoration — a ball passing through a tree is a first-minute bug. Seeded scatter, off the fairway corridor. Reference `src/world/**` is Reserved — do not look at it. |
+| 26 | Dog-leg holes | IDEA | `surfaces.ts` fairway corridor is currently a straight tee→cup segment; make it a polyline. |
+| 27 | Wind | IDEA | Cheap and very golf. A constant force in the ball integrator. |
+| 28 | Elevated tees / greens | IDEA | Pads already support arbitrary height; currently they inherit local terrain. |
+
+## Presentation
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 29 | Hit markers / floating text | **→ Phase 4** | Ease-out, 0.8–1.5 s, rise-and-fade. Projection formula in `ARCHITECTURE.md` §2c. Copy from image 00: `+100`, `DIRECT HIT!`, `HOLE IN ONE!`, `CRITICAL HIT!`, `SAND TRAP!`. |
+| 30 | Marker cluster manager | **→ Phase 4** | Vertical stacking + randomised X drift when several land together. |
+| 31 | Chase camera behind the cart | **→ Phase 2** | Unblocked by `Cart.ts` in that phase. Image 03 is the framing reference. The current fixed-offset camera will not survive a 160 m course. |
+| 32 | Ball-flight tracer | IDEA | A fading line behind the ball reads well on a long drive (images 00, 04, 15). Optional inside Phase 4; first thing to cut if it runs long. |
+| 33 | Shot-power HUD showing the club | **→ Phase 4** | `#power-fill` exists; needs club identity and reload state. Vertical orientation per images 02/08, not 00's horizontal. |
+| 34 | Minimap / hole overview | **→ Phase 4** | `surfaceAt` renders a top-down course map for free — no authored data, nothing to sync or replicate. Promoted from `IDEA` because it is in **every** in-game concept shot (02, 03, 08, 09, 14) while sitting unscheduled here. |
+| 34a | Event banners | **→ Phase 4** | Image 08's `WATER HAZARD` / `PLUS ONE STROKE`. A separate component from #29 — screen-anchored, one at a time, longer dwell. Fires on water, out-of-bounds, hole-out. |
+| 34b | Cart nameplates | **→ Phase 4** | Images 07, 09. Team-coloured name pill + health bar over each cart. Same projection as #29 but persistent per-frame, not one-shot. |
+| 34c | Trajectory preview arc | **→ Phase 4** | Image 02. Needs a non-mutating `Sim.previewTrajectory()` that never touches the Rapier world. A preview that lies is worse than no preview. |
+| 34d | Touch control layer | **→ Phase 4** | Image 14. Implements #16b's interface. If it needs interface changes, Phase 2 got the interface wrong. |
+| 34e | Fairway mow stripes | **→ Phase 4** | In every course shot. Alternating bands along the fairway axis, per-vertex from `surfaceAt` in the same pass as sand tinting. Cheap, and it is most of what makes the art read as golf. |
+
+## Screens and shell
+
+New section. The concept art has always shown a title screen, a lobby, a results screen and a
+clubhouse; until now no document contained the idea that the game has screens at all.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 42 | `ScreenManager` | **→ Phase 1.75** | One active screen, explicit enter/exit, each disposing its own geometry and materials. The reason the phase exists — a screen manager retrofitted onto a single always-live scene is a rewrite. |
+| 43 | Title screen | **→ Phase 1.75** | Image 10. Logo, `PLAY`/`CLUBHOUSE`/`MULTIPLAYER`/`SETTINGS`, version string, **live course backdrop**. The live backdrop is deliberate: it forces the renderer-sharing requirement out into the open in the cheapest phase. |
+| 44 | Results screen | **→ Phase 1.75** | Image 13. Nine columns + `TOTAL`, par/strokes rows, under-par ringed green and over-par boxed red, four stat tiles, `MAIN MENU`/`NEXT HOLE`. |
+| 45 | Round stats | **→ Phase 1.75** | Direct hits, longest drive, targets down, accuracy. Recorded from the start even while three read zero — Phase 3 fills them, Phase 3.5 spends them. |
+| 46 | Settings screen | IDEA | Not drawn anywhere. Ships as a stub in 1.75 so the title screen has no dead button. |
+| 47 | Match lobby | **→ Phase 5** | Image 12. Mode tabs, two team columns of ready-slots, region/ping. Novel only if the screen manager and mode set don't already exist — which is the point of building both earlier. |
+| 48 | Coin economy | **→ Phase 3.5** | Earnings from #45's four tiles, spent on #16c. Price tire type as a stat, not a skin. |
+
+## Platform
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 35 | Colyseus room + schema | PARKED | Phase 5. Do not start early. |
+| 36 | ~~Dual licence~~ | **DONE** | Enacted 31 Aug 2026: Apache-2.0 `src/**`+`tools/**`, AGPL-3.0-or-later `server/**`, DCO in `CONTRIBUTING.md`. See `LICENSES.md`. Apache over MIT for the patent grant. |
+| 37 | Self-test runner | READY | `npm run probe` proves the pattern; generalise to `*.selftest.mjs` + a runner. Phase 3's ragdoll gate now needs recorded, diffable pose baselines — this is on that critical path. |
+| 38 | ~~`docs/ATTRIBUTION.md`~~ | **DONE** | Superseded by root `NOTICE`, which is the Apache-2.0 convention and already has the entry template. Fill it in on the first port; do not create a second attribution file. |
+| 41 | `Dockerfile` + `docker-compose.yml` | READY | The documented self-host path, per `DECISIONS.md` "Hosting". Caddy for TLS/WS proxy. `fly.toml`/`railway.json` optional alongside, never primary. |
+| 39 | Trademark search for "TeeTimeTurrets" | IDEA | Flagged in `RESEARCH-NEEDED.md`; needs a real search, not a guess. **Downgraded** by the 31 Aug 2026 rename from "CallofGolf" — the ordinary pre-users check now, not an urgent one. |
+| 40 | Bundle size | IDEA | Currently 3.4 MB (1.2 MB gzip), dominated by the Rapier WASM. Code-split the clubhouse from the course. |

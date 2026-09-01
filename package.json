@@ -1,0 +1,26 @@
+{
+  "name": "teetimeturrets",
+  "version": "0.0.1",
+  "description": "Open-source browser arcade golf-combat game (Three.js + Rapier + Vite).",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "probe": "vite build -c tools/probe.vite.config.ts && node tools/.probe-out/feelProbe.mjs"
+  },
+  "keywords": ["golf", "three.js", "rapier", "webgl", "game"],
+  "author": "",
+  "license": "Apache-2.0 AND AGPL-3.0-or-later",
+  "type": "module",
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.20.0",
+    "simplex-noise": "^4.0.3",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}
