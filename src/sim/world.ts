@@ -75,18 +75,20 @@ const BALL_RESTITUTION = 0.35;
  * trajectories are provably unchanged by this: against a fixed collider, gravity, damping,
  * and restitution/friction impulse resolution are all mass-independent.
  *
- * 1130 is real golf-ball density (~46 g at this radius), and THIS VALUE IS EXPECTED TO RISE
- * IN PHASE 3 -- realism is the thing that breaks the ragdoll, not the thing that saves it.
- * A 46 g ball against a multi-kg torso capsule is a ~1:100 mass ratio struck at driver
- * velocity: the worst case for any impulse-based solver, and unfixable by joint tuning.
- * Phase 3 raises this until the ratio against the heaviest limb is <= 1:20.
+ * 1130 is real golf-ball density, but NOT a real golf ball's mass: BALL_RADIUS is 0.15 m here,
+ * arcade scale rather than a regulation 0.021 m, so this is a ~16 kg ball. Phase 3 expected to
+ * have to raise it -- the worry was a featherweight ball bouncing uselessly off a multi-kg
+ * ragdoll -- and the measurement said otherwise: against the heaviest target capsule (~21 kg,
+ * TARGET_DENSITY in entities/Target.ts) the ratio is already ~1:1.3, well inside the <= 1:20
+ * bound docs/DECISIONS.md "Ball mass" requires. Raising it would push the ball past the
+ * ragdoll instead. entities/Target.test.ts asserts the ratio against the real bodies.
  *
- * The mass-independence above is what makes that nearly free -- ball flight does not change,
- * only the ball's authority in a collision with another dynamic body. Re-run `npm run probe`
- * after changing it to confirm rather than assume.
+ * Mass-independence is what would have made a change nearly free -- ball flight does not
+ * change, only the ball's authority against another dynamic body. Re-run `npm run probe` after
+ * changing it to confirm rather than assume.
  *
- * See docs/DECISIONS.md "Ball mass". The CTF flag-ball is on the other side of this problem
- * (deliberately heavy, must be struck rather than carried) and wants its own density.
+ * The CTF flag-ball is on the other side of this problem (deliberately heavy, must be struck
+ * rather than carried) and wants its own density.
  */
 const BALL_DENSITY = 1130;
 

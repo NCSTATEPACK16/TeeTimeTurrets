@@ -88,6 +88,17 @@ GLTF bone-sync half is irrelevant to an asset-free project.
 
 ## Ball mass
 
+> **Corrected 2 Sep 2026, when the ragdoll was actually built.** The arithmetic below assumed a
+> regulation golf ball. This project's ball is not one: `BALL_RADIUS = 0.15` m (arcade scale,
+> seven times a real ball), so `BALL_DENSITY = 1130` gives a **~16 kg** ball, not 46 g. Against
+> the shipped ragdoll's heaviest part — a torso capsule at `TARGET_DENSITY = 400`, ~21 kg — the
+> ratio is about **1:1.3**, already far inside the ≤ 1:20 bound this entry demands. So the
+> density was **not** raised: doing so would only push the ball past the ragdoll's own mass.
+> The ratio is asserted against the real bodies in `src/sim/entities/Target.test.ts` rather than
+> recomputed by hand, and the velocity clamp below **is** implemented
+> (`MAX_PART_LINVEL`/`MAX_PART_ANGVEL`). The reasoning that follows is otherwise intact and is
+> what made the ragdoll design safe; only the numbers were wrong.
+
 `BALL_DENSITY = 1130` in `src/sim/world.ts` is real golf-ball density, giving a ~46 g ball.
 Its comment claims this "matters from Phase 3 on, when the ball has to move a ragdoll." That
 is true and backwards: realism is what breaks the ragdoll.
@@ -108,7 +119,10 @@ change unchanged.** Re-run `npm run probe` to confirm rather than assume, but ex
 
 **Fallback if it still misbehaves:** don't resolve the hit physically at all. Detect the
 impact (collision event or shapecast), then apply a scripted impulse to the struck limb and a
-scripted bounce to the ball. Arcade games do this because it is controllable and cannot
+scripted bounce to the ball. *(As built, the knockdown takes exactly this path, and not as a
+fallback: the contact that raises the event was resolved against a `Fixed` body on that tick,
+because the flip to `Dynamic` can only happen after it. `combat.ts` scripts the impulse from the
+ball's impact speed — `KNOCKDOWN_IMPULSE_PER_MPS` — and `Target` clamps the result.)* Arcade games do this because it is controllable and cannot
 explode, and for a comedy physics game "feels right" beats "is correct." Prefer the density
 fix first because it keeps one code path; switch if tuning fights back.
 
