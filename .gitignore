@@ -2,6 +2,8 @@ node_modules/
 dist/
 tools/.probe-out/
 tools/.smoke-out/
+tools/.gate-dist/
+tools/.gate-out/
 *.log
 .DS_Store
 .worktrees/
