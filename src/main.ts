@@ -3,7 +3,7 @@ import { GameLoop } from "./engine/GameLoop";
 import { KeyboardMouseSource } from "./input/KeyboardMouseSource";
 import { RenderScene } from "./render/scene";
 import type { FrameView } from "./render/scene";
-import { FIXED_DT, Sim, SwingMode } from "./sim/world";
+import { FIXED_DT, Sim, SwingMode, TRANSFORM_STRIDE } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
 
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   // sim.loadHole.
   const course = generateCourse(COURSE_SEED, 9);
   const sim = await Sim.create(course.holes[0]);
-  const render = new RenderScene(container, sim.terrain);
+  const render = new RenderScene(container, sim.terrain, sim.targets.length);
   const input = new KeyboardMouseSource(render.renderer.domElement);
 
   // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
@@ -46,6 +46,8 @@ async function main(): Promise<void> {
     club: sim.cart.equippedClub,
     mode: sim.mode,
     turretLoaded: turretLoaded(sim),
+    targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
+    targetPartCount: sim.targetPartCount,
   };
 
   const loop = new GameLoop({
@@ -62,6 +64,12 @@ async function main(): Promise<void> {
       view.club = sim.cart.equippedClub;
       view.mode = sim.mode;
       view.turretLoaded = turretLoaded(sim);
+      interpolateTransforms(
+        sim.previousTargetTransforms,
+        sim.currentTargetTransforms,
+        alpha,
+        view.targetTransforms,
+      );
 
       render.draw(view);
       drawHud(hud, sim);
@@ -163,6 +171,36 @@ function interpolateCart(
   out.position.z = lerp(previous.position.z, current.position.z, alpha);
   out.heading = lerp(previous.heading, current.heading, alpha);
   out.turretYaw = lerp(previous.turretYaw, current.turretYaw, alpha);
+}
+
+/**
+ * Lerps positions and slerps rotations for a whole flat transform buffer in place. Uninterpolated,
+ * a ragdoll collapsing over about a second steps visibly at any refresh rate above 60 Hz -- and
+ * the collapse is the thing this rendering exists to show.
+ *
+ * Standing parts are interpolated too rather than special-cased: the copy costs a handful of
+ * floats and keeps this one code path instead of two.
+ */
+function interpolateTransforms(
+  previous: Float32Array,
+  current: Float32Array,
+  alpha: number,
+  out: Float32Array,
+): void {
+  const count = Math.min(previous.length, current.length, out.length);
+  for (let i = 0; i + TRANSFORM_STRIDE <= count; i += TRANSFORM_STRIDE) {
+    out[i] = lerp(previous[i]!, current[i]!, alpha);
+    out[i + 1] = lerp(previous[i + 1]!, current[i + 1]!, alpha);
+    out[i + 2] = lerp(previous[i + 2]!, current[i + 2]!, alpha);
+
+    scratchA.set(previous[i + 3]!, previous[i + 4]!, previous[i + 5]!, previous[i + 6]!);
+    scratchB.set(current[i + 3]!, current[i + 4]!, current[i + 5]!, current[i + 6]!);
+    scratchOut.slerpQuaternions(scratchA, scratchB, alpha);
+    out[i + 3] = scratchOut.x;
+    out[i + 4] = scratchOut.y;
+    out[i + 5] = scratchOut.z;
+    out[i + 6] = scratchOut.w;
+  }
 }
 
 function lerp(a: number, b: number, t: number): number {

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GolfClub } from "../entities/GolfClub";
+import { TargetRig } from "../entities/TargetRig";
 import type { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import { CART_COLLIDER } from "../sim/entities/Cart";
@@ -52,6 +53,10 @@ export interface FrameView {
   mode: SwingMode;
   /** True while a round of ammo rides the club head: drawn on the turret, ready to fire. */
   turretLoaded: boolean;
+  /** Interpolated target part transforms, laid out exactly as Sim publishes them. */
+  targetTransforms: Float32Array;
+  /** Number of valid transforms in `targetTransforms`. */
+  targetPartCount: number;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -63,12 +68,13 @@ export class RenderScene {
   private readonly ball: THREE.Mesh;
   private readonly aimArrow: THREE.ArrowHelper;
   private readonly cart: GolfClub;
+  private readonly targets: TargetRig;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly aimDirScratch = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
 
-  constructor(container: HTMLElement, terrain: Terrain) {
+  constructor(container: HTMLElement, terrain: Terrain, targetCount: number) {
     this.terrain = terrain;
     const fieldSize = terrain.spec.fieldSize;
 
@@ -108,6 +114,9 @@ export class RenderScene {
     this.cart = new GolfClub();
     this.scene.add(this.cart);
 
+    this.targets = new TargetRig(targetCount);
+    this.scene.add(this.targets);
+
     this.cameraTarget.set(0, 0, 0);
     window.addEventListener("resize", () => this.onResize());
   }
@@ -122,6 +131,7 @@ export class RenderScene {
     );
 
     this.drawCart(view);
+    this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
 
     // The ground aim arrow belongs to stationary mode, where the player is lining up a lie. In
     // cart mode the barrel itself shows where the shot is going.
@@ -143,6 +153,7 @@ export class RenderScene {
   /** Frees the cart's geometries and materials. See the AGENTS.md resource-cleanup rule. */
   dispose(): void {
     this.cart.dispose();
+    this.targets.dispose();
     this.renderer.dispose();
   }
 

@@ -25,7 +25,7 @@ const BASELINE_DIR = resolve("tools/gate-baseline");
 const OUT_DIR = resolve("tools/.gate-out");
 const UPDATE = process.argv.includes("--update-baseline");
 
-const SUBJECTS = ["cart-driver", "cart-iron", "cart-putter", "ball"];
+const SUBJECTS = ["cart-driver", "cart-iron", "cart-putter", "ball", "target"];
 
 const server = spawn("npx", ["vite", "preview", "--outDir", DIST, "--port", String(PORT)], {
   stdio: "ignore",

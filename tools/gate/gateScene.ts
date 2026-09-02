@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import { GolfClub } from "../../src/entities/GolfClub";
+import { TargetRig } from "../../src/entities/TargetRig";
 import { ClubType } from "../../src/physics/Ballistics";
+import { PARTS_PER_TARGET, TARGET_PART_SHAPES } from "../../src/sim/entities/Target";
+import { TRANSFORM_STRIDE } from "../../src/sim/world";
 
 /**
  * One subject, one fixed rig. No Sim, no terrain, no input, no randomness -- AGENTS.md's Scene
@@ -33,6 +36,7 @@ const SUBJECTS: Record<string, () => GateSubject> = {
   "cart-iron": () => clubSubject(ClubType.Iron),
   "cart-putter": () => clubSubject(ClubType.Putter),
   ball: () => ballSubject(),
+  target: () => targetSubject(),
 };
 
 function clubSubject(club: ClubType): GateSubject {
@@ -52,6 +56,25 @@ function ballSubject(): GateSubject {
       material.dispose();
     },
   };
+}
+
+/**
+ * One target in its rest pose, posed from TARGET_PART_SHAPES' own rest offsets rather than from a
+ * live Sim -- the gate must not need Rapier, a terrain or a seed to render a subject.
+ */
+function targetSubject(): GateSubject {
+  const rig = new TargetRig(1);
+  const transforms = new Float32Array(PARTS_PER_TARGET * TRANSFORM_STRIDE);
+  for (let i = 0; i < TARGET_PART_SHAPES.length; i++) {
+    const offset = TARGET_PART_SHAPES[i]!.restOffset;
+    const flat = i * TRANSFORM_STRIDE;
+    transforms[flat] = offset.x;
+    transforms[flat + 1] = offset.y;
+    transforms[flat + 2] = offset.z;
+    transforms[flat + 6] = 1; // identity quaternion
+  }
+  rig.setFromTransforms(transforms, PARTS_PER_TARGET);
+  return { object: rig, dispose: () => rig.dispose() };
 }
 
 function countGeometry(root: THREE.Object3D): { vertices: number; triangles: number } {
