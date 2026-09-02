@@ -1,5 +1,7 @@
 import { CLUB_STATS, ClubType } from "../../physics/Ballistics";
 import type { Vec3 } from "../../physics/Ballistics";
+import { createHealth } from "../health";
+import type { Health } from "../health";
 import type { SurfaceTuning } from "../surfaces";
 
 /**
@@ -73,6 +75,18 @@ export const TIRE_TUNING: Readonly<Record<TireType, TireTuning>> = {
 export const STARTING_AMMO = 30;
 export const BUCKET_REFILL_AMMO = 30;
 export const MAX_AMMO = 100;
+
+/**
+ * Placeholder-but-real starting values, the same status POOL_SIZE had in the ammo spec: tunable
+ * by feel once played. At 100 HP the damage table in `sim/combat.ts` makes a full-charge driver
+ * hit worth 60, so two clean hits kill and a putter tap does not.
+ */
+export const STARTING_HP = 100;
+/**
+ * Death is a stroke penalty plus a wait, not a dead end -- long enough to be a real cost, short
+ * enough that a hole is never abandoned over it.
+ */
+export const RESPAWN_DELAY_S = 3;
 
 /**
  * Physics capsule, not the visual shape. A rounded body slides off heightfield triangle seams
@@ -167,6 +181,22 @@ export class Cart {
   tire: TireType;
   /** Recoil velocity in world XZ, decaying every tick. Added to the desired translation. */
   readonly recoil: Vec2XZ;
+  /**
+   * Velocity in world XZ from being shunted by another cart, decaying exactly like `recoil`.
+   *
+   * A shove has to be a velocity term rather than an impulse because the cart is a kinematic
+   * character controller and a KCC receives no impulses -- docs/DECISIONS.md's physics-ownership
+   * table calls out "same for being shunted by another cart" by name. Kept separate from
+   * `recoil` so the two read independently in a HUD or a replay, not because they behave
+   * differently.
+   */
+  readonly shuntVelocity: Vec2XZ;
+  /** HP. Damage is applied by sim/combat.ts; the cart only owns the number. */
+  readonly health: Health;
+  /** True while awaiting respawn. `world.ts` freezes intent and position for the duration. */
+  dead: boolean;
+  /** Seconds until respawn. Meaningful only while `dead`. */
+  respawnTimer: number;
   /** Where the cart wants to move this tick. The controller decides where it actually goes. */
   readonly desiredTranslation: Vec3;
   readonly shot: CartShot;
@@ -186,8 +216,12 @@ export class Cart {
     this.tire = options.tire ?? TireType.Street;
     this.club = options.club ?? ClubType.Driver;
     this.recoil = { x: 0, z: 0 };
+    this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
     this.ammo = STARTING_AMMO;
+    this.health = createHealth(STARTING_HP);
+    this.dead = false;
+    this.respawnTimer = 0;
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
   }
 
@@ -222,6 +256,25 @@ export class Cart {
     if (club === this.club) return;
     this.club = club;
     this.chargeHeld = 0;
+  }
+
+  /**
+   * Back to full HP, alive, and standing still. Called on respawn and on a new hole -- health is
+   * a per-encounter stat that a fresh start resets, unlike ammo, which is a round-spanning
+   * resource and is deliberately left alone here.
+   *
+   * Momentum is cleared too: arriving at the tee still carrying the speed and the shove that
+   * killed you would fire you straight back off it.
+   */
+  revive(): void {
+    this.health.hp = this.health.max;
+    this.dead = false;
+    this.respawnTimer = 0;
+    this.speed = 0;
+    this.recoil.x = 0;
+    this.recoil.z = 0;
+    this.shuntVelocity.x = 0;
+    this.shuntVelocity.z = 0;
   }
 
   /** Clamps to MAX_AMMO. Used by bucket refills and landed-ball pickups alike. */
@@ -271,14 +324,19 @@ export class Cart {
     this.stepDrive(intent, dt, surface);
 
     // Recoil decays exponentially rather than linearly: a linear ramp reads as the cart being
-    // dragged to a stop, an exponential one as a shove that runs out.
+    // dragged to a stop, an exponential one as a shove that runs out. A shunt from another cart
+    // is the same kind of shove and shares the rate.
     const decay = Math.exp(-CART_TUNING.recoilDecay * dt);
     this.recoil.x *= decay;
     this.recoil.z *= decay;
+    this.shuntVelocity.x *= decay;
+    this.shuntVelocity.z *= decay;
 
-    this.desiredTranslation.x = (Math.cos(this.heading) * this.speed + this.recoil.x) * dt;
+    const driftX = this.recoil.x + this.shuntVelocity.x;
+    const driftZ = this.recoil.z + this.shuntVelocity.z;
+    this.desiredTranslation.x = (Math.cos(this.heading) * this.speed + driftX) * dt;
     this.desiredTranslation.y = 0;
-    this.desiredTranslation.z = (Math.sin(this.heading) * this.speed + this.recoil.z) * dt;
+    this.desiredTranslation.z = (Math.sin(this.heading) * this.speed + driftZ) * dt;
   }
 
   /** Charge on hold, fire on the release edge. Charging is blocked while reloading. */

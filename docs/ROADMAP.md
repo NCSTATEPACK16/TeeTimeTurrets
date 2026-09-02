@@ -340,9 +340,11 @@ is tested, but the renderer's ground mesh is built once at construction.
 
 ## Phase 3 — Targets, ragdolls, pickups
 
-- [ ] `src/sim/entities/Target.ts`: primitive capsule ragdoll (no skinned meshes — matches the
-      zero-external-asset constraint). **Read `DECISIONS.md` "Ragdolls" before writing a line
-      of this.** The plan that used to live here specified `JointData.stiffness`/`.damping`
+- [x] `src/sim/entities/Target.ts`: primitive capsule ragdoll (no skinned meshes — matches the
+      zero-external-asset constraint) — **done**, see `docs/superpowers/specs/2026-09-02-targets-health-combat-design.md` and
+      `docs/superpowers/plans/2026-09-02-targets-health-combat-implementation.md`. Eleven capsules, Fixed at rest,
+      whole rig flipped to Dynamic on impact; the pass conditions below are asserted in
+      `Target.test.ts`. **Read `DECISIONS.md` "Ragdolls" before changing a line of it.** The plan that used to live here specified `JointData.stiffness`/`.damping`
       to hold a pose; those fields are inert in the JS bindings and tuning them does nothing.
       The corrected shape:
       - Parts are `Fixed`/`KinematicPositionBased` at rest and flip to `Dynamic` via
@@ -356,15 +358,25 @@ is tested, but the renderer's ground mesh is built once at construction.
       - **No CCD on ragdoll parts** — it stays on the ball only.
       - Contact threshold for the rest→dynamic flip reads off
         `EventQueue.drainContactForceEvents` (verified present in Rapier 0.20).
-- [ ] Raise `BALL_DENSITY` so the ball-to-heaviest-limb mass ratio is ≤ 1:20, and clamp
-      post-impact linear/angular velocity on ragdoll parts. A realistic 46 g ball against a
-      multi-kg torso is ~1:100 — the worst case for an impulse solver, and unfixable by joint
-      tuning. Re-run `npm run probe` to confirm Phase 0/1.5 numbers are unchanged (they should
-      be: ball flight is mass-independent against a fixed collider — `ARCHITECTURE.md` §2b).
-      Scripted-impulse fallback and full reasoning in `DECISIONS.md` "Ball mass".
-- [ ] Hit detection via Rapier collision events between ball and target.
-- [ ] **Health and damage** (`src/sim/health.ts`): HP per cart, damage from ball impact and
-      from cart-vs-cart shunting, death and respawn. The HUD has shown a health bar in every
+- [x] Ball-to-heaviest-limb mass ratio ≤ 1:20, and post-impact linear/angular velocity clamped
+      on ragdoll parts — **done, and it needed no density change.** The "46 g ball at ~1:100"
+      figure is wrong for this project: `BALL_RADIUS` is 0.15 m (arcade scale, not a regulation
+      0.021 m), so `BALL_DENSITY = 1130` already gives a **~16 kg** ball, and against a
+      `TARGET_DENSITY = 400` torso (~21 kg) the ratio is ~1:1.3 — inside the bound with room to
+      spare. Raising the density would only push the ball past the ragdoll. The ratio is asserted
+      against the real bodies in `Target.test.ts`; the clamp is `MAX_PART_LINVEL`/
+      `MAX_PART_ANGVEL`, applied on the impact frame and every tick while down. `npm run probe`
+      output is byte-for-byte unchanged. See `DECISIONS.md` "Ball mass" (corrected).
+- [x] Hit detection via Rapier collision events between ball and target — **done** as
+      `src/sim/combat.ts`, the project's only `EventQueue` consumer. Dispatches ball↔target,
+      ball↔cart and cart↔cart by collider handle; every other check in the codebase is still
+      proximity polling, deliberately (a 40 m/s ball covers 0.67 m per tick).
+- [x] **Health and damage** (`src/sim/health.ts`): HP per cart, damage from ball impact and
+      from cart-vs-cart shunting, death and respawn — **done**, see `docs/superpowers/specs/2026-09-02-targets-health-combat-design.md`
+      and `docs/superpowers/plans/2026-09-02-targets-health-combat-implementation.md`. Death costs a stroke and respawns at
+      the tee-adjacent spawn point after `RESPAWN_DELAY_S`; shunting is a decaying velocity term,
+      never an impulse. Round stats (`src/sim/stats.ts`) count shots, direct hits and targets
+      down, and survive `Sim.reset()`. The HUD has shown a health bar in every
       cart-mode concept shot since the beginning (03, 07, 08, 09, 14) with nothing behind it;
       this is where it gets a model. The reference repo's `src/sim/damage.ts` is MIT but 83k —
       **take the shape, not the code**, and note it is not a `REUSE-MAP.md` entry precisely

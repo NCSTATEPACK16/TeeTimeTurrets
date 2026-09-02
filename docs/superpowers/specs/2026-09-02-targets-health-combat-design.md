@@ -1,6 +1,13 @@
 # Targets, Ragdolls, and Health/Damage — Design
 
-**Date:** 2 Sep 2026 · **Status:** approved, not yet implemented · **Roadmap slot:** Phase 3
+**Date:** 2 Sep 2026 · **Status:** implemented (sim), 2 Sep 2026 · **Roadmap slot:** Phase 3
+
+**Implementation:** `docs/superpowers/plans/2026-09-02-targets-health-combat-implementation.md`,
+which resolves §9's open parameters and records three departures from this document: contacts are
+dispatched through a collider-handle registry rather than `{ targets, carts, stats }` (a drained
+event carries only handles); `health.ts` lives at `src/sim/health.ts`, the path §1 and `ROADMAP.md`
+name, not the `entities/` path §3's comment names; and `BALL_DENSITY` was **not** raised, because
+the ratio §2 asks for is already met — see that plan and the corrected `DECISIONS.md` "Ball mass".
 
 Fulfils `docs/ROADMAP.md` Phase 3's `Target.ts`/ragdoll item, the `BALL_DENSITY`/ball-mass item,
 "Hit detection via Rapier collision events," and "Health and damage" (`src/sim/health.ts`).
