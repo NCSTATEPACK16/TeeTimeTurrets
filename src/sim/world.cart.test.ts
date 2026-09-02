@@ -5,6 +5,8 @@ import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
 import { STARTING_AMMO } from "./entities/Cart";
+import type { BallPool, PooledBall } from "./entities/BallPool";
+import type { Bucket } from "./entities/Pickup";
 import { SurfaceId } from "./surfaces";
 import { Sim, SwingMode } from "./world";
 
@@ -127,6 +129,50 @@ describe("cart in the world", () => {
     expect(sim.current.position.y).toBeGreaterThan(
       sim.terrain.heightAt(sim.current.position.x, sim.current.position.z) - 0.5,
     );
+  });
+
+  it("loadHole releases every pooled ball back to idle and repositions the bucket for the new hole", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+
+    // Force the whole pool into "flying" -- the exhaustion state that would otherwise leak a
+    // dead pool (or, before this fix, a bucket and stray balls at the old hole's coordinates)
+    // into the new hole. There is no public API for this, so reach into the private fields
+    // directly (still accessible at runtime -- TS privacy is compile-time only).
+    const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
+    const balls = (pool as unknown as { balls: PooledBall[] }).balls;
+    expect(balls.length).toBeGreaterThan(0);
+    for (const b of balls) b.state = "flying";
+    expect(pool.acquire()).toBeNull();
+
+    const next: HoleSpec = { ...legacyHoleSpec(), seed: 555, tee: { x: 30, z: 15 } };
+    sim.loadHole(next);
+
+    // Every ball must be back to idle -- acquire() must succeed again immediately.
+    expect(pool.acquire()).not.toBeNull();
+
+    // The hardcoded bucket must follow the new hole's tee, not stay at the old hole's.
+    const buckets = (sim as unknown as { buckets: Bucket[] }).buckets;
+    expect(buckets.length).toBeGreaterThan(0);
+    expect(buckets[0].position.x).toBeCloseTo(next.tee.x + 10, 5);
+    expect(buckets[0].position.z).toBeCloseTo(next.tee.z, 5);
+  });
+
+  it("loadHole frees pool slots so a fresh cart-mode shot after it still spawns a ball", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+
+    const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
+    const balls = (pool as unknown as { balls: PooledBall[] }).balls;
+    for (const b of balls) b.state = "flying";
+    expect(pool.acquire()).toBeNull();
+
+    const next: HoleSpec = { ...legacyHoleSpec(), seed: 777, tee: { x: -10, z: 40 } };
+    sim.loadHole(next);
+
+    // loadHole() does not reset `mode`, so the sim is still in cart mode from the toggle above.
+    expect(sim.mode).toBe(SwingMode.Cart);
+    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
+
+    expect(sim.lastShotWasStrike).toBe(true);
   });
 });
 

@@ -275,7 +275,9 @@ export class Sim {
     // the ball, and nudging your own ball by driving into it is correct behaviour anyway.
     sim.controller.setApplyImpulsesToDynamicBodies(true);
 
-    sim.ballPool = new BallPool(sim.world);
+    // The closure reads sim.terrain live rather than closing over `terrain`, so it keeps
+    // checking against the correct hole's height field after loadHole() reassigns sim.terrain.
+    sim.ballPool = new BallPool(sim.world, (x, z) => sim.terrain.heightAt(x, z));
     sim.buckets.push(createBucket(tee.x + 10, tee.z));
 
     sim.syncCurrent();
@@ -317,6 +319,16 @@ export class Sim {
     this.surfaces = createSurfaces(spec, this.terrain);
     this.buildGround();
     this.lastSafePosition = { ...this.terrain.teePosition };
+
+    // Stale in-flight/landed balls and the bucket's old-hole position must not survive into the
+    // new hole -- otherwise a landed ball at the previous hole's coordinates could still be
+    // picked up for ammo here, and the bucket would sit wherever the last hole put it.
+    this.ballPool.releaseAll();
+    const tee = this.terrain.teePosition;
+    for (const bucket of this.buckets) {
+      bucket.position = { x: tee.x + 10, z: tee.z };
+    }
+
     this.reset();
   }
 
@@ -466,19 +478,23 @@ export class Sim {
    */
   private resolveShot(): void {
     if (this.mode === SwingMode.Cart) {
-      this.lastShotWasStrike = this.cart.shot.hasBall;
-      if (!this.cart.shot.hasBall) return;
+      if (!this.cart.shot.hasBall) {
+        this.lastShotWasStrike = false;
+        return;
+      }
 
       const pooled = this.ballPool.acquire();
       if (!pooled) {
         // All POOL_SIZE bodies are in flight simultaneously -- an extreme, likely
         // untestable-in-practice case (spec §6). Cart.fire() already decremented ammo on the
         // assumption a ball would spawn; refund it so this degrades to a true no-op rather
-        // than costing ammo for nothing.
+        // than costing ammo for nothing. No ball actually spawned, so this is not a strike.
         this.cart.addAmmo(1);
+        this.lastShotWasStrike = false;
         return;
       }
 
+      this.lastShotWasStrike = true;
       computeMuzzle(this.cart, this.muzzleScratch);
       pooled.body.setTranslation(this.muzzleScratch, true);
       pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
