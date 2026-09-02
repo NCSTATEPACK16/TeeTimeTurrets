@@ -6,7 +6,7 @@ import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, computeMuzzle
 import { BallPool } from "./entities/BallPool";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
-import { Target } from "./entities/Target";
+import { PARTS_PER_TARGET, Target } from "./entities/Target";
 import { CombatRegistry, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
 import { createStats } from "./stats";
@@ -20,6 +20,13 @@ export type { Vec3 } from "./course";
 
 /** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
 export const FIXED_DT = 1 / 60;
+
+/**
+ * Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. Flat typed
+ * arrays rather than objects because these are filled every tick for up to 33 ragdoll parts and
+ * 32 pooled balls, and the no-allocation rule covers the fixed tick.
+ */
+export const TRANSFORM_STRIDE = 7;
 
 const BALL_RADIUS = 0.15;
 
@@ -205,6 +212,12 @@ export class Sim {
   private readonly buckets: Bucket[] = [];
   /** Knockable ragdolls standing on this hole. Rebuilt by `loadHole`, stood back up by `reset`. */
   readonly targets: Target[] = [];
+  /** Parts across all targets on this hole. `targets.length * PARTS_PER_TARGET`. */
+  targetPartCount = 0;
+  /** Target part transforms from the previous fixed step, for render interpolation. */
+  previousTargetTransforms = new Float32Array(0);
+  /** Target part transforms from the most recent fixed step. */
+  currentTargetTransforms = new Float32Array(0);
   /** Round-level counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
   readonly stats = createStats();
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
@@ -376,6 +389,15 @@ export class Sim {
       this.targets.push(target);
       this.registry.registerTarget(target);
     }
+
+    this.targetPartCount = this.targets.length * PARTS_PER_TARGET;
+    const floats = this.targetPartCount * TRANSFORM_STRIDE;
+    if (this.currentTargetTransforms.length !== floats) {
+      this.currentTargetTransforms = new Float32Array(floats);
+      this.previousTargetTransforms = new Float32Array(floats);
+    }
+    this.syncCurrentTargets();
+    this.previousTargetTransforms.set(this.currentTargetTransforms);
   }
 
   /**
@@ -429,6 +451,10 @@ export class Sim {
    * follows it.
    */
   step(intent: PlayerIntent = IDLE_INTENT): void {
+    const swapTargets = this.previousTargetTransforms;
+    this.previousTargetTransforms = this.currentTargetTransforms;
+    this.currentTargetTransforms = swapTargets;
+
     this.previousCart = this.currentCart;
     this.stepCart(intent);
     this.syncCurrentCart();
@@ -440,6 +466,7 @@ export class Sim {
     this.syncCurrent();
     processContacts(this.eventQueue, this.combatContext);
     for (const target of this.targets) target.step();
+    this.syncCurrentTargets();
 
     // The heightfield has no walls, so a ball past its edge free-falls forever and never
     // satisfies isResting() -- the player would be locked out of swinging with only a
@@ -712,6 +739,8 @@ export class Sim {
     this.cart.revive();
     this.cartFallSpeed = 0;
     for (const target of this.targets) target.reset();
+    this.syncCurrentTargets();
+    this.previousTargetTransforms.set(this.currentTargetTransforms);
     this.cartBody.setTranslation(spawn, true);
     this.syncCurrentCart();
     this.previousCart = this.currentCart;
@@ -754,6 +783,30 @@ export class Sim {
       heading: this.cart.heading,
       turretYaw: this.cart.turretYaw,
     };
+  }
+
+  /**
+   * Flattens every target part's body transform into the current buffer. Reads Rapier directly
+   * rather than going through Target, because Target owns no snapshot of its own and the render
+   * layer must never touch a Rapier body itself.
+   */
+  private syncCurrentTargets(): void {
+    const buffer = this.currentTargetTransforms;
+    let i = 0;
+    for (const target of this.targets) {
+      for (const part of target.parts) {
+        const t = part.body.translation();
+        const r = part.body.rotation();
+        buffer[i] = t.x;
+        buffer[i + 1] = t.y;
+        buffer[i + 2] = t.z;
+        buffer[i + 3] = r.x;
+        buffer[i + 4] = r.y;
+        buffer[i + 5] = r.z;
+        buffer[i + 6] = r.w;
+        i += TRANSFORM_STRIDE;
+      }
+    }
   }
 }
 
