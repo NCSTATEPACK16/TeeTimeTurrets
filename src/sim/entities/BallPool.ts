@@ -1,0 +1,127 @@
+import RAPIER from "@dimforge/rapier3d-compat";
+import { heightAt } from "../terrain";
+
+/** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
+ * explicit out-of-scope list (docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1). */
+
+export type BallState = "idle" | "flying" | "landed";
+
+export interface PooledBall {
+  body: RAPIER.RigidBody;
+  state: BallState;
+  landedAt: number;
+}
+
+export const POOL_SIZE = 32;
+export const LANDED_BALL_DESPAWN_S = 15;
+
+// Mirrors world.ts's BALL_RADIUS/BALL_DENSITY/etc. Duplicated rather than imported so this
+// file stays a leaf module -- world.ts imports BallPool, so BallPool importing back from
+// world.ts would be circular. Keep these in sync if the stationary ball's tuning changes.
+const POOLED_BALL_RADIUS = 0.15;
+const POOLED_BALL_DENSITY = 1130;
+const POOLED_BALL_FRICTION = 0.55;
+const POOLED_BALL_RESTITUTION = 0.35;
+const POOLED_BALL_LINEAR_DAMPING = 0.05;
+const POOLED_BALL_ANGULAR_DAMPING = 0.6;
+
+// Mirrors world.ts's REST_SPEED_THRESHOLD/REST_HOLD_TICKS -- same duplication reason above.
+const REST_SPEED_THRESHOLD = 0.25;
+const REST_HOLD_TICKS = 12;
+
+/** Well outside the playable field (FIELD_SIZE is 160, so +/-80 on each axis) and far below
+ * OUT_OF_BOUNDS_Y, so a parked idle ball can never be mistaken for a live one by any bounds
+ * or height check. */
+const PARKED_POSITION = { x: 0, y: -1000, z: 0 };
+
+export class BallPool {
+  private readonly balls: PooledBall[];
+  private readonly restTicks = new WeakMap<RAPIER.RigidBody, number>();
+
+  constructor(world: RAPIER.World, poolSize: number = POOL_SIZE) {
+    this.balls = [];
+    for (let i = 0; i < poolSize; i++) {
+      const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(PARKED_POSITION.x, PARKED_POSITION.y, PARKED_POSITION.z)
+        .setCcdEnabled(true)
+        .setLinearDamping(POOLED_BALL_LINEAR_DAMPING)
+        .setAngularDamping(POOLED_BALL_ANGULAR_DAMPING);
+      const body = world.createRigidBody(bodyDesc);
+
+      const colliderDesc = RAPIER.ColliderDesc.ball(POOLED_BALL_RADIUS)
+        .setDensity(POOLED_BALL_DENSITY)
+        .setFriction(POOLED_BALL_FRICTION)
+        .setRestitution(POOLED_BALL_RESTITUTION)
+        .setEnabled(false);
+      world.createCollider(colliderDesc, body);
+
+      this.balls.push({ body, state: "idle", landedAt: 0 });
+      this.restTicks.set(body, 0);
+    }
+  }
+
+  /**
+   * idle -> flying. Force-recycles the oldest `landed` ball if no `idle` body remains (never a
+   * `flying` one -- an in-flight shot must never vanish mid-arc). Returns null only when every
+   * pooled body is simultaneously `flying`; the caller must degrade to a blank shot in that case.
+   */
+  acquire(): PooledBall | null {
+    const idle = this.balls.find((b) => b.state === "idle");
+    if (idle) return this.beginFlight(idle);
+
+    const landed = this.balls.filter((b) => b.state === "landed");
+    if (landed.length === 0) return null;
+    let oldest = landed[0];
+    for (const b of landed) if (b.landedAt < oldest.landedAt) oldest = b;
+    return this.beginFlight(oldest);
+  }
+
+  private beginFlight(ball: PooledBall): PooledBall {
+    ball.state = "flying";
+    ball.body.collider(0).setEnabled(true);
+    this.restTicks.set(ball.body, 0);
+    return ball;
+  }
+
+  /** -> idle, teleported off-world with its collider disabled. */
+  release(ball: PooledBall): void {
+    ball.state = "idle";
+    ball.body.setTranslation(PARKED_POSITION, true);
+    ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    ball.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    ball.body.collider(0).setEnabled(false);
+    this.restTicks.set(ball.body, 0);
+  }
+
+  /** flying -> landed on sustained rest (mirrors world.ts's isGrounded/restTicks pattern);
+   * landed -> idle after LANDED_BALL_DESPAWN_S with no pickup. */
+  step(dt: number, simTime: number): void {
+    for (const ball of this.balls) {
+      if (ball.state === "flying") {
+        const t = ball.body.translation();
+        const v = ball.body.linvel();
+        const grounded = t.y - heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
+        const slow = Math.hypot(v.x, v.y, v.z) < REST_SPEED_THRESHOLD;
+        const ticks = grounded && slow ? (this.restTicks.get(ball.body) ?? 0) + 1 : 0;
+        this.restTicks.set(ball.body, ticks);
+        if (ticks >= REST_HOLD_TICKS) {
+          ball.state = "landed";
+          ball.landedAt = simTime;
+        }
+      } else if (ball.state === "landed") {
+        if (simTime - ball.landedAt >= LANDED_BALL_DESPAWN_S) {
+          this.release(ball);
+        }
+      }
+    }
+  }
+
+  /** "landed" balls only, for pickup checks. */
+  ballsNear(x: number, z: number, radius: number): PooledBall[] {
+    return this.balls.filter((b) => {
+      if (b.state !== "landed") return false;
+      const t = b.body.translation();
+      return Math.hypot(t.x - x, t.z - z) <= radius;
+    });
+  }
+}
