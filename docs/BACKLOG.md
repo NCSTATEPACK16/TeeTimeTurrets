@@ -40,7 +40,7 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 | 14 | Cart rollover + auto-right | READY | Port `src/sim/rollover.ts` (65 lines, MIT). |
 | 15 | Cart-vs-cart collision and shunting | IDEA | `setApplyImpulsesToDynamicBodies` makes the KCC push dynamic bodies. |
 | 16 | Damage / health model | **→ Phase 3** | Reference `src/sim/damage.ts` is MIT but 83k — take the shape only. Every cart-mode concept shot (03, 07, 08, 09, 14) has shown a health bar with nothing behind it. |
-| 16a | Ammo per club | **→ Phase 3** | Image 06 shows the counter; bucket pickup replenishes. **Disabled in `STROKE`** — finite ammo can strand a player mid-hole with no legal way to finish. See `UI-SPEC.md` §5. |
+| 16a | Ammo per club | **→ Phase 3** | **Superseded in scope**: implemented as one shared pool per cart, not per-club, per explicit user simplification. See `docs/superpowers/specs/2026-09-02-cart-ammo-design.md` §1. |
 | 16b | Input abstraction (`InputSource`) | **DONE** | Phase 2. Binding table is a pure function (`input/mapping.ts`); `ScriptedInputSource` is the second implementation and drives the whole Phase 2 gate headlessly, which is what proves the interface is not keyboard-shaped. |
 | 16c | Cart cosmetics: turret skin, chassis paint, tire type | **PART DONE** / **3.5** (UI) | Phase 2 landed `TIRE_TUNING` as a real trade (turf fastest on fairway, worst in sand; knobby the reverse). Turret skin and chassis paint are still unbuilt — no reader and no UI until 3.5. |
 
@@ -62,12 +62,13 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 | 21 | Water surface rendering | READY | Sim side done (`WATER_LEVEL`, hazard rule). Needs one translucent plane + a splash effect. |
 | 22 | Sand visual distinction | READY | Sim side done. `surfaceAt` can drive per-vertex mesh colour. |
 | 23 | **Clubhouse / HQ hub** | IDEA | Main screen, upgrades, loadout (image 11). Registers into the Phase 1.75 screen manager rather than inventing a lifecycle; build all geometry fresh — the reference garage contributes its *phase pattern* only (see REUSE-MAP). |
-| 24 | **Food & drink carts (pickups)** | **→ Phase 3** | Bucket = ammo, drink = shield, hotdog = health (image 06). Item floats and rotates in a translucent glow cylinder, food-cart prop as spawn anchor. Port `consumables.ts` (42 lines, MIT) for the cooldown model. |
+| 24 | **Food & drink carts (pickups)** | **→ Phase 3** | The ammo bucket half is **in progress**, see `docs/superpowers/specs/2026-09-02-cart-ammo-design.md`. Drink/hotdog pickups remain unbuilt and out of this spec's scope. |
 | 25 | Trees / obstacles | **→ Phase 3** | Procedural cone-stack + cylinder trunk per image 01. Promoted because they are **collision geometry** in every environment shot, not decoration — a ball passing through a tree is a first-minute bug. Seeded scatter, off the fairway corridor. Reference `src/world/**` is Reserved — do not look at it. |
 | 26 | Dog-leg holes | IDEA | `surfaces.ts` fairway corridor is currently a straight tee→cup segment; make it a polyline. |
 | 27 | Wind | IDEA | Cheap and very golf. A constant force in the ball integrator. |
 | 28 | Elevated tees / greens | IDEA | Pads already support arbitrary height; currently they inherit local terrain. |
 | 28a | Blend-band gradient cap | IDEA | The corridor's 10 m blend band (between `HALF_WIDTH` and `HALF_WIDTH + BLEND_WIDTH`) — the carving lerp in `terrain.ts`'s `heightAt`, between centreline height and free noise — can locally exceed 40° of gradient where macro-noise relief is large. Measured on a shipped nine-hole course, roughly 6–7% of fairway-classified ground in that band is steeper than its own blended `crr` (surfaces.ts) can arrest, so a ball landing there never settles there. Found in the final whole-branch review of Phase 2.5; not an explicit design target of the Task 9 slope-budget system, which only bounds the green and corridor interior — the blend band was never budgeted or tested. Accepted as-is for now (arguably desirable "fairway edges roll you toward the rough" flavor), not a bug to fix. Needs its own design decision later: either a dedicated blend-band gradient cap, or formally accepting the current behaviour. |
+| 28b | Bucket placement validity checks for the full course map | BLOCKED | Analogous to `course.ts`'s `validateHole` playability checks. Blocked on the multi-hole map (`docs/RESEARCH-TERRAIN.md` / the procedural course generator). See `docs/superpowers/specs/2026-09-02-cart-ammo-design.md` §7. |
 
 ## Presentation
 

@@ -108,6 +108,10 @@ hardest exactly where putting lives.
 
 ## Phase 1.75 — App shell, screens, and the scorecard
 
+> **Status note (2026-09-02):** Deprioritized, not dropped — combat gameplay (cart-vs-cart
+> shooting) is the current priority; see the ammo/pooled-ball spec below. STROKE mode stays a
+> real future destination once combat has an audience.
+
 Inserted ahead of the cart for the same reason Phase 5 is deferred rather than sprinkled in:
 the game currently boots straight into a single always-live scene, and a screen manager
 retrofitted onto that assumption is a rewrite, not an add. It is also small — three screens
@@ -365,8 +369,9 @@ is tested, but the renderer's ground mesh is built once at construction.
       this is where it gets a model. The reference repo's `src/sim/damage.ts` is MIT but 83k —
       **take the shape, not the code**, and note it is not a `REUSE-MAP.md` entry precisely
       because it is too big to port cleanly (BACKLOG #16).
-- [ ] **Ammo** as a real resource: per-club counts on the cart, decremented on fire,
-      replenished by the bucket pickup (image 06 shows the counter).
+- [ ] **Ammo** as a real resource — **in progress**, see
+  `docs/superpowers/specs/2026-09-02-cart-ammo-design.md` and
+  `docs/superpowers/plans/2026-09-02-cart-ammo-implementation.md`.
 - [ ] **Mode-scoping for both, and this is a rule rather than a preference.** Finite ammo in
       stroke play can strand a player mid-hole with no legal way to finish, which breaks golf
       outright. `STROKE` runs with damage and ammo **disabled**; `CTF` and `TARGETS` enforce
