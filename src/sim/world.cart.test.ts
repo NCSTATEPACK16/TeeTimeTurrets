@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
-import { legacyHoleSpec } from "./course";
+import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
 import { SurfaceId } from "./surfaces";
 import { Sim, SwingMode } from "./world";
@@ -46,7 +46,7 @@ function fullShotDistance(sim: Sim): number {
 describe("cart in the world", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(legacyHoleSpec());
+    sim = await Sim.create(fixedHoleSpec());
   });
 
   it("starts in stationary mode and toggles to cart mode on the mode key", () => {
@@ -105,14 +105,14 @@ describe("cart in the world", () => {
 
   it("exposes the terrain and surfaces built from the hole it was created with", () => {
     expect(sim.terrain.spec.fieldSize).toBe(160);
-    expect(sim.terrain.spec.tee).toEqual({ x: -68, z: 0 });
+    expect(sim.terrain.spec.tee).toEqual({ x: -45, z: 0 });
     expect(sim.surfaces.surfaceAt(sim.terrain.cupPosition.x, sim.terrain.cupPosition.z)).toBe(
       SurfaceId.Green,
     );
   });
 
   it("loadHole swaps the ground collider and re-tees onto the new hole", () => {
-    const next: HoleSpec = { ...legacyHoleSpec(), seed: 999, tee: { x: 20, z: -20 } };
+    const next: HoleSpec = { ...fixedHoleSpec(), seed: 999, tee: { x: 20, z: -20 } };
     sim.loadHole(next);
 
     expect(sim.terrain.spec.seed).toBe(999);
@@ -132,7 +132,7 @@ describe("cart in the world", () => {
 describe("striking the ball from the cart", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(legacyHoleSpec());
+    sim = await Sim.create(fixedHoleSpec());
   });
 
   it("counts a stroke and launches the ball when the cart is parked next to it", () => {
@@ -176,15 +176,16 @@ describe("striking the ball from the cart", () => {
 
   it("sends the ball where the turret points, not where the chassis points", () => {
     // Turret swung a quarter-turn from the chassis heading; the ball must follow the turret.
-    // Deliberately the iron, not the driver: the tee sits on the -X edge with z = 0, so there
-    // is only FIELD_SIZE/2 of room sideways and a driver carries past it. A shot that leaves
-    // the field is returned to the tee, which would leave the ball where it started and pass
-    // any "it moved along Z" check by accident -- hence the explicit out-of-bounds assertion.
+    // Deliberately the iron, not the driver, aimed toward the dog-leg apex side (negative Z):
+    // aimed the other way this shot lands in a water pocket the procedural terrain happens to
+    // carve at positive Z for this fixture, and a water penalty also returns the ball to the
+    // tee -- which would leave the ball where it started and pass any "it moved along Z" check
+    // by accident -- hence the explicit out-of-bounds assertion.
     const teed = { ...sim.current.position };
     play(sim, [
       ENTER_CART_MODE,
       { ticks: 1, intent: { selectClub: ClubType.Iron } },
-      { ticks: seconds(1), intent: { aimDelta: Math.PI / 2 / seconds(1) } },
+      { ticks: seconds(1), intent: { aimDelta: -Math.PI / 2 / seconds(1) } },
       { ticks: seconds(1.2), intent: { fire: true } },
       { ticks: 2, intent: {} },
     ]);
@@ -280,7 +281,7 @@ describe("striking the ball from the cart", () => {
     // `Sim.launch` used to hardcode DEFAULT_CLUB, so what needs proving is that selection
     // reaches Ballistics at all, and the two clubs' relative carry is what shows it.
     const putterDistance = fullShotDistance(sim);
-    const driverSim = await Sim.create(legacyHoleSpec());
+    const driverSim = await Sim.create(fixedHoleSpec());
     play(driverSim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
     const driverDistance = fullShotDistance(driverSim);
 

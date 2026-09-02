@@ -19,10 +19,10 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 1 | Par per hole + scorecard | **→ Phase 1.75** | `Sim.strokes` and `holedOut` exist. Needs `par` on the hole and a per-round tally. Pulled forward: image 13's results screen has nothing to display without it. |
-| 2 | Multi-hole course (front 9) | READY | `terrain.ts` already supports N pads; generalise tee/cup from one pair to a list. Phase 1.75 ships the nine-column scorecard layout with one hole live, so this fills columns without touching UI. |
+| 2 | Multi-hole course (front 9) | DONE | Delivered by Phase 2.5. `generateCourse(seed, 9)` returns nine independently-specified holes; `main.ts` plays hole 0. Advancing between them needs Phase 1.75's screen transition, because the renderer's ground mesh is built once at construction — `Sim.loadHole` is the sim-side half and already exists. See `docs/superpowers/specs/2026-09-01-procedural-course-design.md`. |
 | 3 | Club selection wired to the swing | **DONE** | Phase 2. `Sim.launch` takes a `club` param; the cart owns the equipped club and 1/2/3 select it. |
 | 4 | Reload timers gating re-fire | **DONE** | Phase 2. Owned by `Cart`. Club-swap deliberately does *not* cancel a reload, or swapping away and back would be the game's fastest fire rate. |
-| 5 | Aim spread wired with a seeded RNG | READY | `applyAimSpread` takes an injected `random` and nothing injects one. Port `mulberry32` (see REUSE-MAP). Still true after Phase 2 — the cart fires with no spread at all. |
+| 5 | Aim spread wired with a seeded RNG | READY | `applyAimSpread` takes an injected `random` and nothing injects one. The port is done — `mulberry32` and `hashChannel` are in `src/sim/rng.ts` as of Phase 2.5 — so this is now just wiring a per-shot channel into the call. Still true after Phase 2: the cart fires with no spread at all. |
 | 6 | Lie affects the shot, not just the roll | IDEA | Ball in rough/sand should lose launch power. Natural extension of `surfaces.ts`. |
 | 7 | Backspin / descent-angle model | IDEA | Would fix the driver's 0.86 roll/carry ratio at the source rather than via loft. |
 | 8 | Mulligan / undo last stroke | IDEA | Cheap with `lastSafePosition` already tracked. |
@@ -67,6 +67,7 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 | 26 | Dog-leg holes | IDEA | `surfaces.ts` fairway corridor is currently a straight tee→cup segment; make it a polyline. |
 | 27 | Wind | IDEA | Cheap and very golf. A constant force in the ball integrator. |
 | 28 | Elevated tees / greens | IDEA | Pads already support arbitrary height; currently they inherit local terrain. |
+| 28a | Blend-band gradient cap | IDEA | The corridor's 10 m blend band (between `HALF_WIDTH` and `HALF_WIDTH + BLEND_WIDTH`) — the carving lerp in `terrain.ts`'s `heightAt`, between centreline height and free noise — can locally exceed 40° of gradient where macro-noise relief is large. Measured on a shipped nine-hole course, roughly 6–7% of fairway-classified ground in that band is steeper than its own blended `crr` (surfaces.ts) can arrest, so a ball landing there never settles there. Found in the final whole-branch review of Phase 2.5; not an explicit design target of the Task 9 slope-budget system, which only bounds the green and corridor interior — the blend band was never budgeted or tested. Accepted as-is for now (arguably desirable "fairway edges roll you toward the rough" flavor), not a bug to fix. Needs its own design decision later: either a dedicated blend-band gradient cap, or formally accepting the current behaviour. |
 
 ## Presentation
 

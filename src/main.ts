@@ -5,20 +5,30 @@ import { RenderScene } from "./render/scene";
 import type { FrameView } from "./render/scene";
 import { FIXED_DT, Sim, SwingMode } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
-import { legacyHoleSpec } from "./sim/course";
+import { generateCourse } from "./sim/course";
+
+/**
+ * Fixed until a course-select screen exists (Phase 1.75). Changing it changes every hole, which
+ * is the whole point of the seed -- and is the cheapest way to eyeball generation variety
+ * during development.
+ */
+const COURSE_SEED = 2026;
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
   const hud = readHud();
   if (!container || !hud) throw new Error("expected #app and the #hud elements in index.html");
 
-  // One hole, hard-coded, until generateCourse exists. Replaced in Task 14.
-  const sim = await Sim.create(legacyHoleSpec());
+  // One course, nine holes, one seed. Playing past hole 0 is Phase 1.75's round flow: the
+  // renderer's ground mesh is built once, so advancing needs a screen transition, not just
+  // sim.loadHole.
+  const course = generateCourse(COURSE_SEED, 9);
+  const sim = await Sim.create(course.holes[0]);
   const render = new RenderScene(container, sim.terrain);
   const input = new KeyboardMouseSource(render.renderer.domElement);
 
   // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
-  (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = { sim, render };
+  (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = { sim, render, course };
 
   // Not part of PlayerIntent: "start the hole again" is a screen-level action that Phase 1.75's
   // ScreenManager will own via the results screen's NEXT HOLE. This is a dev affordance until then.

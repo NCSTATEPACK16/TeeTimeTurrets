@@ -275,6 +275,65 @@ corrected in the same phase:
    scooped. Firing in that window gets a blank. Harmless, but it is why the hole opens with a
    brief unloaded moment rather than a loaded turret.
 
+## Phase 2.5 — The Course — ✅ DONE
+
+Independent of Phase 1.75, so the two may land in either order.
+Design: `docs/superpowers/specs/2026-09-01-procedural-course-design.md`.
+Plan: `docs/superpowers/plans/2026-09-01-procedural-course-generation.md`.
+Source research: `docs/RESEARCH-TERRAIN.md` — its architecture was adopted, its constants
+rejected. `BACKLOG.md #2` (multi-hole course) is promoted into this phase.
+
+**Built:** `src/sim/course.ts` (HoleSpec/Course, the seven playability checks, rejection
+sampling), `src/sim/spline.ts` (centripetal Catmull-Rom corridor centreline), `src/sim/rng.ts`
+(mulberry32 + channel hashing). `terrain.ts` and `surfaces.ts` became factories over one spec;
+`world.ts` takes the hole it is playing.
+
+**What deliberately did not change:** the Delaunay render mesh, hierarchical jitter, hexagonal
+base grid and Voronoi biome colouring from the research's §1.2/§2/§3 are deferred. They produce
+exactly the geometry `tools/sceneGate.mjs` exists to guard, and that gate is still unbuilt
+(Phase 1) — so deferring buys time to build the gate before the geometry that needs it arrives.
+The Blender primitive-graph prop exporter pairs with that deferred phase, not this one.
+
+**The measured constant.** The per-octave max gradient `k` in `A = G / (f * k)` was measured
+directly against the installed `simplex-noise` build: max ‖∇S‖ = **7.333** (rms 2.955, mean
+2.672), over 1,002,001 samples (rms and mean as first measured in the original derivation
+sweep; `npm run probe`'s own assertion re-derives and asserts only `max`, at a different PRNG
+seed, and currently reports mean 2.712 for that run — the two means differ only because of the
+seed, not a real discrepancy). Neither prior source was right — this module used 2π, and
+the research's 2.5 is the *mean* gradient, not the max. The research's published amplitudes
+(0.12 / 1.40 / 14.40 m) are 2.9× too large and would bust the green's budget on the micro octave
+alone, so they were not used. `k` is asserted in `npm run probe` because a dependency bump can
+silently invalidate all three amplitudes.
+
+**Re-baselined figures.** Terrain changed (two octaves → three with budget masking and corridor
+carving) and `crr` became continuous across surface boundaries, so these moved for stated
+reasons. Phase 0 / Phase 1.5 → Phase 2.5:
+
+| | Phase 0/1.5 | Phase 2.5 | cause |
+|---|---|---|---|
+| terrain mean slope | 4.3° | 4.9° | three-octave budget masking replaces the two-octave field |
+| terrain max slope | 12.5° | 44.5° | the corridor-carving lerp in `terrain.ts`'s `heightAt` blends centreline height into free noise across the 10 m `BLEND_WIDTH` band, and that blend can approach a 45° gradient where macro relief is large (the rough itself stays inside its own `GRAD_ROUGH` budget everywhere measured) |
+| driver total | 129 m | 106.4 m | terrain relief and continuous crr |
+| driver carry / roll | 69.5 / 59.5 m | 65.3 / 41.0 m | as above |
+| putter settle | 3.2 s | 2.85 s | crr no longer steps at the fairway edge |
+| surface mix | 26 m hard corridor | green 1.5% / fairway 19.2% / rough 49.4% / sand 3.2% / water 26.7% | 15 m corridor + 10 m graded edge |
+| candidate acceptance | — | 94.5% (189/200) | first measurement; research's 80–85% not applicable |
+
+**Gate passed:**
+- [x] All Vitest suites green (`npm test`).
+- [x] `tsc --noEmit` clean.
+- [ ] The four new probe assertions pass. Three do (noise gradient k, course playability, and
+      the acceptance report, which only reports); the fourth, driver distance, fails on the
+      pre-existing roll/carry gap named below — `npm run probe` exits 1 on that check alone.
+- [x] A generated 9-hole course has every hole satisfy all seven checks.
+- [x] The Phase 0 tunneling check still passes: full-power shot, ball Y stays bounded.
+- [x] Re-baselined figures recorded above with their causes, not silently replaced.
+
+**Still open:** the driver's roll/carry ratio is still the Phase 0 item — club balance wants a
+play session, and changing `loftDeg` during this phase would have confounded the re-baseline.
+Advancing through the nine holes needs Phase 1.75's screen transition: `Sim.loadHole` exists and
+is tested, but the renderer's ground mesh is built once at construction.
+
 ## Phase 3 — Targets, ragdolls, pickups
 
 - [ ] `src/sim/entities/Target.ts`: primitive capsule ragdoll (no skinned meshes — matches the

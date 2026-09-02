@@ -6,8 +6,8 @@ import { CART_COLLIDER, Cart, computeMuzzle } from "./entities/Cart";
 import type { HoleSpec, Vec3 } from "./course";
 import { CUP_RADIUS, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
-import { SURFACES, SurfaceId, createSurfaces } from "./surfaces";
-import type { Surfaces } from "./surfaces";
+import { SURFACES, SurfaceId, createSurfaceTuning, createSurfaces } from "./surfaces";
+import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 
 export type { Vec3 } from "./course";
 
@@ -191,6 +191,9 @@ export class Sim {
   private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly parkedScratch: PlayerIntent = neutralIntent();
+  /** Two, not one: the cart and the ball are at different positions within the same tick. */
+  private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
+  private readonly ballTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   /** True when the last shot left the field and was returned to the tee. UI can read this. */
   lastShotOutOfBounds = false;
   /** True when the last shot found water and was returned with a penalty. */
@@ -373,11 +376,8 @@ export class Sim {
 
     const driving = this.mode === SwingMode.Cart;
     const c = this.cart.position;
-    this.cart.step(
-      driving ? intent : this.parkedIntent(intent),
-      FIXED_DT,
-      this.surfaces.tuningAt(c.x, c.z),
-    );
+    this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
+    this.cart.step(driving ? intent : this.parkedIntent(intent), FIXED_DT, this.cartTuningScratch);
 
     if (driving) this.moveCartBody();
 
@@ -483,7 +483,8 @@ export class Sim {
    */
   private applySurfaceResistance(): void {
     const p = this.current.position;
-    const tuning = this.surfaces.tuningAt(p.x, p.z);
+    const tuning = this.ballTuningScratch;
+    this.surfaces.tuningAt(p.x, p.z, tuning);
     const v = this.ball.linvel();
 
     const horizontalSpeed = Math.hypot(v.x, v.z);
