@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { CLUB_STATS, ClubType } from "../../physics/Ballistics";
 import { SURFACES, SurfaceId } from "../surfaces";
 import type { SurfaceTuning } from "../surfaces";
-import { CART_COLLIDER, CART_TUNING, Cart, TireType, computeMuzzle } from "./Cart";
+import { CART_COLLIDER, CART_TUNING, Cart, MAX_AMMO, STARTING_AMMO, TireType, computeMuzzle } from "./Cart";
 import type { CartIntent } from "./Cart";
 
 /**
@@ -372,5 +372,50 @@ describe("Cart tire type is a stat, not a skin", () => {
     turf.step(idle({ steer: 1 }), DT, FAIRWAY);
     street.step(idle({ steer: 1 }), DT, FAIRWAY);
     expect(Math.abs(turf.heading)).toBeGreaterThan(Math.abs(street.heading));
+  });
+});
+
+describe("Cart ammo", () => {
+  let cart: Cart;
+  beforeEach(() => {
+    cart = new Cart();
+  });
+
+  it("starts at STARTING_AMMO", () => {
+    expect(cart.ammo).toBe(STARTING_AMMO);
+  });
+
+  it("addAmmo clamps at MAX_AMMO", () => {
+    cart.addAmmo(MAX_AMMO);
+    expect(cart.ammo).toBe(MAX_AMMO);
+  });
+
+  it("addAmmo clamps a near-cap value rather than overshooting", () => {
+    cart.ammo = 90;
+    cart.addAmmo(30);
+    expect(cart.ammo).toBe(100);
+  });
+
+  it("fire() decrements ammo by 1 and sets shot.hasBall on a real shot", () => {
+    cart.fire(1);
+    expect(cart.ammo).toBe(STARTING_AMMO - 1);
+    expect(cart.shot.hasBall).toBe(true);
+  });
+
+  it("fire() at 0 ammo leaves ammo at 0, sets hasBall false, and still recoils", () => {
+    cart.ammo = 0;
+    const before = { x: cart.recoil.x, z: cart.recoil.z };
+    cart.fire(1);
+    expect(cart.ammo).toBe(0);
+    expect(cart.shot.hasBall).toBe(false);
+    expect(cart.recoil.x).not.toBeCloseTo(before.x, 9);
+  });
+
+  it("fire() while reloading does not touch ammo or hasBall", () => {
+    cart.fire(1);
+    const ammoAfterFirstShot = cart.ammo;
+    const fired = cart.fire(1);
+    expect(fired).toBe(false);
+    expect(cart.ammo).toBe(ammoAfterFirstShot);
   });
 });
