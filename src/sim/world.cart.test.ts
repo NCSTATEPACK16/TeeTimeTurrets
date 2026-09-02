@@ -144,7 +144,7 @@ describe("cart in the world", () => {
     for (const b of balls) b.state = "flying";
     expect(pool.acquire()).toBeNull();
 
-    const next: HoleSpec = { ...legacyHoleSpec(), seed: 555, tee: { x: 30, z: 15 } };
+    const next: HoleSpec = { ...fixedHoleSpec(), seed: 555, tee: { x: 30, z: 15 } };
     sim.loadHole(next);
 
     // Every ball must be back to idle -- acquire() must succeed again immediately.
@@ -165,7 +165,7 @@ describe("cart in the world", () => {
     for (const b of balls) b.state = "flying";
     expect(pool.acquire()).toBeNull();
 
-    const next: HoleSpec = { ...legacyHoleSpec(), seed: 777, tee: { x: -10, z: 40 } };
+    const next: HoleSpec = { ...fixedHoleSpec(), seed: 777, tee: { x: -10, z: 40 } };
     sim.loadHole(next);
 
     // loadHole() does not reset `mode`, so the sim is still in cart mode from the toggle above.
@@ -240,7 +240,7 @@ describe("striking the ball from the cart", () => {
 describe("cart-mode ammo-aware combat shots", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(legacyHoleSpec());
+    sim = await Sim.create(fixedHoleSpec());
   });
 
   it("a fire with ammo spawns a pooled ball at the muzzle and it flies", () => {

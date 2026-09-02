@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import RAPIER from "@dimforge/rapier3d-compat";
-import { heightAt } from "../terrain";
 import { BallPool, LANDED_BALL_DESPAWN_S, POOL_SIZE } from "./BallPool";
 
 const DT = 1 / 60;
+
+/** BallPool takes its height function injected -- these tests supply a flat one rather than
+ * depending on any particular terrain, per the leaf-module design. */
+const heightAt = (_x: number, _z: number) => 0;
 
 describe("BallPool", () => {
   let world: RAPIER.World;
