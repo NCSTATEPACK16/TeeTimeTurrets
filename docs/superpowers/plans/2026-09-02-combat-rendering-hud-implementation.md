@@ -2165,10 +2165,10 @@ function clamp01(v: number): number {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run src/ui/hudState.test.ts`
-Expected: PASS, 15 tests.
+Expected: PASS, 16 tests.
 
 Run: `npm test`
-Expected: PASS, 267 tests.
+Expected: PASS, 268 tests.
 
 Run: `npx tsc --noEmit`
 Expected: clean.
@@ -2375,7 +2375,7 @@ Keep `turretLoaded` in `main.ts`: it feeds `FrameView`, not the HUD.
 - [ ] **Step 4: Verify**
 
 Run: `npx tsc --noEmit` — clean. An unused-import error here means a leftover in `main.ts`; delete it rather than suppressing the rule.
-Run: `npm test` — PASS, 267 tests.
+Run: `npm test` — PASS, 268 tests.
 
 - [ ] **Step 5: See it in the running game**
 
@@ -2557,7 +2557,7 @@ In §2's table, mark H6 and H7 as built and name `src/ui/hud.ts` as the presenta
 
 ```bash
 npx tsc --noEmit          # clean
-npm test                  # 267 pass
+npm test                  # 268 pass
 npm run gate              # GATE PASS, 5 subjects
 npm run smoke             # SMOKE PASS
 npm run probe             # exit 1 on driver distance ONLY, numbers identical to the baseline
@@ -2588,7 +2588,7 @@ condition rather than replace the mechanism."
 | Layer | Question it answers | Expected |
 |---|---|---|
 | `npx tsc --noEmit` | Does it typecheck under strict? | clean |
-| `npm test` | Are the rules and state machines right? | 267 pass |
+| `npm test` | Are the rules and state machines right? | 268 pass |
 | `npm run gate` | Has any procedural geometry silently changed? | GATE PASS, 5 subjects |
 | `npm run smoke` | Does the real browser path work end to end? | SMOKE PASS |
 | `npm run probe` | Did the feel and trajectory numbers move? | identical, `driver distance` still fails |
