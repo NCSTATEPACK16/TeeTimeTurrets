@@ -2,7 +2,10 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
-import { CART_COLLIDER, Cart, computeMuzzle } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, computeMuzzle } from "./entities/Cart";
+import { BallPool } from "./entities/BallPool";
+import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
+import type { Bucket } from "./entities/Pickup";
 import type { HoleSpec, Vec3 } from "./course";
 import { CUP_RADIUS, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
@@ -175,6 +178,13 @@ export class Sim {
   currentCart: CartTransform;
   /** The cart's authoritative state machine. Read for the HUD; drive it through `step`. */
   readonly cart = new Cart();
+  private ballPool!: BallPool;
+  /** One hardcoded bucket for now -- course-scale placement is explicitly out of scope, see
+   * docs/superpowers/specs/2026-09-02-cart-ammo-design.md §7. Populated in `create()` once the
+   * hole's tee position is known; a field initializer here would run before `terrain` exists. */
+  private readonly buckets: Bucket[] = [];
+  /** Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
+  private simTime = 0;
   mode: SwingMode = SwingMode.Stationary;
   /** True when the cart is close enough to a resting ball to scoop it up. */
   ballInReach = false;
@@ -264,6 +274,9 @@ export class Sim {
     // unless told otherwise. Enabling it now costs nothing -- the only dynamic body today is
     // the ball, and nudging your own ball by driving into it is correct behaviour anyway.
     sim.controller.setApplyImpulsesToDynamicBodies(true);
+
+    sim.ballPool = new BallPool(sim.world);
+    sim.buckets.push(createBucket(tee.x + 10, tee.z));
 
     sim.syncCurrent();
     sim.previous = sim.current;
@@ -387,6 +400,18 @@ export class Sim {
     // a player cancel their own shot by chasing it.
     this.ballLoaded = driving && this.ballInReach && this.isResting() && !this.holedOut;
 
+    this.simTime += FIXED_DT;
+    this.ballPool.step(FIXED_DT, this.simTime);
+
+    for (const bucket of this.buckets) {
+      stepBucket(bucket, FIXED_DT);
+      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) this.cart.addAmmo(BUCKET_REFILL_AMMO);
+    }
+    for (const landed of this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE)) {
+      this.cart.addAmmo(1);
+      this.ballPool.release(landed);
+    }
+
     if (this.cart.shot.fired) {
       this.cart.shot.fired = false;
       this.resolveShot();
@@ -434,36 +459,42 @@ export class Sim {
   }
 
   /**
-   * A shot plays the ball only if the ball is actually loaded. Otherwise it is a blank: the
-   * recoil has already been applied by the cart, and no stroke is counted.
-   *
-   * In cart mode the ball leaves from the club head on top of the turret (concept images 03 and
-   * 04), not from where it was lying -- so it is teleported to the muzzle first. Stationary mode
-   * keeps golf's own rule and plays it where it lies (image 02).
+   * Cart mode and stationary mode resolve a shot through entirely separate paths now: cart
+   * mode spawns from the ammo-gated BallPool, stationary mode plays the single Sim.ball where
+   * it lies. See docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1 for why they aren't
+   * unified.
    */
   private resolveShot(): void {
-    const playable =
-      this.mode === SwingMode.Cart ? this.ballLoaded : this.isResting() && !this.holedOut;
+    if (this.mode === SwingMode.Cart) {
+      this.lastShotWasStrike = this.cart.shot.hasBall;
+      if (!this.cart.shot.hasBall) return;
+
+      const pooled = this.ballPool.acquire();
+      if (!pooled) {
+        // All POOL_SIZE bodies are in flight simultaneously -- an extreme, likely
+        // untestable-in-practice case (spec §6). Cart.fire() already decremented ammo on the
+        // assumption a ball would spawn; refund it so this degrades to a true no-op rather
+        // than costing ammo for nothing.
+        this.cart.addAmmo(1);
+        return;
+      }
+
+      computeMuzzle(this.cart, this.muzzleScratch);
+      pooled.body.setTranslation(this.muzzleScratch, true);
+      pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+      pooled.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      pooled.body.setLinvel(
+        computeLaunchVelocity(this.cart.shot.club, this.cart.shot.charge01, this.cart.shot.yaw),
+        true,
+      );
+      return;
+    }
+
+    const playable = this.isResting() && !this.holedOut;
     this.lastShotWasStrike = playable;
     if (!playable) return;
 
-    if (this.mode === SwingMode.Cart) this.moveBallToMuzzle();
     this.launch(this.cart.shot.yaw, this.cart.shot.charge01, this.cart.shot.club);
-    this.ballLoaded = false;
-  }
-
-  /**
-   * Lifts the ball to the club head before launch. `previous` is overwritten alongside `current`
-   * so the renderer interpolates from the muzzle rather than smearing the ball across the course
-   * from wherever it was lying.
-   */
-  private moveBallToMuzzle(): void {
-    computeMuzzle(this.cart, this.muzzleScratch);
-    this.ball.setTranslation(this.muzzleScratch, true);
-    this.ball.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
-    this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    this.syncCurrent();
-    this.previous = this.current;
   }
 
   /** Where the ball is riding when loaded -- the renderer draws it there instead of on the course. */
