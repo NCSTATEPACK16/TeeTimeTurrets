@@ -95,7 +95,7 @@ export class BallPool {
 
   /** flying -> landed on sustained rest (mirrors world.ts's isGrounded/restTicks pattern);
    * landed -> idle after LANDED_BALL_DESPAWN_S with no pickup. */
-  step(dt: number, simTime: number): void {
+  step(_dt: number, simTime: number): void {
     for (const ball of this.balls) {
       if (ball.state === "flying") {
         const t = ball.body.translation();
