@@ -70,6 +70,10 @@ export const TIRE_TUNING: Readonly<Record<TireType, TireTuning>> = {
   [TireType.Turf]: { topSpeedScale: 1.06, offRoadPenalty: 1.25, grip: 1.15 },
 };
 
+export const STARTING_AMMO = 30;
+export const BUCKET_REFILL_AMMO = 30;
+export const MAX_AMMO = 100;
+
 /**
  * Physics capsule, not the visual shape. A rounded body slides off heightfield triangle seams
  * that a box catches on, and the KCC resolves contacts far better for it; the cart *looks* boxy
@@ -139,6 +143,7 @@ export interface CartOptions {
  */
 export interface CartShot {
   fired: boolean;
+  hasBall: boolean;
   club: ClubType;
   charge01: number;
   yaw: number;
@@ -165,6 +170,7 @@ export class Cart {
   /** Where the cart wants to move this tick. The controller decides where it actually goes. */
   readonly desiredTranslation: Vec3;
   readonly shot: CartShot;
+  ammo: number;
 
   private club: ClubType;
   private reload = 0;
@@ -181,7 +187,8 @@ export class Cart {
     this.club = options.club ?? ClubType.Driver;
     this.recoil = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
-    this.shot = { fired: false, club: this.club, charge01: 0, yaw: 0 };
+    this.ammo = STARTING_AMMO;
+    this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
   }
 
   get equippedClub(): ClubType {
@@ -217,6 +224,11 @@ export class Cart {
     this.chargeHeld = 0;
   }
 
+  /** Clamps to MAX_AMMO. Used by bucket refills and landed-ball pickups alike. */
+  addAmmo(n: number): void {
+    this.ammo = Math.min(MAX_AMMO, this.ammo + n);
+  }
+
   /**
    * Fire at `charge01` (0..1). Returns false and does nothing if still reloading, so the caller
    * can distinguish "shot taken" from "click ignored" without reading the timer itself.
@@ -239,7 +251,11 @@ export class Cart {
     this.reload = stats.reloadSeconds;
     this.chargeHeld = 0;
 
+    const hasBall = this.ammo > 0;
+    if (hasBall) this.ammo -= 1;
+
     this.shot.fired = true;
+    this.shot.hasBall = hasBall;
     this.shot.club = this.club;
     this.shot.charge01 = charge;
     this.shot.yaw = this.turretYaw;
