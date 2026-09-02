@@ -2,10 +2,14 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
-import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, computeMuzzle } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, computeMuzzle } from "./entities/Cart";
 import { BallPool } from "./entities/BallPool";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
+import { Target } from "./entities/Target";
+import { CombatRegistry, processContacts } from "./combat";
+import type { CombatContext } from "./combat";
+import { createStats } from "./stats";
 import type { HoleSpec, Vec3 } from "./course";
 import { CUP_RADIUS, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
@@ -118,6 +122,20 @@ const CART_SPAWN_OFFSET = 2.5;
  */
 const PICKUP_RANGE = 3.0;
 
+/**
+ * Where the hardcoded targets stand: fractions along the tee->cup corridor, with a lateral
+ * offset in metres so they are not a firing line down the middle of the fairway.
+ *
+ * Hardcoded for the same reason the bucket is (spec §7 of the ammo design): course-scale
+ * placement is a course-generation concern, and inventing one here would be the second source of
+ * truth for it. Three is enough to make hits, misses and knockdowns real.
+ */
+const TARGET_PLACEMENTS: readonly { along: number; lateral: number }[] = [
+  { along: 0.25, lateral: 5 },
+  { along: 0.5, lateral: -6 },
+  { along: 0.75, lateral: 7 },
+];
+
 /** KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one. */
 const CHARACTER_OFFSET = 0.02;
 const CART_MAX_SLOPE_CLIMB_DEG = 45;
@@ -183,6 +201,15 @@ export class Sim {
    * docs/superpowers/specs/2026-09-02-cart-ammo-design.md §7. Populated in `create()` once the
    * hole's tee position is known; a field initializer here would run before `terrain` exists. */
   private readonly buckets: Bucket[] = [];
+  /** Knockable ragdolls standing on this hole. Rebuilt by `loadHole`, stood back up by `reset`. */
+  readonly targets: Target[] = [];
+  /** Round-level counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
+  readonly stats = createStats();
+  /** Collider handle -> entity, so a drained collision event can be dispatched. */
+  private readonly registry = new CombatRegistry();
+  private eventQueue!: RAPIER.EventQueue;
+  /** Built once: `processContacts` runs every tick and must not allocate its context. */
+  private combatContext!: CombatContext;
   /** Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
   private simTime = 0;
   mode: SwingMode = SwingMode.Stationary;
@@ -249,15 +276,23 @@ export class Sim {
     const ballColliderDesc = RAPIER.ColliderDesc.ball(BALL_RADIUS)
       .setDensity(BALL_DENSITY)
       .setFriction(0.55)
-      .setRestitution(BALL_RESTITUTION);
-    sim.world.createCollider(ballColliderDesc, sim.ball);
+      .setRestitution(BALL_RESTITUTION)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    const ballCollider = sim.world.createCollider(ballColliderDesc, sim.ball);
 
     const spawn = cartSpawnPosition(terrain);
     sim.cartBody = sim.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z),
     );
     sim.cartCollider = sim.world.createCollider(
-      RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius),
+      RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+        // Rapier computes no contacts between two kinematic bodies by default, so cart-vs-cart
+        // shunting would generate no events at all once a second cart exists. Enabling it now
+        // costs nothing -- there is exactly one cart today.
+        .setActiveCollisionTypes(
+          RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
+        ),
       sim.cartBody,
     );
     sim.cart.position.x = spawn.x;
@@ -279,6 +314,19 @@ export class Sim {
     // checking against the correct hole's height field after loadHole() reassigns sim.terrain.
     sim.ballPool = new BallPool(sim.world, (x, z) => sim.terrain.heightAt(x, z));
     sim.buckets.push(createBucket(tee.x + 10, tee.z));
+
+    sim.eventQueue = new RAPIER.EventQueue(true);
+    sim.combatContext = {
+      registry: sim.registry,
+      stats: sim.stats,
+      onCartKilled: (cart) => sim.killCart(cart),
+    };
+    sim.registry.registerBall(ballCollider.handle, sim.ball);
+    for (const pooled of sim.ballPool.all) {
+      sim.registry.registerBall(pooled.body.collider(0).handle, pooled.body);
+    }
+    sim.registry.registerCart(sim.cartCollider.handle, sim.cart);
+    sim.buildTargets();
 
     sim.syncCurrent();
     sim.previous = sim.current;
@@ -305,6 +353,49 @@ export class Sim {
   }
 
   /**
+   * Stands the hole's targets up along the tee->cup corridor and registers their colliders so a
+   * contact against one can be dispatched. Split out because `loadHole` has to redo exactly this:
+   * a target's pose is baked at construction, so a new hole's terrain means new targets rather
+   * than moved ones.
+   */
+  private buildTargets(): void {
+    for (const target of this.targets) {
+      this.registry.unregisterTarget(target);
+      target.dispose();
+    }
+    this.targets.length = 0;
+
+    const tee = this.terrain.teePosition;
+    const cup = this.terrain.cupPosition;
+    const dx = cup.x - tee.x;
+    const dz = cup.z - tee.z;
+    const length = Math.hypot(dx, dz) || 1;
+    // Unit vector across the corridor, for the lateral offset.
+    const sideX = -dz / length;
+    const sideZ = dx / length;
+
+    for (const placement of TARGET_PLACEMENTS) {
+      const x = tee.x + dx * placement.along + sideX * placement.lateral;
+      const z = tee.z + dz * placement.along + sideZ * placement.lateral;
+      const target = new Target(this.world, { x, y: this.terrain.heightAt(x, z), z });
+      this.targets.push(target);
+      this.registry.registerTarget(target);
+    }
+  }
+
+  /**
+   * Death: a stroke penalty and a wait, mirroring the water-hazard rule rather than inventing a
+   * second shape for "you lost the ball/the cart." Guarded on `dead` so two lethal contacts in
+   * one tick cost one stroke, not two.
+   */
+  private killCart(cart: Cart): void {
+    if (cart.dead) return;
+    cart.dead = true;
+    cart.respawnTimer = RESPAWN_DELAY_S;
+    this.strokes += 1;
+  }
+
+  /**
    * Swap in a different hole. The ball, cart and controller are reused -- only the terrain,
    * the surfaces and the ground collider are rebuilt, then everything is re-teed.
    *
@@ -328,6 +419,7 @@ export class Sim {
     for (const bucket of this.buckets) {
       bucket.position = { x: tee.x + 10, z: tee.z };
     }
+    this.buildTargets();
 
     this.reset();
   }
@@ -347,8 +439,12 @@ export class Sim {
     this.syncCurrentCart();
 
     this.previous = this.current;
-    this.world.step();
+    // Stepping with the queue is what fills it; combat.ts drains it immediately afterwards, so
+    // no contact is ever carried into the following tick.
+    this.world.step(this.eventQueue);
     this.syncCurrent();
+    processContacts(this.eventQueue, this.combatContext);
+    for (const target of this.targets) target.step();
 
     // The heightfield has no walls, so a ball past its edge free-falls forever and never
     // satisfies isResting() -- the player would be locked out of swinging with only a
@@ -394,6 +490,17 @@ export class Sim {
    * club selection go through exactly one state machine and cannot drift between modes.
    */
   private stepCart(intent: PlayerIntent): void {
+    // The world keeps running while the cart is out of it: balls already in flight land, and
+    // bucket cooldowns keep ticking. Only the cart is frozen.
+    this.simTime += FIXED_DT;
+    this.ballPool.step(FIXED_DT, this.simTime);
+    for (const bucket of this.buckets) stepBucket(bucket, FIXED_DT);
+
+    if (this.cart.dead) {
+      this.stepRespawn();
+      return;
+    }
+
     if (intent.toggleMode) {
       this.mode = this.mode === SwingMode.Cart ? SwingMode.Stationary : SwingMode.Cart;
     }
@@ -412,11 +519,7 @@ export class Sim {
     // a player cancel their own shot by chasing it.
     this.ballLoaded = driving && this.ballInReach && this.isResting() && !this.holedOut;
 
-    this.simTime += FIXED_DT;
-    this.ballPool.step(FIXED_DT, this.simTime);
-
     for (const bucket of this.buckets) {
-      stepBucket(bucket, FIXED_DT);
       if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) this.cart.addAmmo(BUCKET_REFILL_AMMO);
     }
     for (const landed of this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE)) {
@@ -428,6 +531,26 @@ export class Sim {
       this.cart.shot.fired = false;
       this.resolveShot();
     }
+  }
+
+  /**
+   * Counts the respawn delay down and puts the cart back at the tee-adjacent spawn point when it
+   * expires. Intent is not read at all while dead -- drive, steer, aim, fire, club selection and
+   * the mode toggle are all ignored -- so ammo, reload and position are frozen for the duration.
+   */
+  private stepRespawn(): void {
+    this.ballLoaded = false;
+    this.ballInReach = false;
+    this.cart.respawnTimer -= FIXED_DT;
+    if (this.cart.respawnTimer > 0) return;
+
+    const spawn = cartSpawnPosition(this.terrain);
+    this.cart.position.x = spawn.x;
+    this.cart.position.y = spawn.y;
+    this.cart.position.z = spawn.z;
+    this.cart.revive();
+    this.cartFallSpeed = 0;
+    this.cartBody.setTranslation(spawn, true);
   }
 
   /** The player's intent with the driving axes removed, reusing one object per the no-alloc rule. */
@@ -495,6 +618,9 @@ export class Sim {
       }
 
       this.lastShotWasStrike = true;
+      // "A shot fired" for accuracy purposes is a ball actually leaving the muzzle -- distinct
+      // from ammo's own decrement, which a 0-ammo blank also triggers.
+      this.stats.shotsFired += 1;
       computeMuzzle(this.cart, this.muzzleScratch);
       pooled.body.setTranslation(this.muzzleScratch, true);
       pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
@@ -589,10 +715,12 @@ export class Sim {
     this.cart.position.z = spawn.z;
     this.cart.heading = 0;
     this.cart.turretOffset = 0;
-    this.cart.speed = 0;
-    this.cart.recoil.x = 0;
-    this.cart.recoil.z = 0;
+    // Health, death and momentum all clear here: a new hole starts alive, at full HP, standing
+    // still. Ammo deliberately survives -- it is a round-spanning resource, HP is not. `stats`
+    // survives too, being round-level rather than per-hole (sim/stats.ts).
+    this.cart.revive();
     this.cartFallSpeed = 0;
+    for (const target of this.targets) target.reset();
     this.cartBody.setTranslation(spawn, true);
     this.syncCurrentCart();
     this.previousCart = this.currentCart;

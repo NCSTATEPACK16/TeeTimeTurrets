@@ -4,7 +4,8 @@ import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
-import { STARTING_AMMO } from "./entities/Cart";
+import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO, STARTING_HP } from "./entities/Cart";
+import type { Cart } from "./entities/Cart";
 import type { BallPool, PooledBall } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { SurfaceId } from "./surfaces";
@@ -282,5 +283,136 @@ describe("cart-mode ammo-aware combat shots", () => {
     // also runs unconditionally inside stepCart every tick.
     expect(sim.cart.ammo).toBe(ammoBefore - 1);
     expect(sim.strokes).toBe(strokesBefore + (sim.lastShotWasStrike ? 1 : 0));
+  });
+});
+
+describe("targets, damage and respawn", () => {
+  let sim: Sim;
+  beforeEach(async () => {
+    sim = await Sim.create(fixedHoleSpec());
+  });
+
+  /** The private hook combat.ts calls on a kill. Driving HP to zero through a real contact is
+   * combat.test.ts's job; what this suite owns is what the *world* does about a death. */
+  function kill(s: Sim): void {
+    (s as unknown as { killCart: (cart: Cart) => void }).killCart(s.cart);
+  }
+
+  it("places standing targets on the course", () => {
+    expect(sim.targets.length).toBeGreaterThan(0);
+    for (const target of sim.targets) {
+      expect(target.isDown).toBe(false);
+      const pelvis = target.part("pelvis").body.translation();
+      expect(pelvis.y).toBeGreaterThan(sim.terrain.heightAt(pelvis.x, pelvis.z));
+    }
+  });
+
+  it("a ball fired into a target knocks it down and records the hit", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: { selectClub: ClubType.Putter } }]);
+
+    // Park the cart six metres short of the nearest target, aimed straight at it, and putt: at
+    // that standoff the putter's flat arc crosses the target plane at torso height. Placing the
+    // cart directly is the only way to get a repeatable firing line -- driving there would make
+    // the assertion a test of the terrain rather than of hit detection.
+    const torso = sim.targets[0].part("torso").body.translation();
+    const standoff = 6;
+    sim.cart.heading = 0;
+    sim.cart.turretOffset = 0;
+    sim.cart.position.x = torso.x - standoff;
+    sim.cart.position.z = torso.z;
+    sim.cart.position.y =
+      sim.terrain.heightAt(torso.x - standoff, torso.z) + CART_COLLIDER.groundOffset;
+
+    play(sim, [{ ticks: seconds(1), intent: { fire: true } }, { ticks: seconds(3), intent: {} }]);
+
+    expect(sim.targets[0].isDown).toBe(true);
+    expect(sim.stats.targetsDown).toBe(1);
+    expect(sim.stats.directHits).toBeGreaterThanOrEqual(1);
+  });
+
+  it("counts a shot that spawned a ball, and does not count a blank", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
+    expect(sim.stats.shotsFired).toBe(1);
+
+    sim.cart.ammo = 0;
+    play(sim, [{ ticks: seconds(3), intent: {} }]);
+    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
+    expect(sim.stats.shotsFired).toBe(1);
+  });
+
+  it("a death costs a stroke and freezes the cart for the respawn delay", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: seconds(1), intent: { throttle: 1 } }]);
+    const strokesBefore = sim.strokes;
+    const ammoBefore = sim.cart.ammo;
+
+    kill(sim);
+    expect(sim.cart.dead).toBe(true);
+    expect(sim.strokes).toBe(strokesBefore + 1);
+
+    const frozen = { ...sim.cart.position };
+    play(sim, [{ ticks: seconds(RESPAWN_DELAY_S - 0.5), intent: { throttle: 1, fire: true } }]);
+
+    expect(sim.cart.dead).toBe(true);
+    expect(sim.cart.position.x).toBeCloseTo(frozen.x, 9);
+    expect(sim.cart.position.z).toBeCloseTo(frozen.z, 9);
+    expect(sim.cart.ammo).toBe(ammoBefore);
+  });
+
+  it("respawns at the tee-adjacent spawn point at full health once the delay elapses", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: seconds(2), intent: { throttle: 1 } }]);
+    kill(sim);
+    play(sim, [{ ticks: seconds(RESPAWN_DELAY_S + 0.5), intent: {} }]);
+
+    expect(sim.cart.dead).toBe(false);
+    expect(sim.cart.health.hp).toBe(STARTING_HP);
+    expect(sim.cart.position.x).toBeCloseTo(sim.terrain.teePosition.x - 2.5, 5);
+    expect(sim.cart.position.z).toBeCloseTo(sim.terrain.teePosition.z, 5);
+  });
+
+  it("only one death per life: a second kill while dead does not double the penalty", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    kill(sim);
+    const strokes = sim.strokes;
+    kill(sim);
+    expect(sim.strokes).toBe(strokes);
+  });
+
+  it("reset() heals a mid-respawn cart and stands every target back up", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    sim.targets[0].knockDown(sim.targets[0].part("torso"), { x: 40, y: 0, z: 0 });
+    kill(sim);
+    expect(sim.cart.dead).toBe(true);
+
+    sim.reset();
+
+    expect(sim.cart.dead).toBe(false);
+    expect(sim.cart.respawnTimer).toBe(0);
+    expect(sim.cart.health.hp).toBe(STARTING_HP);
+    expect(sim.targets[0].isDown).toBe(false);
+  });
+
+  it("keeps round stats across reset() -- a round is a sequence of holes", () => {
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
+    expect(sim.stats.shotsFired).toBe(1);
+
+    sim.reset();
+    expect(sim.stats.shotsFired).toBe(1);
+
+    sim.loadHole({ ...fixedHoleSpec(), seed: 4242 });
+    expect(sim.stats.shotsFired).toBe(1);
+  });
+
+  it("loadHole rebuilds the targets onto the new hole's terrain", () => {
+    const next: HoleSpec = { ...fixedHoleSpec(), seed: 321, tee: { x: 25, z: -25 } };
+    sim.loadHole(next);
+
+    expect(sim.targets.length).toBeGreaterThan(0);
+    for (const target of sim.targets) {
+      expect(target.isDown).toBe(false);
+      const pelvis = target.part("pelvis").body.translation();
+      expect(pelvis.y).toBeGreaterThan(sim.terrain.heightAt(pelvis.x, pelvis.z));
+    }
   });
 });

@@ -58,6 +58,9 @@ export class BallPool {
         .setDensity(POOLED_BALL_DENSITY)
         .setFriction(POOLED_BALL_FRICTION)
         .setRestitution(POOLED_BALL_RESTITUTION)
+        // Combat balls are the ones that hit things, so they carry the collision events
+        // sim/combat.ts dispatches on.
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
         .setEnabled(false);
       world.createCollider(colliderDesc, body);
 
@@ -132,6 +135,12 @@ export class BallPool {
         }
       }
     }
+  }
+
+  /** Every pooled body, whatever its state -- for one-time setup like registering colliders for
+   * collision events. Not for per-tick use; `ballsNear` is the query path. */
+  get all(): readonly PooledBall[] {
+    return this.balls;
   }
 
   /** "landed" balls only, for pickup checks. */
