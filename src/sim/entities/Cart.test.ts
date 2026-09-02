@@ -2,7 +2,16 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { CLUB_STATS, ClubType } from "../../physics/Ballistics";
 import { SURFACES, SurfaceId } from "../surfaces";
 import type { SurfaceTuning } from "../surfaces";
-import { CART_COLLIDER, CART_TUNING, Cart, MAX_AMMO, STARTING_AMMO, TireType, computeMuzzle } from "./Cart";
+import {
+  CART_COLLIDER,
+  CART_TUNING,
+  Cart,
+  MAX_AMMO,
+  STARTING_AMMO,
+  STARTING_HP,
+  TireType,
+  computeMuzzle,
+} from "./Cart";
 import type { CartIntent } from "./Cart";
 
 /**
@@ -417,5 +426,59 @@ describe("Cart ammo", () => {
     const fired = cart.fire(1);
     expect(fired).toBe(false);
     expect(cart.ammo).toBe(ammoAfterFirstShot);
+  });
+});
+
+describe("Cart health, death and shunting", () => {
+  let cart: Cart;
+  beforeEach(() => {
+    cart = new Cart();
+  });
+
+  it("starts alive at full HP", () => {
+    expect(cart.health.hp).toBe(STARTING_HP);
+    expect(cart.health.max).toBe(STARTING_HP);
+    expect(cart.dead).toBe(false);
+    expect(cart.respawnTimer).toBe(0);
+  });
+
+  it("adds shunt velocity into the desired translation the way recoil already does", () => {
+    cart.shuntVelocity.x = 4;
+    cart.step(idle(), DT, FAIRWAY);
+    expect(cart.desiredTranslation.x).toBeGreaterThan(0);
+  });
+
+  it("decays shunt velocity exponentially at the recoil rate", () => {
+    cart.shuntVelocity.x = 10;
+    cart.shuntVelocity.z = -6;
+    cart.step(idle(), DT, FAIRWAY);
+
+    const decay = Math.exp(-CART_TUNING.recoilDecay * DT);
+    expect(cart.shuntVelocity.x).toBeCloseTo(10 * decay, 9);
+    expect(cart.shuntVelocity.z).toBeCloseTo(-6 * decay, 9);
+  });
+
+  it("shunt is a velocity term, never an impulse -- it runs out on its own", () => {
+    cart.shuntVelocity.x = 12;
+    run(cart, 3, idle());
+    expect(Math.abs(cart.shuntVelocity.x)).toBeLessThan(0.05);
+  });
+
+  it("revive() restores full HP and clears death and momentum", () => {
+    cart.health.hp = 0;
+    cart.dead = true;
+    cart.respawnTimer = 1.2;
+    cart.speed = 8;
+    cart.recoil.x = 3;
+    cart.shuntVelocity.z = 2;
+
+    cart.revive();
+
+    expect(cart.health.hp).toBe(STARTING_HP);
+    expect(cart.dead).toBe(false);
+    expect(cart.respawnTimer).toBe(0);
+    expect(cart.speed).toBe(0);
+    expect(cart.recoil.x).toBe(0);
+    expect(cart.shuntVelocity.z).toBe(0);
   });
 });
