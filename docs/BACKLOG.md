@@ -43,6 +43,7 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 | 16a | Ammo per club | **→ Phase 3** | **Superseded in scope**: implemented as one shared pool per cart, not per-club, per explicit user simplification. See `docs/superpowers/specs/2026-09-02-cart-ammo-design.md` §1. |
 | 16b | Input abstraction (`InputSource`) | **DONE** | Phase 2. Binding table is a pure function (`input/mapping.ts`); `ScriptedInputSource` is the second implementation and drives the whole Phase 2 gate headlessly, which is what proves the interface is not keyboard-shaped. |
 | 16c | Cart cosmetics: turret skin, chassis paint, tire type | **PART DONE** / **3.5** (UI) | Phase 2 landed `TIRE_TUNING` as a real trade (turf fastest on fairway, worst in sand; knobby the reverse). Turret skin and chassis paint are still unbuilt — no reader and no UI until 3.5. |
+| 16d | Cart-mode `sim.ballLoaded`/`view.ballLoaded` reads are stale | READY | The ammo/pool fork (`docs/superpowers/specs/2026-09-02-cart-ammo-design.md`) replaced cart mode's "drive over the ball to load it" mechanic that `ballLoaded` used to describe, but `src/render/scene.ts` and `src/main.ts` still read it in cart mode for ball visibility, the turret-riding render, and HUD strings like "fire to play it". `docs/superpowers/plans/2026-09-02-cart-ammo-implementation.md`'s Task 4 notes flagged this as a known gap, out of scope for that plan; needs fixing whenever ammo-aware rendering/HUD work is scoped. |
 
 ## CTF and modes
 
