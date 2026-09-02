@@ -215,13 +215,6 @@ export class Sim {
   /** Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
   private simTime = 0;
   mode: SwingMode = SwingMode.Stationary;
-  /** True when the cart is close enough to a resting ball to scoop it up. */
-  ballInReach = false;
-  /**
-   * True when the ball is riding the turret rather than lying on the course. While loaded it is
-   * rendered at the muzzle and a shot plays it; while not loaded a shot is a blank.
-   */
-  ballLoaded = false;
   /** True when the last shot played the ball rather than being a blank fired for propulsion. */
   lastShotWasStrike = false;
   /** Vertical velocity of the cart, integrated here because a KCC has no gravity of its own. */
@@ -515,12 +508,6 @@ export class Sim {
 
     if (driving) this.moveCartBody();
 
-    const b = this.current.position;
-    this.ballInReach = Math.hypot(b.x - c.x, b.z - c.z) <= PICKUP_RANGE;
-    // The ball only rides the turret while it is settled: scooping one still rolling would let
-    // a player cancel their own shot by chasing it.
-    this.ballLoaded = driving && this.ballInReach && this.isResting() && !this.holedOut;
-
     for (const bucket of this.buckets) {
       if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) this.cart.addAmmo(BUCKET_REFILL_AMMO);
     }
@@ -541,8 +528,6 @@ export class Sim {
    * the mode toggle are all ignored -- so ammo, reload and position are frozen for the duration.
    */
   private stepRespawn(): void {
-    this.ballLoaded = false;
-    this.ballInReach = false;
     this.cart.respawnTimer -= FIXED_DT;
     if (this.cart.respawnTimer > 0) return;
 
@@ -603,6 +588,10 @@ export class Sim {
    */
   private resolveShot(): void {
     if (this.mode === SwingMode.Cart) {
+      // No ball is scooped off the course here and none ever will be: the ammo fork replaced
+      // "drive over the ball to load it" with a pooled-ball ammo counter, and this branch never
+      // touches Sim.ball. The old ballLoaded/ballInReach pair described the retired mechanic and
+      // made the course ball vanish onto a turret that could not play it (BACKLOG #16d).
       if (!this.cart.shot.hasBall) {
         this.lastShotWasStrike = false;
         return;

@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     charge01: 0,
     club: sim.cart.equippedClub,
     mode: sim.mode,
-    ballLoaded: sim.ballLoaded,
+    turretLoaded: turretLoaded(sim),
   };
 
   const loop = new GameLoop({
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
       view.charge01 = sim.cart.charge;
       view.club = sim.cart.equippedClub;
       view.mode = sim.mode;
-      view.ballLoaded = sim.ballLoaded;
+      view.turretLoaded = turretLoaded(sim);
 
       render.draw(view);
       drawHud(hud, sim);
@@ -102,14 +102,21 @@ function drawHud(hud: Hud, sim: Sim): void {
   setText(hud.status, statusText(sim));
 }
 
+/**
+ * What rides the club head in cart mode is a round of ammo, not the course ball -- images 03 and
+ * 04, and what actually fires. In stationary mode there is no turret shot at all.
+ */
+function turretLoaded(sim: Sim): boolean {
+  return sim.mode === SwingMode.Cart && sim.cart.ammo > 0;
+}
+
 function statusText(sim: Sim): string {
   if (sim.holedOut) return "HOLED OUT — R to reset";
   if (!sim.cart.canFire) return `RELOADING ${sim.cart.reloadRemaining.toFixed(1)}s`;
   if (sim.lastShotInWater) return "WATER HAZARD — plus one stroke";
   if (sim.lastShotOutOfBounds) return "OUT OF BOUNDS — returned to the tee";
   if (sim.mode !== SwingMode.Cart) return "READY";
-  if (sim.ballLoaded) return "BALL LOADED — fire to play it";
-  return sim.ballInReach ? "BALL SETTLING…" : "NO BALL — fire a blank to boost";
+  return sim.cart.ammo > 0 ? "READY" : "NO AMMO — fire a blank to boost";
 }
 
 /** Guarded so an unchanged string does not dirty the DOM every frame at 60fps. */

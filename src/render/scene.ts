@@ -50,8 +50,8 @@ export interface FrameView {
   charge01: number;
   club: ClubType;
   mode: SwingMode;
-  /** True while the ball rides the turret: the course ball is hidden and the turret's is shown. */
-  ballLoaded: boolean;
+  /** True while a round of ammo rides the club head: drawn on the turret, ready to fire. */
+  turretLoaded: boolean;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -123,10 +123,6 @@ export class RenderScene {
 
     this.drawCart(view);
 
-    // Exactly one ball is ever visible. While loaded it is the turret's, so it tracks the
-    // barrel perfectly instead of being chased there by an interpolated world position.
-    this.ball.visible = !view.ballLoaded;
-
     // The ground aim arrow belongs to stationary mode, where the player is lining up a lie. In
     // cart mode the barrel itself shows where the shot is going.
     this.aimArrow.visible = view.mode === SwingMode.Stationary;
@@ -164,7 +160,7 @@ export class RenderScene {
     this.cart.setAimYaw(c.heading - c.turretYaw);
     this.cart.setClub(view.club);
     this.cart.setChargeVisual(view.charge01);
-    this.cart.setBallLoaded(view.ballLoaded);
+    this.cart.setBallLoaded(view.turretLoaded);
   }
 
   private frameChase(view: FrameView): void {
