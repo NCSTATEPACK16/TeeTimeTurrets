@@ -12,7 +12,7 @@ describe("BallPool", () => {
   beforeEach(async () => {
     await RAPIER.init();
     world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-    pool = new BallPool(world);
+    pool = new BallPool(world, heightAt);
   });
 
   it("acquire returns a distinct idle body each call up to POOL_SIZE", () => {
@@ -96,5 +96,24 @@ describe("BallPool", () => {
     expect(near).toHaveLength(1);
     expect(near[0].body).toBe(landed.body);
     expect(pool.ballsNear(50, 50, 1)).toHaveLength(0);
+  });
+
+  it("step() grounds a ball against the injected height function, not any real terrain", () => {
+    // A constant height far above real terrain (real heightAt(0,0) is within a few meters of 0).
+    // If BallPool ever silently reverted to importing a module-level heightAt instead of using
+    // the constructor-injected one, this ball would never satisfy the grounded check at this
+    // height and the test would fail.
+    const injectedGroundY = 500;
+    const injectedPool = new BallPool(world, () => injectedGroundY);
+
+    const ball = injectedPool.acquire()!;
+    ball.body.setTranslation({ x: 0, y: injectedGroundY + 0.1, z: 0 }, true);
+    ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+
+    for (let i = 0; i < 11; i++) injectedPool.step(DT, i * DT);
+    expect(ball.state).toBe("flying");
+
+    injectedPool.step(DT, 11 * DT);
+    expect(ball.state).toBe("landed");
   });
 });

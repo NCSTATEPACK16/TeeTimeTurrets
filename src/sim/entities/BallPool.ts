@@ -1,5 +1,4 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import { heightAt } from "../terrain";
 
 /** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
  * explicit out-of-scope list (docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1). */
@@ -37,8 +36,14 @@ const PARKED_POSITION = { x: 0, y: -1000, z: 0 };
 export class BallPool {
   private readonly balls: PooledBall[];
   private readonly restTicks = new WeakMap<RAPIER.RigidBody, number>();
+  private readonly heightAt: (x: number, z: number) => number;
 
-  constructor(world: RAPIER.World, poolSize: number = POOL_SIZE) {
+  constructor(
+    world: RAPIER.World,
+    heightAt: (x: number, z: number) => number,
+    poolSize: number = POOL_SIZE,
+  ) {
+    this.heightAt = heightAt;
     this.balls = [];
     for (let i = 0; i < poolSize; i++) {
       const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -47,6 +52,7 @@ export class BallPool {
         .setLinearDamping(POOLED_BALL_LINEAR_DAMPING)
         .setAngularDamping(POOLED_BALL_ANGULAR_DAMPING);
       const body = world.createRigidBody(bodyDesc);
+      body.setEnabled(false);
 
       const colliderDesc = RAPIER.ColliderDesc.ball(POOLED_BALL_RADIUS)
         .setDensity(POOLED_BALL_DENSITY)
@@ -78,19 +84,31 @@ export class BallPool {
 
   private beginFlight(ball: PooledBall): PooledBall {
     ball.state = "flying";
+    ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
     this.restTicks.set(ball.body, 0);
     return ball;
   }
 
-  /** -> idle, teleported off-world with its collider disabled. */
+  /** -> idle, teleported off-world with its collider disabled and the body itself disabled so it
+   * stops integrating under gravity while parked (a dynamic body never sleeps under constant
+   * gravity, so leaving it enabled would have it fall forever). */
   release(ball: PooledBall): void {
     ball.state = "idle";
     ball.body.setTranslation(PARKED_POSITION, true);
     ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     ball.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     ball.body.collider(0).setEnabled(false);
+    ball.body.setEnabled(false);
     this.restTicks.set(ball.body, 0);
+  }
+
+  /** Releases every ball not already idle. Used when swapping holes so stale in-flight/landed
+   * balls from the previous hole don't survive into the new one. */
+  releaseAll(): void {
+    for (const ball of this.balls) {
+      if (ball.state !== "idle") this.release(ball);
+    }
   }
 
   /** flying -> landed on sustained rest (mirrors world.ts's isGrounded/restTicks pattern);
@@ -100,7 +118,7 @@ export class BallPool {
       if (ball.state === "flying") {
         const t = ball.body.translation();
         const v = ball.body.linvel();
-        const grounded = t.y - heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
+        const grounded = t.y - this.heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
         const slow = Math.hypot(v.x, v.y, v.z) < REST_SPEED_THRESHOLD;
         const ticks = grounded && slow ? (this.restTicks.get(ball.body) ?? 0) + 1 : 0;
         this.restTicks.set(ball.body, ticks);
