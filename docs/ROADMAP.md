@@ -369,9 +369,10 @@ is tested, but the renderer's ground mesh is built once at construction.
       this is where it gets a model. The reference repo's `src/sim/damage.ts` is MIT but 83k —
       **take the shape, not the code**, and note it is not a `REUSE-MAP.md` entry precisely
       because it is too big to port cleanly (BACKLOG #16).
-- [ ] **Ammo** as a real resource — **in progress**, see
+- [x] **Ammo** as a real resource — **done**, see
   `docs/superpowers/specs/2026-09-02-cart-ammo-design.md` and
-  `docs/superpowers/plans/2026-09-02-cart-ammo-implementation.md`.
+  `docs/superpowers/plans/2026-09-02-cart-ammo-implementation.md`. Cart mode fires from a
+  pooled-ball ammo counter; stationary/STROKE mode's ball model is untouched.
 - [ ] **Mode-scoping for both, and this is a rule rather than a preference.** Finite ammo in
       stroke play can strand a player mid-hole with no legal way to finish, which breaks golf
       outright. `STROKE` runs with damage and ammo **disabled**; `CTF` and `TARGETS` enforce
