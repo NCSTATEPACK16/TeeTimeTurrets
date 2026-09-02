@@ -3,7 +3,7 @@ import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
 import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, computeMuzzle } from "./entities/Cart";
-import { BallPool } from "./entities/BallPool";
+import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { PARTS_PER_TARGET, Target } from "./entities/Target";
@@ -27,6 +27,10 @@ export const FIXED_DT = 1 / 60;
  * 32 pooled balls, and the no-allocation rule covers the fixed tick.
  */
 export const TRANSFORM_STRIDE = 7;
+
+/** As TRANSFORM_STRIDE, plus a trailing 1/0 active flag: an idle pool slot is parked far below
+ *  the world and must not be drawn where it is parked. */
+export const POOL_TRANSFORM_STRIDE = 8;
 
 const BALL_RADIUS = 0.15;
 
@@ -218,6 +222,10 @@ export class Sim {
   previousTargetTransforms = new Float32Array(0);
   /** Target part transforms from the most recent fixed step. */
   currentTargetTransforms = new Float32Array(0);
+  /** Pooled ball transforms from the previous fixed step, for render interpolation. */
+  previousPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
+  /** Pooled ball transforms from the most recent fixed step. */
+  currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** Round-level counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
   readonly stats = createStats();
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
@@ -340,6 +348,8 @@ export class Sim {
     sim.previous = sim.current;
     sim.syncCurrentCart();
     sim.previousCart = sim.currentCart;
+    sim.syncCurrentPool();
+    sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
   }
 
@@ -432,6 +442,8 @@ export class Sim {
     // new hole -- otherwise a landed ball at the previous hole's coordinates could still be
     // picked up for ammo here, and the bucket would sit wherever the last hole put it.
     this.ballPool.releaseAll();
+    this.syncCurrentPool();
+    this.previousPoolTransforms.set(this.currentPoolTransforms);
     const tee = this.terrain.teePosition;
     for (const bucket of this.buckets) {
       bucket.position = { x: tee.x + 10, z: tee.z };
@@ -455,6 +467,10 @@ export class Sim {
     this.previousTargetTransforms = this.currentTargetTransforms;
     this.currentTargetTransforms = swapTargets;
 
+    const swapPool = this.previousPoolTransforms;
+    this.previousPoolTransforms = this.currentPoolTransforms;
+    this.currentPoolTransforms = swapPool;
+
     this.previousCart = this.currentCart;
     this.stepCart(intent);
     this.syncCurrentCart();
@@ -467,6 +483,7 @@ export class Sim {
     processContacts(this.eventQueue, this.combatContext);
     for (const target of this.targets) target.step();
     this.syncCurrentTargets();
+    this.syncCurrentPool();
 
     // The heightfield has no walls, so a ball past its edge free-falls forever and never
     // satisfies isResting() -- the player would be locked out of swinging with only a
@@ -806,6 +823,33 @@ export class Sim {
         buffer[i + 6] = r.w;
         i += TRANSFORM_STRIDE;
       }
+    }
+  }
+
+  /**
+   * Flattens the pool into the current buffer. An idle ball is parked far below the world, so the
+   * active flag is what stops the renderer drawing thirty-two spheres at y = -1000.
+   */
+  private syncCurrentPool(): void {
+    const buffer = this.currentPoolTransforms;
+    const balls = this.ballPool.all;
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const flat = i * POOL_TRANSFORM_STRIDE;
+      const ball = balls[i];
+      if (!ball || ball.state === "idle") {
+        buffer[flat + 7] = 0;
+        continue;
+      }
+      const t = ball.body.translation();
+      const r = ball.body.rotation();
+      buffer[flat] = t.x;
+      buffer[flat + 1] = t.y;
+      buffer[flat + 2] = t.z;
+      buffer[flat + 3] = r.x;
+      buffer[flat + 4] = r.y;
+      buffer[flat + 5] = r.z;
+      buffer[flat + 6] = r.w;
+      buffer[flat + 7] = 1;
     }
   }
 }

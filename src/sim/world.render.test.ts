@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { generateCourse } from "./course";
-import { Sim, TRANSFORM_STRIDE } from "./world";
+import { POOL_TRANSFORM_STRIDE, Sim, SwingMode, TRANSFORM_STRIDE } from "./world";
+import { POOL_SIZE } from "./entities/BallPool";
 import { PARTS_PER_TARGET, TARGET_PART_SHAPES } from "./entities/Target";
+import { neutralIntent } from "../input/InputSource";
 
 /**
  * The render snapshot buffers, tested through Sim's public surface only. The renderer is a pure
@@ -86,3 +88,61 @@ describe("target part shapes", () => {
     expect(target.parts.map((p) => p.name)).toEqual(TARGET_PART_SHAPES.map((s) => s.name));
   });
 });
+
+describe("pooled ball snapshots", () => {
+  it("is sized for the whole pool and starts inactive", async () => {
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    expect(sim.currentPoolTransforms.length).toBe(POOL_SIZE * POOL_TRANSFORM_STRIDE);
+    expect(sim.previousPoolTransforms.length).toBe(sim.currentPoolTransforms.length);
+    for (let i = 0; i < POOL_SIZE; i++) {
+      expect(sim.currentPoolTransforms[i * POOL_TRANSFORM_STRIDE + 7]).toBe(0);
+    }
+  });
+
+  it("marks a slot active once a cart-mode shot spawns a ball", async () => {
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    sim.mode = SwingMode.Cart;
+    const intent = neutralIntent();
+    intent.fire = true;
+    sim.step(intent);
+    intent.fire = false;
+    for (let n = 0; n < 30; n++) sim.step(intent);
+
+    const active = countActive(sim.currentPoolTransforms);
+    expect(active).toBeGreaterThan(0);
+  });
+
+  it("does not allocate a new pool buffer per tick", async () => {
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    const seen = new Set<Float32Array>();
+    for (let n = 0; n < 8; n++) {
+      sim.step();
+      seen.add(sim.currentPoolTransforms);
+      seen.add(sim.previousPoolTransforms);
+    }
+    expect(seen.size).toBe(2);
+  });
+
+  it("clears every slot when the pool is released for a new hole", async () => {
+    const course = generateCourse(2026, 2).holes;
+    const sim = await Sim.create(course[0]!);
+    sim.mode = SwingMode.Cart;
+    const intent = neutralIntent();
+    intent.fire = true;
+    sim.step(intent);
+    intent.fire = false;
+    for (let n = 0; n < 30; n++) sim.step(intent);
+    expect(countActive(sim.currentPoolTransforms)).toBeGreaterThan(0);
+
+    sim.loadHole(course[1]!);
+    expect(countActive(sim.currentPoolTransforms)).toBe(0);
+  });
+});
+
+function countActive(buffer: Float32Array): number {
+  let active = 0;
+  for (let i = 0; i < POOL_SIZE; i++) {
+    if (buffer[i * POOL_TRANSFORM_STRIDE + 7] === 1) active++;
+  }
+  return active;
+}

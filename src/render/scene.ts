@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BallSwarm, BALL_RADIUS } from "../entities/BallSwarm";
 import { GolfClub } from "../entities/GolfClub";
 import { TargetRig } from "../entities/TargetRig";
 import type { ClubType } from "../physics/Ballistics";
@@ -6,8 +7,6 @@ import type { Terrain } from "../sim/terrain";
 import { CART_COLLIDER } from "../sim/entities/Cart";
 import { SwingMode } from "../sim/world";
 import type { BallTransform, CartTransform } from "../sim/world";
-
-const BALL_RADIUS = 0.15;
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
@@ -57,6 +56,8 @@ export interface FrameView {
   targetTransforms: Float32Array;
   /** Number of valid transforms in `targetTransforms`. */
   targetPartCount: number;
+  /** Interpolated pooled-ball transforms, laid out exactly as Sim publishes them. */
+  poolTransforms: Float32Array;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -69,6 +70,7 @@ export class RenderScene {
   private readonly aimArrow: THREE.ArrowHelper;
   private readonly cart: GolfClub;
   private readonly targets: TargetRig;
+  private readonly pooledBalls: BallSwarm;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly aimDirScratch = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
@@ -117,6 +119,9 @@ export class RenderScene {
     this.targets = new TargetRig(targetCount);
     this.scene.add(this.targets);
 
+    this.pooledBalls = new BallSwarm();
+    this.scene.add(this.pooledBalls);
+
     this.cameraTarget.set(0, 0, 0);
     window.addEventListener("resize", () => this.onResize());
   }
@@ -132,6 +137,7 @@ export class RenderScene {
 
     this.drawCart(view);
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
+    this.pooledBalls.setFromTransforms(view.poolTransforms);
 
     // The ground aim arrow belongs to stationary mode, where the player is lining up a lie. In
     // cart mode the barrel itself shows where the shot is going.
@@ -154,6 +160,7 @@ export class RenderScene {
   dispose(): void {
     this.cart.dispose();
     this.targets.dispose();
+    this.pooledBalls.dispose();
     this.renderer.dispose();
   }
 

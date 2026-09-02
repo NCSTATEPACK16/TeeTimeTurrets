@@ -3,7 +3,7 @@ import { GameLoop } from "./engine/GameLoop";
 import { KeyboardMouseSource } from "./input/KeyboardMouseSource";
 import { RenderScene } from "./render/scene";
 import type { FrameView } from "./render/scene";
-import { FIXED_DT, Sim, SwingMode, TRANSFORM_STRIDE } from "./sim/world";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, SwingMode, TRANSFORM_STRIDE } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
 
@@ -48,6 +48,7 @@ async function main(): Promise<void> {
     turretLoaded: turretLoaded(sim),
     targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
     targetPartCount: sim.targetPartCount,
+    poolTransforms: new Float32Array(sim.currentPoolTransforms.length),
   };
 
   const loop = new GameLoop({
@@ -69,6 +70,13 @@ async function main(): Promise<void> {
         sim.currentTargetTransforms,
         alpha,
         view.targetTransforms,
+      );
+      interpolateTransforms(
+        sim.previousPoolTransforms,
+        sim.currentPoolTransforms,
+        alpha,
+        view.poolTransforms,
+        POOL_TRANSFORM_STRIDE,
       );
 
       render.draw(view);
@@ -186,9 +194,10 @@ function interpolateTransforms(
   current: Float32Array,
   alpha: number,
   out: Float32Array,
+  stride: number = TRANSFORM_STRIDE,
 ): void {
   const count = Math.min(previous.length, current.length, out.length);
-  for (let i = 0; i + TRANSFORM_STRIDE <= count; i += TRANSFORM_STRIDE) {
+  for (let i = 0; i + stride <= count; i += stride) {
     out[i] = lerp(previous[i]!, current[i]!, alpha);
     out[i + 1] = lerp(previous[i + 1]!, current[i + 1]!, alpha);
     out[i + 2] = lerp(previous[i + 2]!, current[i + 2]!, alpha);
@@ -200,6 +209,12 @@ function interpolateTransforms(
     out[i + 4] = scratchOut.y;
     out[i + 5] = scratchOut.z;
     out[i + 6] = scratchOut.w;
+
+    // Anything past the transform itself is a flag, not a value: copy, never interpolate. A
+    // half-active ball would be drawn at half scale on the frame it spawns.
+    for (let extra = TRANSFORM_STRIDE; extra < stride; extra++) {
+      out[i + extra] = current[i + extra]!;
+    }
   }
 }
 

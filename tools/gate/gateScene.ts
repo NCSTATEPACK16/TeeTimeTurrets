@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BALL_RADIUS } from "../../src/entities/BallSwarm";
 import { GolfClub } from "../../src/entities/GolfClub";
 import { TargetRig } from "../../src/entities/TargetRig";
 import { ClubType } from "../../src/physics/Ballistics";
@@ -46,7 +47,7 @@ function clubSubject(club: ClubType): GateSubject {
 
 /** The same sphere render/scene.ts builds for the course ball, at the same radius. */
 function ballSubject(): GateSubject {
-  const geometry = new THREE.SphereGeometry(0.15, 20, 16);
+  const geometry = new THREE.SphereGeometry(BALL_RADIUS, 20, 16);
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
   const mesh = new THREE.Mesh(geometry, material);
   return {
