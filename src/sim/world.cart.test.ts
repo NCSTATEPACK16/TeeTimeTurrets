@@ -4,12 +4,13 @@ import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
-import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO, STARTING_HP } from "./entities/Cart";
+import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import type { BallPool, PooledBall } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { SurfaceId } from "./surfaces";
 import { Sim, SwingMode } from "./world";
+import type { Vec3 } from "./world";
 
 /**
  * Phase 2's gate, run headlessly against the real Rapier world. Everything here is driven
@@ -69,6 +70,15 @@ describe("cart in the world", () => {
   });
 
   it("drives forward under throttle without falling through the ground", () => {
+    // The stationary-mode ball rests at the tee, directly in the cart's drive lane. Driving
+    // through it registers a real combat contact; against the old fixed 100 HP that was a
+    // harmless dent, but against the now par-sized health bar it can be lethal and freeze the
+    // cart before it covers 5 m. Move the ball out of the lane first -- this test is about
+    // ground-following, not combat.
+    const ball = (sim as unknown as { ball: { setTranslation: (t: Vec3, wake: boolean) => void } }).ball;
+    const tee = sim.terrain.teePosition;
+    ball.setTranslation({ x: tee.x, y: tee.y, z: tee.z + 20 }, true);
+
     const start = { ...sim.cart.position };
     play(sim, [ENTER_CART_MODE, { ticks: seconds(3), intent: { throttle: 1 } }]);
     const p = sim.cart.position;
@@ -341,14 +351,15 @@ describe("targets, damage and respawn", () => {
     expect(sim.stats.shotsFired).toBe(1);
   });
 
-  it("a death costs a stroke and freezes the cart for the respawn delay", () => {
+  it("a death freezes the cart for the respawn delay without charging its own stroke", () => {
     play(sim, [ENTER_CART_MODE, { ticks: seconds(1), intent: { throttle: 1 } }]);
-    const strokesBefore = sim.strokes;
+    const strokesBefore = sim.cart.strokesTaken;
     const ammoBefore = sim.cart.ammo;
 
     kill(sim);
     expect(sim.cart.dead).toBe(true);
-    expect(sim.strokes).toBe(strokesBefore + 1);
+    // The hit that emptied the bar counted its own stroke; the death itself is not a second one.
+    expect(sim.cart.strokesTaken).toBe(strokesBefore);
 
     const frozen = { ...sim.cart.position };
     play(sim, [{ ticks: seconds(RESPAWN_DELAY_S - 0.5), intent: { throttle: 1, fire: true } }]);
@@ -365,17 +376,20 @@ describe("targets, damage and respawn", () => {
     play(sim, [{ ticks: seconds(RESPAWN_DELAY_S + 0.5), intent: {} }]);
 
     expect(sim.cart.dead).toBe(false);
-    expect(sim.cart.health.hp).toBe(STARTING_HP);
+    expect(sim.cart.health.hp).toBe(sim.cart.health.max);
     expect(sim.cart.position.x).toBeCloseTo(sim.terrain.teePosition.x - 2.5, 5);
     expect(sim.cart.position.z).toBeCloseTo(sim.terrain.teePosition.z, 5);
   });
 
-  it("only one death per life: a second kill while dead does not double the penalty", () => {
+  it("only one death per life: a second kill while dead does not restart the respawn timer", () => {
     play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
     kill(sim);
-    const strokes = sim.strokes;
+    play(sim, [{ ticks: seconds(1), intent: {} }]);
+    const timer = sim.cart.respawnTimer;
+    expect(timer).toBeLessThan(RESPAWN_DELAY_S);
+
     kill(sim);
-    expect(sim.strokes).toBe(strokes);
+    expect(sim.cart.respawnTimer).toBeCloseTo(timer, 9);
   });
 
   it("reset() heals a mid-respawn cart and stands every target back up", () => {
@@ -388,7 +402,7 @@ describe("targets, damage and respawn", () => {
 
     expect(sim.cart.dead).toBe(false);
     expect(sim.cart.respawnTimer).toBe(0);
-    expect(sim.cart.health.hp).toBe(STARTING_HP);
+    expect(sim.cart.health.hp).toBe(sim.cart.health.max);
     expect(sim.targets[0].isDown).toBe(false);
   });
 
@@ -414,5 +428,23 @@ describe("targets, damage and respawn", () => {
       const pelvis = target.part("pelvis").body.translation();
       expect(pelvis.y).toBeGreaterThan(sim.terrain.heightAt(pelvis.x, pelvis.z));
     }
+  });
+
+  it("sizes the player's health bar at twice the hole's par", () => {
+    expect(sim.terrain.spec.par).toBe(3);
+    expect(sim.cart.health.max).toBe(6);
+    expect(sim.cart.health.hp).toBe(6);
+  });
+
+  it("resizes the health bar when loadHole brings a different par", () => {
+    sim.loadHole({ ...fixedHoleSpec(), par: 5, seed: 4141 });
+    expect(sim.cart.health.max).toBe(10);
+    expect(sim.cart.health.hp).toBe(10);
+  });
+
+  it("reset clears strokesTaken", () => {
+    sim.cart.strokesTaken = 4;
+    sim.reset();
+    expect(sim.cart.strokesTaken).toBe(0);
   });
 });

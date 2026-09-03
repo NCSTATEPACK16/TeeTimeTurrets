@@ -1,6 +1,6 @@
 import { CLUB_STATS, ClubType } from "../../physics/Ballistics";
 import type { Vec3 } from "../../physics/Ballistics";
-import { createHealth } from "../health";
+import { createHealth, setMaxHealth } from "../health";
 import type { Health } from "../health";
 import type { SurfaceTuning } from "../surfaces";
 
@@ -148,6 +148,12 @@ export interface CartOptions {
   heading?: number;
   /** Turret angle *relative to the chassis*. 0 aims straight over the bonnet. */
   turretOffset?: number;
+  /**
+   * Size of the health bar. Cart-only mode passes `2 * hole.par` -- the hole's par is the
+   * number of strokes it is worth, and health is that budget doubled. Defaults to STARTING_HP
+   * for a cart built without a hole (tests, and the dormant stationary path).
+   */
+  maxHealth?: number;
 }
 
 /**
@@ -197,6 +203,14 @@ export class Cart {
   dead: boolean;
   /** Seconds until respawn. Meaningful only while `dead`. */
   respawnTimer: number;
+  /**
+   * Strokes taken this match: one per ball hit, one per water entry. The match score.
+   *
+   * A real counter rather than `health.max - health.hp`, because a respawn refills the bar and
+   * a derived value would silently reset the score with it. Cart-vs-cart shunting deliberately
+   * does not touch this -- ramming is a shove, not a stroke (spec section 5).
+   */
+  strokesTaken: number;
   /** Where the cart wants to move this tick. The controller decides where it actually goes. */
   readonly desiredTranslation: Vec3;
   readonly shot: CartShot;
@@ -219,9 +233,10 @@ export class Cart {
     this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
     this.ammo = STARTING_AMMO;
-    this.health = createHealth(STARTING_HP);
+    this.health = createHealth(options.maxHealth ?? STARTING_HP);
     this.dead = false;
     this.respawnTimer = 0;
+    this.strokesTaken = 0;
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
   }
 
@@ -275,6 +290,19 @@ export class Cart {
     this.recoil.z = 0;
     this.shuntVelocity.x = 0;
     this.shuntVelocity.z = 0;
+  }
+
+  /**
+   * Resize the health bar for a new hole's par. Refills, so a hole always opens at full HP --
+   * `strokesTaken` is deliberately untouched, since it spans the match rather than the hole.
+   */
+  setMaxHealth(max: number): void {
+    setMaxHealth(this.health, max);
+  }
+
+  /** Zeroes the match score. Called by `Sim.reset()`, never by a respawn. */
+  clearStrokes(): void {
+    this.strokesTaken = 0;
   }
 
   /** Clamps to MAX_AMMO. Used by bucket refills and landed-ball pickups alike. */

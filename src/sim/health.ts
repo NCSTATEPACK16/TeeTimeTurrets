@@ -8,11 +8,22 @@
 
 export interface Health {
   hp: number;
-  readonly max: number;
+  /**
+   * Mutable because the bar's size is a property of the hole being played, not of the cart:
+   * cart-only mode sizes it at 2 x par, and `Sim.loadHole` can bring a different par. Resizing
+   * goes through `setMaxHealth` so hp is never left above max.
+   */
+  max: number;
 }
 
 export function createHealth(max: number): Health {
   return { hp: max, max };
+}
+
+/** Resize the bar and refill it. A new hole starts at full HP, exactly as `Cart.revive()` does. */
+export function setMaxHealth(h: Health, max: number): void {
+  h.max = max;
+  h.hp = max;
 }
 
 /**

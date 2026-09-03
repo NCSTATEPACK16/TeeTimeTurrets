@@ -206,8 +206,8 @@ export class Sim {
   previousCart: CartTransform;
   /** Cart state from the most recent fixed step. */
   currentCart: CartTransform;
-  /** The cart's authoritative state machine. Read for the HUD; drive it through `step`. */
-  readonly cart = new Cart();
+  /** The player's cart state machine. Read for the HUD; drive it through `step`. */
+  readonly cart: Cart;
   private ballPool!: BallPool;
   /** One hardcoded bucket for now -- course-scale placement is explicitly out of scope, see
    * docs/superpowers/specs/2026-09-02-cart-ammo-design.md §7. Populated in `create()` once the
@@ -264,6 +264,10 @@ export class Sim {
   private constructor(terrain: Terrain, surfaces: Surfaces) {
     this.terrain = terrain;
     this.surfaces = surfaces;
+    // 2 x par: the hole's par is the strokes it is worth, and the health bar is that budget
+    // doubled (spec section 5). Sized here rather than at the field initializer because the
+    // initializer runs before `terrain` exists.
+    this.cart = new Cart({ maxHealth: 2 * terrain.spec.par });
     this.lastSafePosition = { ...terrain.teePosition };
     this.previous = restTransform(terrain);
     this.current = restTransform(terrain);
@@ -410,15 +414,16 @@ export class Sim {
   }
 
   /**
-   * Death: a stroke penalty and a wait, mirroring the water-hazard rule rather than inventing a
-   * second shape for "you lost the ball/the cart." Guarded on `dead` so two lethal contacts in
-   * one tick cost one stroke, not two.
+   * Death: the cart is out of the world for `RESPAWN_DELAY_S` and comes back at the spawn point.
+   * Guarded on `dead` so two lethal contacts in one tick do not restart the timer.
+   *
+   * No stroke is charged here. The hit that took the last point of HP already counted its own
+   * stroke against `cart.strokesTaken`; charging again for the death would double it.
    */
   private killCart(cart: Cart): void {
     if (cart.dead) return;
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
-    this.strokes += 1;
   }
 
   /**
@@ -449,6 +454,8 @@ export class Sim {
     }
     this.buildTargets();
 
+    // A new hole can bring a different par, and the health bar is sized from it.
+    this.cart.setMaxHealth(2 * this.terrain.spec.par);
     this.reset();
   }
 
@@ -755,6 +762,7 @@ export class Sim {
     // still. Ammo deliberately survives -- it is a round-spanning resource, HP is not. `stats`
     // survives too, being round-level rather than per-hole (sim/stats.ts).
     this.cart.revive();
+    this.cart.clearStrokes();
     this.cartFallSpeed = 0;
     for (const target of this.targets) target.reset();
     this.syncCurrentTargets();

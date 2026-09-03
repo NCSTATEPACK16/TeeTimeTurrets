@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDamage, createHealth, heal } from "./health";
+import { applyDamage, createHealth, heal, setMaxHealth } from "./health";
 
 describe("health", () => {
   it("starts full", () => {
@@ -35,5 +35,15 @@ describe("health", () => {
     expect(h.hp).toBe(50);
     heal(h, 999);
     expect(h.hp).toBe(100);
+  });
+});
+
+describe("setMaxHealth", () => {
+  it("resizes the bar and refills it", () => {
+    const h = createHealth(100);
+    applyDamage(h, 40);
+    setMaxHealth(h, 8);
+    expect(h.max).toBe(8);
+    expect(h.hp).toBe(8);
   });
 });
