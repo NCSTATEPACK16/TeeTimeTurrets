@@ -427,11 +427,23 @@ One hit is one stroke and one point of health, regardless of how hard the ball w
 
 **Files:**
 - Modify: `src/sim/combat.ts`
-- Test: `src/sim/combat.test.ts`
+- Modify: `src/sim/world.ts`
+- Test: `src/sim/combat.test.ts`, `src/sim/world.cart.test.ts`
 
 **Interfaces:**
 - Consumes: `Cart.strokesTaken` (Task 1).
-- Produces: `STROKE_DAMAGE = 1` exported from `src/sim/combat.ts`.
+- Produces: `STROKE_DAMAGE = 1` exported from `src/sim/combat.ts`; the dormant course ball is no longer a combat actor.
+
+**Added after Task 1 — the dormant course ball must stop dealing damage.** Task 1 shrank the
+health bar from a fixed 100 to `2 × par`, and that exposed a pre-existing bug it could not have
+been expected to fix: `Sim.ball` — the stroke-play course ball, now dormant — is still registered
+in `CombatRegistry` as a `"ball"` actor. Driving the cart forward from its spawn runs it over the
+tee and into its own resting ball, which fires `ballHitsCart`. At 100 HP that was invisible; at a
+par-3 cart's 6 HP it kills the cart before it has driven five metres, and once this task makes
+every ball contact worth exactly one stroke, the player accrues phantom strokes just by driving
+across their own tee — corrupting the score Task 7's win condition reads. Spec §3 keeps the
+course ball as a *dormant* reference, and a dormant ball that damages carts is not dormant.
+Step 5 below is that fix; Step 6 reverts the test-only workaround Task 1 used to get green.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -553,12 +565,87 @@ The `ball` parameter is now unused, hence the leading underscore — `noUnusedPa
 Run: `npx vitest run src/sim/combat.test.ts`
 Expected: the new block passes. The existing tests asserting a velocity-scaled cart hit now fail. Rewrite each of those to assert `STROKE_DAMAGE` instead — the `hitDamage`/`MIN_HIT_DAMAGE`/`MAX_HIT_DAMAGE` *pure function* tests stay exactly as they are, since that function is unchanged and still exported. Delete any assertion of the form `expect(cart.health.hp).toBe(STARTING_HP - hitDamage(...))` in favour of `expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE)`.
 
-- [ ] **Step 5: Verify the whole suite and the typecheck**
+- [ ] **Step 5: Stop the dormant course ball being a combat actor**
+
+In `src/sim/world.ts`'s `create`, the course ball's collider is created and then registered:
+
+```ts
+    const ballCollider = sim.world.createCollider(ballColliderDesc, sim.ball);
+```
+
+```ts
+    sim.registry.registerBall(ballCollider.handle, sim.ball);
+```
+
+Delete the registration line, and stop capturing the collider in a local — `noUnusedLocals`
+would flag `ballCollider` the moment nothing reads it:
+
+```ts
+    sim.world.createCollider(ballColliderDesc, sim.ball);
+```
+
+Add this comment immediately above that line:
+
+```ts
+    // Deliberately NOT registered as a combat actor. The course ball is dormant in cart-only
+    // mode (spec section 3) and only pooled balls -- fired ammo -- can hurt a cart. Registering
+    // it made the player's own resting ball a hazard: the cart spawns behind the tee, so driving
+    // forward ran it into the ball and cost strokes, which at 2 x par health is lethal. An
+    // unregistered handle falls through processContacts's own `if (!a || !b) return`.
+```
+
+Leave the `.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)` on `ballColliderDesc` alone.
+It now generates events nothing claims, which `processContacts` already discards, and the
+dormant stroke-play path is unchanged by it. The pooled-ball registration loop immediately below
+stays exactly as it is — those are the balls that count.
+
+- [ ] **Step 6: Revert Task 1's test-only workaround**
+
+Task 1 got `"drives forward under throttle without falling through the ground"` in
+`src/sim/world.cart.test.ts` green by teleporting the resting `Sim.ball` 20 m out of the drive
+lane before driving. Step 5 removes the reason for that, so take the workaround out: delete the
+teleport lines and the `Vec3` type import Task 1 added for them, restoring the test to what it
+asserted before — drive forward, stay on the ground. Leave the rest of the test untouched.
+
+If that test now fails, **stop and report it** rather than reinstating the workaround: it would
+mean something other than the course ball is damaging the cart, which is a finding, not a
+nuisance.
+
+- [ ] **Step 7: Add the regression test**
+
+Append to the `describe("cart-mode ammo-aware combat shots", ...)` block in
+`src/sim/world.cart.test.ts`:
+
+```ts
+  it("driving over the dormant course ball costs nothing", () => {
+    // The course ball rests at the tee and the cart spawns behind it, so this is the drive every
+    // hole opens with. It is a hazard only if the dormant ball is a combat actor.
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    const hpBefore = sim.cart.health.hp;
+    play(sim, [{ ticks: seconds(3), intent: { throttle: 1 } }]);
+
+    expect(sim.cart.strokesTaken).toBe(0);
+    expect(sim.cart.health.hp).toBe(hpBefore);
+    expect(sim.cart.dead).toBe(false);
+    // And it really did drive over the tee, or the assertions above prove nothing.
+    expect(sim.cart.position.x).toBeGreaterThan(sim.terrain.teePosition.x);
+  });
+```
+
+`ENTER_CART_MODE` is required here and only here-and-now: at this point in the plan `Sim.mode`
+still defaults to `Stationary`, so `stepCart` zeroes the driving axes and a cart with
+`throttle: 1` does not move — the test would fail on the position assertion for a reason that has
+nothing to do with the course ball. Task 5 deletes `ENTER_CART_MODE` along with the mode toggle
+and strips it from every script in this file, including this one.
+
+- [ ] **Step 8: Verify the whole suite and the typecheck**
 
 Run: `npm test && npx tsc --noEmit`
 Expected: all pass, tsc silent.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
+
+Two commits, because these are two changes and the second is not about damage scaling:
 
 ```bash
 git add src/sim/combat.ts src/sim/combat.test.ts
@@ -567,6 +654,15 @@ git commit -s -m "sim: a ball hit costs exactly one stroke and one point of heal
 Speed no longer scales cart damage. The velocity curve stays in the file
 unreferenced as the reference for a future mode that wants graduated damage.
 Shunting is untouched and still costs no stroke; a dead cart takes neither."
+
+git add src/sim/world.ts src/sim/world.cart.test.ts
+git commit -s -m "sim: stop the dormant course ball damaging carts
+
+The stroke-play ball is unreachable in cart-only mode but was still a
+registered combat actor, so driving forward off the spawn ran the cart into
+its own resting ball. Harmless against a fixed 100 HP; fatal against a
+par-3 cart's 6, and a phantom stroke against a score that is now damage
+taken. Only pooled balls -- fired ammo -- are combat actors now."
 ```
 
 ---
