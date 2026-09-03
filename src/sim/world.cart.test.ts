@@ -50,7 +50,7 @@ function fullShotDistance(sim: Sim): number {
 describe("cart in the world", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec());
+    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
   });
 
   it("starts in stationary mode and toggles to cart mode on the mode key", () => {
@@ -180,7 +180,7 @@ describe("cart in the world", () => {
 describe("striking the ball from the cart", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec());
+    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
   });
 
   it("fires regardless of distance in stationary mode, where the player stands at the ball", () => {
@@ -208,7 +208,7 @@ describe("striking the ball from the cart", () => {
     // `Sim.launch` used to hardcode DEFAULT_CLUB, so what needs proving is that selection
     // reaches Ballistics at all, and the two clubs' relative carry is what shows it.
     const putterDistance = fullShotDistance(sim);
-    const driverSim = await Sim.create(fixedHoleSpec());
+    const driverSim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
     play(driverSim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
     const driverDistance = fullShotDistance(driverSim);
 
@@ -241,7 +241,7 @@ describe("striking the ball from the cart", () => {
 describe("cart-mode ammo-aware combat shots", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec());
+    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
   });
 
   it("a fire with ammo spawns a pooled ball at the muzzle and it flies", () => {
@@ -303,7 +303,7 @@ describe("cart-mode ammo-aware combat shots", () => {
 describe("targets, damage and respawn", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec());
+    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
   });
 
   /** The private hook combat.ts calls on a kill. Driving HP to zero through a real contact is
@@ -450,5 +450,63 @@ describe("targets, damage and respawn", () => {
     sim.cart.strokesTaken = 4;
     sim.reset();
     expect(sim.cart.strokesTaken).toBe(0);
+  });
+});
+
+describe("bot carts", () => {
+  it("creates one bot by default, on the terrain and out past the cup", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    expect(sim.bots).toHaveLength(1);
+
+    const bot = sim.bots[0]!;
+    const cup = sim.terrain.cupPosition;
+    expect(bot.position.x).toBeCloseTo(cup.x + 2.5, 5);
+    expect(bot.position.z).toBeCloseTo(cup.z, 5);
+    expect(bot.position.y).toBeGreaterThan(sim.terrain.heightAt(bot.position.x, bot.position.z));
+  });
+
+  it("creates none when the caller asks for none", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    expect(sim.bots).toHaveLength(0);
+    expect(sim.currentBotCarts).toHaveLength(0);
+  });
+
+  it("gives every bot its own health bar sized to par", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    expect(sim.bots[0]!.health.max).toBe(2 * sim.terrain.spec.par);
+    expect(sim.bots[0]!.health.hp).toBe(sim.bots[0]!.health.max);
+  });
+
+  it("publishes a render transform per bot and keeps it in step with the sim", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    expect(sim.currentBotCarts).toHaveLength(1);
+    expect(sim.previousBotCarts).toHaveLength(1);
+    for (let i = 0; i < 30; i++) sim.step();
+    expect(sim.currentBotCarts[0]!.position.x).toBeCloseTo(sim.bots[0]!.position.x, 9);
+    expect(sim.currentBotCarts[0]!.position.z).toBeCloseTo(sim.bots[0]!.position.z, 9);
+  });
+
+  it("settles the bot onto the ground rather than leaving it hanging or sunk", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    for (let i = 0; i < 120; i++) sim.step();
+    const bot = sim.bots[0]!;
+    const ground = sim.terrain.heightAt(bot.position.x, bot.position.z);
+    expect(bot.position.y - ground).toBeGreaterThan(0);
+    expect(bot.position.y - ground).toBeLessThan(2);
+  });
+
+  it("returns every bot to its spawn on reset", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    const bot = sim.bots[0]!;
+    bot.position.x = 0;
+    bot.position.z = 0;
+    bot.strokesTaken = 3;
+    bot.health.hp = 1;
+
+    sim.reset();
+
+    expect(bot.position.x).toBeCloseTo(sim.terrain.cupPosition.x + 2.5, 5);
+    expect(bot.strokesTaken).toBe(0);
+    expect(bot.health.hp).toBe(bot.health.max);
   });
 });

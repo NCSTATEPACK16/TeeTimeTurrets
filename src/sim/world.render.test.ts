@@ -14,7 +14,7 @@ const holes = generateCourse(2026, 2).holes;
 
 describe("target transform snapshots", () => {
   it("is sized for every part of every target", async () => {
-    const sim = await Sim.create(holes[0]!);
+    const sim = await Sim.create(holes[0]!, { botCount: 0 });
     expect(sim.targets.length).toBeGreaterThan(0);
     expect(sim.targetPartCount).toBe(sim.targets.length * PARTS_PER_TARGET);
     expect(sim.currentTargetTransforms.length).toBe(sim.targetPartCount * TRANSFORM_STRIDE);
@@ -22,7 +22,7 @@ describe("target transform snapshots", () => {
   });
 
   it("matches the live body transforms after a step", async () => {
-    const sim = await Sim.create(holes[0]!);
+    const sim = await Sim.create(holes[0]!, { botCount: 0 });
     sim.step();
 
     const buffer = sim.currentTargetTransforms;
@@ -44,7 +44,7 @@ describe("target transform snapshots", () => {
   });
 
   it("does not allocate a new buffer per tick", async () => {
-    const sim = await Sim.create(holes[0]!);
+    const sim = await Sim.create(holes[0]!, { botCount: 0 });
     const seen = new Set<Float32Array>();
     for (let n = 0; n < 8; n++) {
       sim.step();
@@ -56,7 +56,7 @@ describe("target transform snapshots", () => {
   });
 
   it("seeds previous from current on reset so a rebuild is not lerped through", async () => {
-    const sim = await Sim.create(holes[0]!);
+    const sim = await Sim.create(holes[0]!, { botCount: 0 });
     for (let n = 0; n < 20; n++) sim.step();
     sim.reset();
     expect(Array.from(sim.previousTargetTransforms)).toEqual(
@@ -65,7 +65,7 @@ describe("target transform snapshots", () => {
   });
 
   it("resizes for a new hole's targets", async () => {
-    const sim = await Sim.create(holes[0]!);
+    const sim = await Sim.create(holes[0]!, { botCount: 0 });
     sim.loadHole(holes[1]!);
     expect(sim.targetPartCount).toBe(sim.targets.length * PARTS_PER_TARGET);
     expect(sim.currentTargetTransforms.length).toBe(sim.targetPartCount * TRANSFORM_STRIDE);
@@ -83,7 +83,7 @@ describe("target part shapes", () => {
   });
 
   it("agrees with the colliders actually built from it", async () => {
-    const sim = await Sim.create(holes[0]!);
+    const sim = await Sim.create(holes[0]!, { botCount: 0 });
     const target = sim.targets[0]!;
     expect(target.parts.map((p) => p.name)).toEqual(TARGET_PART_SHAPES.map((s) => s.name));
   });
@@ -91,7 +91,7 @@ describe("target part shapes", () => {
 
 describe("pooled ball snapshots", () => {
   it("is sized for the whole pool and starts inactive", async () => {
-    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!, { botCount: 0 });
     expect(sim.currentPoolTransforms.length).toBe(POOL_SIZE * POOL_TRANSFORM_STRIDE);
     expect(sim.previousPoolTransforms.length).toBe(sim.currentPoolTransforms.length);
     for (let i = 0; i < POOL_SIZE; i++) {
@@ -100,7 +100,7 @@ describe("pooled ball snapshots", () => {
   });
 
   it("marks a slot active once a cart-mode shot spawns a ball", async () => {
-    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!, { botCount: 0 });
     sim.mode = SwingMode.Cart;
     const intent = neutralIntent();
     intent.fire = true;
@@ -113,7 +113,7 @@ describe("pooled ball snapshots", () => {
   });
 
   it("does not allocate a new pool buffer per tick", async () => {
-    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!, { botCount: 0 });
     const seen = new Set<Float32Array>();
     for (let n = 0; n < 8; n++) {
       sim.step();
@@ -125,7 +125,7 @@ describe("pooled ball snapshots", () => {
 
   it("clears every slot when the pool is released for a new hole", async () => {
     const course = generateCourse(2026, 2).holes;
-    const sim = await Sim.create(course[0]!);
+    const sim = await Sim.create(course[0]!, { botCount: 0 });
     sim.mode = SwingMode.Cart;
     const intent = neutralIntent();
     intent.fire = true;
@@ -139,7 +139,7 @@ describe("pooled ball snapshots", () => {
   });
 
   it("seeds the previous transform on the tick a slot activates, so a spawning ball has no stale prior position to lerp from", async () => {
-    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!, { botCount: 0 });
     sim.mode = SwingMode.Cart;
     const intent = neutralIntent();
     intent.fire = true;
