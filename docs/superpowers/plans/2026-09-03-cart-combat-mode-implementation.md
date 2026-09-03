@@ -1550,6 +1550,21 @@ Leave every `puppeteer.launch` argument in the file exactly as it is.
 
 - [ ] **Step 8: Update the docs**
 
+In `AGENTS.md`, add a bullet to the **Rapier JS binding caveats** list under "Conventions &
+invariants". That section exists for behaviour verified against the installed binding rather than
+assumed from the Rust docs, and this is a case where the JS docstring misleads:
+
+```markdown
+- **`setTranslation(p, true)` overrides a pending `setNextKinematicTranslation` target** on a
+  kinematic body — verified against the installed 0.20.0 build, not assumed. The JS docstring
+  describes the "next kinematic position" as separate internal state applied during
+  `world.step()`, which reads as though a teleport would be overwritten by an
+  already-queued target. It is not: queue a target, then `setTranslation`, and the step keeps
+  the teleport. (Control: with no teleport, the queued target *is* applied, so the queue itself
+  works.) This is why `Sim.checkCartWater` repositions a cart with `setTranslation` alone and
+  does not need to re-issue the queued translation.
+```
+
 In `docs/UI-SPEC.md` §1, add immediately under the table's paragraph about image 08 (before the image-14 paragraph):
 
 ```markdown
@@ -1603,7 +1618,7 @@ Expected: tests pass, tsc silent, `SMOKE PASS`.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/input src/sim/world.ts src/sim/world.cart.test.ts src/sim/world.render.test.ts src/ui src/render/scene.ts src/main.ts index.html tools/smoke.mjs docs/UI-SPEC.md docs/ROADMAP.md docs/BACKLOG.md
+git add AGENTS.md src/input src/sim/world.ts src/sim/world.cart.test.ts src/sim/world.render.test.ts src/ui src/render/scene.ts src/main.ts index.html tools/smoke.mjs docs/UI-SPEC.md docs/ROADMAP.md docs/BACKLOG.md
 git commit -s -m "game: make the cart the only way to play
 
 Deletes the mode toggle from the input path, fixes Sim.mode at Cart for a
