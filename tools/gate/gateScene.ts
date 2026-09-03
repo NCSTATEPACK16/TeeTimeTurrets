@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BALL_RADIUS } from "../../src/entities/BallSwarm";
+import { BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../../src/entities/BallSwarm";
 import { GolfClub } from "../../src/entities/GolfClub";
 import { TargetRig } from "../../src/entities/TargetRig";
 import { ClubType } from "../../src/physics/Ballistics";
@@ -45,9 +45,11 @@ function clubSubject(club: ClubType): GateSubject {
   return { object: cart, dispose: () => cart.dispose() };
 }
 
-/** The same sphere render/scene.ts builds for the course ball, at the same radius. */
+/** The same sphere render/scene.ts builds for the course ball: same radius and same segment
+ *  counts, imported rather than copied, so a tesselation change there can't drift out from
+ *  under what this subject measures. */
 function ballSubject(): GateSubject {
-  const geometry = new THREE.SphereGeometry(BALL_RADIUS, 20, 16);
+  const geometry = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
   const mesh = new THREE.Mesh(geometry, material);
   return {

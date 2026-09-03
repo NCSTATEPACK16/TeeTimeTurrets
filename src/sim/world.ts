@@ -4,6 +4,7 @@ import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
 import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
+import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { PARTS_PER_TARGET, Target } from "./entities/Target";
@@ -31,8 +32,6 @@ export const TRANSFORM_STRIDE = 7;
 /** As TRANSFORM_STRIDE, plus a trailing 1/0 active flag: an idle pool slot is parked far below
  *  the world and must not be drawn where it is parked. */
 export const POOL_TRANSFORM_STRIDE = 8;
-
-const BALL_RADIUS = 0.15;
 
 /**
  * Rapier's linear damping is the ball's *air* drag only (F = -k*v, applied in flight and on
@@ -674,9 +673,9 @@ export class Sim {
     this.launch(this.cart.shot.yaw, this.cart.shot.charge01, this.cart.shot.club);
   }
 
-  /** Where the ball is riding when loaded on the turret. Cart mode's course ball is retired
-   * (BACKLOG #16d) and no longer drawn at all, so this no longer trades off against a course
-   * position -- it just answers where the ammo-round sprite sits. */
+  /** Where the ball is riding when loaded on the turret. The scoop-onto-the-turret mechanic is
+   * retired (#16d), so the course ball is now always drawn and this no longer trades off
+   * against a course position -- it just answers where the ammo-round sprite sits. */
   muzzle(out: Vec3): void {
     computeMuzzle(this.cart, out);
   }

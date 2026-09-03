@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BallSwarm, BALL_RADIUS } from "../entities/BallSwarm";
+import { BallSwarm, BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../entities/BallSwarm";
 import { GolfClub } from "../entities/GolfClub";
 import { TargetRig } from "../entities/TargetRig";
 import type { ClubType } from "../physics/Ballistics";
@@ -107,7 +107,7 @@ export class RenderScene {
 
     this.scene.add(buildGroundMesh(terrain));
 
-    const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 20, 16);
+    const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
     const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
     this.ball = new THREE.Mesh(ballGeo, ballMat);
     this.scene.add(this.ball);

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { POOL_SIZE } from "../sim/entities/BallPool";
 import { POOL_TRANSFORM_STRIDE } from "../sim/world";
+import { BALL_RADIUS } from "../sim/entities/ballShape";
 
 /**
  * The pooled combat balls, which cart mode fires and which nothing drew before this: the player
@@ -13,9 +14,18 @@ import { POOL_TRANSFORM_STRIDE } from "../sim/world";
  * Render-only, like GolfClub and TargetRig: no Rapier body, no authoritative state.
  */
 
-/** Also the course ball's radius (src/render/scene.ts) and the gate's ball subject
+/** Re-exported from the sim's ballShape.ts leaf module -- see its docstring for why the sim
+ *  owns this. Also the course ball's radius (src/render/scene.ts) and the gate's ball subject
  *  (tools/gate/gateScene.ts) -- exported so both import it instead of carrying their own copy. */
-export const BALL_RADIUS = 0.15;
+export { BALL_RADIUS };
+
+/** Segment counts for the course ball's own sphere geometry (src/render/scene.ts) and the
+ *  gate's ball subject (tools/gate/gateScene.ts) -- shared so a tesselation change to one
+ *  can't silently drift out of step with the other. Not used by this file's own swarm mesh,
+ *  which has its own coarser tesselation below. */
+export const BALL_WIDTH_SEGMENTS = 20;
+export const BALL_HEIGHT_SEGMENTS = 16;
+
 const ZERO_SCALE = 0.0001;
 
 export class BallSwarm extends THREE.Group {
