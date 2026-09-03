@@ -563,27 +563,26 @@ describe("driving into water", () => {
     sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
   });
 
-  /** Find a water cell on this hole, or skip -- the fixed hole has one but do not assume where. */
-  function findWater(s: Sim): { x: number; z: number } | null {
+  /** Find a water cell on this hole -- the fixed hole has one but do not assume where. */
+  function findWater(s: Sim): { x: number; z: number } {
     const half = s.terrain.spec.fieldSize / 2 - 4;
     for (let x = -half; x <= half; x += 2) {
       for (let z = -half; z <= half; z += 2) {
         if (s.surfaces.surfaceAt(x, z) === SurfaceId.Water) return { x, z };
       }
     }
-    return null;
+    throw new Error(`no water cell found scanning [-${half}, ${half}] step 2 on both axes`);
   }
 
   it("costs exactly one stroke and one point of health on the tick it enters", () => {
     const water = findWater(sim);
-    expect(water).not.toBeNull();
 
     // Settle first, so the cart has a last-safe position recorded on dry land.
     play(sim, [{ ticks: 30, intent: {} }]);
     const hpBefore = sim.cart.health.hp;
 
-    sim.cart.position.x = water!.x;
-    sim.cart.position.z = water!.z;
+    sim.cart.position.x = water.x;
+    sim.cart.position.z = water.z;
     sim.step();
 
     expect(sim.cart.strokesTaken).toBe(1);
@@ -591,7 +590,7 @@ describe("driving into water", () => {
   });
 
   it("does not drain a stroke every tick while it sits there", () => {
-    const water = findWater(sim)!;
+    const water = findWater(sim);
     play(sim, [{ ticks: 30, intent: {} }]);
 
     sim.cart.position.x = water.x;
@@ -609,7 +608,7 @@ describe("driving into water", () => {
   });
 
   it("drops the cart back on the last dry ground it stood on", () => {
-    const water = findWater(sim)!;
+    const water = findWater(sim);
     play(sim, [{ ticks: 30, intent: {} }]);
     const dry = { x: sim.cart.position.x, z: sim.cart.position.z };
 
@@ -625,7 +624,7 @@ describe("driving into water", () => {
   });
 
   it("does not fire while the cart is dead and awaiting respawn", () => {
-    const water = findWater(sim)!;
+    const water = findWater(sim);
     play(sim, [{ ticks: 30, intent: {} }]);
     (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.cart);
 
