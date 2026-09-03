@@ -211,6 +211,15 @@ export class Cart {
    * does not touch this -- ramming is a shove, not a stroke (spec section 5).
    */
   strokesTaken: number;
+  /**
+   * True while this cart is standing on a hazard surface. The edge into water is what costs a
+   * stroke, not the state -- a cart parked in the shallows must not be drained every tick.
+   * Owned here rather than in a parallel array in `world.ts` so it cannot fall out of step with
+   * the cart it describes when carts are added or removed.
+   */
+  wasInWater: boolean;
+  /** The last non-hazard spot this cart occupied: where it is dropped after driving into water. */
+  readonly lastSafePosition: Vec3;
   /** Where the cart wants to move this tick. The controller decides where it actually goes. */
   readonly desiredTranslation: Vec3;
   readonly shot: CartShot;
@@ -237,6 +246,8 @@ export class Cart {
     this.dead = false;
     this.respawnTimer = 0;
     this.strokesTaken = 0;
+    this.wasInWater = false;
+    this.lastSafePosition = { x: start.x, y: start.y, z: start.z };
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
   }
 

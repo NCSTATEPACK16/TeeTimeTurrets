@@ -556,3 +556,83 @@ describe("bot carts", () => {
     expect(bot.health.hp).toBe(bot.health.max);
   });
 });
+
+describe("driving into water", () => {
+  let sim: Sim;
+  beforeEach(async () => {
+    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+  });
+
+  /** Find a water cell on this hole, or skip -- the fixed hole has one but do not assume where. */
+  function findWater(s: Sim): { x: number; z: number } | null {
+    const half = s.terrain.spec.fieldSize / 2 - 4;
+    for (let x = -half; x <= half; x += 2) {
+      for (let z = -half; z <= half; z += 2) {
+        if (s.surfaces.surfaceAt(x, z) === SurfaceId.Water) return { x, z };
+      }
+    }
+    return null;
+  }
+
+  it("costs exactly one stroke and one point of health on the tick it enters", () => {
+    const water = findWater(sim);
+    expect(water).not.toBeNull();
+
+    // Settle first, so the cart has a last-safe position recorded on dry land.
+    play(sim, [{ ticks: 30, intent: {} }]);
+    const hpBefore = sim.cart.health.hp;
+
+    sim.cart.position.x = water!.x;
+    sim.cart.position.z = water!.z;
+    sim.step();
+
+    expect(sim.cart.strokesTaken).toBe(1);
+    expect(sim.cart.health.hp).toBe(hpBefore - 1);
+  });
+
+  it("does not drain a stroke every tick while it sits there", () => {
+    const water = findWater(sim)!;
+    play(sim, [{ ticks: 30, intent: {} }]);
+
+    sim.cart.position.x = water.x;
+    sim.cart.position.z = water.z;
+    sim.step();
+    const afterFirst = sim.cart.strokesTaken;
+
+    // Put it straight back in; the edge only re-arms once the cart is out of the water.
+    for (let i = 0; i < 10; i++) {
+      sim.cart.position.x = water.x;
+      sim.cart.position.z = water.z;
+      sim.step();
+    }
+    expect(sim.cart.strokesTaken).toBe(afterFirst);
+  });
+
+  it("drops the cart back on the last dry ground it stood on", () => {
+    const water = findWater(sim)!;
+    play(sim, [{ ticks: 30, intent: {} }]);
+    const dry = { x: sim.cart.position.x, z: sim.cart.position.z };
+
+    sim.cart.position.x = water.x;
+    sim.cart.position.z = water.z;
+    sim.step();
+
+    expect(sim.cart.position.x).toBeCloseTo(dry.x, 3);
+    expect(sim.cart.position.z).toBeCloseTo(dry.z, 3);
+    expect(sim.surfaces.surfaceAt(sim.cart.position.x, sim.cart.position.z)).not.toBe(
+      SurfaceId.Water,
+    );
+  });
+
+  it("does not fire while the cart is dead and awaiting respawn", () => {
+    const water = findWater(sim)!;
+    play(sim, [{ ticks: 30, intent: {} }]);
+    (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.cart);
+
+    sim.cart.position.x = water.x;
+    sim.cart.position.z = water.z;
+    sim.step();
+
+    expect(sim.cart.strokesTaken).toBe(0);
+  });
+});

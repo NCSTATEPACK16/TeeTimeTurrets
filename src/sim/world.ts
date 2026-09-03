@@ -8,8 +8,9 @@ import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { PARTS_PER_TARGET, Target } from "./entities/Target";
-import { CombatRegistry, processContacts } from "./combat";
+import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
+import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import type { HoleSpec, Vec3 } from "./course";
 import { CUP_RADIUS, createTerrain } from "./terrain";
@@ -620,6 +621,7 @@ export class Sim {
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
     cart.step(intent, FIXED_DT, this.cartTuningScratch);
     this.moveCartBody(rig);
+    this.checkCartWater(rig);
 
     for (const bucket of this.buckets) {
       if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) cart.addAmmo(BUCKET_REFILL_AMMO);
@@ -684,6 +686,48 @@ export class Sim {
 
     if (this.controller.computedGrounded()) rig.fallSpeed = 0;
     rig.body.setNextKinematicTranslation(p);
+  }
+
+  /**
+   * A cart in the water costs a stroke and is dropped back where it was last on dry land --
+   * the same stroke-and-distance shape the ball's own water rule uses, applied to the driver.
+   *
+   * Edge-triggered on `wasInWater`, so a cart nosing into a pond pays once rather than once per
+   * tick. Each cart's flag is its own state, so two carts entering water on the same tick are
+   * independent by construction and need no ordering rule.
+   *
+   * Runs inside `stepRig`'s alive branch, which `stepRespawn` returns before -- a dead cart is
+   * out of the world and pays nothing.
+   */
+  private checkCartWater(rig: CartRig): void {
+    const cart = rig.cart;
+    const p = cart.position;
+    const inWater = this.surfaces.surfaceAt(p.x, p.z) === SurfaceId.Water;
+
+    if (!inWater) {
+      cart.wasInWater = false;
+      // Recorded every dry tick. A cart does not bounce the way a ball does, so this needs none
+      // of the ball's REST_HOLD_TICKS debounce -- wherever it is now is somewhere it can be put
+      // back down.
+      cart.lastSafePosition.x = p.x;
+      cart.lastSafePosition.y = p.y;
+      cart.lastSafePosition.z = p.z;
+      return;
+    }
+
+    if (cart.wasInWater) return;
+    cart.wasInWater = true;
+
+    cart.strokesTaken += 1;
+    if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart);
+
+    const safe = cart.lastSafePosition;
+    p.x = safe.x;
+    p.y = safe.y;
+    p.z = safe.z;
+    cart.speed = 0;
+    rig.fallSpeed = 0;
+    rig.body.setTranslation(p, true);
   }
 
   /**
@@ -832,6 +876,7 @@ export class Sim {
       // resource, HP is not. `stats` survives too, being round-level (sim/stats.ts).
       rig.cart.revive();
       rig.cart.clearStrokes();
+      rig.cart.wasInWater = false;
       rig.fallSpeed = 0;
       rig.body.setTranslation(spawn, true);
     }
