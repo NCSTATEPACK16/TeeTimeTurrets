@@ -4,6 +4,7 @@
   "description": "Open-source browser arcade golf-combat game (Three.js + Rapier + Vite).",
   "main": "index.js",
   "scripts": {
+    "postinstall": "puppeteer browsers install chrome",
     "dev": "vite",
     "build": "tsc --noEmit && vite build && npm run gate",
     "preview": "vite preview",
