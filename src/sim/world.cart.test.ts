@@ -10,7 +10,6 @@ import type { BallPool, PooledBall } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { SurfaceId } from "./surfaces";
 import { Sim, SwingMode } from "./world";
-import type { Vec3 } from "./world";
 
 /**
  * Phase 2's gate, run headlessly against the real Rapier world. Everything here is driven
@@ -70,15 +69,6 @@ describe("cart in the world", () => {
   });
 
   it("drives forward under throttle without falling through the ground", () => {
-    // The stationary-mode ball rests at the tee, directly in the cart's drive lane. Driving
-    // through it registers a real combat contact; against the old fixed 100 HP that was a
-    // harmless dent, but against the now par-sized health bar it can be lethal and freeze the
-    // cart before it covers 5 m. Move the ball out of the lane first -- this test is about
-    // ground-following, not combat.
-    const ball = (sim as unknown as { ball: { setTranslation: (t: Vec3, wake: boolean) => void } }).ball;
-    const tee = sim.terrain.teePosition;
-    ball.setTranslation({ x: tee.x, y: tee.y, z: tee.z + 20 }, true);
-
     const start = { ...sim.cart.position };
     play(sim, [ENTER_CART_MODE, { ticks: seconds(3), intent: { throttle: 1 } }]);
     const p = sim.cart.position;
@@ -293,6 +283,20 @@ describe("cart-mode ammo-aware combat shots", () => {
     // also runs unconditionally inside stepCart every tick.
     expect(sim.cart.ammo).toBe(ammoBefore - 1);
     expect(sim.strokes).toBe(strokesBefore + (sim.lastShotWasStrike ? 1 : 0));
+  });
+
+  it("driving over the dormant course ball costs nothing", () => {
+    // The course ball rests at the tee and the cart spawns behind it, so this is the drive every
+    // hole opens with. It is a hazard only if the dormant ball is a combat actor.
+    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    const hpBefore = sim.cart.health.hp;
+    play(sim, [{ ticks: seconds(3), intent: { throttle: 1 } }]);
+
+    expect(sim.cart.strokesTaken).toBe(0);
+    expect(sim.cart.health.hp).toBe(hpBefore);
+    expect(sim.cart.dead).toBe(false);
+    // And it really did drive over the tee, or the assertions above prove nothing.
+    expect(sim.cart.position.x).toBeGreaterThan(sim.terrain.teePosition.x);
   });
 });
 

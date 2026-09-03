@@ -297,7 +297,12 @@ export class Sim {
       .setFriction(0.55)
       .setRestitution(BALL_RESTITUTION)
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-    const ballCollider = sim.world.createCollider(ballColliderDesc, sim.ball);
+    // Deliberately NOT registered as a combat actor. The course ball is dormant in cart-only
+    // mode (spec section 3) and only pooled balls -- fired ammo -- can hurt a cart. Registering
+    // it made the player's own resting ball a hazard: the cart spawns behind the tee, so driving
+    // forward ran it into the ball and cost strokes, which at 2 x par health is lethal. An
+    // unregistered handle falls through processContacts's own `if (!a || !b) return`.
+    sim.world.createCollider(ballColliderDesc, sim.ball);
 
     const spawn = cartSpawnPosition(terrain);
     sim.cartBody = sim.world.createRigidBody(
@@ -340,7 +345,6 @@ export class Sim {
       stats: sim.stats,
       onCartKilled: (cart) => sim.killCart(cart),
     };
-    sim.registry.registerBall(ballCollider.handle, sim.ball);
     for (const pooled of sim.ballPool.all) {
       sim.registry.registerBall(pooled.body.collider(0).handle, pooled.body);
     }
