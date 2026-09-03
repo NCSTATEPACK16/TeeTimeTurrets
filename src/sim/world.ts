@@ -829,9 +829,16 @@ export class Sim {
   /**
    * Flattens the pool into the current buffer. An idle ball is parked far below the world, so the
    * active flag is what stops the renderer drawing thirty-two spheres at y = -1000.
+   *
+   * A slot transitioning idle -> active this tick also gets `previousPoolTransforms` seeded with
+   * the same transform. Without this, `previous` for that slot is stale -- world origin for a
+   * never-used slot, or wherever the slot's last occupant landed for a reused one -- and
+   * `interpolateTransforms` (main.ts) would lerp the ball in from that stale point on its spawn
+   * frame even though the active flag (copied, not lerped) already reads 1.
    */
   private syncCurrentPool(): void {
     const buffer = this.currentPoolTransforms;
+    const previous = this.previousPoolTransforms;
     const balls = this.ballPool.all;
     for (let i = 0; i < POOL_SIZE; i++) {
       const flat = i * POOL_TRANSFORM_STRIDE;
@@ -840,6 +847,7 @@ export class Sim {
         buffer[flat + 7] = 0;
         continue;
       }
+      const wasActive = previous[flat + 7] === 1;
       const t = ball.body.translation();
       const r = ball.body.rotation();
       buffer[flat] = t.x;
@@ -850,6 +858,16 @@ export class Sim {
       buffer[flat + 5] = r.z;
       buffer[flat + 6] = r.w;
       buffer[flat + 7] = 1;
+      if (!wasActive) {
+        previous[flat] = buffer[flat]!;
+        previous[flat + 1] = buffer[flat + 1]!;
+        previous[flat + 2] = buffer[flat + 2]!;
+        previous[flat + 3] = buffer[flat + 3]!;
+        previous[flat + 4] = buffer[flat + 4]!;
+        previous[flat + 5] = buffer[flat + 5]!;
+        previous[flat + 6] = buffer[flat + 6]!;
+        previous[flat + 7] = 1;
+      }
     }
   }
 }

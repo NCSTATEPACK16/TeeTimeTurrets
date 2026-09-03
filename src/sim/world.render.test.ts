@@ -137,6 +137,33 @@ describe("pooled ball snapshots", () => {
     sim.loadHole(course[1]!);
     expect(countActive(sim.currentPoolTransforms)).toBe(0);
   });
+
+  it("seeds the previous transform on the tick a slot activates, so a spawning ball has no stale prior position to lerp from", async () => {
+    const sim = await Sim.create(generateCourse(2026, 1).holes[0]!);
+    sim.mode = SwingMode.Cart;
+    const intent = neutralIntent();
+    intent.fire = true;
+    sim.step(intent);
+    intent.fire = false;
+    sim.step(intent); // fires on this tick's release edge, per Cart's charge-and-release model
+
+    let activeIndex = -1;
+    for (let i = 0; i < POOL_SIZE; i++) {
+      if (sim.currentPoolTransforms[i * POOL_TRANSFORM_STRIDE + 7] === 1) {
+        activeIndex = i;
+        break;
+      }
+    }
+    expect(activeIndex).toBeGreaterThanOrEqual(0);
+
+    const flat = activeIndex * POOL_TRANSFORM_STRIDE;
+    // On the very tick a slot activates, its "previous" snapshot must already equal "current" --
+    // otherwise interpolateTransforms lerps the ball in from wherever that slot's previous
+    // occupant (or world origin, for a never-used slot) last stood.
+    for (let k = 0; k < POOL_TRANSFORM_STRIDE; k++) {
+      expect(sim.previousPoolTransforms[flat + k]).toBeCloseTo(sim.currentPoolTransforms[flat + k]!, 5);
+    }
+  });
 });
 
 function countActive(buffer: Float32Array): number {
