@@ -3,10 +3,11 @@ import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
 import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, computeMuzzle } from "./entities/Cart";
-import { BallPool } from "./entities/BallPool";
+import { BallPool, POOL_SIZE } from "./entities/BallPool";
+import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
-import { Target } from "./entities/Target";
+import { PARTS_PER_TARGET, Target } from "./entities/Target";
 import { CombatRegistry, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
 import { createStats } from "./stats";
@@ -21,7 +22,16 @@ export type { Vec3 } from "./course";
 /** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
 export const FIXED_DT = 1 / 60;
 
-const BALL_RADIUS = 0.15;
+/**
+ * Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. Flat typed
+ * arrays rather than objects because these are filled every tick for up to 33 ragdoll parts and
+ * 32 pooled balls, and the no-allocation rule covers the fixed tick.
+ */
+export const TRANSFORM_STRIDE = 7;
+
+/** As TRANSFORM_STRIDE, plus a trailing 1/0 active flag: an idle pool slot is parked far below
+ *  the world and must not be drawn where it is parked. */
+export const POOL_TRANSFORM_STRIDE = 8;
 
 /**
  * Rapier's linear damping is the ball's *air* drag only (F = -k*v, applied in flight and on
@@ -205,6 +215,16 @@ export class Sim {
   private readonly buckets: Bucket[] = [];
   /** Knockable ragdolls standing on this hole. Rebuilt by `loadHole`, stood back up by `reset`. */
   readonly targets: Target[] = [];
+  /** Parts across all targets on this hole. `targets.length * PARTS_PER_TARGET`. */
+  targetPartCount = 0;
+  /** Target part transforms from the previous fixed step, for render interpolation. */
+  previousTargetTransforms = new Float32Array(0);
+  /** Target part transforms from the most recent fixed step. */
+  currentTargetTransforms = new Float32Array(0);
+  /** Pooled ball transforms from the previous fixed step, for render interpolation. */
+  previousPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
+  /** Pooled ball transforms from the most recent fixed step. */
+  currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** Round-level counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
   readonly stats = createStats();
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
@@ -215,13 +235,6 @@ export class Sim {
   /** Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
   private simTime = 0;
   mode: SwingMode = SwingMode.Stationary;
-  /** True when the cart is close enough to a resting ball to scoop it up. */
-  ballInReach = false;
-  /**
-   * True when the ball is riding the turret rather than lying on the course. While loaded it is
-   * rendered at the muzzle and a shot plays it; while not loaded a shot is a blank.
-   */
-  ballLoaded = false;
   /** True when the last shot played the ball rather than being a blank fired for propulsion. */
   lastShotWasStrike = false;
   /** Vertical velocity of the cart, integrated here because a KCC has no gravity of its own. */
@@ -334,6 +347,8 @@ export class Sim {
     sim.previous = sim.current;
     sim.syncCurrentCart();
     sim.previousCart = sim.currentCart;
+    sim.syncCurrentPool();
+    sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
   }
 
@@ -383,6 +398,15 @@ export class Sim {
       this.targets.push(target);
       this.registry.registerTarget(target);
     }
+
+    this.targetPartCount = this.targets.length * PARTS_PER_TARGET;
+    const floats = this.targetPartCount * TRANSFORM_STRIDE;
+    if (this.currentTargetTransforms.length !== floats) {
+      this.currentTargetTransforms = new Float32Array(floats);
+      this.previousTargetTransforms = new Float32Array(floats);
+    }
+    this.syncCurrentTargets();
+    this.previousTargetTransforms.set(this.currentTargetTransforms);
   }
 
   /**
@@ -417,6 +441,8 @@ export class Sim {
     // new hole -- otherwise a landed ball at the previous hole's coordinates could still be
     // picked up for ammo here, and the bucket would sit wherever the last hole put it.
     this.ballPool.releaseAll();
+    this.syncCurrentPool();
+    this.previousPoolTransforms.set(this.currentPoolTransforms);
     const tee = this.terrain.teePosition;
     for (const bucket of this.buckets) {
       bucket.position = { x: tee.x + 10, z: tee.z };
@@ -436,6 +462,14 @@ export class Sim {
    * follows it.
    */
   step(intent: PlayerIntent = IDLE_INTENT): void {
+    const swapTargets = this.previousTargetTransforms;
+    this.previousTargetTransforms = this.currentTargetTransforms;
+    this.currentTargetTransforms = swapTargets;
+
+    const swapPool = this.previousPoolTransforms;
+    this.previousPoolTransforms = this.currentPoolTransforms;
+    this.currentPoolTransforms = swapPool;
+
     this.previousCart = this.currentCart;
     this.stepCart(intent);
     this.syncCurrentCart();
@@ -447,6 +481,8 @@ export class Sim {
     this.syncCurrent();
     processContacts(this.eventQueue, this.combatContext);
     for (const target of this.targets) target.step();
+    this.syncCurrentTargets();
+    this.syncCurrentPool();
 
     // The heightfield has no walls, so a ball past its edge free-falls forever and never
     // satisfies isResting() -- the player would be locked out of swinging with only a
@@ -515,12 +551,6 @@ export class Sim {
 
     if (driving) this.moveCartBody();
 
-    const b = this.current.position;
-    this.ballInReach = Math.hypot(b.x - c.x, b.z - c.z) <= PICKUP_RANGE;
-    // The ball only rides the turret while it is settled: scooping one still rolling would let
-    // a player cancel their own shot by chasing it.
-    this.ballLoaded = driving && this.ballInReach && this.isResting() && !this.holedOut;
-
     for (const bucket of this.buckets) {
       if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) this.cart.addAmmo(BUCKET_REFILL_AMMO);
     }
@@ -541,8 +571,6 @@ export class Sim {
    * the mode toggle are all ignored -- so ammo, reload and position are frozen for the duration.
    */
   private stepRespawn(): void {
-    this.ballLoaded = false;
-    this.ballInReach = false;
     this.cart.respawnTimer -= FIXED_DT;
     if (this.cart.respawnTimer > 0) return;
 
@@ -603,6 +631,10 @@ export class Sim {
    */
   private resolveShot(): void {
     if (this.mode === SwingMode.Cart) {
+      // No ball is scooped off the course here and none ever will be: the ammo fork replaced
+      // "drive over the ball to load it" with a pooled-ball ammo counter, and this branch never
+      // touches Sim.ball. The old ballLoaded/ballInReach pair described the retired mechanic and
+      // made the course ball vanish onto a turret that could not play it (BACKLOG #16d).
       if (!this.cart.shot.hasBall) {
         this.lastShotWasStrike = false;
         return;
@@ -641,7 +673,9 @@ export class Sim {
     this.launch(this.cart.shot.yaw, this.cart.shot.charge01, this.cart.shot.club);
   }
 
-  /** Where the ball is riding when loaded -- the renderer draws it there instead of on the course. */
+  /** Where the ball is riding when loaded on the turret. The scoop-onto-the-turret mechanic is
+   * retired (#16d), so the course ball is now always drawn and this no longer trades off
+   * against a course position -- it just answers where the ammo-round sprite sits. */
   muzzle(out: Vec3): void {
     computeMuzzle(this.cart, out);
   }
@@ -723,6 +757,8 @@ export class Sim {
     this.cart.revive();
     this.cartFallSpeed = 0;
     for (const target of this.targets) target.reset();
+    this.syncCurrentTargets();
+    this.previousTargetTransforms.set(this.currentTargetTransforms);
     this.cartBody.setTranslation(spawn, true);
     this.syncCurrentCart();
     this.previousCart = this.currentCart;
@@ -765,6 +801,75 @@ export class Sim {
       heading: this.cart.heading,
       turretYaw: this.cart.turretYaw,
     };
+  }
+
+  /**
+   * Flattens every target part's body transform into the current buffer. Reads Rapier directly
+   * rather than going through Target, because Target owns no snapshot of its own and the render
+   * layer must never touch a Rapier body itself.
+   */
+  private syncCurrentTargets(): void {
+    const buffer = this.currentTargetTransforms;
+    let i = 0;
+    for (const target of this.targets) {
+      for (const part of target.parts) {
+        const t = part.body.translation();
+        const r = part.body.rotation();
+        buffer[i] = t.x;
+        buffer[i + 1] = t.y;
+        buffer[i + 2] = t.z;
+        buffer[i + 3] = r.x;
+        buffer[i + 4] = r.y;
+        buffer[i + 5] = r.z;
+        buffer[i + 6] = r.w;
+        i += TRANSFORM_STRIDE;
+      }
+    }
+  }
+
+  /**
+   * Flattens the pool into the current buffer. An idle ball is parked far below the world, so the
+   * active flag is what stops the renderer drawing thirty-two spheres at y = -1000.
+   *
+   * A slot transitioning idle -> active this tick also gets `previousPoolTransforms` seeded with
+   * the same transform. Without this, `previous` for that slot is stale -- world origin for a
+   * never-used slot, or wherever the slot's last occupant landed for a reused one -- and
+   * `interpolateTransforms` (main.ts) would lerp the ball in from that stale point on its spawn
+   * frame even though the active flag (copied, not lerped) already reads 1.
+   */
+  private syncCurrentPool(): void {
+    const buffer = this.currentPoolTransforms;
+    const previous = this.previousPoolTransforms;
+    const balls = this.ballPool.all;
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const flat = i * POOL_TRANSFORM_STRIDE;
+      const ball = balls[i];
+      if (!ball || ball.state === "idle") {
+        buffer[flat + 7] = 0;
+        continue;
+      }
+      const wasActive = previous[flat + 7] === 1;
+      const t = ball.body.translation();
+      const r = ball.body.rotation();
+      buffer[flat] = t.x;
+      buffer[flat + 1] = t.y;
+      buffer[flat + 2] = t.z;
+      buffer[flat + 3] = r.x;
+      buffer[flat + 4] = r.y;
+      buffer[flat + 5] = r.z;
+      buffer[flat + 6] = r.w;
+      buffer[flat + 7] = 1;
+      if (!wasActive) {
+        previous[flat] = buffer[flat]!;
+        previous[flat + 1] = buffer[flat + 1]!;
+        previous[flat + 2] = buffer[flat + 2]!;
+        previous[flat + 3] = buffer[flat + 3]!;
+        previous[flat + 4] = buffer[flat + 4]!;
+        previous[flat + 5] = buffer[flat + 5]!;
+        previous[flat + 6] = buffer[flat + 6]!;
+        previous[flat + 7] = 1;
+      }
+    }
   }
 }
 

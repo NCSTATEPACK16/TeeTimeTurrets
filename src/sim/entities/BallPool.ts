@@ -1,4 +1,5 @@
 import RAPIER from "@dimforge/rapier3d-compat";
+import { BALL_RADIUS as POOLED_BALL_RADIUS } from "./ballShape";
 
 /** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
  * explicit out-of-scope list (docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1). */
@@ -14,10 +15,10 @@ export interface PooledBall {
 export const POOL_SIZE = 32;
 export const LANDED_BALL_DESPAWN_S = 15;
 
-// Mirrors world.ts's BALL_RADIUS/BALL_DENSITY/etc. Duplicated rather than imported so this
-// file stays a leaf module -- world.ts imports BallPool, so BallPool importing back from
-// world.ts would be circular. Keep these in sync if the stationary ball's tuning changes.
-const POOLED_BALL_RADIUS = 0.15;
+// POOLED_BALL_RADIUS comes from ballShape.ts, the shared leaf module -- see its docstring. The
+// rest still mirrors world.ts's BALL_DENSITY/etc: those aren't shared because nothing outside
+// world.ts needs them to agree, unlike the radius (which render also has to match). Keep these
+// in sync if the stationary ball's tuning changes.
 const POOLED_BALL_DENSITY = 1130;
 const POOLED_BALL_FRICTION = 0.55;
 const POOLED_BALL_RESTITUTION = 0.35;

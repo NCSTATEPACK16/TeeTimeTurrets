@@ -3,9 +3,10 @@ import { GameLoop } from "./engine/GameLoop";
 import { KeyboardMouseSource } from "./input/KeyboardMouseSource";
 import { RenderScene } from "./render/scene";
 import type { FrameView } from "./render/scene";
-import { FIXED_DT, Sim, SwingMode } from "./sim/world";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, SwingMode, TRANSFORM_STRIDE } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
+import { drawHud, readHud } from "./ui/hud";
 
 /**
  * Fixed until a course-select screen exists (Phase 1.75). Changing it changes every hole, which
@@ -24,7 +25,7 @@ async function main(): Promise<void> {
   // sim.loadHole.
   const course = generateCourse(COURSE_SEED, 9);
   const sim = await Sim.create(course.holes[0]);
-  const render = new RenderScene(container, sim.terrain);
+  const render = new RenderScene(container, sim.terrain, sim.targets.length);
   const input = new KeyboardMouseSource(render.renderer.domElement);
 
   // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
@@ -45,7 +46,10 @@ async function main(): Promise<void> {
     charge01: 0,
     club: sim.cart.equippedClub,
     mode: sim.mode,
-    ballLoaded: sim.ballLoaded,
+    turretLoaded: turretLoaded(sim),
+    targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
+    targetPartCount: sim.targetPartCount,
+    poolTransforms: new Float32Array(sim.currentPoolTransforms.length),
   };
 
   const loop = new GameLoop({
@@ -61,7 +65,20 @@ async function main(): Promise<void> {
       view.charge01 = sim.cart.charge;
       view.club = sim.cart.equippedClub;
       view.mode = sim.mode;
-      view.ballLoaded = sim.ballLoaded;
+      view.turretLoaded = turretLoaded(sim);
+      interpolateTransforms(
+        sim.previousTargetTransforms,
+        sim.currentTargetTransforms,
+        alpha,
+        view.targetTransforms,
+      );
+      interpolateTransforms(
+        sim.previousPoolTransforms,
+        sim.currentPoolTransforms,
+        alpha,
+        view.poolTransforms,
+        POOL_TRANSFORM_STRIDE,
+      );
 
       render.draw(view);
       drawHud(hud, sim);
@@ -70,51 +87,12 @@ async function main(): Promise<void> {
   loop.start();
 }
 
-interface Hud {
-  powerFill: HTMLElement;
-  mode: HTMLElement;
-  club: HTMLElement;
-  strokes: HTMLElement;
-  status: HTMLElement;
-}
-
-function readHud(): Hud | null {
-  const powerFill = document.getElementById("power-fill");
-  const mode = document.getElementById("hud-mode");
-  const club = document.getElementById("hud-club");
-  const strokes = document.getElementById("hud-strokes");
-  const status = document.getElementById("hud-status");
-  if (!powerFill || !mode || !club || !strokes || !status) return null;
-  return { powerFill, mode, club, strokes, status };
-}
-
 /**
- * A deliberately minimal readout, not the image-08 HUD -- that is Phase 4's job and wants the
- * layout done properly rather than grown one span at a time. This is only what a player needs to
- * understand what the cart is doing.
+ * What rides the club head in cart mode is a round of ammo, not the course ball -- images 03 and
+ * 04, and what actually fires. In stationary mode there is no turret shot at all.
  */
-function drawHud(hud: Hud, sim: Sim): void {
-  const cart = sim.cart;
-  hud.powerFill.style.width = `${Math.round(cart.charge * 100)}%`;
-  setText(hud.mode, sim.mode === SwingMode.Cart ? "CART" : "STANDING");
-  setText(hud.club, cart.equippedClub.toUpperCase());
-  setText(hud.strokes, `STROKES ${sim.strokes}`);
-  setText(hud.status, statusText(sim));
-}
-
-function statusText(sim: Sim): string {
-  if (sim.holedOut) return "HOLED OUT — R to reset";
-  if (!sim.cart.canFire) return `RELOADING ${sim.cart.reloadRemaining.toFixed(1)}s`;
-  if (sim.lastShotInWater) return "WATER HAZARD — plus one stroke";
-  if (sim.lastShotOutOfBounds) return "OUT OF BOUNDS — returned to the tee";
-  if (sim.mode !== SwingMode.Cart) return "READY";
-  if (sim.ballLoaded) return "BALL LOADED — fire to play it";
-  return sim.ballInReach ? "BALL SETTLING…" : "NO BALL — fire a blank to boost";
-}
-
-/** Guarded so an unchanged string does not dirty the DOM every frame at 60fps. */
-function setText(element: HTMLElement, text: string): void {
-  if (element.textContent !== text) element.textContent = text;
+function turretLoaded(sim: Sim): boolean {
+  return sim.mode === SwingMode.Cart && sim.cart.ammo > 0;
 }
 
 const scratchA = new THREE.Quaternion();
@@ -156,6 +134,43 @@ function interpolateCart(
   out.position.z = lerp(previous.position.z, current.position.z, alpha);
   out.heading = lerp(previous.heading, current.heading, alpha);
   out.turretYaw = lerp(previous.turretYaw, current.turretYaw, alpha);
+}
+
+/**
+ * Lerps positions and slerps rotations for a whole flat transform buffer in place. Uninterpolated,
+ * a ragdoll collapsing over about a second steps visibly at any refresh rate above 60 Hz -- and
+ * the collapse is the thing this rendering exists to show.
+ *
+ * Standing parts are interpolated too rather than special-cased: the copy costs a handful of
+ * floats and keeps this one code path instead of two.
+ */
+function interpolateTransforms(
+  previous: Float32Array,
+  current: Float32Array,
+  alpha: number,
+  out: Float32Array,
+  stride: number = TRANSFORM_STRIDE,
+): void {
+  const count = Math.min(previous.length, current.length, out.length);
+  for (let i = 0; i + stride <= count; i += stride) {
+    out[i] = lerp(previous[i]!, current[i]!, alpha);
+    out[i + 1] = lerp(previous[i + 1]!, current[i + 1]!, alpha);
+    out[i + 2] = lerp(previous[i + 2]!, current[i + 2]!, alpha);
+
+    scratchA.set(previous[i + 3]!, previous[i + 4]!, previous[i + 5]!, previous[i + 6]!);
+    scratchB.set(current[i + 3]!, current[i + 4]!, current[i + 5]!, current[i + 6]!);
+    scratchOut.slerpQuaternions(scratchA, scratchB, alpha);
+    out[i + 3] = scratchOut.x;
+    out[i + 4] = scratchOut.y;
+    out[i + 5] = scratchOut.z;
+    out[i + 6] = scratchOut.w;
+
+    // Anything past the transform itself is a flag, not a value: copy, never interpolate. A
+    // half-active ball would be drawn at half scale on the frame it spawns.
+    for (let extra = TRANSFORM_STRIDE; extra < stride; extra++) {
+      out[i + extra] = current[i + extra]!;
+    }
+  }
 }
 
 function lerp(a: number, b: number, t: number): number {

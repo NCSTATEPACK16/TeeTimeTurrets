@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { CLUB_STATS, ClubType } from "../physics/Ballistics";
 import { TURRET_GEOMETRY } from "../sim/entities/Cart";
+import { BALL_RADIUS } from "./BallSwarm";
 
 /**
  * The hero cart: chassis, canopy, and a turret bolted to the roof whose barrel *is* a golf club
@@ -21,7 +22,6 @@ const CHASSIS_SIZE = { width: 1.4, height: 0.6, length: 2.2 };
 const WHEEL_RADIUS = 0.35;
 const CANOPY_THICKNESS = 0.09;
 const POST_RADIUS = 0.045;
-const BALL_RADIUS = 0.15;
 const MAX_WINDUP_TILT_RADIANS = 0.32;
 
 /** Roof height comes from the sim so the turret ring and `computeMuzzle` cannot disagree. */

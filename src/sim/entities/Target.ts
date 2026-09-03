@@ -108,6 +108,30 @@ const RIG: readonly PartSpec[] = [
   { name: "lowerLegR", radius: 0.08, halfHeight: 0.17, x: -0.11, y: 0.3, angularDamping: 6, parent: "upperLegR", joint: "revolute", jointY: 0.5, limits: [-2.4, 0] },
 ] as const;
 
+/**
+ * The rig's capsule dimensions and rest pose, exported so the renderer builds its capsules from
+ * the same numbers the colliders use. AGENTS.md's "never add a second source of truth" rule
+ * applies here exactly as it does to CLUB_STATS: a visual capsule that disagrees with its
+ * collider is the same class of bug as a club head that disagrees with its ballistics.
+ *
+ * Shape data only -- no Three types cross into src/sim/**, which stays DOM-free and three-free.
+ */
+export interface TargetPartShape {
+  readonly name: TargetPartName;
+  readonly radius: number;
+  readonly halfHeight: number;
+  readonly restOffset: { readonly x: number; readonly y: number; readonly z: number };
+}
+
+export const TARGET_PART_SHAPES: readonly TargetPartShape[] = RIG.map((spec) => ({
+  name: spec.name,
+  radius: spec.radius,
+  halfHeight: spec.halfHeight,
+  restOffset: { x: spec.x, y: spec.y, z: 0 },
+}));
+
+export const PARTS_PER_TARGET = RIG.length;
+
 /** Knees and elbows hinge in the sagittal plane, so the axis runs across the body (world X). */
 const HINGE_AXIS = { x: 1, y: 0, z: 0 };
 

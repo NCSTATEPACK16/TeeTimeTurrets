@@ -1,12 +1,12 @@
 import * as THREE from "three";
+import { BallSwarm, BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../entities/BallSwarm";
 import { GolfClub } from "../entities/GolfClub";
+import { TargetRig } from "../entities/TargetRig";
 import type { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import { CART_COLLIDER } from "../sim/entities/Cart";
 import { SwingMode } from "../sim/world";
 import type { BallTransform, CartTransform } from "../sim/world";
-
-const BALL_RADIUS = 0.15;
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
@@ -50,8 +50,16 @@ export interface FrameView {
   charge01: number;
   club: ClubType;
   mode: SwingMode;
-  /** True while the ball rides the turret: the course ball is hidden and the turret's is shown. */
-  ballLoaded: boolean;
+  /** True while a round of ammo rides the club head: drawn on the turret. Loaded does not mean
+   * fireable -- `Cart.canFire` also gates on the reload timer, so a loaded round can still be
+   * mid-reload. */
+  turretLoaded: boolean;
+  /** Interpolated target part transforms, laid out exactly as Sim publishes them. */
+  targetTransforms: Float32Array;
+  /** Number of valid transforms in `targetTransforms`. */
+  targetPartCount: number;
+  /** Interpolated pooled-ball transforms, laid out exactly as Sim publishes them. */
+  poolTransforms: Float32Array;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -63,12 +71,14 @@ export class RenderScene {
   private readonly ball: THREE.Mesh;
   private readonly aimArrow: THREE.ArrowHelper;
   private readonly cart: GolfClub;
+  private readonly targets: TargetRig;
+  private readonly pooledBalls: BallSwarm;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly aimDirScratch = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
 
-  constructor(container: HTMLElement, terrain: Terrain) {
+  constructor(container: HTMLElement, terrain: Terrain, targetCount: number) {
     this.terrain = terrain;
     const fieldSize = terrain.spec.fieldSize;
 
@@ -97,7 +107,7 @@ export class RenderScene {
 
     this.scene.add(buildGroundMesh(terrain));
 
-    const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 20, 16);
+    const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
     const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
     this.ball = new THREE.Mesh(ballGeo, ballMat);
     this.scene.add(this.ball);
@@ -107,6 +117,12 @@ export class RenderScene {
 
     this.cart = new GolfClub();
     this.scene.add(this.cart);
+
+    this.targets = new TargetRig(targetCount);
+    this.scene.add(this.targets);
+
+    this.pooledBalls = new BallSwarm();
+    this.scene.add(this.pooledBalls);
 
     this.cameraTarget.set(0, 0, 0);
     window.addEventListener("resize", () => this.onResize());
@@ -122,10 +138,8 @@ export class RenderScene {
     );
 
     this.drawCart(view);
-
-    // Exactly one ball is ever visible. While loaded it is the turret's, so it tracks the
-    // barrel perfectly instead of being chased there by an interpolated world position.
-    this.ball.visible = !view.ballLoaded;
+    this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
+    this.pooledBalls.setFromTransforms(view.poolTransforms);
 
     // The ground aim arrow belongs to stationary mode, where the player is lining up a lie. In
     // cart mode the barrel itself shows where the shot is going.
@@ -147,6 +161,8 @@ export class RenderScene {
   /** Frees the cart's geometries and materials. See the AGENTS.md resource-cleanup rule. */
   dispose(): void {
     this.cart.dispose();
+    this.targets.dispose();
+    this.pooledBalls.dispose();
     this.renderer.dispose();
   }
 
@@ -164,7 +180,7 @@ export class RenderScene {
     this.cart.setAimYaw(c.heading - c.turretYaw);
     this.cart.setClub(view.club);
     this.cart.setChargeVisual(view.charge01);
-    this.cart.setBallLoaded(view.ballLoaded);
+    this.cart.setBallLoaded(view.turretLoaded);
   }
 
   private frameChase(view: FrameView): void {

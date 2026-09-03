@@ -59,7 +59,13 @@ async function hold(page, key, ms) {
   await page.keyboard.up(key);
 }
 
-const browser = await puppeteer.launch({ headless: true, args: ["--enable-unsafe-swiftshader"] });
+// --no-sandbox/--disable-setuid-sandbox/--disable-dev-shm-usage: see tools/sceneGate.mjs's launch
+// call for why these are needed on CI/build containers and why dropping the OS sandbox is fine
+// here (the only page ever loaded is this repo's own built output on localhost).
+const browser = await puppeteer.launch({
+  headless: true,
+  args: ["--enable-unsafe-swiftshader", "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+});
 const page = await browser.newPage();
 await page.setViewport({ width: 1280, height: 720 });
 
@@ -87,8 +93,23 @@ const read = () =>
       mode: sim.mode,
       club: sim.cart.equippedClub,
       strokes: sim.strokes,
-      loaded: sim.ballLoaded,
-      inReach: sim.ballInReach,
+      ammo: sim.cart.ammo,
+      health: sim.cart.health.hp,
+      dead: sim.cart.dead,
+      // The highest-flying active pooled ball. Cart-mode shots are pooled bodies, not Sim.ball,
+      // so this is the only honest way to ask "did a ball leave the muzzle".
+      topPooledBallY: (() => {
+        const stride = 8;
+        let best = null;
+        for (let i = 0; i < sim.currentPoolTransforms.length; i += stride) {
+          if (sim.currentPoolTransforms[i + 7] !== 1) continue;
+          const y = sim.currentPoolTransforms[i + 1];
+          if (best === null || y > best) best = y;
+        }
+        return best;
+      })(),
+      hudCombatHidden: document.getElementById("hud-combat").hidden,
+      hudAmmo: document.getElementById("ammo-count").textContent,
       cart: { ...sim.cart.position },
       ball: { ...sim.current.position },
       heading: sim.cart.heading,
@@ -139,27 +160,26 @@ const putter = await read();
 check("number row selects a club", putter.club === "putter", putter.club);
 check("HUD shows the equipped club", putter.hudClub === "PUTTER", putter.hudClub);
 
-console.log("=== BLANK FIRE (F, driven away from the ball) ===");
-// The ball is still back at the tee, so this shot has nothing loaded: it must shove the cart
-// without costing a stroke. That is the mechanic the phase exists for, and F is the key that
-// makes it usable while a hand is already on WASD.
-check("ball is not loaded once driven away from it", putter.loaded === false);
+console.log("=== FIRE WHILE DRIVING (F) ===");
+// Cart-mode fire is propulsion first: recoil opposes the shot, so firing shoves the cart. It
+// costs no stroke whether or not a ball spawns, because Sim.strokes only moves on death, water
+// and a stationary launch. Both assertions below still hold; only the reason has changed.
 const strokesBefore = putter.strokes;
 const cartBeforeShot = putter.cart;
 await hold(page, "KeyF", 900);
 await new Promise((r) => setTimeout(r, 400));
 const fired = await read();
 const shoved = Math.hypot(fired.cart.x - cartBeforeShot.x, fired.cart.z - cartBeforeShot.z);
-check("blank costs no stroke", fired.strokes === strokesBefore, `strokes ${fired.strokes}`);
-check("blank still shoves the cart (recoil propulsion)", shoved > 0.2, `${shoved.toFixed(2)} m`);
+check("cart-mode fire costs no stroke", fired.strokes === strokesBefore, `strokes ${fired.strokes}`);
+check("firing shoves the cart (recoil propulsion)", shoved > 0.2, `${shoved.toFixed(2)} m`);
 
-console.log("=== BALL ON THE TURRET ===");
+console.log("=== RESET AND RELOAD ===");
 await page.keyboard.press("KeyR");
-// The tee ball spawns 0.3 m up and needs about half a second to settle before it can be scooped.
 await new Promise((r) => setTimeout(r, 1200));
-const loadedState = await read();
-check("ball rides the turret once settled and in reach", loadedState.loaded === true);
-check("cart is back in cart mode after reset", loadedState.mode === "cart", loadedState.mode);
+const readyState = await read();
+check("cart is back in cart mode after reset", readyState.mode === "cart", readyState.mode);
+check("cart has ammo to fire", readyState.ammo > 0, `ammo ${readyState.ammo}`);
+check("health is restored by a reset", readyState.health > 0, `hp ${readyState.health}`);
 
 // Swing the turret off-axis and pick the driver before the shot: dead astern the barrel is
 // foreshortened to nothing, and the club-as-barrel is the whole point of the silhouette.
@@ -172,13 +192,29 @@ await page.screenshot({ path: SHOT });
 console.log(`  screenshot -> ${SHOT}`);
 
 console.log("=== FIRE FROM THE MUZZLE ===");
-const groundBefore = loadedState.cart.y;
+// Cart mode fires pooled balls off an ammo counter, not Sim.ball off the turf, and a cart-mode
+// shot is not a stroke -- Sim.strokes only moves on death, water, and a stationary launch. The
+// assertions here are the mechanic that exists, not the pre-ammo one they replaced.
+const ammoBefore = readyState.ammo;
+const groundBefore = readyState.cart.y;
 await hold(page, "KeyF", 1600);
 await new Promise((r) => setTimeout(r, 120));
 const shot = await read();
-check("loaded shot counts a stroke", shot.strokes === 1, `strokes ${shot.strokes}`);
-check("ball leaves from above the cart, not from the ground", shot.ball.y > groundBefore, `ball y=${shot.ball.y.toFixed(2)} vs cart y=${groundBefore.toFixed(2)}`);
-check("ball unloads after being fired", shot.loaded === false);
+check("firing spends a round of ammo", shot.ammo === ammoBefore - 1, `${ammoBefore} -> ${shot.ammo}`);
+check("a pooled ball is in flight", shot.topPooledBallY !== null, `y=${shot.topPooledBallY}`);
+check(
+  "the ball leaves from above the cart, not from the ground",
+  shot.topPooledBallY !== null && shot.topPooledBallY > groundBefore,
+  `ball y=${shot.topPooledBallY?.toFixed(2)} vs cart y=${groundBefore.toFixed(2)}`,
+);
+
+console.log("=== COMBAT HUD ===");
+check("health and ammo are visible in cart mode", shot.hudCombatHidden === false);
+check("the ammo card matches the sim", shot.hudAmmo === String(shot.ammo), `${shot.hudAmmo} vs ${shot.ammo}`);
+await page.keyboard.press("KeyC");
+await new Promise((r) => setTimeout(r, 200));
+const standing = await read();
+check("health and ammo hide in stationary mode", standing.hudCombatHidden === true);
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 
