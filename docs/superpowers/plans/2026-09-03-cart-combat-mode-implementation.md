@@ -853,7 +853,9 @@ In `src/sim/world.ts`, replace the body of `stepCart` from `if (this.cart.dead)`
   }
 ```
 
-Note what this deletes: the `intent.toggleMode` branch, the `driving` flag and the `parkedIntent(intent)` call. `SwingMode` and `Sim.mode` stay in the file untouched — Task 5 handles the rest of the mode removal, including deleting `parkedIntent`/`parkedScratch`, which are now unreferenced. Leave them for one task; `noUnusedLocals` does not flag an unused private method, so this compiles.
+Note what this deletes: the `intent.toggleMode` branch, the `driving` flag and the `parkedIntent(intent)` call. `SwingMode` and `Sim.mode` stay in the file untouched — Task 5 handles the rest of the mode removal.
+
+**Delete `parkedIntent` and the `parkedScratch` field in this task, not in Task 5.** This task was their only caller, and `noUnusedLocals` reports `TS6133: 'parkedIntent' is declared but its value is never read` for an unused *private method* just as it does for a local — verified, not assumed. Leaving them for a later task fails this task's own typecheck. Deleting `parkedIntent` also orphans `parkedScratch`, so both go together.
 
 Retarget `stepRespawn`, `moveCartBody` and `resolveShot` at a rig or a cart. Replace `stepRespawn` in full:
 
@@ -1351,7 +1353,7 @@ Extend the `SwingMode` docstring with a matching note:
  */
 ```
 
-Delete `parkedIntent` and the `parkedScratch` field outright — the stationary path was their only caller and it is unreachable now.
+(`parkedIntent` and `parkedScratch` are already gone — Task 3 deleted them, because orphaning a private member fails `noUnusedLocals` in the task that orphans it.)
 
 Add a note at the top of `resolveShot`:
 
@@ -1783,8 +1785,12 @@ Expected: PASS.
 In `src/sim/world.ts`, add to `CartRig`:
 
 ```ts
-  /** The bot's own seeded stream. `null` for the player's rig, which is not AI-driven. */
-  readonly random: (() => number) | null;
+  /**
+   * The bot's own seeded stream. `null` for the player's rig, which is not AI-driven.
+   * Deliberately not `readonly`: `reset()` re-seeds it so "play again" is a genuine rerun
+   * rather than a continuation of the previous match's stream.
+   */
+  random: (() => number) | null;
   /** Reused per tick so the bot's intent costs no allocation. `null` for the player's rig. */
   readonly intentScratch: PlayerIntent | null;
 ```
@@ -1869,7 +1875,7 @@ import type { BotTarget } from "./bot";
 import { hashChannel, mulberry32 } from "./rng";
 ```
 
-`Sim.reset()` must re-seed the bots so "play again" is a genuine rerun rather than a continuation of the previous match's stream. `CartRig.random` is `readonly`, so drop the `readonly` on that one field and add to `reset()`'s per-rig loop:
+`Sim.reset()` must re-seed the bots. Add to `reset()`'s per-rig loop:
 
 ```ts
       if (rig.random !== null) {
@@ -2901,28 +2907,36 @@ const plateScratch = { x: 0, y: 0 };
  * never a mutation, per the AGENTS.md rule that src/ui/** consumes sim state.
  */
 function drawNameplates(render: RenderScene, plates: Nameplates, view: FrameView, sim: Sim): void {
-  place(0, view.cart, sim.cart.health);
+  placeNameplate(render, plates, 0, view.cart, sim.cart.health);
   for (let i = 0; i < view.botCarts.length; i++) {
     const bot = sim.bots[i];
     if (bot === undefined) continue;
-    place(i + 1, view.botCarts[i]!, bot.health);
+    placeNameplate(render, plates, i + 1, view.botCarts[i]!, bot.health);
   }
+}
 
-  function place(index: number, cart: CartTransform, health: { hp: number; max: number }): void {
-    const visible = render.projectToScreen(
-      cart.position.x,
-      cart.position.y + NAMEPLATE_HEIGHT,
-      cart.position.z,
-      plateScratch,
-    );
-    plates.setPlate(
-      index,
-      plateScratch.x,
-      plateScratch.y,
-      visible,
-      health.max > 0 ? health.hp / health.max : 0,
-    );
-  }
+/** Module-level rather than nested inside `drawNameplates`: a function declared inside a function
+ *  body allocates a fresh closure on every call, and this one is called every frame. */
+function placeNameplate(
+  render: RenderScene,
+  plates: Nameplates,
+  index: number,
+  cart: CartTransform,
+  health: { readonly hp: number; readonly max: number },
+): void {
+  const visible = render.projectToScreen(
+    cart.position.x,
+    cart.position.y + NAMEPLATE_HEIGHT,
+    cart.position.z,
+    plateScratch,
+  );
+  plates.setPlate(
+    index,
+    plateScratch.x,
+    plateScratch.y,
+    visible,
+    health.max > 0 ? health.hp / health.max : 0,
+  );
 }
 ```
 
