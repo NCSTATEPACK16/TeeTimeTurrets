@@ -34,6 +34,18 @@ export const DAMAGE_PER_MPS = 1.5;
 export const MIN_HIT_DAMAGE = 5;
 export const MAX_HIT_DAMAGE = 60;
 
+/**
+ * Cart-only mode's whole damage rule: one ball hit is one stroke and one point of health, and a
+ * health bar is 2 x par points tall. Speed no longer scales damage -- a stroke is a stroke, and
+ * making a driver hit worth more strokes than a putter hit would be scoring the club rather than
+ * the shot.
+ *
+ * DAMAGE_PER_MPS / MIN_HIT_DAMAGE / MAX_HIT_DAMAGE and `hitDamage` above are kept, unreferenced
+ * by the live path, as the reference curve for a future mode that wants graduated damage back --
+ * the same dormant-code exception the design spec makes for the stationary swing.
+ */
+export const STROKE_DAMAGE = 1;
+
 /** Two carts at CART_TUNING.topSpeed head-on close at ~28 m/s: 22 damage. Ramming hurts, but
  * shooting stays the primary way to kill something. */
 export const SHUNT_DAMAGE_PER_MPS = 0.8;
@@ -159,13 +171,14 @@ function ballHitsTarget(
   if (!wasDown) ctx.stats.targetsDown += 1;
 }
 
-function ballHitsCart(ball: RAPIER.RigidBody, cart: Cart, ctx: CombatContext): void {
-  const v = ball.linvel();
-  cartVelocity(cart, velA);
-  const speed = Math.hypot(v.x - velA.x, v.y, v.z - velA.z);
+function ballHitsCart(_ball: RAPIER.RigidBody, cart: Cart, ctx: CombatContext): void {
+  // A cart awaiting respawn is out of the world: it takes no damage, no stroke, and generates
+  // no accuracy credit for whoever shot at it. `world.ts` freezes it for the same reason.
+  if (cart.dead) return;
 
   ctx.stats.directHits += 1;
-  if (applyDamage(cart.health, hitDamage(speed))) ctx.onCartKilled(cart);
+  cart.strokesTaken += 1;
+  if (applyDamage(cart.health, STROKE_DAMAGE)) ctx.onCartKilled(cart);
 }
 
 /**
