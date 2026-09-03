@@ -42,25 +42,43 @@ export interface HudState {
   ammoText: string;
 }
 
-export function deriveHudState(source: HudSource): HudState {
+/** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
+ *  deriveHudState as `out`. Field values are placeholders, overwritten on the first call. */
+export function createHudStateScratch(): HudState {
+  return {
+    modeText: "",
+    clubText: "",
+    strokesText: "",
+    charge01: 0,
+    status: "",
+    combatVisible: false,
+    healthFraction: 0,
+    healthText: "",
+    ammoText: "",
+  };
+}
+
+/** Writes into `out` rather than allocating a new object -- this runs every frame from main.ts's
+ *  render callback, and the project's Global Constraints ban per-frame allocation in the render
+ *  loop (see main.ts's scratchA/scratchB/scratchOut for the same pattern). Callers hold one
+ *  reusable HudState-shaped scratch object and pass it in. */
+export function deriveHudState(source: HudSource, out: HudState): void {
   const cart = source.cart;
   const inCart = source.mode === SwingMode.Cart;
 
-  return {
-    modeText: inCart ? "CART" : "STANDING",
-    clubText: cart.equippedClub.toUpperCase(),
-    strokesText: `STROKES ${source.strokes}`,
-    charge01: clamp01(cart.charge),
-    status: statusText(source, inCart),
-    // UI-SPEC.md section 1's table gives Health and Reload to the Cart HUD and marks them absent
-    // from the Swing HUD, and that split maps onto SwingMode. Section 5 scopes the same rule to
-    // STROKE vs CTF/TARGETS, a switch that does not exist yet; when it lands these elements gain
-    // a second hiding condition rather than a new mechanism.
-    combatVisible: inCart,
-    healthFraction: cart.health.max > 0 ? clamp01(cart.health.hp / cart.health.max) : 0,
-    healthText: `${Math.max(0, Math.round(cart.health.hp))}`,
-    ammoText: `${Math.max(0, Math.round(cart.ammo))}`,
-  };
+  out.modeText = inCart ? "CART" : "STANDING";
+  out.clubText = cart.equippedClub.toUpperCase();
+  out.strokesText = `STROKES ${source.strokes}`;
+  out.charge01 = clamp01(cart.charge);
+  out.status = statusText(source, inCart);
+  // UI-SPEC.md section 1's table gives Health and Reload to the Cart HUD and marks them absent
+  // from the Swing HUD, and that split maps onto SwingMode. Section 5 scopes the same rule to
+  // STROKE vs CTF/TARGETS, a switch that does not exist yet; when it lands these elements gain
+  // a second hiding condition rather than a new mechanism.
+  out.combatVisible = inCart;
+  out.healthFraction = cart.health.max > 0 ? clamp01(cart.health.hp / cart.health.max) : 0;
+  out.healthText = `${Math.max(0, Math.round(cart.health.hp))}`;
+  out.ammoText = `${Math.max(0, Math.round(cart.ammo))}`;
 }
 
 /**

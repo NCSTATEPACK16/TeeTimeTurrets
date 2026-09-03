@@ -1,5 +1,8 @@
-import { deriveHudState } from "./hudState";
+import { createHudStateScratch, deriveHudState } from "./hudState";
 import type { HudSource } from "./hudState";
+
+/** Reused every call rather than allocated per frame -- see deriveHudState's docstring. */
+const stateScratch = createHudStateScratch();
 
 /**
  * The DOM-writing half of the HUD. Every decision lives in hudState.ts; this file only puts
@@ -56,7 +59,8 @@ export function readHud(): Hud | null {
 }
 
 export function drawHud(hud: Hud, source: HudSource): void {
-  const state = deriveHudState(source);
+  const state = stateScratch;
+  deriveHudState(source, state);
 
   setWidth(hud.powerFill, state.charge01);
   setText(hud.mode, state.modeText);

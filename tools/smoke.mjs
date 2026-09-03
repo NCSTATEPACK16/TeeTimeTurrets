@@ -164,8 +164,8 @@ await hold(page, "KeyF", 900);
 await new Promise((r) => setTimeout(r, 400));
 const fired = await read();
 const shoved = Math.hypot(fired.cart.x - cartBeforeShot.x, fired.cart.z - cartBeforeShot.z);
-check("blank costs no stroke", fired.strokes === strokesBefore, `strokes ${fired.strokes}`);
-check("blank still shoves the cart (recoil propulsion)", shoved > 0.2, `${shoved.toFixed(2)} m`);
+check("cart-mode fire costs no stroke", fired.strokes === strokesBefore, `strokes ${fired.strokes}`);
+check("firing shoves the cart (recoil propulsion)", shoved > 0.2, `${shoved.toFixed(2)} m`);
 
 console.log("=== RESET AND RELOAD ===");
 await page.keyboard.press("KeyR");

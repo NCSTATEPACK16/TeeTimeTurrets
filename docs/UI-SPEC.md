@@ -60,7 +60,7 @@ and the second owns the presentation.
 | H4 | Club selector | 02, 03, 08, 00 | 2 / 4 | equipped `ClubType`, `CLUB_STATS` | Three buttons, active one outlined. Labels on desktop (02/08), icons only when cramped (03). 00 adds per-club POWER/RANGE/RELOAD bars — that variant belongs to the clubhouse (S3), not the HUD. |
 | H5 | Reload gauge | 03, 07, 08, 09, 14 | 2 / 4 | `Cart.reloadRemaining` ÷ `CLUB_STATS[club].reloadSeconds` | Must actually block re-fire, per Phase 2's gate. |
 | H6 | Health bar | 03, 07, 08, 09, 14 | 3 / 4 | `Cart.health` | **Built.** Heart icon + bar, presented by `src/ui/hud.ts`. |
-| H7 | Ammo counter | 06 | 3 / 4 | `Cart.ammo[club]` | **Built.** Bottom-left card, presented by `src/ui/hud.ts`. **Hidden entirely in stroke-play** — see §5. |
+| H7 | Ammo counter | 06 | 3 / 4 | `Cart.ammo` | **Built.** Bottom-left card, presented by `src/ui/hud.ts`. **Hidden entirely in stroke-play** — see §5. |
 | H8 | Minimap | 02, 03, 08, 09, 14 | 4 | `surfaceAt`, entity positions | In *every* in-game shot; the single most under-planned element in the old roadmap. Top-right, rounded. Renders from `surfaceAt` alone — no authored map data, so nothing to keep in sync (same argument as `surfaces.ts`). Shows hole shape, own heading arrow, and in multiplayer a dot per cart (09). |
 | H9 | Trajectory preview arc | 02 | 4 | new `Sim.previewTrajectory()` | Solid arc through the air + dashed line on the ground. Needs a **non-mutating** integration of `computeLaunchVelocity` — it must not touch the Rapier world or advance `Sim`. |
 | H10 | Ball-flight tracer | 00, 04, 15 | 4 (optional) | ball position history | Fading trail behind a struck ball. BACKLOG #32. Reads well on a long drive; cut it if Phase 4 runs long. |
