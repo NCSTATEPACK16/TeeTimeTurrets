@@ -407,7 +407,9 @@ async function main(): Promise<void> {
 
   surfaceReport();
 
-  const sim = await Sim.create(HOLE);
+  // No bot: it spawns 2.5 m past the cup, right on the hole-out putt's line, so an overshoot
+  // could clip its capsule and make these numbers -- cited in tuning docstrings -- flaky.
+  const sim = await Sim.create(HOLE, { botCount: 0 });
   console.log("\n=== FULL-POWER SHOTS (charge = 1.0, flat aim down +X) ===");
   console.log("  club      v0   carry    roll   total    apex  flight  settle  bnc  result");
   for (const club of [ClubType.Putter, ClubType.Iron, ClubType.Driver]) {

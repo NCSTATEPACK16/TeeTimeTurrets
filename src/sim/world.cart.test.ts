@@ -495,6 +495,52 @@ describe("bot carts", () => {
     expect(bot.position.y - ground).toBeLessThan(2);
   });
 
+  /** `resolveShot` is private and, since carts became rigs, reachable by any of them. Calling it
+   *  directly is the point: it is the seam where a bot could write the player's counters. */
+  function resolveShotFor(s: Sim, cart: Cart): void {
+    (s as unknown as { resolveShot: (c: Cart) => void }).resolveShot(cart);
+  }
+
+  it("a bot's shot never launches the player's course ball or counts a player stroke", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    // Stationary is still the default mode, so this is the branch a bot would reach today.
+    expect(sim.mode).toBe(SwingMode.Stationary);
+    const bot = sim.bots[0]!;
+    const from = { ...sim.current.position };
+
+    expect(bot.fire(1)).toBe(true);
+    resolveShotFor(sim, bot);
+
+    expect(sim.strokes).toBe(0);
+    expect(sim.lastShotWasStrike).toBe(false);
+    // A full-charge launch would carry the course ball tens of metres in half a second; a ball
+    // left alone only settles.
+    for (let i = 0; i < 30; i++) sim.step();
+    const p = sim.current.position;
+    expect(Math.hypot(p.x - from.x, p.z - from.z)).toBeLessThan(2);
+  });
+
+  it("a bot's cart-mode shot spawns its own pooled ball without counting a player shot", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    sim.mode = SwingMode.Cart;
+    const bot = sim.bots[0]!;
+    const ammoBefore = bot.ammo;
+
+    expect(bot.fire(1)).toBe(true);
+    resolveShotFor(sim, bot);
+
+    // `stats` and `lastShotWasStrike` are the player's round-level state, not the world's.
+    expect(sim.stats.shotsFired).toBe(0);
+    expect(sim.lastShotWasStrike).toBe(false);
+
+    // The bot's own shot still has to happen -- guarding the player's counters must not turn a
+    // bot's trigger pull into a no-op.
+    expect(bot.ammo).toBe(ammoBefore - 1);
+    const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
+    const balls = (pool as unknown as { balls: PooledBall[] }).balls;
+    expect(balls.some((b) => b.state !== "idle")).toBe(true);
+  });
+
   it("returns every bot to its spawn on reset", async () => {
     const sim = await Sim.create(fixedHoleSpec());
     const bot = sim.bots[0]!;

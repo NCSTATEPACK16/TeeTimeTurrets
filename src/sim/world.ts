@@ -691,15 +691,21 @@ export class Sim {
    * mode spawns from the ammo-gated BallPool, stationary mode plays the single Sim.ball where
    * it lies. See docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1 for why they aren't
    * unified.
+   *
+   * Any cart reaches this now that carts are rigs, but `Sim.stats`, `lastShotWasStrike`,
+   * `Sim.ball` and `Sim.strokes` are all single-player state -- `stats.shotsFired` is the
+   * accuracy denominator the results screen reports. So only the player's shot may write them,
+   * and the stationary branch, which plays the player's own course ball, is his alone.
    */
   private resolveShot(cart: Cart): void {
+    const isPlayer = cart === this.cart;
     if (this.mode === SwingMode.Cart) {
       // No ball is scooped off the course here and none ever will be: the ammo fork replaced
       // "drive over the ball to load it" with a pooled-ball ammo counter, and this branch never
       // touches Sim.ball. The old ballLoaded/ballInReach pair described the retired mechanic and
       // made the course ball vanish onto a turret that could not play it (BACKLOG #16d).
       if (!cart.shot.hasBall) {
-        this.lastShotWasStrike = false;
+        if (isPlayer) this.lastShotWasStrike = false;
         return;
       }
 
@@ -710,14 +716,16 @@ export class Sim {
         // assumption a ball would spawn; refund it so this degrades to a true no-op rather
         // than costing ammo for nothing. No ball actually spawned, so this is not a strike.
         cart.addAmmo(1);
-        this.lastShotWasStrike = false;
+        if (isPlayer) this.lastShotWasStrike = false;
         return;
       }
 
-      this.lastShotWasStrike = true;
-      // "A shot fired" for accuracy purposes is a ball actually leaving the muzzle -- distinct
-      // from ammo's own decrement, which a 0-ammo blank also triggers.
-      this.stats.shotsFired += 1;
+      if (isPlayer) {
+        this.lastShotWasStrike = true;
+        // "A shot fired" for accuracy purposes is a ball actually leaving the muzzle -- distinct
+        // from ammo's own decrement, which a 0-ammo blank also triggers.
+        this.stats.shotsFired += 1;
+      }
       computeMuzzle(cart, this.muzzleScratch);
       pooled.body.setTranslation(this.muzzleScratch, true);
       pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
@@ -728,6 +736,10 @@ export class Sim {
       );
       return;
     }
+
+    // Stationary mode plays Sim.ball, and there is exactly one of those: the player's. A bot has
+    // no course ball to strike, so its trigger pull ends here rather than launching the player's.
+    if (!isPlayer) return;
 
     const playable = this.isResting() && !this.holedOut;
     this.lastShotWasStrike = playable;
