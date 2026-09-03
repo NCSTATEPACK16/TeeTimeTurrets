@@ -61,7 +61,16 @@ mkdirSync(BASELINE_DIR, { recursive: true });
 // Software rasterisation, the same flag tools/smoke.mjs uses. This is what makes a signature
 // portable between machines: every run goes through the same rasteriser rather than through
 // whatever GPU driver happens to be installed.
-const browser = await puppeteer.launch({ headless: true, args: ["--enable-unsafe-swiftshader"] });
+//
+// --no-sandbox/--disable-setuid-sandbox/--disable-dev-shm-usage: Chrome's OS-level sandbox needs
+// privileges (an unprivileged user namespace, a writable /dev/shm) that most CI/build containers
+// don't grant, and it protects against hostile page content -- moot here, since the only page
+// ever loaded is this repo's own built output on localhost. Without these, launch() throws "No
+// usable sandbox!" on exactly that class of host, which is what broke npm run build on Netlify.
+const browser = await puppeteer.launch({
+  headless: true,
+  args: ["--enable-unsafe-swiftshader", "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+});
 
 // try/finally so a mid-loop exception (a subject that never sets window.__gate.ready, a
 // Puppeteer protocol error, a slow machine) still closes the browser before the script exits.

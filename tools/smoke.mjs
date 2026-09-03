@@ -59,7 +59,13 @@ async function hold(page, key, ms) {
   await page.keyboard.up(key);
 }
 
-const browser = await puppeteer.launch({ headless: true, args: ["--enable-unsafe-swiftshader"] });
+// --no-sandbox/--disable-setuid-sandbox/--disable-dev-shm-usage: see tools/sceneGate.mjs's launch
+// call for why these are needed on CI/build containers and why dropping the OS sandbox is fine
+// here (the only page ever loaded is this repo's own built output on localhost).
+const browser = await puppeteer.launch({
+  headless: true,
+  args: ["--enable-unsafe-swiftshader", "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+});
 const page = await browser.newPage();
 await page.setViewport({ width: 1280, height: 720 });
 
