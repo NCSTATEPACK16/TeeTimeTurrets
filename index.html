@@ -50,10 +50,61 @@
         width: 0%;
         background: linear-gradient(90deg, #6cf, #f66);
       }
+
+      /* UI-SPEC section 6: dark translucent rounded rectangles, white bold condensed type.
+         Bottom-left, the corner image 06 and image 08 put ammo and health in, and placed so
+         Phase 4 can lay the full image-08 set out around them without moving them. */
+      #hud-combat {
+        position: fixed;
+        left: 24px;
+        bottom: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font: 600 13px system-ui, sans-serif;
+        letter-spacing: 0.06em;
+        color: #fff;
+        pointer-events: none;
+      }
+      #hud-combat[hidden] { display: none; }
+      .hud-card {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 11px;
+        border-radius: 8px;
+        background: rgba(16, 20, 24, 0.62);
+      }
+      #health-track {
+        width: 132px;
+        height: 10px;
+        border-radius: 5px;
+        overflow: hidden;
+        background: rgba(0, 0, 0, 0.5);
+      }
+      #health-fill {
+        height: 100%;
+        width: 100%;
+        background: #46c46a;
+        transition: width 90ms linear;
+      }
+      #health-icon { color: #e8564a; font-size: 15px; }
+      #ammo-count { color: #ff9d3d; font-size: 17px; }
     </style>
   </head>
   <body>
     <div id="app"></div>
+    <div id="hud-combat" hidden>
+      <div class="hud-card">
+        <span id="health-icon">&#9829;</span>
+        <div id="health-track"><div id="health-fill"></div></div>
+        <span id="health-text">100</span>
+      </div>
+      <div class="hud-card">
+        <span>AMMO</span>
+        <span id="ammo-count">0</span>
+      </div>
+    </div>
     <div id="hud">
       <div id="hud-row">
         <span id="hud-mode">STANDING</span>

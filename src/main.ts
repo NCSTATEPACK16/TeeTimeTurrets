@@ -6,6 +6,7 @@ import type { FrameView } from "./render/scene";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, SwingMode, TRANSFORM_STRIDE } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
+import { drawHud, readHud } from "./ui/hud";
 
 /**
  * Fixed until a course-select screen exists (Phase 1.75). Changing it changes every hole, which
@@ -86,58 +87,12 @@ async function main(): Promise<void> {
   loop.start();
 }
 
-interface Hud {
-  powerFill: HTMLElement;
-  mode: HTMLElement;
-  club: HTMLElement;
-  strokes: HTMLElement;
-  status: HTMLElement;
-}
-
-function readHud(): Hud | null {
-  const powerFill = document.getElementById("power-fill");
-  const mode = document.getElementById("hud-mode");
-  const club = document.getElementById("hud-club");
-  const strokes = document.getElementById("hud-strokes");
-  const status = document.getElementById("hud-status");
-  if (!powerFill || !mode || !club || !strokes || !status) return null;
-  return { powerFill, mode, club, strokes, status };
-}
-
-/**
- * A deliberately minimal readout, not the image-08 HUD -- that is Phase 4's job and wants the
- * layout done properly rather than grown one span at a time. This is only what a player needs to
- * understand what the cart is doing.
- */
-function drawHud(hud: Hud, sim: Sim): void {
-  const cart = sim.cart;
-  hud.powerFill.style.width = `${Math.round(cart.charge * 100)}%`;
-  setText(hud.mode, sim.mode === SwingMode.Cart ? "CART" : "STANDING");
-  setText(hud.club, cart.equippedClub.toUpperCase());
-  setText(hud.strokes, `STROKES ${sim.strokes}`);
-  setText(hud.status, statusText(sim));
-}
-
 /**
  * What rides the club head in cart mode is a round of ammo, not the course ball -- images 03 and
  * 04, and what actually fires. In stationary mode there is no turret shot at all.
  */
 function turretLoaded(sim: Sim): boolean {
   return sim.mode === SwingMode.Cart && sim.cart.ammo > 0;
-}
-
-function statusText(sim: Sim): string {
-  if (sim.holedOut) return "HOLED OUT — R to reset";
-  if (!sim.cart.canFire) return `RELOADING ${sim.cart.reloadRemaining.toFixed(1)}s`;
-  if (sim.lastShotInWater) return "WATER HAZARD — plus one stroke";
-  if (sim.lastShotOutOfBounds) return "OUT OF BOUNDS — returned to the tee";
-  if (sim.mode !== SwingMode.Cart) return "READY";
-  return sim.cart.ammo > 0 ? "READY" : "NO AMMO — fire a blank to boost";
-}
-
-/** Guarded so an unchanged string does not dirty the DOM every frame at 60fps. */
-function setText(element: HTMLElement, text: string): void {
-  if (element.textContent !== text) element.textContent = text;
 }
 
 const scratchA = new THREE.Quaternion();
