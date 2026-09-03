@@ -50,7 +50,9 @@ export interface FrameView {
   charge01: number;
   club: ClubType;
   mode: SwingMode;
-  /** True while a round of ammo rides the club head: drawn on the turret, ready to fire. */
+  /** True while a round of ammo rides the club head: drawn on the turret. Loaded does not mean
+   * fireable -- `Cart.canFire` also gates on the reload timer, so a loaded round can still be
+   * mid-reload. */
   turretLoaded: boolean;
   /** Interpolated target part transforms, laid out exactly as Sim publishes them. */
   targetTransforms: Float32Array;

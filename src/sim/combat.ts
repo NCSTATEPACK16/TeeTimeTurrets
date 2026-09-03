@@ -11,8 +11,8 @@ import type { Stats } from "./stats";
  * system established (BallPool.ts / Pickup.ts): world.ts imports this, this imports nothing from
  * world.ts, and the damage rules stay testable without a Sim.
  *
- * Every existing proximity check in this codebase (isGrounded, ballInReach, ballsNear) is
- * polling; this is deliberately not. A ball crossing a target at 40 m/s covers 0.67 m per tick,
+ * Every existing proximity check in this codebase (isGrounded, ballsNear) is polling; this is
+ * deliberately not. A ball crossing a target at 40 m/s covers 0.67 m per tick,
  * so a radius check either misses it or has to be wide enough to register hits that visibly
  * missed. Real contact events do not have that failure.
  *

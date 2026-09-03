@@ -69,12 +69,17 @@ gameplay.
       every pure function in `Ballistics.ts`. Runs in the **node** environment, which turns the
       DOM-free rule for `src/sim/**` and `src/physics/**` into something the suite enforces
       rather than something a reviewer has to notice.
-- [ ] Add `tools/sceneGate.mjs` v1 (see `AGENTS.md` "Visual Critic / Scene Gate") — even a
+- [x] Add `tools/sceneGate.mjs` v1 (see `AGENTS.md` "Visual Critic / Scene Gate") — even a
       version that only checks the ball and ground mesh is worth having before Phase 2 adds
-      more geometry to regress. **Still open.** `tools/smoke.mjs` (`npm run smoke`) was added
-      alongside Phase 2 and is *not* this: it drives the real browser input path and asserts no
-      console errors, but has no geometry baseline and no perceptual diff. The cart and three
-      club heads are now in the scene and unguarded by any baseline.
+      more geometry to regress. **Built:** a fixed headless-Chrome harness page loads each
+      subject and the gate diffs two independent halves against `tools/gate-baseline/` —
+      structural metrics off the `BufferGeometry` and a downsampled perceptual signature off the
+      canvas — exiting non-zero on drift in either. Five subjects are baselined: `cart-driver`,
+      `cart-iron`, `cart-putter`, `ball`, `target`. Wired into `npm run build`, which now runs
+      `npm run gate` after `vite build`, so a geometry regression fails the build rather than
+      waiting to be noticed. `tools/smoke.mjs` (`npm run smoke`) remains a separate thing: it
+      drives the real browser input path and asserts no console errors, with no geometry
+      baseline and no perceptual diff.
 
 **Gate:** `tsc --noEmit` clean; the Phase 0 headless trajectory check still passes
 unchanged (regression check for the extraction, already re-run once after this refactor —
@@ -212,9 +217,10 @@ swing (both modes coexist — see design decision below).
       BACKLOG #31; the current fixed-offset camera will not survive a 160 m course.
       Tracks the *turret*, not the chassis, and clamps the eye above the terrain so reversing
       into a slope does not put the camera inside the heightfield.
-- [ ] `tools/sceneGate.mjs` baseline extended to cover the cart + all three club heads.
-      **Still open, and now overdue** — the cart and three club heads are in the scene with no
-      geometry baseline guarding them.
+- [x] `tools/sceneGate.mjs` baseline extended to cover the cart + all three club heads.
+      Landed as part of Phase 1's `sceneGate.mjs` build, not a separate follow-up: the cart and
+      all three club heads (`cart-driver`, `cart-iron`, `cart-putter`) are baselined subjects
+      from the gate's first version, alongside `ball` and `target`.
 
 **Gate:** drive the cart around the terrain patch without falling through it or getting
 stuck on a slope it shouldn't; swap all three clubs and confirm each fires with visibly
@@ -232,13 +238,11 @@ that actually proves the interface. 82 tests green, `tsc --noEmit` clean, `npm r
 unchanged from Phase 1.5 (terrain 4.3°/12.5°, surface mix 27.9/63.2/5.0/2.5/1.4, water and
 hole-out both PASS), `npm run smoke` green through the real browser input path.
 
-Two carve-outs, both deliberate:
+One carve-out remains, deliberate:
 
 1. **The two modes share one HUD**, where `UI-SPEC.md` §1 wants two. The current readout is a
    minimal mode/club/strokes/status line, not image 08. Splitting it belongs with Phase 4
    building the real HUD, not with growing this one.
-2. **No geometry baseline** covers the cart or the club heads — Phase 1's `sceneGate.mjs` is
-   still unbuilt, so nothing catches a silent geometry regression.
 
 ### The turret carries the ball — corrected against the concept art
 
@@ -385,6 +389,12 @@ is tested, but the renderer's ground mesh is built once at construction.
   `docs/superpowers/specs/2026-09-02-cart-ammo-design.md` and
   `docs/superpowers/plans/2026-09-02-cart-ammo-implementation.md`. Cart mode fires from a
   pooled-ball ammo counter; stationary/STROKE mode's ball model is untouched.
+- [x] **Target rendering, pooled-ball rendering, and the H6/H7 HUD.** Targets and in-flight
+      pooled balls now render (they existed in the sim since the entries above but had no
+      presentation), and the health bar (H6) and ammo counter (H7) that every cart-mode concept
+      shot has shown finally have a model behind them. See
+      `docs/superpowers/specs/2026-09-02-combat-rendering-hud-design.md` and
+      `docs/superpowers/plans/2026-09-02-combat-rendering-hud-implementation.md`.
 - [ ] **Mode-scoping for both, and this is a rule rather than a preference.** Finite ammo in
       stroke play can strand a player mid-hole with no legal way to finish, which breaks golf
       outright. `STROKE` runs with damage and ammo **disabled**; `CTF` and `TARGETS` enforce
@@ -454,6 +464,10 @@ without overlap and every other shot becomes a subset that composes by hiding el
 than by relayout. Element-by-element inventory, with the sim field feeding each, is
 `UI-SPEC.md` §2; the two-HUD split it depends on is §1.
 
+- [x] H6 (health bar) and H7 (ammo counter) are done, landed ahead of the rest of this phase
+      alongside target and pooled-ball rendering — see the Phase 3 note above and
+      `src/ui/hud.ts`. H11 (hit markers), H12 (event banner), the minimap, and everything else
+      in this phase's list remain.
 - [ ] `src/ui/hitMarkers.ts`: world→screen projection (formula in `docs/ARCHITECTURE.md`
       §2c), one-shot DOM elements on ball-land/hit/hole events, CSS-driven drift+fade.
       Timing settled by research: **ease-out, 0.8–1.5 s** rise-and-fade.
