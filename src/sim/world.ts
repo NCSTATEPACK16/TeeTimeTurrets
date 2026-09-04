@@ -17,6 +17,9 @@ import { CUP_RADIUS, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { SURFACES, SurfaceId, createSurfaceTuning, createSurfaces } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
+import { BOT_CHANNEL, computeBotIntent } from "./bot";
+import type { BotTarget } from "./bot";
+import { hashChannel, mulberry32 } from "./rng";
 
 export type { Vec3 } from "./course";
 
@@ -189,6 +192,14 @@ interface CartRig {
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   fallSpeed: number;
+  /**
+   * The bot's own seeded stream. `null` for the player's rig, which is not AI-driven.
+   * Deliberately not `readonly`: `reset()` re-seeds it so "play again" is a genuine rerun
+   * rather than a continuation of the previous match's stream.
+   */
+  random: (() => number) | null;
+  /** Reused per tick so the bot's intent costs no allocation. `null` for the player's rig. */
+  readonly intentScratch: PlayerIntent | null;
 }
 
 export interface SimOptions {
@@ -280,6 +291,7 @@ export class Sim {
   /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
   private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly botTarget = { x: 0, z: 0, dead: false };
   /** Two, not one: the cart and the ball are at different positions within the same tick. */
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   private readonly ballTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
@@ -352,7 +364,7 @@ export class Sim {
     // the ball, and nudging your own ball by driving into it is correct behaviour anyway.
     sim.controller.setApplyImpulsesToDynamicBodies(true);
 
-    sim.addCartRig(sim.cart, cartSpawnPosition(terrain));
+    sim.addCartRig(sim.cart, cartSpawnPosition(terrain), null);
 
     // The closure reads sim.terrain live rather than closing over `terrain`, so it keeps
     // checking against the correct hole's height field after loadHole() reassigns sim.terrain.
@@ -372,7 +384,11 @@ export class Sim {
     for (let i = 0; i < botCount; i++) {
       const bot = new Cart({ maxHealth: 2 * hole.par });
       sim.bots.push(bot);
-      sim.addCartRig(bot, botSpawnPosition(terrain, i));
+      sim.addCartRig(
+        bot,
+        botSpawnPosition(terrain, i),
+        mulberry32(hashChannel(hole.seed, hole.index, BOT_CHANNEL, i)),
+      );
     }
     sim.buildTargets();
 
@@ -408,7 +424,7 @@ export class Sim {
    * files the rig. Every cart -- the player's and every bot's -- goes through here, so a bot is
    * physically identical to the player rather than a cheaper approximation of one.
    */
-  private addCartRig(cart: Cart, spawn: Vec3): void {
+  private addCartRig(cart: Cart, spawn: Vec3, random: (() => number) | null): void {
     const body = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z),
     );
@@ -426,7 +442,14 @@ export class Sim {
     cart.position.y = spawn.y;
     cart.position.z = spawn.z;
     this.registry.registerCart(collider.handle, cart);
-    this.rigs.push({ cart, body, collider, fallSpeed: 0 });
+    this.rigs.push({
+      cart,
+      body,
+      collider,
+      fallSpeed: 0,
+      random,
+      intentScratch: random === null ? null : neutralIntent(),
+    });
   }
 
   /**
@@ -600,10 +623,26 @@ export class Sim {
     for (const bucket of this.buckets) stepBucket(bucket, FIXED_DT);
 
     for (const rig of this.rigs) {
-      // Bots are driven by a neutral intent until sim/bot.ts exists; the player's cart is
-      // driven by the player's. Everything below is otherwise identical for both.
-      this.stepRig(rig, rig.cart === this.cart ? intent : IDLE_INTENT);
+      this.stepRig(rig, this.intentFor(rig, intent));
     }
+  }
+
+  /** The player's rig gets the player's intent; a bot's gets whatever `sim/bot.ts` decides. */
+  private intentFor(rig: CartRig, playerIntent: PlayerIntent): PlayerIntent {
+    if (rig.random === null || rig.intentScratch === null) return playerIntent;
+    computeBotIntent(rig.cart, this.botTargetScratch(), FIXED_DT, rig.random, rig.intentScratch);
+    return rig.intentScratch;
+  }
+
+  /**
+   * The player, as the only thing a bot engages in this build. Written into one reused object
+   * per the no-allocation rule; a bot never sees the player's `Cart` itself.
+   */
+  private botTargetScratch(): BotTarget {
+    this.botTarget.x = this.cart.position.x;
+    this.botTarget.z = this.cart.position.z;
+    this.botTarget.dead = this.cart.dead;
+    return this.botTarget;
   }
 
   /** Intent -> cart state -> body movement -> shot resolution, for exactly one cart. */
@@ -880,6 +919,11 @@ export class Sim {
       rig.cart.wasInWater = false;
       rig.fallSpeed = 0;
       rig.body.setTranslation(spawn, true);
+      if (rig.random !== null) {
+        rig.random = mulberry32(
+          hashChannel(this.terrain.spec.seed, this.terrain.spec.index, BOT_CHANNEL, this.rigs.indexOf(rig) - 1),
+        );
+      }
     }
 
     for (const target of this.targets) target.reset();

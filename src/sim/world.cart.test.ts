@@ -4,7 +4,7 @@ import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
-import { CART_COLLIDER, RESPAWN_DELAY_S } from "./entities/Cart";
+import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import { POOL_SIZE } from "./entities/BallPool";
 import type { BallPool, PooledBall } from "./entities/BallPool";
@@ -573,6 +573,64 @@ describe("bot carts", () => {
     expect(bot.position.x).toBeCloseTo(sim.terrain.cupPosition.x + 2.5, 5);
     expect(bot.strokesTaken).toBe(0);
     expect(bot.health.hp).toBe(bot.health.max);
+  });
+
+  it("stays put while the player is out of its engagement range", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    const bot = sim.bots[0]!;
+    const start = { x: bot.position.x, z: bot.position.z };
+    for (let i = 0; i < 300; i++) sim.step();
+    expect(Math.hypot(bot.position.x - start.x, bot.position.z - start.z)).toBeLessThan(1);
+    expect(bot.ammo).toBe(STARTING_AMMO);
+  });
+
+  it("closes on the player and spends ammo once the player is in range", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    const bot = sim.bots[0]!;
+    // Put the player just inside the bot's engagement range rather than driving there, so the
+    // assertion is about the bot rather than about the terrain between the tee and the cup.
+    sim.cart.position.x = bot.position.x - 20;
+    sim.cart.position.z = bot.position.z;
+    const ammoBefore = bot.ammo;
+    const distanceBefore = 20;
+
+    for (let i = 0; i < 600; i++) sim.step();
+
+    const distanceAfter = Math.hypot(
+      bot.position.x - sim.cart.position.x,
+      bot.position.z - sim.cart.position.z,
+    );
+    expect(distanceAfter).toBeLessThan(distanceBefore);
+    expect(bot.ammo).toBeLessThan(ammoBefore);
+  });
+
+  it("holds fire at a dead player instead of camping the respawn", async () => {
+    const sim = await Sim.create(fixedHoleSpec());
+    const bot = sim.bots[0]!;
+    sim.cart.position.x = bot.position.x - 15;
+    sim.cart.position.z = bot.position.z;
+    (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.cart);
+    const ammoBefore = bot.ammo;
+
+    // Shorter than RESPAWN_DELAY_S, so the player is dead for the whole window.
+    for (let i = 0; i < seconds(RESPAWN_DELAY_S - 0.5); i++) sim.step();
+
+    expect(bot.ammo).toBe(ammoBefore);
+  });
+
+  it("plays the same match twice from the same seed", async () => {
+    const trace = async (): Promise<number[]> => {
+      const sim = await Sim.create(fixedHoleSpec());
+      sim.cart.position.x = sim.bots[0]!.position.x - 20;
+      sim.cart.position.z = sim.bots[0]!.position.z;
+      const out: number[] = [];
+      for (let i = 0; i < 400; i++) {
+        sim.step();
+        out.push(sim.bots[0]!.turretYaw);
+      }
+      return out;
+    };
+    expect(await trace()).toEqual(await trace());
   });
 });
 
