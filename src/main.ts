@@ -7,6 +7,7 @@ import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "./sim/wo
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
 import { drawHud, readHud } from "./ui/hud";
+import { drawMatchResults, readMatchResults } from "./ui/matchResults";
 
 /**
  * Fixed until a course-select screen exists (Phase 1.75). Changing it changes every hole, which
@@ -18,7 +19,10 @@ const COURSE_SEED = 2026;
 async function main(): Promise<void> {
   const container = document.getElementById("app");
   const hud = readHud();
-  if (!container || !hud) throw new Error("expected #app and the #hud elements in index.html");
+  const results = readMatchResults();
+  if (!container || !hud || !results) {
+    throw new Error("expected #app, the #hud elements and #match-results in index.html");
+  }
 
   // One course, nine holes, one seed. Playing past hole 0 is Phase 1.75's round flow: the
   // renderer's ground mesh is built once, so advancing needs a screen transition, not just
@@ -36,6 +40,10 @@ async function main(): Promise<void> {
   window.addEventListener("keydown", (event) => {
     if (event.code === "KeyR") sim.reset();
   });
+
+  // Same reset path R already triggers: it re-rolls the clock, clears the result, re-seeds the
+  // bots and stands the targets back up.
+  results.playAgain.addEventListener("click", () => sim.reset());
 
   // Reused across frames rather than rebuilt -- GameLoop's frame callback is covered by the
   // AGENTS.md no-allocation rule just as the fixed step is.
@@ -78,6 +86,7 @@ async function main(): Promise<void> {
 
       render.draw(view);
       drawHud(hud, sim);
+      drawMatchResults(results, sim);
     },
   });
   loop.start();

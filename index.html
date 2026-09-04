@@ -91,6 +91,50 @@
       }
       #health-icon { color: #e8564a; font-size: 15px; }
       #ammo-count { color: #ff9d3d; font-size: 17px; }
+
+      /* UI-SPEC section 6's visual language: dark translucent card, white bold condensed type.
+         Not S2's full nine-column scorecard -- that is Phase 1.75's screen, and this is one
+         overlay gated by one boolean. */
+      #match-results {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 12, 16, 0.72);
+        font: 600 15px system-ui, sans-serif;
+        letter-spacing: 0.06em;
+        color: #fff;
+      }
+      #match-results[hidden] { display: none; }
+      #results-card {
+        min-width: 300px;
+        padding: 28px 34px;
+        border-radius: 12px;
+        background: rgba(16, 20, 24, 0.94);
+        text-align: center;
+      }
+      #results-headline { margin: 0 0 18px; font-size: 30px; letter-spacing: 0.1em; }
+      #results-scores {
+        display: flex;
+        justify-content: space-between;
+        gap: 28px;
+        margin-bottom: 22px;
+        font-size: 17px;
+        font-variant-numeric: tabular-nums;
+      }
+      #play-again {
+        width: 100%;
+        padding: 11px 0;
+        border: 0;
+        border-radius: 8px;
+        background: #ef8a2b;
+        color: #14181c;
+        font: inherit;
+        font-size: 15px;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -104,6 +148,16 @@
       <div class="hud-card">
         <span>AMMO</span>
         <span id="ammo-count">0</span>
+      </div>
+    </div>
+    <div id="match-results" hidden>
+      <div id="results-card">
+        <h1 id="results-headline">DRAW</h1>
+        <div id="results-scores">
+          <span id="results-you">YOU 0</span>
+          <span id="results-bot">BOT 0</span>
+        </div>
+        <button id="play-again" type="button">PLAY AGAIN</button>
       </div>
     </div>
     <div id="hud">

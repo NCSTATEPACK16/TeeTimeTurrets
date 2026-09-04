@@ -116,6 +116,8 @@ const read = () =>
       turretYaw: sim.cart.turretYaw,
       turretOffset: sim.cart.turretOffset,
       hudClub: document.getElementById("hud-club").textContent,
+      resultsHidden: document.getElementById("match-results").hidden,
+      timer: document.getElementById("hud-timer").textContent,
     };
   });
 
@@ -202,6 +204,26 @@ check(
 console.log("=== COMBAT HUD ===");
 check("health and ammo are always visible", shot.hudCombatHidden === false);
 check("the ammo card matches the sim", shot.hudAmmo === String(shot.ammo), `${shot.hudAmmo} vs ${shot.ammo}`);
+
+console.log("=== MATCH RESULTS ===");
+check("results overlay is hidden while the match runs", (await read()).resultsHidden === true);
+
+// Run the clock out rather than waiting three minutes for it.
+await page.evaluate(() => {
+  window.__teetimeturrets.sim.matchTimeRemaining = 1 / 60;
+});
+await new Promise((r) => setTimeout(r, 400));
+const ended = await page.evaluate(() => ({
+  hidden: document.getElementById("match-results").hidden,
+  headline: document.getElementById("results-headline").textContent,
+}));
+check("results overlay appears when the clock runs out", ended.hidden === false);
+check("results overlay names an outcome", ended.headline.length > 0, ended.headline);
+
+await page.click("#play-again");
+await new Promise((r) => setTimeout(r, 400));
+const restarted = await read();
+check("play again restarts the match", restarted.resultsHidden === true, `t=${restarted.timer}`);
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 
