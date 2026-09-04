@@ -162,8 +162,9 @@ title screen's course backdrop renders without stalling the first frame of a rou
 ## Phase 2 — The cart: movement, turret, club-swap
 
 **Goal:** the "golf cart as tank chassis, turret swaps between putter/iron/driver with
-different range/power/reload" mechanic, layered on top of the still-working stationary
-swing (both modes coexist — see design decision below).
+different range/power/reload" mechanic. As of cart-only mode this is the *only* mode: the
+stationary swing is unreachable and kept as a dormant reference, see
+`docs/superpowers/specs/2026-09-03-cart-combat-mode-design.md`.
 
 - [x] `src/sim/entities/Cart.ts`: authoritative chassis position/heading via Rapier's
       `KinematicCharacterController` (settled by research — see `DECISIONS.md`; the
@@ -413,6 +414,11 @@ is tested, but the renderer's ground mesh is built once at construction.
       entity work, not with decoration. Scatter from a seeded PRNG, never `Math.random()`, and
       keep them off the fairway corridor.
 - [x] ~~Terrain material zones~~ — done early in Phase 1.5 as `src/sim/surfaces.ts`.
+- [x] **Cart-only combat mode**: strokes are damage taken (one per ball hit, one per water
+      entry) against a health bar of `2 x par`, one seeded AI bot cart, a match clock, a
+      results overlay and cart nameplates. See
+      `docs/superpowers/specs/2026-09-03-cart-combat-mode-design.md` and
+      `docs/superpowers/plans/2026-09-03-cart-combat-mode-implementation.md`.
 
 **Gate:** pass criteria are fixed in advance and asserted by `npm run probe`, not eyeballed —
 a ragdoll dropped from 2 m settles with no joint separation inside 5 s, and a fixed-impulse

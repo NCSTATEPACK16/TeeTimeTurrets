@@ -8,6 +8,7 @@ import {
   MIN_HIT_DAMAGE,
   SHUNT_DAMAGE_PER_MPS,
   SHUNT_MIN_SPEED,
+  STROKE_DAMAGE,
   hitDamage,
   processContacts,
 } from "./combat";
@@ -107,12 +108,11 @@ describe("combat contact resolution", () => {
     expect(part.body.linvel().x).toBeGreaterThan(0);
   });
 
-  it("a ball hitting a cart damages it by impact speed, clamped at both ends", () => {
+  it("a ball hitting a cart costs one point of health and counts a direct hit", () => {
     processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
 
     expect(stats.directHits).toBe(1);
-    expect(cart.health.hp).toBe(STARTING_HP - hitDamage(30));
-    expect(cart.health.hp).toBeLessThan(STARTING_HP);
+    expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
   });
 
   it("clamps a full-charge driver hit to MAX_HIT_DAMAGE and a putter tap to MIN_HIT_DAMAGE", () => {
@@ -121,12 +121,14 @@ describe("combat contact resolution", () => {
     expect(hitDamage(0)).toBe(MIN_HIT_DAMAGE);
   });
 
-  it("scales damage with the ball's speed relative to the cart, not its raw speed", () => {
-    // A ball drifting alongside a cart at the same velocity should barely scratch it.
+  it("costs a flat point of health regardless of the cart's own speed", () => {
+    // Old behavior scaled damage by the ball's speed relative to the cart, so a ball drifting
+    // alongside a cart at matching velocity barely scratched it. Cart-only mode's flat damage
+    // rule means that no longer matters -- confirm the cart moving does not change the outcome.
     cart.heading = 0;
     cart.speed = 30;
     processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
-    expect(cart.health.hp).toBe(STARTING_HP - MIN_HIT_DAMAGE);
+    expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
   });
 
   it("reports a kill exactly once even when two lethal contacts drain in the same tick", () => {
@@ -202,5 +204,75 @@ describe("combat contact resolution", () => {
     processContacts(queueOf([ballHandle, handle, true]), ctx());
     expect(target.isDown).toBe(false);
     expect(stats.directHits).toBe(0);
+  });
+
+  describe("a ball hit is exactly one stroke", () => {
+    it("costs one point of health and one stroke, whatever the ball's speed", () => {
+      const slow = makeBall(3);
+      registry.registerBall(slow.handle, slow.body);
+      processContacts(queueOf([slow.handle, cartHandle, true]), ctx());
+      expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
+      expect(cart.strokesTaken).toBe(1);
+
+      const fast = makeBall(40);
+      registry.registerBall(fast.handle, fast.body);
+      processContacts(queueOf([fast.handle, cartHandle, true]), ctx());
+      expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE * 2);
+      expect(cart.strokesTaken).toBe(2);
+    });
+
+    it("still counts the hit as a direct hit for accuracy stats", () => {
+      const ball = makeBall(20);
+      registry.registerBall(ball.handle, ball.body);
+      processContacts(queueOf([ball.handle, cartHandle, true]), ctx());
+      expect(stats.directHits).toBe(1);
+    });
+
+    it("kills on the hit that empties a bar sized to par", () => {
+      const small = new Cart({ maxHealth: 2 });
+      const collider = world.createCollider(
+        RAPIER.ColliderDesc.capsule(0.35, 0.6),
+        world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
+      );
+      registry.registerCart(collider.handle, small);
+      const ball = makeBall(20);
+      registry.registerBall(ball.handle, ball.body);
+
+      processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
+      expect(killed).toHaveLength(0);
+      processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
+      expect(small.health.hp).toBe(0);
+      expect(small.strokesTaken).toBe(2);
+      expect(killed).toEqual([small]);
+    });
+
+    it("ignores a hit on a cart that is already dead and awaiting respawn", () => {
+      cart.dead = true;
+      const ball = makeBall(20);
+      registry.registerBall(ball.handle, ball.body);
+      processContacts(queueOf([ball.handle, cartHandle, true]), ctx());
+      expect(cart.health.hp).toBe(STARTING_HP);
+      expect(cart.strokesTaken).toBe(0);
+      expect(stats.directHits).toBe(0);
+    });
+
+    it("leaves shunt damage velocity-scaled and free of strokes", () => {
+      const other = new Cart();
+      const collider = world.createCollider(
+        RAPIER.ColliderDesc.capsule(0.35, 0.6),
+        world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
+      );
+      registry.registerCart(collider.handle, other);
+      cart.heading = 0;
+      cart.speed = 10;
+      other.heading = Math.PI;
+      other.speed = 10;
+
+      processContacts(queueOf([cartHandle, collider.handle, true]), ctx());
+
+      expect(cart.health.hp).toBeLessThan(STARTING_HP - STROKE_DAMAGE);
+      expect(cart.strokesTaken).toBe(0);
+      expect(other.strokesTaken).toBe(0);
+    });
   });
 });

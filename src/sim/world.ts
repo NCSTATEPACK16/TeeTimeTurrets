@@ -8,19 +8,33 @@ import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { PARTS_PER_TARGET, Target } from "./entities/Target";
-import { CombatRegistry, processContacts } from "./combat";
+import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
+import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import type { HoleSpec, Vec3 } from "./course";
 import { CUP_RADIUS, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { SURFACES, SurfaceId, createSurfaceTuning, createSurfaces } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
+import { BOT_CHANNEL, computeBotIntent } from "./bot";
+import type { BotTarget } from "./bot";
+import { hashChannel, mulberry32 } from "./rng";
 
 export type { Vec3 } from "./course";
 
 /** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
 export const FIXED_DT = 1 / 60;
+
+/**
+ * Match length in seconds. Three minutes is long enough for the engagement range to matter and
+ * short enough that a match is a sitting rather than a session. Overridable per `Sim.create` so
+ * a test can run a match to its end in a handful of ticks instead of 180 real seconds.
+ */
+export const MATCH_DURATION_S = 180;
+
+/** Who won, once the clock has run out. */
+export type MatchOutcome = "pending" | "player" | "bot" | "draw";
 
 /**
  * Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. Flat typed
@@ -177,11 +191,44 @@ export interface CartTransform {
 }
 
 /**
- * Both modes are kept rather than one replacing the other. Stationary is Phase 0's mechanic --
- * you stand at your ball and swing. Cart is Phase 2's -- you drive to it and the turret does the
- * hitting. They share one swing state machine (the cart's) so charge, reload and club selection
- * cannot drift apart between them; stationary mode simply ignores the driving axes and the
- * strike-range check, because you are by definition standing at the ball.
+ * Everything the world owns for one cart: the state machine, the kinematic body it drives, the
+ * collider that generates its contacts, and the fall speed the KCC does not integrate for us.
+ *
+ * Bundled rather than kept as parallel arrays because every one of these is looked up together,
+ * every time. Rig 0 is always the player's; the rest are bots, in `bots` order.
+ */
+interface CartRig {
+  readonly cart: Cart;
+  readonly body: RAPIER.RigidBody;
+  readonly collider: RAPIER.Collider;
+  fallSpeed: number;
+  /**
+   * The bot's own seeded stream. `null` for the player's rig, which is not AI-driven.
+   * Deliberately not `readonly`: `reset()` re-seeds it so "play again" is a genuine rerun
+   * rather than a continuation of the previous match's stream.
+   */
+  random: (() => number) | null;
+  /** Reused per tick so the bot's intent costs no allocation. `null` for the player's rig. */
+  readonly intentScratch: PlayerIntent | null;
+}
+
+export interface SimOptions {
+  /**
+   * AI carts to create. 1 in play. Tests that want the player's cart in isolation pass 0 --
+   * a second cart on the course is a second source of contacts, ammo pickups and shunts.
+   */
+  readonly botCount?: number;
+  /** Seconds on the match clock. Defaults to MATCH_DURATION_S. */
+  readonly matchDurationS?: number;
+}
+
+/** Metres past the cup, per bot. Far enough from the tee that a match opens with the bot idle. */
+export const BOT_SPAWN_OFFSET = 2.5;
+
+/**
+ * Dormant since cart-only mode. Stationary is Phase 0's mechanic -- you stand at your ball and
+ * swing -- and Cart is Phase 2's. `Sim` is constructed in `Cart` and there is no longer any input
+ * path that changes it. Kept rather than deleted; see the note on `Sim.mode`.
  */
 export enum SwingMode {
   Stationary = "stationary",
@@ -191,8 +238,8 @@ export enum SwingMode {
 export class Sim {
   private world!: RAPIER.World;
   private ball!: RAPIER.RigidBody;
-  private cartBody!: RAPIER.RigidBody;
-  private cartCollider!: RAPIER.Collider;
+  /** Rig 0 is the player's; rigs 1.. are `bots`, in the same order. */
+  private readonly rigs: CartRig[] = [];
   private controller!: RAPIER.KinematicCharacterController;
   private groundCollider!: RAPIER.Collider;
   /** The hole this sim is playing. Swapped wholesale by `loadHole`. */
@@ -206,8 +253,17 @@ export class Sim {
   previousCart: CartTransform;
   /** Cart state from the most recent fixed step. */
   currentCart: CartTransform;
-  /** The cart's authoritative state machine. Read for the HUD; drive it through `step`. */
-  readonly cart = new Cart();
+  /** The player's cart state machine. Read for the HUD; drive it through `step`. */
+  readonly cart: Cart;
+  /**
+   * AI-controlled carts. An array rather than a single field because nothing in the design
+   * assumes exactly one; this build creates one.
+   */
+  readonly bots: Cart[] = [];
+  /** Bot cart transforms from the previous fixed step, for render interpolation. One per bot. */
+  previousBotCarts: CartTransform[] = [];
+  /** Bot cart transforms from the most recent fixed step. One per bot. */
+  currentBotCarts: CartTransform[] = [];
   private ballPool!: BallPool;
   /** One hardcoded bucket for now -- course-scale placement is explicitly out of scope, see
    * docs/superpowers/specs/2026-09-02-cart-ammo-design.md §7. Populated in `create()` once the
@@ -234,15 +290,20 @@ export class Sim {
   private combatContext!: CombatContext;
   /** Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
   private simTime = 0;
-  mode: SwingMode = SwingMode.Stationary;
+  /**
+   * Dormant. Nothing sets this after construction: `PlayerIntent.toggleMode` is gone and the
+   * stationary half of `resolveShot` is unreachable. It stays, with `Sim.ball`, `launch()` and
+   * the hole-out/water-for-the-ball rules in `step()`, as the working reference for a future
+   * "true golf" mode -- a deliberate exception to the delete-stale-code rule, made because that
+   * mode is intended and this code is tested.
+   */
+  mode: SwingMode = SwingMode.Cart;
   /** True when the last shot played the ball rather than being a blank fired for propulsion. */
   lastShotWasStrike = false;
-  /** Vertical velocity of the cart, integrated here because a KCC has no gravity of its own. */
-  private cartFallSpeed = 0;
   /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
   private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  private readonly parkedScratch: PlayerIntent = neutralIntent();
+  private readonly botTarget = { x: 0, z: 0, dead: false };
   /** Two, not one: the cart and the ball are at different positions within the same tick. */
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   private readonly ballTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
@@ -260,10 +321,21 @@ export class Sim {
   private lastSafePosition: Vec3;
   /** Consecutive ticks the ball has been slow and grounded; see REST_HOLD_TICKS. */
   private restTicks = REST_HOLD_TICKS;
+  /** Seconds left on the match clock. Counts down every `step()` until it hits zero. */
+  matchTimeRemaining: number;
+  /** Set once, on the tick the clock reaches zero. Every later `step()` is a no-op. */
+  matchOver = false;
+  private readonly matchDurationS: number;
 
-  private constructor(terrain: Terrain, surfaces: Surfaces) {
+  private constructor(terrain: Terrain, surfaces: Surfaces, matchDurationS: number) {
     this.terrain = terrain;
     this.surfaces = surfaces;
+    this.matchDurationS = matchDurationS;
+    this.matchTimeRemaining = matchDurationS;
+    // 2 x par: the hole's par is the strokes it is worth, and the health bar is that budget
+    // doubled (spec section 5). Sized here rather than at the field initializer because the
+    // initializer runs before `terrain` exists.
+    this.cart = new Cart({ maxHealth: 2 * terrain.spec.par });
     this.lastSafePosition = { ...terrain.teePosition };
     this.previous = restTransform(terrain);
     this.current = restTransform(terrain);
@@ -271,10 +343,14 @@ export class Sim {
     this.currentCart = restCartTransform(terrain);
   }
 
-  static async create(hole: HoleSpec): Promise<Sim> {
+  static async create(hole: HoleSpec, options: SimOptions = {}): Promise<Sim> {
     await RAPIER.init();
     const terrain = createTerrain(hole);
-    const sim = new Sim(terrain, createSurfaces(hole, terrain));
+    const sim = new Sim(
+      terrain,
+      createSurfaces(hole, terrain),
+      options.matchDurationS ?? MATCH_DURATION_S,
+    );
 
     sim.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     sim.world.timestep = FIXED_DT;
@@ -293,26 +369,12 @@ export class Sim {
       .setFriction(0.55)
       .setRestitution(BALL_RESTITUTION)
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-    const ballCollider = sim.world.createCollider(ballColliderDesc, sim.ball);
-
-    const spawn = cartSpawnPosition(terrain);
-    sim.cartBody = sim.world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z),
-    );
-    sim.cartCollider = sim.world.createCollider(
-      RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
-        // Rapier computes no contacts between two kinematic bodies by default, so cart-vs-cart
-        // shunting would generate no events at all once a second cart exists. Enabling it now
-        // costs nothing -- there is exactly one cart today.
-        .setActiveCollisionTypes(
-          RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
-        ),
-      sim.cartBody,
-    );
-    sim.cart.position.x = spawn.x;
-    sim.cart.position.y = spawn.y;
-    sim.cart.position.z = spawn.z;
+    // Deliberately NOT registered as a combat actor. The course ball is dormant in cart-only
+    // mode (spec section 3) and only pooled balls -- fired ammo -- can hurt a cart. Registering
+    // it made the player's own resting ball a hazard: the cart spawns behind the tee, so driving
+    // forward ran it into the ball and cost strokes, which at 2 x par health is lethal. An
+    // unregistered handle falls through processContacts's own `if (!a || !b) return`.
+    sim.world.createCollider(ballColliderDesc, sim.ball);
 
     sim.controller = sim.world.createCharacterController(CHARACTER_OFFSET);
     sim.controller.setUp({ x: 0, y: 1, z: 0 });
@@ -325,6 +387,8 @@ export class Sim {
     // the ball, and nudging your own ball by driving into it is correct behaviour anyway.
     sim.controller.setApplyImpulsesToDynamicBodies(true);
 
+    sim.addCartRig(sim.cart, cartSpawnPosition(terrain), null);
+
     // The closure reads sim.terrain live rather than closing over `terrain`, so it keeps
     // checking against the correct hole's height field after loadHole() reassigns sim.terrain.
     sim.ballPool = new BallPool(sim.world, (x, z) => sim.terrain.heightAt(x, z));
@@ -336,17 +400,26 @@ export class Sim {
       stats: sim.stats,
       onCartKilled: (cart) => sim.killCart(cart),
     };
-    sim.registry.registerBall(ballCollider.handle, sim.ball);
     for (const pooled of sim.ballPool.all) {
       sim.registry.registerBall(pooled.body.collider(0).handle, pooled.body);
     }
-    sim.registry.registerCart(sim.cartCollider.handle, sim.cart);
+    const botCount = options.botCount ?? 1;
+    for (let i = 0; i < botCount; i++) {
+      const bot = new Cart({ maxHealth: 2 * hole.par });
+      sim.bots.push(bot);
+      sim.addCartRig(
+        bot,
+        botSpawnPosition(terrain, i),
+        mulberry32(hashChannel(hole.seed, hole.index, BOT_CHANNEL, i)),
+      );
+    }
     sim.buildTargets();
 
     sim.syncCurrent();
     sim.previous = sim.current;
     sim.syncCurrentCart();
     sim.previousCart = sim.currentCart;
+    sim.previousBotCarts = sim.currentBotCarts.slice();
     sim.syncCurrentPool();
     sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
@@ -367,6 +440,39 @@ export class Sim {
       .setFriction(0.8)
       .setRestitution(0.15);
     this.groundCollider = this.world.createCollider(groundDesc);
+  }
+
+  /**
+   * Creates one cart's body and collider at `spawn`, registers it for contact dispatch, and
+   * files the rig. Every cart -- the player's and every bot's -- goes through here, so a bot is
+   * physically identical to the player rather than a cheaper approximation of one.
+   */
+  private addCartRig(cart: Cart, spawn: Vec3, random: (() => number) | null): void {
+    const body = this.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z),
+    );
+    const collider = this.world.createCollider(
+      RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+        // Rapier computes no contacts between two kinematic bodies by default, and every cart
+        // here is kinematic -- without this, cart-vs-cart shunting generates no events at all.
+        .setActiveCollisionTypes(
+          RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
+        ),
+      body,
+    );
+    cart.position.x = spawn.x;
+    cart.position.y = spawn.y;
+    cart.position.z = spawn.z;
+    this.registry.registerCart(collider.handle, cart);
+    this.rigs.push({
+      cart,
+      body,
+      collider,
+      fallSpeed: 0,
+      random,
+      intentScratch: random === null ? null : neutralIntent(),
+    });
   }
 
   /**
@@ -410,15 +516,16 @@ export class Sim {
   }
 
   /**
-   * Death: a stroke penalty and a wait, mirroring the water-hazard rule rather than inventing a
-   * second shape for "you lost the ball/the cart." Guarded on `dead` so two lethal contacts in
-   * one tick cost one stroke, not two.
+   * Death: the cart is out of the world for `RESPAWN_DELAY_S` and comes back at the spawn point.
+   * Guarded on `dead` so two lethal contacts in one tick do not restart the timer.
+   *
+   * No stroke is charged here. The hit that took the last point of HP already counted its own
+   * stroke against `cart.strokesTaken`; charging again for the death would double it.
    */
   private killCart(cart: Cart): void {
     if (cart.dead) return;
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
-    this.strokes += 1;
   }
 
   /**
@@ -449,6 +556,8 @@ export class Sim {
     }
     this.buildTargets();
 
+    // A new hole can bring a different par, and the health bar is sized from it.
+    for (const rig of this.rigs) rig.cart.setMaxHealth(2 * this.terrain.spec.par);
     this.reset();
   }
 
@@ -462,6 +571,30 @@ export class Sim {
    * follows it.
    */
   step(intent: PlayerIntent = IDLE_INTENT): void {
+    // The clock is checked before anything else moves, so a finished match freezes exactly where
+    // it stood. Once `matchOver` is set below, every later call returns here before the
+    // previous/current swaps happen -- but that first return leaves `previous` and `current`
+    // one tick apart (whatever they were mid-interpolation when the buzzer sounded), and the
+    // renderer keeps lerping between that stale pair forever. So on the single tick that ends
+    // the match we collapse every previous/current pair onto its current value -- the same
+    // pattern `reset()` uses -- before returning, so a live scene actually holds still.
+    if (this.matchOver) return;
+    this.matchTimeRemaining -= FIXED_DT;
+    // Half a tick of slack, not `<= 0`. Repeated subtraction of 1/60 leaves a float residue --
+    // a five-tick match ends on 6.9e-18, not on 0 -- so an exact test never fires and the clock
+    // runs a tick long, or forever. The threshold makes "the tick that brings it to zero" exact.
+    if (this.matchTimeRemaining <= FIXED_DT * 0.5) {
+      this.matchTimeRemaining = 0;
+      this.matchOver = true;
+      this.previous = this.current;
+      this.syncCurrentCart();
+      this.previousCart = this.currentCart;
+      this.previousBotCarts = this.currentBotCarts.slice();
+      this.previousTargetTransforms.set(this.currentTargetTransforms);
+      this.previousPoolTransforms.set(this.currentPoolTransforms);
+      return;
+    }
+
     const swapTargets = this.previousTargetTransforms;
     this.previousTargetTransforms = this.currentTargetTransforms;
     this.currentTargetTransforms = swapTargets;
@@ -471,6 +604,9 @@ export class Sim {
     this.currentPoolTransforms = swapPool;
 
     this.previousCart = this.currentCart;
+    for (let i = 0; i < this.currentBotCarts.length; i++) {
+      this.previousBotCarts[i] = this.currentBotCarts[i]!;
+    }
     this.stepCart(intent);
     this.syncCurrentCart();
 
@@ -523,77 +659,99 @@ export class Sim {
   }
 
   /**
-   * Intent -> cart state -> body movement -> shot resolution, in that order. Runs in both modes:
-   * stationary mode zeroes the driving axes rather than skipping the call, so charge, reload and
-   * club selection go through exactly one state machine and cannot drift between modes.
+   * Per-tick world bookkeeping that belongs to no single cart, then one `stepRig` call per cart.
+   * Split that way so the pool and the buckets tick exactly once however many carts are in play.
    */
   private stepCart(intent: PlayerIntent): void {
-    // The world keeps running while the cart is out of it: balls already in flight land, and
+    // The world keeps running while a cart is out of it: balls already in flight land, and
     // bucket cooldowns keep ticking. Only the cart is frozen.
     this.simTime += FIXED_DT;
     this.ballPool.step(FIXED_DT, this.simTime);
     for (const bucket of this.buckets) stepBucket(bucket, FIXED_DT);
 
-    if (this.cart.dead) {
-      this.stepRespawn();
+    for (const rig of this.rigs) {
+      this.stepRig(rig, this.intentFor(rig, intent));
+    }
+  }
+
+  /** The player's rig gets the player's intent; a bot's gets whatever `sim/bot.ts` decides. */
+  private intentFor(rig: CartRig, playerIntent: PlayerIntent): PlayerIntent {
+    if (rig.random === null) return playerIntent;
+    // Unreachable by construction (addCartRig always pairs a non-null random with a non-null
+    // intentScratch) -- but a bot with no scratch must idle, not inherit the player's live
+    // intent and mirror their controls.
+    if (rig.intentScratch === null) return IDLE_INTENT;
+    // A dead cart's intent is never read by stepRig (see stepRespawn), so computing one here
+    // would only spend the bot's RNG stream on a throwaway draw -- and make the draw count
+    // depend on death timing, which is otherwise no business of this function's determinism.
+    if (rig.cart.dead) return IDLE_INTENT;
+    computeBotIntent(rig.cart, this.botTargetScratch(), FIXED_DT, rig.random, rig.intentScratch);
+    return rig.intentScratch;
+  }
+
+  /**
+   * The player, as the only thing a bot engages in this build. Written into one reused object
+   * per the no-allocation rule; a bot never sees the player's `Cart` itself.
+   */
+  private botTargetScratch(): BotTarget {
+    this.botTarget.x = this.cart.position.x;
+    this.botTarget.z = this.cart.position.z;
+    this.botTarget.dead = this.cart.dead;
+    return this.botTarget;
+  }
+
+  /** Intent -> cart state -> body movement -> shot resolution, for exactly one cart. */
+  private stepRig(rig: CartRig, intent: PlayerIntent): void {
+    const cart = rig.cart;
+    if (cart.dead) {
+      this.stepRespawn(rig);
       return;
     }
 
-    if (intent.toggleMode) {
-      this.mode = this.mode === SwingMode.Cart ? SwingMode.Stationary : SwingMode.Cart;
-    }
-    if (intent.selectClub !== null) this.cart.selectClub(intent.selectClub);
+    if (intent.selectClub !== null) cart.selectClub(intent.selectClub);
 
-    const driving = this.mode === SwingMode.Cart;
-    const c = this.cart.position;
+    const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
-    this.cart.step(driving ? intent : this.parkedIntent(intent), FIXED_DT, this.cartTuningScratch);
-
-    if (driving) this.moveCartBody();
+    cart.step(intent, FIXED_DT, this.cartTuningScratch);
+    this.moveCartBody(rig);
+    this.checkCartWater(rig);
 
     for (const bucket of this.buckets) {
-      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) this.cart.addAmmo(BUCKET_REFILL_AMMO);
+      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) cart.addAmmo(BUCKET_REFILL_AMMO);
     }
     for (const landed of this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE)) {
-      this.cart.addAmmo(1);
+      cart.addAmmo(1);
       this.ballPool.release(landed);
     }
 
-    if (this.cart.shot.fired) {
-      this.cart.shot.fired = false;
-      this.resolveShot();
+    if (cart.shot.fired) {
+      cart.shot.fired = false;
+      this.resolveShot(cart);
     }
   }
 
   /**
-   * Counts the respawn delay down and puts the cart back at the tee-adjacent spawn point when it
-   * expires. Intent is not read at all while dead -- drive, steer, aim, fire, club selection and
-   * the mode toggle are all ignored -- so ammo, reload and position are frozen for the duration.
+   * Counts one cart's respawn delay down and puts it back at its own spawn point when it
+   * expires. Intent is not read at all while dead -- drive, steer, aim, fire and club selection
+   * are all ignored -- so ammo, reload and position are frozen for the duration.
    */
-  private stepRespawn(): void {
-    this.cart.respawnTimer -= FIXED_DT;
-    if (this.cart.respawnTimer > 0) return;
+  private stepRespawn(rig: CartRig): void {
+    rig.cart.respawnTimer -= FIXED_DT;
+    if (rig.cart.respawnTimer > 0) return;
 
-    const spawn = cartSpawnPosition(this.terrain);
-    this.cart.position.x = spawn.x;
-    this.cart.position.y = spawn.y;
-    this.cart.position.z = spawn.z;
-    this.cart.revive();
-    this.cartFallSpeed = 0;
-    this.cartBody.setTranslation(spawn, true);
+    const spawn = this.spawnFor(rig);
+    rig.cart.position.x = spawn.x;
+    rig.cart.position.y = spawn.y;
+    rig.cart.position.z = spawn.z;
+    rig.cart.revive();
+    rig.fallSpeed = 0;
+    rig.body.setTranslation(spawn, true);
   }
 
-  /** The player's intent with the driving axes removed, reusing one object per the no-alloc rule. */
-  private parkedIntent(intent: PlayerIntent): PlayerIntent {
-    const parked = this.parkedScratch;
-    parked.throttle = 0;
-    parked.steer = 0;
-    parked.brake = false;
-    parked.aimDelta = intent.aimDelta;
-    parked.fire = intent.fire;
-    parked.selectClub = null;
-    parked.toggleMode = false;
-    return parked;
+  /** Rig 0 spawns behind the tee; a bot spawns past the cup, one offset per bot index. */
+  private spawnFor(rig: CartRig): Vec3 {
+    const index = this.rigs.indexOf(rig);
+    return index <= 0 ? cartSpawnPosition(this.terrain) : botSpawnPosition(this.terrain, index - 1);
   }
 
   /**
@@ -604,39 +762,89 @@ export class Sim {
    * `computedMovement()` allocates inside the binding. That is the one unavoidable per-tick
    * allocation in this loop; everything on our side of the call reuses `moveScratch`.
    */
-  private moveCartBody(): void {
-    this.cartFallSpeed -= GRAVITY * FIXED_DT;
-    this.moveScratch.x = this.cart.desiredTranslation.x;
-    this.moveScratch.y = this.cartFallSpeed * FIXED_DT;
-    this.moveScratch.z = this.cart.desiredTranslation.z;
+  private moveCartBody(rig: CartRig): void {
+    rig.fallSpeed -= GRAVITY * FIXED_DT;
+    this.moveScratch.x = rig.cart.desiredTranslation.x;
+    this.moveScratch.y = rig.fallSpeed * FIXED_DT;
+    this.moveScratch.z = rig.cart.desiredTranslation.z;
 
-    this.controller.computeColliderMovement(this.cartCollider, this.moveScratch);
+    this.controller.computeColliderMovement(rig.collider, this.moveScratch);
     const corrected = this.controller.computedMovement();
 
-    const p = this.cart.position;
+    const p = rig.cart.position;
     const half = this.terrain.spec.fieldSize / 2 - CART_COLLIDER.radius;
     p.x = Math.min(half, Math.max(-half, p.x + corrected.x));
     p.y += corrected.y;
     p.z = Math.min(half, Math.max(-half, p.z + corrected.z));
 
-    if (this.controller.computedGrounded()) this.cartFallSpeed = 0;
-    this.cartBody.setNextKinematicTranslation(p);
+    if (this.controller.computedGrounded()) rig.fallSpeed = 0;
+    rig.body.setNextKinematicTranslation(p);
+  }
+
+  /**
+   * A cart in the water costs a stroke and is dropped back where it was last on dry land --
+   * the same stroke-and-distance shape the ball's own water rule uses, applied to the driver.
+   *
+   * Edge-triggered on `wasInWater`, so a cart nosing into a pond pays once rather than once per
+   * tick. Each cart's flag is its own state, so two carts entering water on the same tick are
+   * independent by construction and need no ordering rule.
+   *
+   * Runs inside `stepRig`'s alive branch, which `stepRespawn` returns before -- a dead cart is
+   * out of the world and pays nothing.
+   */
+  private checkCartWater(rig: CartRig): void {
+    const cart = rig.cart;
+    const p = cart.position;
+    const inWater = this.surfaces.surfaceAt(p.x, p.z) === SurfaceId.Water;
+
+    if (!inWater) {
+      cart.wasInWater = false;
+      // Recorded every dry tick. A cart does not bounce the way a ball does, so this needs none
+      // of the ball's REST_HOLD_TICKS debounce -- wherever it is now is somewhere it can be put
+      // back down.
+      cart.lastSafePosition.x = p.x;
+      cart.lastSafePosition.y = p.y;
+      cart.lastSafePosition.z = p.z;
+      return;
+    }
+
+    if (cart.wasInWater) return;
+    cart.wasInWater = true;
+
+    cart.strokesTaken += 1;
+    if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart);
+
+    const safe = cart.lastSafePosition;
+    p.x = safe.x;
+    p.y = safe.y;
+    p.z = safe.z;
+    cart.speed = 0;
+    rig.fallSpeed = 0;
+    rig.body.setTranslation(p, true);
   }
 
   /**
    * Cart mode and stationary mode resolve a shot through entirely separate paths now: cart
    * mode spawns from the ammo-gated BallPool, stationary mode plays the single Sim.ball where
    * it lies. See docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1 for why they aren't
-   * unified.
+   * unified. The stationary half below is unreachable -- `mode` is never anything but `Cart` --
+   * and is kept as the reference implementation of the stroke-play swing; see the note on
+   * `Sim.mode`.
+   *
+   * Any cart reaches this now that carts are rigs, but `Sim.stats`, `lastShotWasStrike`,
+   * `Sim.ball` and `Sim.strokes` are all single-player state -- `stats.shotsFired` is the
+   * accuracy denominator the results screen reports. So only the player's shot may write them,
+   * and the stationary branch, which plays the player's own course ball, is his alone.
    */
-  private resolveShot(): void {
+  private resolveShot(cart: Cart): void {
+    const isPlayer = cart === this.cart;
     if (this.mode === SwingMode.Cart) {
       // No ball is scooped off the course here and none ever will be: the ammo fork replaced
       // "drive over the ball to load it" with a pooled-ball ammo counter, and this branch never
       // touches Sim.ball. The old ballLoaded/ballInReach pair described the retired mechanic and
       // made the course ball vanish onto a turret that could not play it (BACKLOG #16d).
-      if (!this.cart.shot.hasBall) {
-        this.lastShotWasStrike = false;
+      if (!cart.shot.hasBall) {
+        if (isPlayer) this.lastShotWasStrike = false;
         return;
       }
 
@@ -646,31 +854,37 @@ export class Sim {
         // untestable-in-practice case (spec §6). Cart.fire() already decremented ammo on the
         // assumption a ball would spawn; refund it so this degrades to a true no-op rather
         // than costing ammo for nothing. No ball actually spawned, so this is not a strike.
-        this.cart.addAmmo(1);
-        this.lastShotWasStrike = false;
+        cart.addAmmo(1);
+        if (isPlayer) this.lastShotWasStrike = false;
         return;
       }
 
-      this.lastShotWasStrike = true;
-      // "A shot fired" for accuracy purposes is a ball actually leaving the muzzle -- distinct
-      // from ammo's own decrement, which a 0-ammo blank also triggers.
-      this.stats.shotsFired += 1;
-      computeMuzzle(this.cart, this.muzzleScratch);
+      if (isPlayer) {
+        this.lastShotWasStrike = true;
+        // "A shot fired" for accuracy purposes is a ball actually leaving the muzzle -- distinct
+        // from ammo's own decrement, which a 0-ammo blank also triggers.
+        this.stats.shotsFired += 1;
+      }
+      computeMuzzle(cart, this.muzzleScratch);
       pooled.body.setTranslation(this.muzzleScratch, true);
       pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
       pooled.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       pooled.body.setLinvel(
-        computeLaunchVelocity(this.cart.shot.club, this.cart.shot.charge01, this.cart.shot.yaw),
+        computeLaunchVelocity(cart.shot.club, cart.shot.charge01, cart.shot.yaw),
         true,
       );
       return;
     }
 
+    // Stationary mode plays Sim.ball, and there is exactly one of those: the player's. A bot has
+    // no course ball to strike, so its trigger pull ends here rather than launching the player's.
+    if (!isPlayer) return;
+
     const playable = this.isResting() && !this.holedOut;
     this.lastShotWasStrike = playable;
     if (!playable) return;
 
-    this.launch(this.cart.shot.yaw, this.cart.shot.charge01, this.cart.shot.club);
+    this.launch(cart.shot.yaw, cart.shot.charge01, cart.shot.club);
   }
 
   /** Where the ball is riding when loaded on the turret. The scoop-onto-the-turret mechanic is
@@ -735,7 +949,7 @@ export class Sim {
     this.lastShotInWater = false;
   }
 
-  /** Full reset back to the tee: new hole, stroke count and cart position included. */
+  /** Full reset back to the tee: new hole, stroke counts and every cart's position included. */
   reset(): void {
     this.lastSafePosition = { ...this.terrain.teePosition };
     this.dropAtLastSafePosition();
@@ -744,28 +958,71 @@ export class Sim {
     this.lastShotOutOfBounds = false;
     this.lastShotInWater = false;
     this.lastShotWasStrike = false;
+    this.matchTimeRemaining = this.matchDurationS;
+    this.matchOver = false;
 
-    const spawn = cartSpawnPosition(this.terrain);
-    this.cart.position.x = spawn.x;
-    this.cart.position.y = spawn.y;
-    this.cart.position.z = spawn.z;
-    this.cart.heading = 0;
-    this.cart.turretOffset = 0;
-    // Health, death and momentum all clear here: a new hole starts alive, at full HP, standing
-    // still. Ammo deliberately survives -- it is a round-spanning resource, HP is not. `stats`
-    // survives too, being round-level rather than per-hole (sim/stats.ts).
-    this.cart.revive();
-    this.cartFallSpeed = 0;
+    for (const rig of this.rigs) {
+      const spawn = this.spawnFor(rig);
+      rig.cart.position.x = spawn.x;
+      rig.cart.position.y = spawn.y;
+      rig.cart.position.z = spawn.z;
+      rig.cart.heading = 0;
+      rig.cart.turretOffset = 0;
+      // Health, death, momentum and the match score all clear here: a new hole starts alive, at
+      // full HP, standing still, on nothing. Ammo deliberately survives -- it is a round-spanning
+      // resource, HP is not. `stats` survives too, being round-level (sim/stats.ts).
+      rig.cart.revive();
+      rig.cart.clearStrokes();
+      rig.cart.wasInWater = false;
+      rig.fallSpeed = 0;
+      rig.body.setTranslation(spawn, true);
+      if (rig.random !== null) {
+        rig.random = mulberry32(
+          hashChannel(this.terrain.spec.seed, this.terrain.spec.index, BOT_CHANNEL, this.rigs.indexOf(rig) - 1),
+        );
+      }
+    }
+
     for (const target of this.targets) target.reset();
     this.syncCurrentTargets();
     this.previousTargetTransforms.set(this.currentTargetTransforms);
-    this.cartBody.setTranslation(spawn, true);
     this.syncCurrentCart();
     this.previousCart = this.currentCart;
+    this.previousBotCarts = this.currentBotCarts.slice();
   }
 
   isResting(): boolean {
     return this.restTicks >= REST_HOLD_TICKS;
+  }
+
+  /**
+   * The lowest `strokesTaken` among the bots, or +Infinity if there are none. The single
+   * definition of "the bot's score" -- `matchOutcome` below and the results overlay
+   * (`MatchResultsSource.bestBotStrokes`) both call this rather than each keeping their own copy
+   * of the loop, so the headline and the number displayed under it cannot disagree.
+   */
+  bestBotStrokes(): number {
+    let best = Number.POSITIVE_INFINITY;
+    for (const bot of this.bots) best = Math.min(best, bot.strokesTaken);
+    return best;
+  }
+
+  /**
+   * Fewest strokes taken wins; an equal best score is a draw rather than an arbitrary pick.
+   *
+   * Read off the live `strokesTaken` counters rather than a result snapshot taken at the buzzer:
+   * `step()` returns before touching a cart once `matchOver` is set, so the numbers here cannot
+   * move after the match ends, and a cart that died on the closing tick keeps the score it died
+   * with.
+   */
+  matchOutcome(): MatchOutcome {
+    if (!this.matchOver) return "pending";
+
+    const bestBot = this.bestBotStrokes();
+    const player = this.cart.strokesTaken;
+    if (player < bestBot) return "player";
+    if (bestBot < player) return "bot";
+    return "draw";
   }
 
   /** Ball is within one radius of the terrain surface, i.e. not mid-bounce. */
@@ -790,17 +1047,15 @@ export class Sim {
   }
 
   /**
-   * Snapshots the cart's own position rather than the rigid body's: a kinematic body only moves
+   * Snapshots each cart's own position rather than its rigid body's: a kinematic body only moves
    * when `world.step()` consumes the queued translation, so reading the body here would render
-   * the cart one tick behind everything else.
+   * every cart one tick behind everything else.
    */
   private syncCurrentCart(): void {
-    const p = this.cart.position;
-    this.currentCart = {
-      position: { x: p.x, y: p.y, z: p.z },
-      heading: this.cart.heading,
-      turretYaw: this.cart.turretYaw,
-    };
+    this.currentCart = cartTransformOf(this.cart);
+    for (let i = 0; i < this.bots.length; i++) {
+      this.currentBotCarts[i] = cartTransformOf(this.bots[i]!);
+    }
   }
 
   /**
@@ -887,6 +1142,27 @@ function cartSpawnPosition(terrain: Terrain): Vec3 {
   return { x, y: terrain.heightAt(x, z) + CART_COLLIDER.groundOffset, z };
 }
 
+/**
+ * Beyond the cup along +X, mirroring `cartSpawnPosition`'s "behind the tee" placement. Chosen so
+ * a match opens with the bot further from the player than BOT_ENGAGE_RANGE: on the fixed hole
+ * that is ~93 m against a 40 m engagement range, so the bot idles until the player drives at it
+ * rather than opening fire from the tee.
+ */
+function botSpawnPosition(terrain: Terrain, index: number): Vec3 {
+  const x = terrain.cupPosition.x + BOT_SPAWN_OFFSET * (index + 1);
+  const z = terrain.cupPosition.z;
+  return { x, y: terrain.heightAt(x, z) + CART_COLLIDER.groundOffset, z };
+}
+
 function restCartTransform(terrain: Terrain): CartTransform {
   return { position: cartSpawnPosition(terrain), heading: 0, turretYaw: 0 };
+}
+
+function cartTransformOf(cart: Cart): CartTransform {
+  const p = cart.position;
+  return {
+    position: { x: p.x, y: p.y, z: p.z },
+    heading: cart.heading,
+    turretYaw: cart.turretYaw,
+  };
 }

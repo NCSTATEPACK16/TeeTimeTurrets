@@ -17,7 +17,6 @@ const stateScratch = createHudStateScratch();
 
 export interface Hud {
   powerFill: HTMLElement;
-  mode: HTMLElement;
   club: HTMLElement;
   strokes: HTMLElement;
   status: HTMLElement;
@@ -25,12 +24,12 @@ export interface Hud {
   healthFill: HTMLElement;
   healthText: HTMLElement;
   ammoCount: HTMLElement;
+  timer: HTMLElement;
 }
 
 export function readHud(): Hud | null {
   const ids = [
     "power-fill",
-    "hud-mode",
     "hud-club",
     "hud-strokes",
     "hud-status",
@@ -38,16 +37,16 @@ export function readHud(): Hud | null {
     "health-fill",
     "health-text",
     "ammo-count",
+    "hud-timer",
   ] as const;
 
   const found = ids.map((id) => document.getElementById(id));
   if (found.some((element) => element === null)) return null;
-  const [powerFill, mode, club, strokes, status, combat, healthFill, healthText, ammoCount] =
+  const [powerFill, club, strokes, status, combat, healthFill, healthText, ammoCount, timer] =
     found as HTMLElement[];
 
   return {
     powerFill: powerFill!,
-    mode: mode!,
     club: club!,
     strokes: strokes!,
     status: status!,
@@ -55,6 +54,7 @@ export function readHud(): Hud | null {
     healthFill: healthFill!,
     healthText: healthText!,
     ammoCount: ammoCount!,
+    timer: timer!,
   };
 }
 
@@ -63,10 +63,10 @@ export function drawHud(hud: Hud, source: HudSource): void {
   deriveHudState(source, state);
 
   setWidth(hud.powerFill, state.charge01);
-  setText(hud.mode, state.modeText);
   setText(hud.club, state.clubText);
   setText(hud.strokes, state.strokesText);
   setText(hud.status, state.status);
+  setText(hud.timer, state.timerText);
 
   // Hidden outright rather than shown full: an inert bar reads as a bug (UI-SPEC section 5).
   if (hud.combat.hidden === state.combatVisible) hud.combat.hidden = !state.combatVisible;

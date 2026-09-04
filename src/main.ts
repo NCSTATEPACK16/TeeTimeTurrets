@@ -3,10 +3,12 @@ import { GameLoop } from "./engine/GameLoop";
 import { KeyboardMouseSource } from "./input/KeyboardMouseSource";
 import { RenderScene } from "./render/scene";
 import type { FrameView } from "./render/scene";
-import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, SwingMode, TRANSFORM_STRIDE } from "./sim/world";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
 import { drawHud, readHud } from "./ui/hud";
+import { drawMatchResults, readMatchResults } from "./ui/matchResults";
+import { Nameplates } from "./ui/nameplates";
 
 /**
  * Fixed until a course-select screen exists (Phase 1.75). Changing it changes every hole, which
@@ -18,14 +20,20 @@ const COURSE_SEED = 2026;
 async function main(): Promise<void> {
   const container = document.getElementById("app");
   const hud = readHud();
-  if (!container || !hud) throw new Error("expected #app and the #hud elements in index.html");
+  const results = readMatchResults();
+  if (!container || !hud || !results) {
+    throw new Error("expected #app, the #hud elements and #match-results in index.html");
+  }
 
   // One course, nine holes, one seed. Playing past hole 0 is Phase 1.75's round flow: the
   // renderer's ground mesh is built once, so advancing needs a screen transition, not just
   // sim.loadHole.
   const course = generateCourse(COURSE_SEED, 9);
   const sim = await Sim.create(course.holes[0]);
-  const render = new RenderScene(container, sim.terrain, sim.targets.length);
+  const render = new RenderScene(container, sim.terrain, sim.targets.length, sim.bots.length);
+  const plateRoot = document.getElementById("nameplates");
+  if (!plateRoot) throw new Error("expected #nameplates in index.html");
+  const nameplates = new Nameplates(plateRoot, sim.bots.map((_, i) => `BOT ${i + 1}`));
   const input = new KeyboardMouseSource(render.renderer.domElement);
 
   // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
@@ -37,19 +45,25 @@ async function main(): Promise<void> {
     if (event.code === "KeyR") sim.reset();
   });
 
+  // Same reset path R already triggers: it re-rolls the clock, clears the result, re-seeds the
+  // bots and stands the targets back up.
+  results.playAgain.addEventListener("click", () => sim.reset());
+
+  // Edge-triggers document.exitPointerLock() below: a primitive, not a per-frame allocation.
+  let resultsWereVisible = false;
+
   // Reused across frames rather than rebuilt -- GameLoop's frame callback is covered by the
   // AGENTS.md no-allocation rule just as the fixed step is.
   const view: FrameView = {
     ball: cloneBall(sim.current),
     cart: cloneCart(sim.currentCart),
-    aimYaw: 0,
     charge01: 0,
     club: sim.cart.equippedClub,
-    mode: sim.mode,
     turretLoaded: turretLoaded(sim),
     targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
     targetPartCount: sim.targetPartCount,
     poolTransforms: new Float32Array(sim.currentPoolTransforms.length),
+    botCarts: sim.currentBotCarts.map(cloneCart),
   };
 
   const loop = new GameLoop({
@@ -61,10 +75,11 @@ async function main(): Promise<void> {
     render: (alpha) => {
       interpolateBall(sim.previous, sim.current, alpha, view.ball);
       interpolateCart(sim.previousCart, sim.currentCart, alpha, view.cart);
-      view.aimYaw = view.cart.turretYaw;
+      for (let i = 0; i < view.botCarts.length; i++) {
+        interpolateCart(sim.previousBotCarts[i]!, sim.currentBotCarts[i]!, alpha, view.botCarts[i]!);
+      }
       view.charge01 = sim.cart.charge;
       view.club = sim.cart.equippedClub;
-      view.mode = sim.mode;
       view.turretLoaded = turretLoaded(sim);
       interpolateTransforms(
         sim.previousTargetTransforms,
@@ -81,18 +96,74 @@ async function main(): Promise<void> {
       );
 
       render.draw(view);
+      drawNameplates(render, nameplates, view, sim);
       drawHud(hud, sim);
+      drawMatchResults(results, sim);
+
+      // Pointer-locked players (mouse aim) cannot see or reach #play-again -- the canvas has
+      // captured and hidden the cursor -- so release the lock on the tick the overlay first
+      // becomes visible rather than leaving Esc as the only undocumented way out.
+      const resultsVisible = !results.root.hidden;
+      if (resultsVisible && !resultsWereVisible && document.pointerLockElement !== null) {
+        document.exitPointerLock();
+      }
+      resultsWereVisible = resultsVisible;
     },
   });
   loop.start();
 }
 
 /**
- * What rides the club head in cart mode is a round of ammo, not the course ball -- images 03 and
- * 04, and what actually fires. In stationary mode there is no turret shot at all.
+ * What rides the club head is a round of ammo, not the course ball -- images 03 and 04, and what
+ * actually fires.
  */
 function turretLoaded(sim: Sim): boolean {
-  return sim.mode === SwingMode.Cart && sim.cart.ammo > 0;
+  return sim.cart.ammo > 0;
+}
+
+/** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
+const NAMEPLATE_HEIGHT = 2.6;
+const plateScratch = { x: 0, y: 0 };
+
+/**
+ * Projects each bot cart's plate anchor and places it. Reads health straight off the sim -- a
+ * read, never a mutation, per the AGENTS.md rule that src/ui/** consumes sim state.
+ *
+ * The player's own cart is never plated: UI-SPEC H13's data source is "remote cart positions"
+ * (docs/UI-SPEC.md), and the chase camera already frames the player's cart with #hud-combat's
+ * health card below it -- a second health bar mid-screen over your own cart would duplicate
+ * both.
+ */
+function drawNameplates(render: RenderScene, plates: Nameplates, view: FrameView, sim: Sim): void {
+  for (let i = 0; i < view.botCarts.length; i++) {
+    const bot = sim.bots[i];
+    if (bot === undefined) continue;
+    placeNameplate(render, plates, i, view.botCarts[i]!, bot.health);
+  }
+}
+
+/** Module-level rather than nested inside `drawNameplates`: a function declared inside a function
+ *  body allocates a fresh closure on every call, and this one is called every frame. */
+function placeNameplate(
+  render: RenderScene,
+  plates: Nameplates,
+  index: number,
+  cart: CartTransform,
+  health: { readonly hp: number; readonly max: number },
+): void {
+  const visible = render.projectToScreen(
+    cart.position.x,
+    cart.position.y + NAMEPLATE_HEIGHT,
+    cart.position.z,
+    plateScratch,
+  );
+  plates.setPlate(
+    index,
+    plateScratch.x,
+    plateScratch.y,
+    visible,
+    health.max > 0 ? health.hp / health.max : 0,
+  );
 }
 
 const scratchA = new THREE.Quaternion();

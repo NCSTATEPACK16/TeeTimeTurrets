@@ -54,7 +54,7 @@ element-level detail lives in `docs/UI-SPEC.md`; this file keeps the one-line no
 | 19 | Flag-ball reset on stalemate | IDEA | If it ends up somewhere unreachable. |
 | 20 | Stroke-play race mode | READY | Non-combat: first to hole out wins. Good low-risk mode to ship first, and the one already playable. Named `STROKE` in image 12. |
 | 20a | `TARGETS` mode | IDEA | The third tab in image 12's lobby — Phase 3's ragdoll work promoted to a mode with its own scoring. Image 13's `TARGETS DOWN` tile is its round stat. Named for the first time in `UI-SPEC.md` §5. |
-| 20b | Mode-scoped rulesets | **→ Phase 3** | One switch deciding whether damage and ammo are live. `STROKE` off, `CTF`/`TARGETS` on. Cheap now; retrofitting a mode concept after three modes exist is not. |
+| 20b | Mode-scoped rulesets | **→ Phase 3.5** | One switch deciding whether damage and ammo are live. Cart-only mode settled the near term by removing the other side of the switch: damage and ammo are always on, and `hudState.combatVisible` is unconditionally true. `STROKE` returns as a mode when the dormant stationary swing does, and that is when this switch becomes real. |
 
 ## Course features
 

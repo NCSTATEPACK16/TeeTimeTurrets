@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { createHudStateScratch, deriveHudState } from "./hudState";
-import { SwingMode } from "../sim/world";
 import { ClubType } from "../physics/Ballistics";
 import type { HudSource, HudState } from "./hudState";
 
@@ -15,11 +14,11 @@ function derive(source: HudSource): HudState {
 
 function source(overrides: Partial<HudSource> = {}): HudSource {
   return {
-    mode: SwingMode.Cart,
     strokes: 0,
     holedOut: false,
     lastShotInWater: false,
     lastShotOutOfBounds: false,
+    matchTimeRemaining: 180,
     cart: {
       equippedClub: ClubType.Driver,
       charge: 0,
@@ -35,15 +34,9 @@ function source(overrides: Partial<HudSource> = {}): HudSource {
 }
 
 describe("combat element visibility", () => {
-  it("shows health and ammo in cart mode", () => {
+  it("always shows health and ammo: there is one HUD configuration now", () => {
     expect(derive(source()).combatVisible).toBe(true);
-  });
-
-  it("hides them in stationary mode rather than showing them full", () => {
-    // UI-SPEC.md section 1 gives Health to the Cart HUD and marks it absent from the Swing HUD;
-    // section 5 says an inert full bar reads as a bug.
-    const state = derive(source({ mode: SwingMode.Stationary }));
-    expect(state.combatVisible).toBe(false);
+    expect(derive(source({ cart: { ...source().cart, ammo: 0 } })).combatVisible).toBe(true);
   });
 });
 
@@ -115,22 +108,19 @@ describe("status precedence", () => {
       "NO AMMO — fire a blank to boost",
     );
   });
-
-  it("is READY in stationary mode regardless of ammo", () => {
-    const state = derive(source({ mode: SwingMode.Stationary, cart: { ...source().cart, ammo: 0 } }));
-    expect(state.status).toBe("READY");
-  });
 });
 
 describe("the rest of the readout", () => {
-  it("labels the mode and the club and the strokes", () => {
+  it("labels the club and the strokes", () => {
     const state = derive(source({ strokes: 3, cart: { ...source().cart, equippedClub: ClubType.Putter } }));
-    expect(state.modeText).toBe("CART");
     expect(state.clubText).toBe("PUTTER");
     expect(state.strokesText).toBe("STROKES 3");
   });
 
-  it("labels stationary mode STANDING, which smoke.mjs asserts", () => {
-    expect(derive(source({ mode: SwingMode.Stationary })).modeText).toBe("STANDING");
+  it("renders the clock as minutes and seconds", () => {
+    expect(derive(source({ matchTimeRemaining: 180 })).timerText).toBe("3:00");
+    expect(derive(source({ matchTimeRemaining: 65.9 })).timerText).toBe("1:05");
+    expect(derive(source({ matchTimeRemaining: 9 })).timerText).toBe("0:09");
+    expect(derive(source({ matchTimeRemaining: 0 })).timerText).toBe("0:00");
   });
 });

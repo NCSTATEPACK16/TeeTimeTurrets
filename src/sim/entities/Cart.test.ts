@@ -482,3 +482,33 @@ describe("Cart health, death and shunting", () => {
     expect(cart.shuntVelocity.z).toBe(0);
   });
 });
+
+describe("stroke bookkeeping", () => {
+  it("sizes health from the maxHealth option and defaults to STARTING_HP", () => {
+    expect(new Cart().health.max).toBe(STARTING_HP);
+    const sized = new Cart({ maxHealth: 8 });
+    expect(sized.health.max).toBe(8);
+    expect(sized.health.hp).toBe(8);
+  });
+
+  it("keeps strokesTaken across a respawn but clears it on clearStrokes", () => {
+    const cart = new Cart({ maxHealth: 8 });
+    cart.strokesTaken = 3;
+    cart.health.hp = 0;
+
+    cart.revive();
+    expect(cart.health.hp).toBe(8);
+    expect(cart.strokesTaken).toBe(3);
+
+    cart.clearStrokes();
+    expect(cart.strokesTaken).toBe(0);
+  });
+
+  it("setMaxHealth resizes and refills", () => {
+    const cart = new Cart({ maxHealth: 6 });
+    cart.health.hp = 2;
+    cart.setMaxHealth(10);
+    expect(cart.health.max).toBe(10);
+    expect(cart.health.hp).toBe(10);
+  });
+});

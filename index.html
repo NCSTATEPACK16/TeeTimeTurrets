@@ -35,6 +35,7 @@
         margin-bottom: 4px;
       }
       #hud-status { min-height: 1.2em; color: #ffe27a; margin-top: 5px; }
+      #hud-timer { font-variant-numeric: tabular-nums; }
       #hud-help { margin-top: 8px; opacity: 0.7; font-size: 11px; }
       #power-track {
         margin-top: 6px;
@@ -67,6 +68,39 @@
         pointer-events: none;
       }
       #hud-combat[hidden] { display: none; }
+
+      /* UI-SPEC H13. Built once and repositioned per frame, unlike the one-shot hit markers.
+         No z-index of its own (auto), same as #hud/#hud-combat: #match-results' explicit
+         z-index: 10 already lifts it above every auto sibling regardless of DOM order, so the
+         results card still covers the plates at the buzzer without this needing to know about
+         it. Placed early in the DOM (right after #app) so it stacks below #hud/#hud-combat,
+         which come later -- the plates read as part of the world, not the cockpit. */
+      #nameplates { position: fixed; inset: 0; pointer-events: none; }
+      .nameplate {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: rgba(16, 20, 24, 0.62);
+        font: 600 11px system-ui, sans-serif;
+        letter-spacing: 0.08em;
+        color: #fff;
+        white-space: nowrap;
+      }
+      .nameplate[hidden] { display: none; }
+      .nameplate-track {
+        width: 62px;
+        height: 4px;
+        border-radius: 2px;
+        overflow: hidden;
+        background: rgba(0, 0, 0, 0.5);
+      }
+      .nameplate-fill { height: 100%; width: 100%; background: #46c46a; }
       .hud-card {
         display: flex;
         align-items: center;
@@ -90,10 +124,61 @@
       }
       #health-icon { color: #e8564a; font-size: 15px; }
       #ammo-count { color: #ff9d3d; font-size: 17px; }
+
+      /* UI-SPEC section 6's visual language: dark translucent card, white bold condensed type.
+         Not S2's full nine-column scorecard -- that is Phase 1.75's screen, and this is one
+         overlay gated by one boolean. */
+      #match-results {
+        position: fixed;
+        inset: 0;
+        /* #hud has no z-index of its own (auto), so without one here it paints on top of this
+           backdrop despite coming earlier in the DOM -- the match freezes but the timer and
+           status line stay lit above the dimmed scene. A positive z-index lifts this overlay
+           into its own paint layer above every z-index:auto sibling, matching how a modal
+           backdrop is expected to occlude the page behind it. */
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 12, 16, 0.72);
+        font: 600 15px system-ui, sans-serif;
+        letter-spacing: 0.06em;
+        color: #fff;
+      }
+      #match-results[hidden] { display: none; }
+      #results-card {
+        min-width: 300px;
+        padding: 28px 34px;
+        border-radius: 12px;
+        background: rgba(16, 20, 24, 0.94);
+        text-align: center;
+      }
+      #results-headline { margin: 0 0 18px; font-size: 30px; letter-spacing: 0.1em; }
+      #results-scores {
+        display: flex;
+        justify-content: space-between;
+        gap: 28px;
+        margin-bottom: 22px;
+        font-size: 17px;
+        font-variant-numeric: tabular-nums;
+      }
+      #play-again {
+        width: 100%;
+        padding: 11px 0;
+        border: 0;
+        border-radius: 8px;
+        background: #ef8a2b;
+        color: #14181c;
+        font: inherit;
+        font-size: 15px;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
+    <div id="nameplates"></div>
     <div id="hud-combat" hidden>
       <div class="hud-card">
         <span id="health-icon">&#9829;</span>
@@ -105,16 +190,29 @@
         <span id="ammo-count">0</span>
       </div>
     </div>
+    <!-- Empty by design: review round 1 caught a placeholder "DRAW"/"YOU 0"/"BOT 0" here making
+         the smoke check for these elements pass even with drawMatchResults never called. Blank
+         markup means the check can only pass because the writer actually ran. -->
+    <div id="match-results" hidden>
+      <div id="results-card">
+        <h1 id="results-headline"></h1>
+        <div id="results-scores">
+          <span id="results-you"></span>
+          <span id="results-bot"></span>
+        </div>
+        <button id="play-again" type="button">PLAY AGAIN</button>
+      </div>
+    </div>
     <div id="hud">
       <div id="hud-row">
-        <span id="hud-mode">STANDING</span>
+        <span id="hud-timer">3:00</span>
         <span id="hud-club">DRIVER</span>
         <span id="hud-strokes">STROKES 0</span>
       </div>
       <div id="power-track"><div id="power-fill"></div></div>
       <div id="hud-status"></div>
       <div id="hud-help">
-        C mode &middot; WASD drive &middot; F or Space fire &middot; mouse/Q/E aim &middot; 1-2-3 club &middot; Shift brake &middot;
+        WASD drive &middot; F or Space fire &middot; mouse/Q/E aim &middot; 1-2-3 club &middot; Shift brake &middot;
         hold to charge, release to shoot &middot; R reset
       </div>
     </div>

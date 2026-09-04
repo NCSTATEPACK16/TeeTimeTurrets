@@ -2,10 +2,9 @@ import * as THREE from "three";
 import { BallSwarm, BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../entities/BallSwarm";
 import { GolfClub } from "../entities/GolfClub";
 import { TargetRig } from "../entities/TargetRig";
-import type { ClubType } from "../physics/Ballistics";
+import { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import { CART_COLLIDER } from "../sim/entities/Cart";
-import { SwingMode } from "../sim/world";
 import type { BallTransform, CartTransform } from "../sim/world";
 
 /**
@@ -38,6 +37,15 @@ const CHASE_MIN_GROUND_CLEARANCE = 1.5;
 const CART_BODY_OFFSET_Y = CART_COLLIDER.groundOffset;
 
 /**
+ * The renderer has no per-bot club, charge or loaded-round state to draw from -- `Sim` doesn't
+ * publish one per bot today -- so every bot cart draws a fixed default club, never charged, never
+ * showing a loaded round, regardless of what that bot is actually doing. That is a known gap, not
+ * a guess dressed up as one: a bot mid-charge or holding a different club looks identical to one
+ * standing idle with a driver.
+ */
+const BOT_DEFAULT_CLUB = ClubType.Driver;
+
+/**
  * Everything the renderer needs for one frame. Passed as one object the caller reuses rather
  * than as a growing positional argument list -- and reused rather than rebuilt, because
  * GameLoop's frame callback is covered by the AGENTS.md no-allocation rule.
@@ -45,11 +53,8 @@ const CART_BODY_OFFSET_Y = CART_COLLIDER.groundOffset;
 export interface FrameView {
   ball: BallTransform;
   cart: CartTransform;
-  /** World-space aim yaw, 0 = +X. The turret's in cart mode, the player's in stationary mode. */
-  aimYaw: number;
   charge01: number;
   club: ClubType;
-  mode: SwingMode;
   /** True while a round of ammo rides the club head: drawn on the turret. Loaded does not mean
    * fireable -- `Cart.canFire` also gates on the reload timer, so a loaded round can still be
    * mid-reload. */
@@ -60,6 +65,8 @@ export interface FrameView {
   targetPartCount: number;
   /** Interpolated pooled-ball transforms, laid out exactly as Sim publishes them. */
   poolTransforms: Float32Array;
+  /** One entry per bot cart, laid out exactly as `cart` is. */
+  botCarts: CartTransform[];
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -69,16 +76,17 @@ export class RenderScene {
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly ball: THREE.Mesh;
-  private readonly aimArrow: THREE.ArrowHelper;
   private readonly cart: GolfClub;
+  private readonly botCarts: GolfClub[] = [];
   private readonly targets: TargetRig;
   private readonly pooledBalls: BallSwarm;
   private readonly cameraTarget = new THREE.Vector3();
-  private readonly aimDirScratch = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
+  private readonly projectScratch = new THREE.Vector3();
+  private readonly sizeScratch = new THREE.Vector2();
 
-  constructor(container: HTMLElement, terrain: Terrain, targetCount: number) {
+  constructor(container: HTMLElement, terrain: Terrain, targetCount: number, botCount: number) {
     this.terrain = terrain;
     const fieldSize = terrain.spec.fieldSize;
 
@@ -112,11 +120,16 @@ export class RenderScene {
     this.ball = new THREE.Mesh(ballGeo, ballMat);
     this.scene.add(this.ball);
 
-    this.aimArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 2, 0xffee55, 0.5, 0.3);
-    this.scene.add(this.aimArrow);
-
     this.cart = new GolfClub();
     this.scene.add(this.cart);
+
+    // A bot is physically a cart, so it is visually one too -- the same procedural model, no
+    // cheaper stand-in. Team colour is Phase 5's; today the nameplate is what tells them apart.
+    for (let i = 0; i < botCount; i++) {
+      const bot = new GolfClub();
+      this.botCarts.push(bot);
+      this.scene.add(bot);
+    }
 
     this.targets = new TargetRig(targetCount);
     this.scene.add(this.targets);
@@ -137,23 +150,16 @@ export class RenderScene {
       view.ball.rotation.w,
     );
 
-    this.drawCart(view);
+    this.poseCart(this.cart, view.cart, view.club, view.charge01, view.turretLoaded);
+    for (let i = 0; i < this.botCarts.length; i++) {
+      const transform = view.botCarts[i];
+      if (transform === undefined) continue;
+      this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, false);
+    }
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
 
-    // The ground aim arrow belongs to stationary mode, where the player is lining up a lie. In
-    // cart mode the barrel itself shows where the shot is going.
-    this.aimArrow.visible = view.mode === SwingMode.Stationary;
-    if (this.aimArrow.visible) {
-      this.aimArrow.position.copy(this.ball.position);
-      this.aimArrow.position.y += BALL_RADIUS;
-      this.aimDirScratch.set(Math.cos(view.aimYaw), 0, Math.sin(view.aimYaw));
-      this.aimArrow.setDirection(this.aimDirScratch);
-      this.aimArrow.setLength(1.2 + view.charge01 * 2, 0.4, 0.25);
-    }
-
-    if (view.mode === SwingMode.Cart) this.frameChase(view);
-    else this.frameBall();
+    this.frameChase(view);
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -161,9 +167,31 @@ export class RenderScene {
   /** Frees the cart's geometries and materials. See the AGENTS.md resource-cleanup rule. */
   dispose(): void {
     this.cart.dispose();
+    for (const bot of this.botCarts) bot.dispose();
     this.targets.dispose();
     this.pooledBalls.dispose();
     this.renderer.dispose();
+  }
+
+  /**
+   * World point -> canvas pixels, per docs/ARCHITECTURE.md section 2c. Returns false when the
+   * point is behind the camera (stops a nameplate being drawn mirrored in front of a viewer
+   * looking the other way) or outside the horizontal/vertical frustum (stops a plate for a cart
+   * off to the side or above/below frame from being placed at an off-viewport pixel coordinate
+   * instead of hidden -- at four carts on screen at once, most of them are off to a side more
+   * often than dead ahead).
+   *
+   * Lives here rather than in `src/ui/**` because the camera does, and `src/ui/**` must not
+   * import three. Writes into `out`: this runs once per cart per frame.
+   */
+  projectToScreen(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
+    this.projectScratch.set(x, y, z).project(this.camera);
+    if (this.projectScratch.z > 1) return false;
+    if (Math.abs(this.projectScratch.x) > 1 || Math.abs(this.projectScratch.y) > 1) return false;
+    const size = this.renderer.getSize(this.sizeScratch);
+    out.x = (this.projectScratch.x * 0.5 + 0.5) * size.x;
+    out.y = (1 - (this.projectScratch.y * 0.5 + 0.5)) * size.y;
+    return true;
   }
 
   /**
@@ -173,14 +201,19 @@ export class RenderScene {
    * t = PI/2 - yaw. The turret pivot is a *child* of the cart group, so its local rotation is
    * the difference of the two converted angles, which simplifies to (heading - turretYaw).
    */
-  private drawCart(view: FrameView): void {
-    const c = view.cart;
-    this.cart.position.set(c.position.x, c.position.y - CART_BODY_OFFSET_Y, c.position.z);
-    this.cart.rotation.y = Math.PI / 2 - c.heading;
-    this.cart.setAimYaw(c.heading - c.turretYaw);
-    this.cart.setClub(view.club);
-    this.cart.setChargeVisual(view.charge01);
-    this.cart.setBallLoaded(view.turretLoaded);
+  private poseCart(
+    model: GolfClub,
+    c: CartTransform,
+    club: ClubType,
+    charge01: number,
+    loaded: boolean,
+  ): void {
+    model.position.set(c.position.x, c.position.y - CART_BODY_OFFSET_Y, c.position.z);
+    model.rotation.y = Math.PI / 2 - c.heading;
+    model.setAimYaw(c.heading - c.turretYaw);
+    model.setClub(club);
+    model.setChargeVisual(charge01);
+    model.setBallLoaded(loaded);
   }
 
   private frameChase(view: FrameView): void {
@@ -206,13 +239,6 @@ export class RenderScene {
 
     this.camera.position.lerp(this.chaseEyeScratch, CHASE_POSITION_LERP);
     this.cameraTarget.lerp(this.chaseLookScratch, CHASE_TARGET_LERP);
-    this.camera.lookAt(this.cameraTarget);
-  }
-
-  /** Phase 0's framing, unchanged: a fixed offset that follows the ball. */
-  private frameBall(): void {
-    this.cameraTarget.lerp(this.ball.position, 0.08);
-    this.camera.position.set(this.cameraTarget.x - 6, this.cameraTarget.y + 4.5, this.cameraTarget.z + 7);
     this.camera.lookAt(this.cameraTarget);
   }
 

@@ -47,12 +47,11 @@ describe("ScriptedInputSource", () => {
   });
 
   it("emits edge-triggered fields only on the first tick of a step", () => {
-    // selectClub and toggleMode are presses. A step that holds one for 10 ticks must not
-    // re-select the club 10 times -- in the cart that would reset the swing charge every tick.
-    const source = new ScriptedInputSource([{ ticks: 3, intent: { selectClub: ClubType.Iron, toggleMode: true } }]);
+    // selectClub is a press. A step that holds one for 10 ticks must not re-select the club 10
+    // times -- in the cart that would reset the swing charge every tick.
+    const source = new ScriptedInputSource([{ ticks: 3, intent: { selectClub: ClubType.Iron } }]);
     const seen = drain(source, 3);
     expect(seen.map((i) => i.selectClub)).toEqual([ClubType.Iron, null, null]);
-    expect(seen.map((i) => i.toggleMode)).toEqual([true, false, false]);
   });
 
   it("goes neutral and reports finished once the script is exhausted", () => {

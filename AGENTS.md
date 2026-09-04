@@ -59,6 +59,14 @@ now has a repository and agents may commit. Two rules replace the prohibition:
   joint motors were removed at 0.12-alpha with no clear restoration — verify at runtime before
   relying on them. Anything that looks like it should hold a pose via joint parameters does
   not work; hold poses with body type instead (`docs/DECISIONS.md` "Ragdolls").
+- **`setTranslation(p, true)` overrides a pending `setNextKinematicTranslation` target** on a
+  kinematic body — verified against the installed 0.20.0 build, not assumed. The JS docstring
+  describes the "next kinematic position" as separate internal state applied during
+  `world.step()`, which reads as though a teleport would be overwritten by an
+  already-queued target. It is not: queue a target, then `setTranslation`, and the step keeps
+  the teleport. (Control: with no teleport, the queued target *is* applied, so the queue itself
+  works.) This is why `Sim.checkCartWater` repositions a cart with `setTranslation` alone and
+  does not need to re-issue the queued translation.
 - **Licensing is split by directory** and the split is load-bearing: `src/**` and `tools/**`
   are Apache-2.0, `server/**` is AGPL-3.0-or-later. AGPL code may import Apache-2.0 code;
   **the reverse must never happen.** Shared logic lives in `src/sim/**` or `src/physics/**`.
@@ -81,6 +89,13 @@ now has a repository and agents may commit. Two rules replace the prohibition:
 
 ## Testing invariants & failure conditions
 
+- **See every new test fail before you make it pass, and keep the output.** For a test that
+  guards against rot rather than driving new code, break the guarded thing deliberately and
+  watch it fail. A test you have never seen red is a claim, not evidence. This repo's
+  recurring defect is the test that passes for a reason unrelated to its name — six caught so
+  far, each one green while the bug it was named for was fully present. The instances, and
+  the other ways specs and tests have lied here, are in `docs/TEST-AND-SPEC-PITFALLS.md`;
+  read it before writing a spec, a plan, or a test.
 - A change to `src/sim/**` or `src/physics/**` that makes `tsc --noEmit` fail, or that
   introduces a `three`/DOM import into either directory, is a failed change — revert or fix,
   don't ship it.
