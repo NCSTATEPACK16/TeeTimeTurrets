@@ -24,6 +24,7 @@ export interface Hud {
   healthFill: HTMLElement;
   healthText: HTMLElement;
   ammoCount: HTMLElement;
+  timer: HTMLElement;
 }
 
 export function readHud(): Hud | null {
@@ -36,11 +37,12 @@ export function readHud(): Hud | null {
     "health-fill",
     "health-text",
     "ammo-count",
+    "hud-timer",
   ] as const;
 
   const found = ids.map((id) => document.getElementById(id));
   if (found.some((element) => element === null)) return null;
-  const [powerFill, club, strokes, status, combat, healthFill, healthText, ammoCount] =
+  const [powerFill, club, strokes, status, combat, healthFill, healthText, ammoCount, timer] =
     found as HTMLElement[];
 
   return {
@@ -52,6 +54,7 @@ export function readHud(): Hud | null {
     healthFill: healthFill!,
     healthText: healthText!,
     ammoCount: ammoCount!,
+    timer: timer!,
   };
 }
 
@@ -63,6 +66,7 @@ export function drawHud(hud: Hud, source: HudSource): void {
   setText(hud.club, state.clubText);
   setText(hud.strokes, state.strokesText);
   setText(hud.status, state.status);
+  setText(hud.timer, state.timerText);
 
   // Hidden outright rather than shown full: an inert bar reads as a bug (UI-SPEC section 5).
   if (hud.combat.hidden === state.combatVisible) hud.combat.hidden = !state.combatVisible;

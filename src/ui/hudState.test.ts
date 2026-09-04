@@ -18,6 +18,7 @@ function source(overrides: Partial<HudSource> = {}): HudSource {
     holedOut: false,
     lastShotInWater: false,
     lastShotOutOfBounds: false,
+    matchTimeRemaining: 180,
     cart: {
       equippedClub: ClubType.Driver,
       charge: 0,
@@ -114,5 +115,12 @@ describe("the rest of the readout", () => {
     const state = derive(source({ strokes: 3, cart: { ...source().cart, equippedClub: ClubType.Putter } }));
     expect(state.clubText).toBe("PUTTER");
     expect(state.strokesText).toBe("STROKES 3");
+  });
+
+  it("renders the clock as minutes and seconds", () => {
+    expect(derive(source({ matchTimeRemaining: 180 })).timerText).toBe("3:00");
+    expect(derive(source({ matchTimeRemaining: 65.9 })).timerText).toBe("1:05");
+    expect(derive(source({ matchTimeRemaining: 9 })).timerText).toBe("0:09");
+    expect(derive(source({ matchTimeRemaining: 0 })).timerText).toBe("0:00");
   });
 });

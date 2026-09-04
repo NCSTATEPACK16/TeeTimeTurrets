@@ -10,7 +10,8 @@ import { POOL_SIZE } from "./entities/BallPool";
 import type { BallPool, PooledBall } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { SurfaceId } from "./surfaces";
-import { POOL_TRANSFORM_STRIDE, Sim, SwingMode } from "./world";
+import { MATCH_DURATION_S, POOL_TRANSFORM_STRIDE, Sim, SwingMode } from "./world";
+import { neutralIntent } from "../input/InputSource";
 
 /**
  * Phase 2's gate, run headlessly against the real Rapier world. Everything here is driven
@@ -750,5 +751,89 @@ describe("driving into water", () => {
     sim.step();
 
     expect(sim.cart.strokesTaken).toBe(0);
+  });
+});
+
+describe("the match clock", () => {
+  it("counts down from the default duration", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    expect(sim.matchTimeRemaining).toBe(MATCH_DURATION_S);
+    expect(sim.matchOver).toBe(false);
+    for (let i = 0; i < 60; i++) sim.step();
+    expect(sim.matchTimeRemaining).toBeCloseTo(MATCH_DURATION_S - 1, 5);
+  });
+
+  it("runs to the end in a handful of ticks when a test shortens it", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0, matchDurationS: 5 / 60 });
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.matchTimeRemaining).toBe(0);
+    expect(sim.matchOver).toBe(true);
+  });
+
+  it("freezes the world once the match is over", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    for (let i = 0; i < 5; i++) sim.step();
+    const frozen = { ...sim.cart.position };
+    const botFrozen = { ...sim.bots[0]!.position };
+
+    const intent = neutralIntent();
+    intent.throttle = 1;
+    for (let i = 0; i < 120; i++) sim.step(intent);
+
+    expect(sim.cart.position.x).toBeCloseTo(frozen.x, 9);
+    expect(sim.cart.position.z).toBeCloseTo(frozen.z, 9);
+    expect(sim.bots[0]!.position.x).toBeCloseTo(botFrozen.x, 9);
+  });
+
+  it("is pending until the clock runs out", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    expect(sim.matchOutcome()).toBe("pending");
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.matchOutcome()).toBe("draw");
+  });
+
+  it("gives the win to whoever took fewer strokes", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    sim.bots[0]!.strokesTaken = 3;
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.matchOutcome()).toBe("player");
+  });
+
+  it("gives the win to the bot when the player took more", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    sim.cart.strokesTaken = 4;
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.matchOutcome()).toBe("bot");
+  });
+
+  it("calls an equal score a draw rather than picking a winner", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    sim.cart.strokesTaken = 2;
+    sim.bots[0]!.strokesTaken = 2;
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.matchOutcome()).toBe("draw");
+  });
+
+  it("keeps the score a cart died on: a death on the closing tick still counts", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    for (let i = 0; i < 4; i++) sim.step();
+    sim.bots[0]!.strokesTaken = 6;
+    (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.bots[0]!);
+    sim.step();
+    expect(sim.matchOver).toBe(true);
+    expect(sim.bots[0]!.strokesTaken).toBe(6);
+    expect(sim.matchOutcome()).toBe("player");
+  });
+
+  it("reset re-rolls the clock and clears the result", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.matchOver).toBe(true);
+
+    sim.reset();
+
+    expect(sim.matchOver).toBe(false);
+    expect(sim.matchTimeRemaining).toBeCloseTo(5 / 60, 9);
+    expect(sim.matchOutcome()).toBe("pending");
   });
 });

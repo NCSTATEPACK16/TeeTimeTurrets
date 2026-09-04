@@ -27,6 +27,16 @@ export type { Vec3 } from "./course";
 export const FIXED_DT = 1 / 60;
 
 /**
+ * Match length in seconds. Three minutes is long enough for the engagement range to matter and
+ * short enough that a match is a sitting rather than a session. Overridable per `Sim.create` so
+ * a test can run a match to its end in a handful of ticks instead of 180 real seconds.
+ */
+export const MATCH_DURATION_S = 180;
+
+/** Who won, once the clock has run out. */
+export type MatchOutcome = "pending" | "player" | "bot" | "draw";
+
+/**
  * Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. Flat typed
  * arrays rather than objects because these are filled every tick for up to 33 ragdoll parts and
  * 32 pooled balls, and the no-allocation rule covers the fixed tick.
@@ -208,6 +218,8 @@ export interface SimOptions {
    * a second cart on the course is a second source of contacts, ammo pickups and shunts.
    */
   readonly botCount?: number;
+  /** Seconds on the match clock. Defaults to MATCH_DURATION_S. */
+  readonly matchDurationS?: number;
 }
 
 /** Metres past the cup, per bot. Far enough from the tee that a match opens with the bot idle. */
@@ -309,10 +321,17 @@ export class Sim {
   private lastSafePosition: Vec3;
   /** Consecutive ticks the ball has been slow and grounded; see REST_HOLD_TICKS. */
   private restTicks = REST_HOLD_TICKS;
+  /** Seconds left on the match clock. Counts down every `step()` until it hits zero. */
+  matchTimeRemaining: number;
+  /** Set once, on the tick the clock reaches zero. Every later `step()` is a no-op. */
+  matchOver = false;
+  private readonly matchDurationS: number;
 
-  private constructor(terrain: Terrain, surfaces: Surfaces) {
+  private constructor(terrain: Terrain, surfaces: Surfaces, matchDurationS: number) {
     this.terrain = terrain;
     this.surfaces = surfaces;
+    this.matchDurationS = matchDurationS;
+    this.matchTimeRemaining = matchDurationS;
     // 2 x par: the hole's par is the strokes it is worth, and the health bar is that budget
     // doubled (spec section 5). Sized here rather than at the field initializer because the
     // initializer runs before `terrain` exists.
@@ -327,7 +346,11 @@ export class Sim {
   static async create(hole: HoleSpec, options: SimOptions = {}): Promise<Sim> {
     await RAPIER.init();
     const terrain = createTerrain(hole);
-    const sim = new Sim(terrain, createSurfaces(hole, terrain));
+    const sim = new Sim(
+      terrain,
+      createSurfaces(hole, terrain),
+      options.matchDurationS ?? MATCH_DURATION_S,
+    );
 
     sim.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     sim.world.timestep = FIXED_DT;
@@ -548,6 +571,20 @@ export class Sim {
    * follows it.
    */
   step(intent: PlayerIntent = IDLE_INTENT): void {
+    // The clock is checked before anything else moves, so a finished match freezes exactly where
+    // it stood -- including the previous/current snapshot pairs, which stay equal rather than
+    // drifting apart under a renderer that keeps interpolating.
+    if (this.matchOver) return;
+    this.matchTimeRemaining -= FIXED_DT;
+    // Half a tick of slack, not `<= 0`. Repeated subtraction of 1/60 leaves a float residue --
+    // a five-tick match ends on 6.9e-18, not on 0 -- so an exact test never fires and the clock
+    // runs a tick long, or forever. The threshold makes "the tick that brings it to zero" exact.
+    if (this.matchTimeRemaining <= FIXED_DT * 0.5) {
+      this.matchTimeRemaining = 0;
+      this.matchOver = true;
+      return;
+    }
+
     const swapTargets = this.previousTargetTransforms;
     this.previousTargetTransforms = this.currentTargetTransforms;
     this.currentTargetTransforms = swapTargets;
@@ -911,6 +948,8 @@ export class Sim {
     this.lastShotOutOfBounds = false;
     this.lastShotInWater = false;
     this.lastShotWasStrike = false;
+    this.matchTimeRemaining = this.matchDurationS;
+    this.matchOver = false;
 
     for (const rig of this.rigs) {
       const spawn = this.spawnFor(rig);
@@ -944,6 +983,26 @@ export class Sim {
 
   isResting(): boolean {
     return this.restTicks >= REST_HOLD_TICKS;
+  }
+
+  /**
+   * Fewest strokes taken wins; an equal best score is a draw rather than an arbitrary pick.
+   *
+   * Read off the live `strokesTaken` counters rather than a result snapshot taken at the buzzer:
+   * `step()` returns before touching a cart once `matchOver` is set, so the numbers here cannot
+   * move after the match ends, and a cart that died on the closing tick keeps the score it died
+   * with.
+   */
+  matchOutcome(): MatchOutcome {
+    if (!this.matchOver) return "pending";
+
+    let bestBot = Number.POSITIVE_INFINITY;
+    for (const bot of this.bots) bestBot = Math.min(bestBot, bot.strokesTaken);
+
+    const player = this.cart.strokesTaken;
+    if (player < bestBot) return "player";
+    if (bestBot < player) return "bot";
+    return "draw";
   }
 
   /** Ball is within one radius of the terrain surface, i.e. not mid-bounce. */

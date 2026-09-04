@@ -15,6 +15,7 @@ export interface HudSource {
   readonly holedOut: boolean;
   readonly lastShotInWater: boolean;
   readonly lastShotOutOfBounds: boolean;
+  readonly matchTimeRemaining: number;
   readonly cart: {
     readonly equippedClub: ClubType;
     readonly charge: number;
@@ -37,6 +38,7 @@ export interface HudState {
   healthFraction: number;
   healthText: string;
   ammoText: string;
+  timerText: string;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -51,6 +53,7 @@ export function createHudStateScratch(): HudState {
     healthFraction: 0,
     healthText: "",
     ammoText: "",
+    timerText: "",
   };
 }
 
@@ -72,6 +75,7 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.healthFraction = cart.health.max > 0 ? clamp01(cart.health.hp / cart.health.max) : 0;
   out.healthText = `${Math.max(0, Math.round(cart.health.hp))}`;
   out.ammoText = `${Math.max(0, Math.round(cart.ammo))}`;
+  out.timerText = formatClock(source.matchTimeRemaining);
 }
 
 /**
@@ -97,4 +101,11 @@ function statusText(source: HudSource): string {
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
+}
+
+/** m:ss, floored -- a clock that rounds up shows 3:00 for a match that has already started. */
+function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${String(total % 60).padStart(2, "0")}`;
 }
