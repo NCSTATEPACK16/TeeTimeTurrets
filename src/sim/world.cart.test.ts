@@ -200,6 +200,10 @@ describe("striking the ball from the cart", () => {
     play(driverSim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
     const driverDistance = fullShotDistance(driverSim);
 
+    // Guard the asymmetric trivial pass: a putter shot that silently spawns no ball at all --
+    // out of ammo, pool exhausted, a regression in the fire gate -- measures 0, and 0 is less
+    // than any driver distance. The comparison alone would call that a pass.
+    expect(putterDistance).toBeGreaterThan(0);
     expect(putterDistance).toBeLessThan(driverDistance * 0.6);
   });
 
@@ -221,6 +225,41 @@ describe("striking the ball from the cart", () => {
     expect(sim.cart.equippedClub).toBe(ClubType.Iron);
     expect(Number.isFinite(sim.cart.position.y)).toBe(true);
     expect(Number.isFinite(sim.current.position.y)).toBe(true);
+  });
+});
+
+describe("the dormant stroke-play swing", () => {
+  let sim: Sim;
+  beforeEach(async () => {
+    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+  });
+
+  /**
+   * The only thing keeping `Sim.launch()` and `resolveShot`'s stationary branch honest. Since
+   * cart-only mode no input path reaches either, and `Sim.launch` has exactly one call site in
+   * the tree -- that branch. Without this test they would be proven to compile and nothing more,
+   * while `Sim.mode`'s docstring, UI-SPEC §1 and BACKLOG 20b all promise a *working* reference
+   * for the future true-golf mode. Whoever revives that mode needs to know the path did not rot
+   * in the interim, and a compiling-only reference cannot tell them.
+   *
+   * Reaching into `Sim.mode` is the point rather than a shortcut: it is the only remaining way in.
+   */
+  it("still plays the course ball and counts a stroke when the mode is set back to Stationary", () => {
+    sim.mode = SwingMode.Stationary;
+    play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
+    const from = { ...sim.current.position };
+
+    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
+
+    expect(sim.lastShotWasStrike).toBe(true);
+    expect(sim.strokes).toBe(1);
+
+    // Measured in flight rather than after it settles: a shot that lands in water or out of
+    // bounds is returned to the tee, which would read as "never launched". What is under test
+    // is that `launch()` imparts velocity at all, not where the ball ends up.
+    play(sim, [{ ticks: seconds(0.5), intent: {} }]);
+    const p = sim.current.position;
+    expect(Math.hypot(p.x - from.x, p.z - from.z)).toBeGreaterThan(5);
   });
 });
 

@@ -730,15 +730,12 @@ export class Sim {
   }
 
   /**
-   * Cart mode spawns from the ammo-gated BallPool. The stationary half below is unreachable --
-   * `mode` is never anything but `Cart` -- and is kept as the reference implementation of the
-   * stroke-play swing. See the note on `Sim.mode`.
-   */
-  /**
    * Cart mode and stationary mode resolve a shot through entirely separate paths now: cart
    * mode spawns from the ammo-gated BallPool, stationary mode plays the single Sim.ball where
    * it lies. See docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1 for why they aren't
-   * unified.
+   * unified. The stationary half below is unreachable -- `mode` is never anything but `Cart` --
+   * and is kept as the reference implementation of the stroke-play swing; see the note on
+   * `Sim.mode`.
    *
    * Any cart reaches this now that carts are rigs, but `Sim.stats`, `lastShotWasStrike`,
    * `Sim.ball` and `Sim.strokes` are all single-player state -- `stats.shotsFired` is the

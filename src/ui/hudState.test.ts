@@ -33,10 +33,6 @@ function source(overrides: Partial<HudSource> = {}): HudSource {
 }
 
 describe("combat element visibility", () => {
-  it("shows health and ammo in cart mode", () => {
-    expect(derive(source()).combatVisible).toBe(true);
-  });
-
   it("always shows health and ammo: there is one HUD configuration now", () => {
     expect(derive(source()).combatVisible).toBe(true);
     expect(derive(source({ cart: { ...source().cart, ammo: 0 } })).combatVisible).toBe(true);
