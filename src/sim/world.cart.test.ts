@@ -653,13 +653,17 @@ describe("bot carts", () => {
 
   it("reseeds the bot's RNG on reset to the same stream a fresh sim would construct", async () => {
     const replayed = await Sim.create(fixedHoleSpec());
-    // Play out a real match segment first, with the player in engagement range, so the bot's
-    // stream is actually advanced before reset -- a reset that failed to reseed at all (left
-    // the same mulberry32 closure in place rather than replacing it) would then continue from
-    // mid-stream and diverge from a fresh sim's first draw, not just coincidentally match it.
-    replayed.cart.position.x = replayed.bots[0]!.position.x - 20;
-    replayed.cart.position.z = replayed.bots[0]!.position.z;
-    for (let i = 0; i < 200; i++) replayed.step();
+    // Draw from the stream directly rather than hoping gameplay reaches a release tick within
+    // some fixed number of ticks -- the bot's only random() call site is the charge-threshold
+    // release, whose timing depends on aim-lock and charge-up duration and is not something a
+    // fixed tick count can be relied on to hit. Advancing the stream this way also means a
+    // reset() that dropped its re-seed entirely (left the same never-reseeded closure in place)
+    // would continue mid-stream after reset and diverge from a fresh sim's first draw, rather
+    // than coincidentally matching it by both happening to still be at their own start.
+    const preReset = botRandom(replayed, 1);
+    preReset();
+    preReset();
+    preReset();
     replayed.reset();
 
     const fresh = await Sim.create(fixedHoleSpec());
