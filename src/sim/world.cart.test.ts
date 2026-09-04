@@ -785,6 +785,34 @@ describe("the match clock", () => {
     expect(sim.bots[0]!.position.x).toBeCloseTo(botFrozen.x, 9);
   });
 
+  it("collapses the render-interpolation pairs on the buzzer tick, not just the live carts", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.matchOver).toBe(true);
+
+    // The renderer never reads `sim.cart` -- it lerps `previousCart` -> `currentCart` (and the
+    // ball's `previous` -> `current`) by an alpha that keeps sweeping 0..1 every tick period even
+    // though `step()` is now a no-op. If those pairs are left one tick apart from whenever the
+    // buzzer happened to land, a moving cart or ball visibly oscillates forever after the match
+    // has "ended". Equal components is what a frozen render actually requires.
+    expect(sim.previousCart.position.x).toBe(sim.currentCart.position.x);
+    expect(sim.previousCart.position.z).toBe(sim.currentCart.position.z);
+    expect(sim.previousCart.heading).toBe(sim.currentCart.heading);
+    expect(sim.previousBotCarts[0]!.position.x).toBe(sim.currentBotCarts[0]!.position.x);
+    expect(sim.previousBotCarts[0]!.position.z).toBe(sim.currentBotCarts[0]!.position.z);
+    expect(sim.previous.position.x).toBe(sim.current.position.x);
+    expect(sim.previous.position.y).toBe(sim.current.position.y);
+    expect(sim.previous.position.z).toBe(sim.current.position.z);
+
+    // And that equality must survive further ticks, not just hold by luck on the buzzer tick
+    // itself -- step() is a no-op from here on, so the pairs must stay collapsed indefinitely.
+    const intent = neutralIntent();
+    intent.throttle = 1;
+    for (let i = 0; i < 30; i++) sim.step(intent);
+    expect(sim.previousCart.position.x).toBe(sim.currentCart.position.x);
+    expect(sim.previous.position.x).toBe(sim.current.position.x);
+  });
+
   it("is pending until the clock runs out", async () => {
     const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
     expect(sim.matchOutcome()).toBe("pending");
@@ -814,11 +842,24 @@ describe("the match clock", () => {
     expect(sim.matchOutcome()).toBe("draw");
   });
 
-  it("keeps the score a cart died on: a death on the closing tick still counts", async () => {
+  it("keeps the score a cart died on: a death before the closing tick still counts", async () => {
+    // matchDurationS is 5/60, so the buzzer fires on the 5th step() (the tick where
+    // matchTimeRemaining first falls to <= half a tick). That tick's early return -- correctly,
+    // per the freeze fix above -- never touches a cart, so killing the bot beforehand and only
+    // then taking the *last* step (as this test originally did after 4 pre-steps) never runs a
+    // single real tick over the dead bot: no respawn-timer tick, nothing on the death path at
+    // all. Killing after 3 steps instead leaves two real ticks (the 4th and 5th) to run before
+    // the clock closes -- the 4th is a genuine, non-early-return tick that processes the death
+    // (stepRespawn counts the timer down), and only the 5th ends the match.
     const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
-    for (let i = 0; i < 4; i++) sim.step();
+    for (let i = 0; i < 3; i++) sim.step();
     sim.bots[0]!.strokesTaken = 6;
     (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.bots[0]!);
+
+    sim.step();
+    expect(sim.matchOver).toBe(false); // the 4th tick is real, not the early return
+    expect(sim.bots[0]!.dead).toBe(true); // and it did land on the dead cart
+
     sim.step();
     expect(sim.matchOver).toBe(true);
     expect(sim.bots[0]!.strokesTaken).toBe(6);

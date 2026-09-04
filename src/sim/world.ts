@@ -572,8 +572,12 @@ export class Sim {
    */
   step(intent: PlayerIntent = IDLE_INTENT): void {
     // The clock is checked before anything else moves, so a finished match freezes exactly where
-    // it stood -- including the previous/current snapshot pairs, which stay equal rather than
-    // drifting apart under a renderer that keeps interpolating.
+    // it stood. Once `matchOver` is set below, every later call returns here before the
+    // previous/current swaps happen -- but that first return leaves `previous` and `current`
+    // one tick apart (whatever they were mid-interpolation when the buzzer sounded), and the
+    // renderer keeps lerping between that stale pair forever. So on the single tick that ends
+    // the match we collapse every previous/current pair onto its current value -- the same
+    // pattern `reset()` uses -- before returning, so a live scene actually holds still.
     if (this.matchOver) return;
     this.matchTimeRemaining -= FIXED_DT;
     // Half a tick of slack, not `<= 0`. Repeated subtraction of 1/60 leaves a float residue --
@@ -582,6 +586,12 @@ export class Sim {
     if (this.matchTimeRemaining <= FIXED_DT * 0.5) {
       this.matchTimeRemaining = 0;
       this.matchOver = true;
+      this.previous = this.current;
+      this.syncCurrentCart();
+      this.previousCart = this.currentCart;
+      this.previousBotCarts = this.currentBotCarts.slice();
+      this.previousTargetTransforms.set(this.currentTargetTransforms);
+      this.previousPoolTransforms.set(this.currentPoolTransforms);
       return;
     }
 
