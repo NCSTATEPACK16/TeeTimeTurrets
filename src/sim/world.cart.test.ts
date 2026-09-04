@@ -632,6 +632,42 @@ describe("bot carts", () => {
     };
     expect(await trace()).toEqual(await trace());
   });
+
+  /**
+   * `CartRig.random` is private; reaching in here is the only way to observe the reseed
+   * directly rather than through however many ticks of physics it takes a bot to draw from it.
+   * Physics is the wrong instrument for this test: two `RAPIER.World`s with different
+   * step-count histories are not bound to bit-identical floating point from identical body
+   * positions, so a full post-reset turretYaw trace compared against a freshly created sim's
+   * trace diverges on its own, tens of ticks before either bot's first random draw -- confirmed
+   * by instrumenting `rig.random` to log its call ticks, which showed the two traces splitting
+   * at tick 72 while the first actual draw did not happen until tick ~300 in either run. That
+   * divergence has nothing to do with seeding and would fail this test under correct code, so a
+   * direct comparison of the streams themselves is what actually isolates the reseed.
+   */
+  function botRandom(sim: Sim, rigIndex: number): () => number {
+    const rig = (sim as unknown as { rigs: { random: (() => number) | null }[] }).rigs[rigIndex]!;
+    if (rig.random === null) throw new Error("rig has no RNG stream");
+    return rig.random;
+  }
+
+  it("reseeds the bot's RNG on reset to the same stream a fresh sim would construct", async () => {
+    const replayed = await Sim.create(fixedHoleSpec());
+    // Play out a real match segment first, with the player in engagement range, so the bot's
+    // stream is actually advanced before reset -- a reset that failed to reseed at all (left
+    // the same mulberry32 closure in place rather than replacing it) would then continue from
+    // mid-stream and diverge from a fresh sim's first draw, not just coincidentally match it.
+    replayed.cart.position.x = replayed.bots[0]!.position.x - 20;
+    replayed.cart.position.z = replayed.bots[0]!.position.z;
+    for (let i = 0; i < 200; i++) replayed.step();
+    replayed.reset();
+
+    const fresh = await Sim.create(fixedHoleSpec());
+
+    const afterReset = [botRandom(replayed, 1)(), botRandom(replayed, 1)(), botRandom(replayed, 1)()];
+    const freshDraws = [botRandom(fresh, 1)(), botRandom(fresh, 1)(), botRandom(fresh, 1)()];
+    expect(afterReset).toEqual(freshDraws);
+  });
 });
 
 describe("driving into water", () => {

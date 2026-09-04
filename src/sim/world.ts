@@ -629,7 +629,15 @@ export class Sim {
 
   /** The player's rig gets the player's intent; a bot's gets whatever `sim/bot.ts` decides. */
   private intentFor(rig: CartRig, playerIntent: PlayerIntent): PlayerIntent {
-    if (rig.random === null || rig.intentScratch === null) return playerIntent;
+    if (rig.random === null) return playerIntent;
+    // Unreachable by construction (addCartRig always pairs a non-null random with a non-null
+    // intentScratch) -- but a bot with no scratch must idle, not inherit the player's live
+    // intent and mirror their controls.
+    if (rig.intentScratch === null) return IDLE_INTENT;
+    // A dead cart's intent is never read by stepRig (see stepRespawn), so computing one here
+    // would only spend the bot's RNG stream on a throwaway draw -- and make the draw count
+    // depend on death timing, which is otherwise no business of this function's determinism.
+    if (rig.cart.dead) return IDLE_INTENT;
     computeBotIntent(rig.cart, this.botTargetScratch(), FIXED_DT, rig.random, rig.intentScratch);
     return rig.intentScratch;
   }

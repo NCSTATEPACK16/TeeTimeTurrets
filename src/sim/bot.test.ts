@@ -7,6 +7,7 @@ import {
   BOT_CHARGE_RELEASE,
   BOT_ENGAGE_RANGE,
   BOT_FIRE_TOLERANCE,
+  BOT_STANDOFF,
   computeBotIntent,
 } from "./bot";
 
@@ -45,6 +46,11 @@ describe("computeBotIntent", () => {
   it("drives at a target it can see and stops closing at the standoff", () => {
     expect(intentFor(botAt(0, 0), { x: 30, z: 0 }).throttle).toBe(1);
     expect(intentFor(botAt(0, 0), { x: 4, z: 0 }).throttle).toBe(0);
+  });
+
+  it("brakes once it is well inside the standoff, rather than idling on momentum alone", () => {
+    expect(intentFor(botAt(0, 0), { x: BOT_STANDOFF * 0.4, z: 0 }).brake).toBe(true);
+    expect(intentFor(botAt(0, 0), { x: BOT_STANDOFF * 0.9, z: 0 }).brake).toBe(false);
   });
 
   it("steers toward the target and the sign follows which side it is on", () => {
