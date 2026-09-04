@@ -8,6 +8,7 @@ import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
 import { drawHud, readHud } from "./ui/hud";
 import { drawMatchResults, readMatchResults } from "./ui/matchResults";
+import { Nameplates } from "./ui/nameplates";
 
 /**
  * Fixed until a course-select screen exists (Phase 1.75). Changing it changes every hole, which
@@ -29,7 +30,10 @@ async function main(): Promise<void> {
   // sim.loadHole.
   const course = generateCourse(COURSE_SEED, 9);
   const sim = await Sim.create(course.holes[0]);
-  const render = new RenderScene(container, sim.terrain, sim.targets.length);
+  const render = new RenderScene(container, sim.terrain, sim.targets.length, sim.bots.length);
+  const plateRoot = document.getElementById("nameplates");
+  if (!plateRoot) throw new Error("expected #nameplates in index.html");
+  const nameplates = new Nameplates(plateRoot, ["YOU", ...sim.bots.map((_, i) => `BOT ${i + 1}`)]);
   const input = new KeyboardMouseSource(render.renderer.domElement);
 
   // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
@@ -59,6 +63,7 @@ async function main(): Promise<void> {
     targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
     targetPartCount: sim.targetPartCount,
     poolTransforms: new Float32Array(sim.currentPoolTransforms.length),
+    botCarts: sim.currentBotCarts.map(cloneCart),
   };
 
   const loop = new GameLoop({
@@ -70,6 +75,9 @@ async function main(): Promise<void> {
     render: (alpha) => {
       interpolateBall(sim.previous, sim.current, alpha, view.ball);
       interpolateCart(sim.previousCart, sim.currentCart, alpha, view.cart);
+      for (let i = 0; i < view.botCarts.length; i++) {
+        interpolateCart(sim.previousBotCarts[i]!, sim.currentBotCarts[i]!, alpha, view.botCarts[i]!);
+      }
       view.charge01 = sim.cart.charge;
       view.club = sim.cart.equippedClub;
       view.turretLoaded = turretLoaded(sim);
@@ -88,6 +96,7 @@ async function main(): Promise<void> {
       );
 
       render.draw(view);
+      drawNameplates(render, nameplates, view, sim);
       drawHud(hud, sim);
       drawMatchResults(results, sim);
 
@@ -110,6 +119,47 @@ async function main(): Promise<void> {
  */
 function turretLoaded(sim: Sim): boolean {
   return sim.cart.ammo > 0;
+}
+
+/** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
+const NAMEPLATE_HEIGHT = 2.6;
+const plateScratch = { x: 0, y: 0 };
+
+/**
+ * Projects each cart's plate anchor and places it. Reads health straight off the sim -- a read,
+ * never a mutation, per the AGENTS.md rule that src/ui/** consumes sim state.
+ */
+function drawNameplates(render: RenderScene, plates: Nameplates, view: FrameView, sim: Sim): void {
+  placeNameplate(render, plates, 0, view.cart, sim.cart.health);
+  for (let i = 0; i < view.botCarts.length; i++) {
+    const bot = sim.bots[i];
+    if (bot === undefined) continue;
+    placeNameplate(render, plates, i + 1, view.botCarts[i]!, bot.health);
+  }
+}
+
+/** Module-level rather than nested inside `drawNameplates`: a function declared inside a function
+ *  body allocates a fresh closure on every call, and this one is called every frame. */
+function placeNameplate(
+  render: RenderScene,
+  plates: Nameplates,
+  index: number,
+  cart: CartTransform,
+  health: { readonly hp: number; readonly max: number },
+): void {
+  const visible = render.projectToScreen(
+    cart.position.x,
+    cart.position.y + NAMEPLATE_HEIGHT,
+    cart.position.z,
+    plateScratch,
+  );
+  plates.setPlate(
+    index,
+    plateScratch.x,
+    plateScratch.y,
+    visible,
+    health.max > 0 ? health.hp / health.max : 0,
+  );
 }
 
 const scratchA = new THREE.Quaternion();

@@ -68,6 +68,39 @@
         pointer-events: none;
       }
       #hud-combat[hidden] { display: none; }
+
+      /* UI-SPEC H13. Built once and repositioned per frame, unlike the one-shot hit markers.
+         No z-index of its own (auto), same as #hud/#hud-combat: #match-results' explicit
+         z-index: 10 already lifts it above every auto sibling regardless of DOM order, so the
+         results card still covers the plates at the buzzer without this needing to know about
+         it. Placed early in the DOM (right after #app) so it stacks below #hud/#hud-combat,
+         which come later -- the plates read as part of the world, not the cockpit. */
+      #nameplates { position: fixed; inset: 0; pointer-events: none; }
+      .nameplate {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: rgba(16, 20, 24, 0.62);
+        font: 600 11px system-ui, sans-serif;
+        letter-spacing: 0.08em;
+        color: #fff;
+        white-space: nowrap;
+      }
+      .nameplate[hidden] { display: none; }
+      .nameplate-track {
+        width: 62px;
+        height: 4px;
+        border-radius: 2px;
+        overflow: hidden;
+        background: rgba(0, 0, 0, 0.5);
+      }
+      .nameplate-fill { height: 100%; width: 100%; background: #46c46a; }
       .hud-card {
         display: flex;
         align-items: center;
@@ -145,6 +178,7 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="nameplates"></div>
     <div id="hud-combat" hidden>
       <div class="hud-card">
         <span id="health-icon">&#9829;</span>

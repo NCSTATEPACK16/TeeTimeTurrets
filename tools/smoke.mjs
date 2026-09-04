@@ -108,6 +108,7 @@ const read = () =>
         }
         return best;
       })(),
+      nameplates: document.querySelectorAll("#nameplates .nameplate").length,
       hudCombatHidden: document.getElementById("hud-combat").hidden,
       hudAmmo: document.getElementById("ammo-count").textContent,
       cart: { ...sim.cart.position },
@@ -204,6 +205,10 @@ check(
 console.log("=== COMBAT HUD ===");
 check("health and ammo are always visible", shot.hudCombatHidden === false);
 check("the ammo card matches the sim", shot.hudAmmo === String(shot.ammo), `${shot.hudAmmo} vs ${shot.ammo}`);
+
+console.log("=== NAMEPLATES ===");
+const plated = await read();
+check("one nameplate per cart", plated.nameplates === 2, `${plated.nameplates}`);
 
 console.log("=== MATCH RESULTS ===");
 check("results overlay is hidden while the match runs", (await read()).resultsHidden === true);

@@ -56,6 +56,8 @@ export interface FrameView {
   targetPartCount: number;
   /** Interpolated pooled-ball transforms, laid out exactly as Sim publishes them. */
   poolTransforms: Float32Array;
+  /** One entry per bot cart, laid out exactly as `cart` is. */
+  botCarts: CartTransform[];
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -66,13 +68,16 @@ export class RenderScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly ball: THREE.Mesh;
   private readonly cart: GolfClub;
+  private readonly botCarts: GolfClub[] = [];
   private readonly targets: TargetRig;
   private readonly pooledBalls: BallSwarm;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
+  private readonly projectScratch = new THREE.Vector3();
+  private readonly sizeScratch = new THREE.Vector2();
 
-  constructor(container: HTMLElement, terrain: Terrain, targetCount: number) {
+  constructor(container: HTMLElement, terrain: Terrain, targetCount: number, botCount: number) {
     this.terrain = terrain;
     const fieldSize = terrain.spec.fieldSize;
 
@@ -109,6 +114,14 @@ export class RenderScene {
     this.cart = new GolfClub();
     this.scene.add(this.cart);
 
+    // A bot is physically a cart, so it is visually one too -- the same procedural model, no
+    // cheaper stand-in. Team colour is Phase 5's; today the nameplate is what tells them apart.
+    for (let i = 0; i < botCount; i++) {
+      const bot = new GolfClub();
+      this.botCarts.push(bot);
+      this.scene.add(bot);
+    }
+
     this.targets = new TargetRig(targetCount);
     this.scene.add(this.targets);
 
@@ -128,7 +141,14 @@ export class RenderScene {
       view.ball.rotation.w,
     );
 
-    this.drawCart(view);
+    this.poseCart(this.cart, view.cart, view.club, view.charge01, view.turretLoaded);
+    for (let i = 0; i < this.botCarts.length; i++) {
+      const transform = view.botCarts[i];
+      if (transform === undefined) continue;
+      // A bot's club and charge are not published to the renderer: it always draws with the
+      // default model, which is honest about what the view carries rather than guessing.
+      this.poseCart(this.botCarts[i]!, transform, view.club, 0, false);
+    }
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
 
@@ -140,9 +160,27 @@ export class RenderScene {
   /** Frees the cart's geometries and materials. See the AGENTS.md resource-cleanup rule. */
   dispose(): void {
     this.cart.dispose();
+    for (const bot of this.botCarts) bot.dispose();
     this.targets.dispose();
     this.pooledBalls.dispose();
     this.renderer.dispose();
+  }
+
+  /**
+   * World point -> canvas pixels, per docs/ARCHITECTURE.md section 2c. Returns false when the
+   * point is behind the camera, which is what stops a nameplate being drawn mirrored in front of
+   * a viewer looking the other way.
+   *
+   * Lives here rather than in `src/ui/**` because the camera does, and `src/ui/**` must not
+   * import three. Writes into `out`: this runs once per cart per frame.
+   */
+  projectToScreen(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
+    this.projectScratch.set(x, y, z).project(this.camera);
+    if (this.projectScratch.z > 1) return false;
+    const size = this.renderer.getSize(this.sizeScratch);
+    out.x = (this.projectScratch.x * 0.5 + 0.5) * size.x;
+    out.y = (1 - (this.projectScratch.y * 0.5 + 0.5)) * size.y;
+    return true;
   }
 
   /**
@@ -152,14 +190,19 @@ export class RenderScene {
    * t = PI/2 - yaw. The turret pivot is a *child* of the cart group, so its local rotation is
    * the difference of the two converted angles, which simplifies to (heading - turretYaw).
    */
-  private drawCart(view: FrameView): void {
-    const c = view.cart;
-    this.cart.position.set(c.position.x, c.position.y - CART_BODY_OFFSET_Y, c.position.z);
-    this.cart.rotation.y = Math.PI / 2 - c.heading;
-    this.cart.setAimYaw(c.heading - c.turretYaw);
-    this.cart.setClub(view.club);
-    this.cart.setChargeVisual(view.charge01);
-    this.cart.setBallLoaded(view.turretLoaded);
+  private poseCart(
+    model: GolfClub,
+    c: CartTransform,
+    club: ClubType,
+    charge01: number,
+    loaded: boolean,
+  ): void {
+    model.position.set(c.position.x, c.position.y - CART_BODY_OFFSET_Y, c.position.z);
+    model.rotation.y = Math.PI / 2 - c.heading;
+    model.setAimYaw(c.heading - c.turretYaw);
+    model.setClub(club);
+    model.setChargeVisual(charge01);
+    model.setBallLoaded(loaded);
   }
 
   private frameChase(view: FrameView): void {
