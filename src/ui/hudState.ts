@@ -1,4 +1,3 @@
-import { SwingMode } from "../sim/world";
 import type { ClubType } from "../physics/Ballistics";
 
 /**
@@ -12,7 +11,6 @@ import type { ClubType } from "../physics/Ballistics";
 
 /** The structural slice of Sim this module needs. Structural so tests need no Rapier world. */
 export interface HudSource {
-  readonly mode: SwingMode;
   readonly strokes: number;
   readonly holedOut: boolean;
   readonly lastShotInWater: boolean;
@@ -30,12 +28,11 @@ export interface HudSource {
 }
 
 export interface HudState {
-  modeText: string;
   clubText: string;
   strokesText: string;
   charge01: number;
   status: string;
-  /** UI-SPEC H6 and H7. False hides them outright; see the note on the Swing HUD below. */
+  /** UI-SPEC H6 and H7. False hides them outright; see the note in deriveHudState below. */
   combatVisible: boolean;
   healthFraction: number;
   healthText: string;
@@ -46,7 +43,6 @@ export interface HudState {
  *  deriveHudState as `out`. Field values are placeholders, overwritten on the first call. */
 export function createHudStateScratch(): HudState {
   return {
-    modeText: "",
     clubText: "",
     strokesText: "",
     charge01: 0,
@@ -64,18 +60,15 @@ export function createHudStateScratch(): HudState {
  *  reusable HudState-shaped scratch object and pass it in. */
 export function deriveHudState(source: HudSource, out: HudState): void {
   const cart = source.cart;
-  const inCart = source.mode === SwingMode.Cart;
 
-  out.modeText = inCart ? "CART" : "STANDING";
   out.clubText = cart.equippedClub.toUpperCase();
   out.strokesText = `STROKES ${source.strokes}`;
   out.charge01 = clamp01(cart.charge);
-  out.status = statusText(source, inCart);
-  // UI-SPEC.md section 1's table gives Health and Reload to the Cart HUD and marks them absent
-  // from the Swing HUD, and that split maps onto SwingMode. Section 5 scopes the same rule to
-  // STROKE vs CTF/TARGETS, a switch that does not exist yet; when it lands these elements gain
-  // a second hiding condition rather than a new mechanism.
-  out.combatVisible = inCart;
+  out.status = statusText(source);
+  // There is one HUD configuration now: the cart is the only way to play, so health and ammo
+  // are always live. UI-SPEC section 5's rule that H6/H7 hide rather than show inert is what
+  // this flag exists for, and it gains a real second condition when CTF and TARGETS land.
+  out.combatVisible = true;
   out.healthFraction = cart.health.max > 0 ? clamp01(cart.health.hp / cart.health.max) : 0;
   out.healthText = `${Math.max(0, Math.round(cart.health.hp))}`;
   out.ammoText = `${Math.max(0, Math.round(cart.ammo))}`;
@@ -92,14 +85,13 @@ export function deriveHudState(source: HudSource, out: HudState): void {
  * so with no message at all the game simply appears to freeze. That is a playability hole, not
  * missing polish, and this line is the cheapest honest fix.
  */
-function statusText(source: HudSource, inCart: boolean): string {
+function statusText(source: HudSource): string {
   const cart = source.cart;
   if (source.holedOut) return "HOLED OUT — R to reset";
   if (cart.dead) return `DESTROYED — RESPAWNING ${(Math.floor(cart.respawnTimer * 10) / 10).toFixed(1)}s`;
   if (!cart.canFire) return `RELOADING ${(Math.floor(cart.reloadRemaining * 10) / 10).toFixed(1)}s`;
   if (source.lastShotInWater) return "WATER HAZARD — plus one stroke";
   if (source.lastShotOutOfBounds) return "OUT OF BOUNDS — returned to the tee";
-  if (!inCart) return "READY";
   return cart.ammo > 0 ? "READY" : "NO AMMO — fire a blank to boost";
 }
 

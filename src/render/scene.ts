@@ -5,7 +5,6 @@ import { TargetRig } from "../entities/TargetRig";
 import type { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import { CART_COLLIDER } from "../sim/entities/Cart";
-import { SwingMode } from "../sim/world";
 import type { BallTransform, CartTransform } from "../sim/world";
 
 /**
@@ -45,11 +44,8 @@ const CART_BODY_OFFSET_Y = CART_COLLIDER.groundOffset;
 export interface FrameView {
   ball: BallTransform;
   cart: CartTransform;
-  /** World-space aim yaw, 0 = +X. The turret's in cart mode, the player's in stationary mode. */
-  aimYaw: number;
   charge01: number;
   club: ClubType;
-  mode: SwingMode;
   /** True while a round of ammo rides the club head: drawn on the turret. Loaded does not mean
    * fireable -- `Cart.canFire` also gates on the reload timer, so a loaded round can still be
    * mid-reload. */
@@ -69,12 +65,10 @@ export class RenderScene {
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly ball: THREE.Mesh;
-  private readonly aimArrow: THREE.ArrowHelper;
   private readonly cart: GolfClub;
   private readonly targets: TargetRig;
   private readonly pooledBalls: BallSwarm;
   private readonly cameraTarget = new THREE.Vector3();
-  private readonly aimDirScratch = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
 
@@ -112,9 +106,6 @@ export class RenderScene {
     this.ball = new THREE.Mesh(ballGeo, ballMat);
     this.scene.add(this.ball);
 
-    this.aimArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 2, 0xffee55, 0.5, 0.3);
-    this.scene.add(this.aimArrow);
-
     this.cart = new GolfClub();
     this.scene.add(this.cart);
 
@@ -141,19 +132,7 @@ export class RenderScene {
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
 
-    // The ground aim arrow belongs to stationary mode, where the player is lining up a lie. In
-    // cart mode the barrel itself shows where the shot is going.
-    this.aimArrow.visible = view.mode === SwingMode.Stationary;
-    if (this.aimArrow.visible) {
-      this.aimArrow.position.copy(this.ball.position);
-      this.aimArrow.position.y += BALL_RADIUS;
-      this.aimDirScratch.set(Math.cos(view.aimYaw), 0, Math.sin(view.aimYaw));
-      this.aimArrow.setDirection(this.aimDirScratch);
-      this.aimArrow.setLength(1.2 + view.charge01 * 2, 0.4, 0.25);
-    }
-
-    if (view.mode === SwingMode.Cart) this.frameChase(view);
-    else this.frameBall();
+    this.frameChase(view);
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -206,13 +185,6 @@ export class RenderScene {
 
     this.camera.position.lerp(this.chaseEyeScratch, CHASE_POSITION_LERP);
     this.cameraTarget.lerp(this.chaseLookScratch, CHASE_TARGET_LERP);
-    this.camera.lookAt(this.cameraTarget);
-  }
-
-  /** Phase 0's framing, unchanged: a fixed offset that follows the ball. */
-  private frameBall(): void {
-    this.cameraTarget.lerp(this.ball.position, 0.08);
-    this.camera.position.set(this.cameraTarget.x - 6, this.cameraTarget.y + 4.5, this.cameraTarget.z + 7);
     this.camera.lookAt(this.cameraTarget);
   }
 

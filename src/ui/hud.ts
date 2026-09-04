@@ -17,7 +17,6 @@ const stateScratch = createHudStateScratch();
 
 export interface Hud {
   powerFill: HTMLElement;
-  mode: HTMLElement;
   club: HTMLElement;
   strokes: HTMLElement;
   status: HTMLElement;
@@ -30,7 +29,6 @@ export interface Hud {
 export function readHud(): Hud | null {
   const ids = [
     "power-fill",
-    "hud-mode",
     "hud-club",
     "hud-strokes",
     "hud-status",
@@ -42,12 +40,11 @@ export function readHud(): Hud | null {
 
   const found = ids.map((id) => document.getElementById(id));
   if (found.some((element) => element === null)) return null;
-  const [powerFill, mode, club, strokes, status, combat, healthFill, healthText, ammoCount] =
+  const [powerFill, club, strokes, status, combat, healthFill, healthText, ammoCount] =
     found as HTMLElement[];
 
   return {
     powerFill: powerFill!,
-    mode: mode!,
     club: club!,
     strokes: strokes!,
     status: status!,
@@ -63,7 +60,6 @@ export function drawHud(hud: Hud, source: HudSource): void {
   deriveHudState(source, state);
 
   setWidth(hud.powerFill, state.charge01);
-  setText(hud.mode, state.modeText);
   setText(hud.club, state.clubText);
   setText(hud.strokes, state.strokesText);
   setText(hud.status, state.status);

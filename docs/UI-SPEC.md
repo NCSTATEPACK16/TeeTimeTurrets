@@ -41,6 +41,13 @@ reload, club selector, minimap, *and* an event banner simultaneously. Build Phas
 so 08 fits without overlap; every other shot is then a subset that composes by hiding
 elements, not by relayout.
 
+**Dormant since cart-only mode.** The two-HUD split above is not live: the cart is the only way
+to play, `PlayerIntent.toggleMode` is gone, and `Sim.mode` is fixed at `Cart` for a sim's
+lifetime. `hudState.combatVisible` is unconditionally true and there is no `STANDING` label. The
+Swing HUD column is kept as the specification for the "true golf" mode `Sim.ball`, `Sim.launch()`
+and `SwingMode.Stationary` are being kept in the tree for — see
+`docs/superpowers/specs/2026-09-03-cart-combat-mode-design.md` §1 and §3.
+
 Image 14's two mode buttons (`DRIVER`, an icon of a figure at a wheel; `CLUBSWAP`, a figure
 with a club) read as a **mode toggle**, not a club choice — further support for the two-mode
 split, and the clearest statement in the art of how a player moves between them.
@@ -112,10 +119,10 @@ stroke play can strand a player mid-hole with no way to finish, which breaks gol
 `STROKE` runs with damage and ammo disabled; `CTF` and `TARGETS` enforce both. The HUD hides
 H6/H7 rather than showing them full — an inert full bar reads as a bug.
 
-Today the hiding rule is implemented against `SwingMode` per §1 (Swing HUD vs. Cart HUD), since
-`STROKE` is the only mode that exists to test against. When `CTF` and `TARGETS` land, that
-becomes a second, independent condition alongside `SwingMode` rather than a replacement for
-it — the two HUD configurations in §1 and the three-way mode split here are orthogonal.
+The hiding rule no longer keys off `SwingMode`: cart-only mode made `combatVisible`
+unconditionally true, because damage and ammo are always live when the cart is the only way to
+play. When `CTF` and `TARGETS` land, the mode-scoped ruleset becomes that flag's first real
+condition rather than a second one alongside `SwingMode`.
 
 ## 6. Visual language
 

@@ -203,11 +203,9 @@ export interface SimOptions {
 export const BOT_SPAWN_OFFSET = 2.5;
 
 /**
- * Both modes are kept rather than one replacing the other. Stationary is Phase 0's mechanic --
- * you stand at your ball and swing. Cart is Phase 2's -- you drive to it and the turret does the
- * hitting. They share one swing state machine (the cart's) so charge, reload and club selection
- * cannot drift apart between them; stationary mode simply ignores the driving axes and the
- * strike-range check, because you are by definition standing at the ball.
+ * Dormant since cart-only mode. Stationary is Phase 0's mechanic -- you stand at your ball and
+ * swing -- and Cart is Phase 2's. `Sim` is constructed in `Cart` and there is no longer any input
+ * path that changes it. Kept rather than deleted; see the note on `Sim.mode`.
  */
 export enum SwingMode {
   Stationary = "stationary",
@@ -269,7 +267,14 @@ export class Sim {
   private combatContext!: CombatContext;
   /** Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
   private simTime = 0;
-  mode: SwingMode = SwingMode.Stationary;
+  /**
+   * Dormant. Nothing sets this after construction: `PlayerIntent.toggleMode` is gone and the
+   * stationary half of `resolveShot` is unreachable. It stays, with `Sim.ball`, `launch()` and
+   * the hole-out/water-for-the-ball rules in `step()`, as the working reference for a future
+   * "true golf" mode -- a deliberate exception to the delete-stale-code rule, made because that
+   * mode is intended and this code is tested.
+   */
+  mode: SwingMode = SwingMode.Cart;
   /** True when the last shot played the ball rather than being a blank fired for propulsion. */
   lastShotWasStrike = false;
   /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
@@ -594,12 +599,6 @@ export class Sim {
     this.ballPool.step(FIXED_DT, this.simTime);
     for (const bucket of this.buckets) stepBucket(bucket, FIXED_DT);
 
-    // `mode` is the world's, not any one cart's, so it is toggled out here rather than inside
-    // stepRig -- a bot must never flip the player's swing mode. Task 5 deletes the mode entirely.
-    if (intent.toggleMode) {
-      this.mode = this.mode === SwingMode.Cart ? SwingMode.Stationary : SwingMode.Cart;
-    }
-
     for (const rig of this.rigs) {
       // Bots are driven by a neutral intent until sim/bot.ts exists; the player's cart is
       // driven by the player's. Everything below is otherwise identical for both.
@@ -730,6 +729,11 @@ export class Sim {
     rig.body.setTranslation(p, true);
   }
 
+  /**
+   * Cart mode spawns from the ammo-gated BallPool. The stationary half below is unreachable --
+   * `mode` is never anything but `Cart` -- and is kept as the reference implementation of the
+   * stroke-play swing. See the note on `Sim.mode`.
+   */
   /**
    * Cart mode and stationary mode resolve a shot through entirely separate paths now: cart
    * mode spawns from the ammo-gated BallPool, stationary mode plays the single Sim.ball where

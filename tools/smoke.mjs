@@ -115,24 +115,15 @@ const read = () =>
       heading: sim.cart.heading,
       turretYaw: sim.cart.turretYaw,
       turretOffset: sim.cart.turretOffset,
-      hudMode: document.getElementById("hud-mode").textContent,
       hudClub: document.getElementById("hud-club").textContent,
     };
   });
 
 const boot = await read();
-check("starts in stationary mode", boot.mode === "stationary", boot.mode);
-check("HUD reflects sim mode", boot.hudMode === "STANDING", boot.hudMode);
-
-console.log("=== MODE TOGGLE (C) ===");
-await page.keyboard.press("KeyC");
-await new Promise((r) => setTimeout(r, 200));
-const carted = await read();
-check("C switches to cart mode", carted.mode === "cart", carted.mode);
-check("HUD follows the mode change", carted.hudMode === "CART", carted.hudMode);
+check("starts in cart mode", boot.mode === "cart", boot.mode);
 
 console.log("=== DRIVE (W) ===");
-const before = carted.cart;
+const before = boot.cart;
 await hold(page, "KeyW", 1600);
 await new Promise((r) => setTimeout(r, 150));
 const driven = await read();
@@ -209,12 +200,8 @@ check(
 );
 
 console.log("=== COMBAT HUD ===");
-check("health and ammo are visible in cart mode", shot.hudCombatHidden === false);
+check("health and ammo are always visible", shot.hudCombatHidden === false);
 check("the ammo card matches the sim", shot.hudAmmo === String(shot.ammo), `${shot.hudAmmo} vs ${shot.ammo}`);
-await page.keyboard.press("KeyC");
-await new Promise((r) => setTimeout(r, 200));
-const standing = await read();
-check("health and ammo hide in stationary mode", standing.hudCombatHidden === true);
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 

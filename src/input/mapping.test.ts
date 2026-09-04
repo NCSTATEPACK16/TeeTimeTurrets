@@ -5,8 +5,8 @@ import { intentFromKeys } from "./mapping";
 /**
  * The mapping is a pure function of (held keys, keys pressed this tick, aim delta) so it can be
  * tested with no DOM at all -- the browser shell around it only has to collect those three
- * things. Held vs. pressed is the important split: driving is a held state, while club select
- * and mode toggle are edge-triggered and would repeat every tick if read from the held set.
+ * things. Held vs. pressed is the important split: driving is a held state, while club select is
+ * edge-triggered and would repeat every tick if read from the held set.
  */
 
 const NONE: ReadonlySet<string> = new Set();
@@ -54,7 +54,6 @@ describe("intentFromKeys driving axes", () => {
     expect(intent.fire).toBe(false);
     expect(intent.aimDelta).toBe(0);
     expect(intent.selectClub).toBeNull();
-    expect(intent.toggleMode).toBe(false);
   });
 });
 
@@ -87,9 +86,12 @@ describe("intentFromKeys edge-triggered actions", () => {
     expect(intentFromKeys(NONE, held("Digit3"), 0).selectClub).toBe(ClubType.Driver);
   });
 
-  it("toggles mode only on the tick the key goes down", () => {
-    expect(intentFromKeys(NONE, held("KeyC"), 0).toggleMode).toBe(true);
-    expect(intentFromKeys(held("KeyC"), NONE, 0).toggleMode).toBe(false);
+  it("has no mode-toggle binding: C is unbound now that the cart is the only mode", () => {
+    const intent = intentFromKeys(held("KeyC"), held("KeyC"), 0);
+    expect(intent.throttle).toBe(0);
+    expect(intent.steer).toBe(0);
+    expect(intent.fire).toBe(false);
+    expect(intent.selectClub).toBeNull();
   });
 });
 

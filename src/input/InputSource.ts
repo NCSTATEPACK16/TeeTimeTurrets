@@ -11,13 +11,11 @@ import type { CartIntent } from "../sim/entities/Cart";
 
 /**
  * Everything the player can express in one tick. Extends the cart's own control intent with the
- * two edge-triggered choices that belong to the player rather than to the chassis.
+ * edge-triggered choice that belongs to the player rather than to the chassis.
  */
 export interface PlayerIntent extends CartIntent {
   /** Set on the tick a club is chosen, null otherwise. Edge-triggered, not held. */
   selectClub: ClubType | null;
-  /** Set on the tick the player asks to switch between stationary-swing and cart mode. */
-  toggleMode: boolean;
 }
 
 export interface InputSource {
@@ -40,6 +38,5 @@ export function neutralIntent(): PlayerIntent {
     aimDelta: 0,
     fire: false,
     selectClub: null,
-    toggleMode: false,
   };
 }

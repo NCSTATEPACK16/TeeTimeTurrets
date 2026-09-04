@@ -4,12 +4,13 @@ import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
-import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
+import { CART_COLLIDER, RESPAWN_DELAY_S } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
+import { POOL_SIZE } from "./entities/BallPool";
 import type { BallPool, PooledBall } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { SurfaceId } from "./surfaces";
-import { Sim, SwingMode } from "./world";
+import { POOL_TRANSFORM_STRIDE, Sim, SwingMode } from "./world";
 
 /**
  * Phase 2's gate, run headlessly against the real Rapier world. Everything here is driven
@@ -35,16 +36,30 @@ function play(sim: Sim, script: readonly ScriptedStep[], tail = 0): void {
   }
 }
 
-/** Drive to cart mode first -- every cart script needs it, and it is one press. */
-const ENTER_CART_MODE: ScriptedStep = { ticks: 1, intent: { toggleMode: true } };
-
-/** Full-charge shot with whatever club is equipped, measured as displacement from the tee. */
+/**
+ * Full-charge shot with whatever club is equipped, measured as how far the pooled ball it spawns
+ * gets from the cart. Sampled every tick rather than read at the end because a pooled ball is
+ * released back to the pool once it lands, so its final resting place is not readable -- and it
+ * is the pooled ball, not `Sim.ball`, that a shot moves now that cart mode is the only mode.
+ */
 function fullShotDistance(sim: Sim): number {
-  const from = { ...sim.current.position };
+  const from = { ...sim.cart.position };
   play(sim, [{ ticks: seconds(2), intent: { fire: true } }, { ticks: 2, intent: {} }]);
-  play(sim, [{ ticks: seconds(8), intent: {} }]);
-  const p = sim.current.position;
-  return Math.hypot(p.x - from.x, p.z - from.z);
+
+  let farthest = 0;
+  for (let tick = 0; tick < seconds(8); tick++) {
+    sim.step();
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const flat = i * POOL_TRANSFORM_STRIDE;
+      if (sim.currentPoolTransforms[flat + 7] !== 1) continue;
+      const d = Math.hypot(
+        sim.currentPoolTransforms[flat]! - from.x,
+        sim.currentPoolTransforms[flat + 2]! - from.z,
+      );
+      if (d > farthest) farthest = d;
+    }
+  }
+  return farthest;
 }
 
 describe("cart in the world", () => {
@@ -53,16 +68,8 @@ describe("cart in the world", () => {
     sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
   });
 
-  it("starts in stationary mode and toggles to cart mode on the mode key", () => {
-    expect(sim.mode).toBe(SwingMode.Stationary);
-    play(sim, [ENTER_CART_MODE]);
-    expect(sim.mode).toBe(SwingMode.Cart);
-    play(sim, [{ ticks: 1, intent: { toggleMode: true } }]);
-    expect(sim.mode).toBe(SwingMode.Stationary);
-  });
-
   it("spawns the cart resting on the terrain rather than inside or above it", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(1), intent: {} }]);
+    play(sim, [{ ticks: seconds(1), intent: {} }]);
     const p = sim.cart.position;
     expect(p.y).toBeGreaterThan(sim.terrain.heightAt(p.x, p.z));
     expect(p.y - sim.terrain.heightAt(p.x, p.z)).toBeLessThan(2);
@@ -70,7 +77,7 @@ describe("cart in the world", () => {
 
   it("drives forward under throttle without falling through the ground", () => {
     const start = { ...sim.cart.position };
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(3), intent: { throttle: 1 } }]);
+    play(sim, [{ ticks: seconds(3), intent: { throttle: 1 } }]);
     const p = sim.cart.position;
 
     expect(Math.hypot(p.x - start.x, p.z - start.z)).toBeGreaterThan(5);
@@ -80,12 +87,12 @@ describe("cart in the world", () => {
   });
 
   it("steers the chassis while driving", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(2), intent: { throttle: 1, steer: 1 } }]);
+    play(sim, [{ ticks: seconds(2), intent: { throttle: 1, steer: 1 } }]);
     expect(Math.abs(sim.cart.heading)).toBeGreaterThan(0.3);
   });
 
   it("stays on the field when driven at the edge for a long time", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(30), intent: { throttle: -1 } }]);
+    play(sim, [{ ticks: seconds(30), intent: { throttle: -1 } }]);
     const p = sim.cart.position;
     expect(Math.abs(p.x)).toBeLessThanOrEqual(sim.terrain.spec.fieldSize / 2);
     expect(Math.abs(p.z)).toBeLessThanOrEqual(sim.terrain.spec.fieldSize / 2);
@@ -93,7 +100,7 @@ describe("cart in the world", () => {
   });
 
   it("holds an aim offset relative to the chassis rather than an absolute world yaw", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(1), intent: { throttle: 1, steer: 1, aimDelta: -0.01 } }]);
+    play(sim, [{ ticks: seconds(1), intent: { throttle: 1, steer: 1, aimDelta: -0.01 } }]);
     expect(sim.cart.turretOffset).toBeLessThan(0);
     expect(sim.cart.heading).toBeGreaterThan(0);
     expect(sim.cart.turretYaw).toBeCloseTo(sim.cart.heading + sim.cart.turretOffset, 9);
@@ -102,7 +109,7 @@ describe("cart in the world", () => {
   it("fires straight over the bonnet when the player never touches the aim control", () => {
     // Aiming is optional: drive, point the cart, shoot. The turret only leaves the chassis
     // heading if the player asks it to.
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(2), intent: { throttle: 1, steer: -0.6 } }]);
+    play(sim, [{ ticks: seconds(2), intent: { throttle: 1, steer: -0.6 } }]);
     expect(sim.cart.heading).toBeLessThan(-0.3);
     expect(sim.cart.turretYaw).toBeCloseTo(sim.cart.heading, 9);
   });
@@ -133,7 +140,7 @@ describe("cart in the world", () => {
   });
 
   it("loadHole releases every pooled ball back to idle and repositions the bucket for the new hole", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
 
     // Force the whole pool into "flying" -- the exhaustion state that would otherwise leak a
     // dead pool (or, before this fix, a bucket and stray balls at the old hole's coordinates)
@@ -159,7 +166,7 @@ describe("cart in the world", () => {
   });
 
   it("loadHole frees pool slots so a fresh cart-mode shot after it still spawns a ball", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
 
     const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
     const balls = (pool as unknown as { balls: PooledBall[] }).balls;
@@ -169,8 +176,6 @@ describe("cart in the world", () => {
     const next: HoleSpec = { ...fixedHoleSpec(), seed: 777, tee: { x: -10, z: 40 } };
     sim.loadHole(next);
 
-    // loadHole() does not reset `mode`, so the sim is still in cart mode from the toggle above.
-    expect(sim.mode).toBe(SwingMode.Cart);
     play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
 
     expect(sim.lastShotWasStrike).toBe(true);
@@ -181,23 +186,6 @@ describe("striking the ball from the cart", () => {
   let sim: Sim;
   beforeEach(async () => {
     sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
-  });
-
-  it("fires regardless of distance in stationary mode, where the player stands at the ball", () => {
-    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
-    expect(sim.mode).toBe(SwingMode.Stationary);
-    expect(sim.lastShotWasStrike).toBe(true);
-    expect(sim.strokes).toBe(1);
-  });
-
-  it("blocks a second shot until the fired club's reload elapses", () => {
-    play(sim, [
-      { ticks: seconds(1.5), intent: { fire: true } },
-      { ticks: 2, intent: {} },
-      { ticks: seconds(0.2), intent: { fire: true } },
-      { ticks: 2, intent: {} },
-    ]);
-    expect(sim.strokes).toBe(1);
   });
 
   it("equips the club the player selects and uses its stats for the shot", async () => {
@@ -216,10 +204,9 @@ describe("striking the ball from the cart", () => {
   });
 
   it("drives the whole gate through the input interface with no direct Sim calls", () => {
-    // Meta-check: one script covering mode, club, drive, aim and fire, asserting the sim ends
+    // Meta-check: one script covering club, drive, aim and fire, asserting the sim ends
     // somewhere sane. If this ever needs a direct method call to work, the interface is wrong.
     const source = new ScriptedInputSource([
-      { ticks: 1, intent: { toggleMode: true } },
       { ticks: 1, intent: { selectClub: ClubType.Iron } },
       { ticks: seconds(2), intent: { throttle: 1, steer: 0.4 } },
       { ticks: seconds(1), intent: { brake: true } },
@@ -231,7 +218,6 @@ describe("striking the ball from the cart", () => {
       sim.step(source.sample());
       source.endTick();
     }
-    expect(sim.mode).toBe(SwingMode.Cart);
     expect(sim.cart.equippedClub).toBe(ClubType.Iron);
     expect(Number.isFinite(sim.cart.position.y)).toBe(true);
     expect(Number.isFinite(sim.current.position.y)).toBe(true);
@@ -245,7 +231,7 @@ describe("cart-mode ammo-aware combat shots", () => {
   });
 
   it("a fire with ammo spawns a pooled ball at the muzzle and it flies", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
     expect(sim.cart.ammo).toBeGreaterThan(0);
     const ammoBefore = sim.cart.ammo;
 
@@ -256,7 +242,7 @@ describe("cart-mode ammo-aware combat shots", () => {
   });
 
   it("firing at 0 ammo produces a recoil-only blank: no strike, ammo stays at 0", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
     sim.cart.ammo = 0;
     const recoilBefore = { x: sim.cart.recoil.x, z: sim.cart.recoil.z };
 
@@ -267,28 +253,22 @@ describe("cart-mode ammo-aware combat shots", () => {
     expect(sim.cart.recoil.x).not.toBeCloseTo(recoilBefore.x, 9);
   });
 
-  it("does not touch stationary mode's stroke count or ball state", () => {
-    expect(sim.mode).toBe(SwingMode.Stationary);
-    const strokesBefore = sim.strokes;
+  it("blocks a second shot until the fired club's reload elapses", () => {
+    play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
     const ammoBefore = sim.cart.ammo;
-    expect(ammoBefore).toBe(STARTING_AMMO);
-
-    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
-
-    // Cart.fire() runs off the one shared swing state machine regardless of Sim.mode -- that is
-    // by design, so charge/reload/ammo cannot drift between modes -- so ammo still ticks down
-    // here even though the shot itself is resolved by stationary mode's own path. What this
-    // guards is narrower: that stationary mode's stroke/ball bookkeeping is driven only by its
-    // own resting/holedOut rules, untouched by the cart-mode ammo/pool/bucket wiring that now
-    // also runs unconditionally inside stepCart every tick.
+    play(sim, [
+      { ticks: seconds(1.5), intent: { fire: true } },
+      { ticks: 2, intent: {} },
+      { ticks: seconds(0.2), intent: { fire: true } },
+      { ticks: 2, intent: {} },
+    ]);
     expect(sim.cart.ammo).toBe(ammoBefore - 1);
-    expect(sim.strokes).toBe(strokesBefore + (sim.lastShotWasStrike ? 1 : 0));
   });
 
   it("driving over the dormant course ball costs nothing", () => {
     // The course ball rests at the tee and the cart spawns behind it, so this is the drive every
     // hole opens with. It is a hazard only if the dormant ball is a combat actor.
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
     const hpBefore = sim.cart.health.hp;
     play(sim, [{ ticks: seconds(3), intent: { throttle: 1 } }]);
 
@@ -322,7 +302,7 @@ describe("targets, damage and respawn", () => {
   });
 
   it("a ball fired into a target knocks it down and records the hit", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: { selectClub: ClubType.Putter } }]);
+    play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Putter } }]);
 
     // Park the cart six metres short of the nearest target, aimed straight at it, and putt: at
     // that standoff the putter's flat arc crosses the target plane at torso height. Placing the
@@ -345,7 +325,7 @@ describe("targets, damage and respawn", () => {
   });
 
   it("counts a shot that spawned a ball, and does not count a blank", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
     play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
     expect(sim.stats.shotsFired).toBe(1);
 
@@ -356,7 +336,7 @@ describe("targets, damage and respawn", () => {
   });
 
   it("a death freezes the cart for the respawn delay without charging its own stroke", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(1), intent: { throttle: 1 } }]);
+    play(sim, [{ ticks: seconds(1), intent: { throttle: 1 } }]);
     const strokesBefore = sim.cart.strokesTaken;
     const ammoBefore = sim.cart.ammo;
 
@@ -375,7 +355,7 @@ describe("targets, damage and respawn", () => {
   });
 
   it("respawns at the tee-adjacent spawn point at full health once the delay elapses", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: seconds(2), intent: { throttle: 1 } }]);
+    play(sim, [{ ticks: seconds(2), intent: { throttle: 1 } }]);
     kill(sim);
     play(sim, [{ ticks: seconds(RESPAWN_DELAY_S + 0.5), intent: {} }]);
 
@@ -386,7 +366,7 @@ describe("targets, damage and respawn", () => {
   });
 
   it("only one death per life: a second kill while dead does not restart the respawn timer", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
     kill(sim);
     play(sim, [{ ticks: seconds(1), intent: {} }]);
     const timer = sim.cart.respawnTimer;
@@ -397,7 +377,7 @@ describe("targets, damage and respawn", () => {
   });
 
   it("reset() heals a mid-respawn cart and stands every target back up", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
     sim.targets[0].knockDown(sim.targets[0].part("torso"), { x: 40, y: 0, z: 0 });
     kill(sim);
     expect(sim.cart.dead).toBe(true);
@@ -411,7 +391,7 @@ describe("targets, damage and respawn", () => {
   });
 
   it("keeps round stats across reset() -- a round is a sequence of holes", () => {
-    play(sim, [ENTER_CART_MODE, { ticks: 1, intent: {} }]);
+    play(sim, [{ ticks: 1, intent: {} }]);
     play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
     expect(sim.stats.shotsFired).toBe(1);
 
@@ -503,8 +483,9 @@ describe("bot carts", () => {
 
   it("a bot's shot never launches the player's course ball or counts a player stroke", async () => {
     const sim = await Sim.create(fixedHoleSpec());
-    // Stationary is still the default mode, so this is the branch a bot would reach today.
-    expect(sim.mode).toBe(SwingMode.Stationary);
+    // The stationary branch is dormant -- no input path reaches it -- so reach in and select it
+    // directly. Its player-only guard is what keeps that reference implementation safe to revive.
+    sim.mode = SwingMode.Stationary;
     const bot = sim.bots[0]!;
     const from = { ...sim.current.position };
 
@@ -522,7 +503,6 @@ describe("bot carts", () => {
 
   it("a bot's cart-mode shot spawns its own pooled ball without counting a player shot", async () => {
     const sim = await Sim.create(fixedHoleSpec());
-    sim.mode = SwingMode.Cart;
     const bot = sim.bots[0]!;
     const ammoBefore = bot.ammo;
 

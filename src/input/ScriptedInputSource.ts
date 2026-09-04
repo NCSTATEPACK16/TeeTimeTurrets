@@ -39,12 +39,11 @@ export class ScriptedInputSource implements InputSource {
 
     Object.assign(this.current, step.intent);
 
-    // selectClub and toggleMode are presses, not held states. A step declaring `ticks: 10`
+    // selectClub is a press, not a held state. A step declaring `ticks: 10`
     // means "hold this for 10 ticks", and holding a press would re-fire it every tick -- which
     // in the cart resets the swing charge on all ten.
     if (this.tickInStep > 0) {
       this.current.selectClub = null;
-      this.current.toggleMode = false;
     }
     return this.current;
   }
@@ -71,5 +70,4 @@ function reset(intent: PlayerIntent): void {
   intent.aimDelta = 0;
   intent.fire = false;
   intent.selectClub = null;
-  intent.toggleMode = false;
 }

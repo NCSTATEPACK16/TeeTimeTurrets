@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateCourse } from "./course";
-import { POOL_TRANSFORM_STRIDE, Sim, SwingMode, TRANSFORM_STRIDE } from "./world";
+import { POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "./world";
 import { POOL_SIZE } from "./entities/BallPool";
 import { PARTS_PER_TARGET, TARGET_PART_SHAPES } from "./entities/Target";
 import { neutralIntent } from "../input/InputSource";
@@ -101,7 +101,6 @@ describe("pooled ball snapshots", () => {
 
   it("marks a slot active once a cart-mode shot spawns a ball", async () => {
     const sim = await Sim.create(generateCourse(2026, 1).holes[0]!, { botCount: 0 });
-    sim.mode = SwingMode.Cart;
     const intent = neutralIntent();
     intent.fire = true;
     sim.step(intent);
@@ -126,7 +125,6 @@ describe("pooled ball snapshots", () => {
   it("clears every slot when the pool is released for a new hole", async () => {
     const course = generateCourse(2026, 2).holes;
     const sim = await Sim.create(course[0]!, { botCount: 0 });
-    sim.mode = SwingMode.Cart;
     const intent = neutralIntent();
     intent.fire = true;
     sim.step(intent);
@@ -140,7 +138,6 @@ describe("pooled ball snapshots", () => {
 
   it("seeds the previous transform on the tick a slot activates, so a spawning ball has no stale prior position to lerp from", async () => {
     const sim = await Sim.create(generateCourse(2026, 1).holes[0]!, { botCount: 0 });
-    sim.mode = SwingMode.Cart;
     const intent = neutralIntent();
     intent.fire = true;
     sim.step(intent);

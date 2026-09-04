@@ -3,7 +3,7 @@ import { GameLoop } from "./engine/GameLoop";
 import { KeyboardMouseSource } from "./input/KeyboardMouseSource";
 import { RenderScene } from "./render/scene";
 import type { FrameView } from "./render/scene";
-import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, SwingMode, TRANSFORM_STRIDE } from "./sim/world";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
 import { drawHud, readHud } from "./ui/hud";
@@ -42,10 +42,8 @@ async function main(): Promise<void> {
   const view: FrameView = {
     ball: cloneBall(sim.current),
     cart: cloneCart(sim.currentCart),
-    aimYaw: 0,
     charge01: 0,
     club: sim.cart.equippedClub,
-    mode: sim.mode,
     turretLoaded: turretLoaded(sim),
     targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
     targetPartCount: sim.targetPartCount,
@@ -61,10 +59,8 @@ async function main(): Promise<void> {
     render: (alpha) => {
       interpolateBall(sim.previous, sim.current, alpha, view.ball);
       interpolateCart(sim.previousCart, sim.currentCart, alpha, view.cart);
-      view.aimYaw = view.cart.turretYaw;
       view.charge01 = sim.cart.charge;
       view.club = sim.cart.equippedClub;
-      view.mode = sim.mode;
       view.turretLoaded = turretLoaded(sim);
       interpolateTransforms(
         sim.previousTargetTransforms,
@@ -88,11 +84,11 @@ async function main(): Promise<void> {
 }
 
 /**
- * What rides the club head in cart mode is a round of ammo, not the course ball -- images 03 and
- * 04, and what actually fires. In stationary mode there is no turret shot at all.
+ * What rides the club head is a round of ammo, not the course ball -- images 03 and 04, and what
+ * actually fires.
  */
 function turretLoaded(sim: Sim): boolean {
-  return sim.mode === SwingMode.Cart && sim.cart.ammo > 0;
+  return sim.cart.ammo > 0;
 }
 
 const scratchA = new THREE.Quaternion();

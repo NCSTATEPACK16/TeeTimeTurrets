@@ -58,7 +58,6 @@ export function intentFromKeys(
       break;
     }
   }
-  out.toggleMode = keysPressedThisTick.has("KeyC");
 
   return out;
 }
