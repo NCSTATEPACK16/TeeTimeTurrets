@@ -12,8 +12,10 @@ import type { MatchOutcome } from "../sim/world";
 export interface MatchResultsSource {
   readonly matchOver: boolean;
   readonly cart: { readonly strokesTaken: number };
-  readonly bots: readonly { readonly strokesTaken: number }[];
   matchOutcome(): MatchOutcome;
+  /** The single definition of "the bot's score" -- see `Sim.bestBotStrokes`. Read, never
+   *  recomputed here, so this card and `matchOutcome`'s headline cannot disagree. */
+  bestBotStrokes(): number;
 }
 
 export interface MatchResultsState {
@@ -32,17 +34,16 @@ export function createMatchResultsScratch(): MatchResultsState {
  * Writes into `out` rather than allocating: `main.ts` calls this from the render callback, which
  * the no-per-frame-allocation rule covers just as it covers the fixed step.
  *
- * The bot's score is the best of them, which is the same number `Sim.matchOutcome` compares the
- * player against -- one rule, stated once, so the headline and the numbers under it cannot
- * disagree.
+ * The bot's score is read from `source.bestBotStrokes()` -- `Sim`'s own definition of "the
+ * bot's score", the same number `matchOutcome()` compares the player against -- rather than
+ * recomputed here, so the headline and the numbers under it cannot disagree.
  */
 export function deriveMatchResults(source: MatchResultsSource, out: MatchResultsState): void {
   out.visible = source.matchOver;
   out.headline = HEADLINES[source.matchOutcome()];
   out.playerText = `YOU ${source.cart.strokesTaken}`;
 
-  let bestBot = Number.POSITIVE_INFINITY;
-  for (const bot of source.bots) bestBot = Math.min(bestBot, bot.strokesTaken);
+  const bestBot = source.bestBotStrokes();
   out.botText = Number.isFinite(bestBot) ? `BOT ${bestBot}` : "BOT —";
 }
 

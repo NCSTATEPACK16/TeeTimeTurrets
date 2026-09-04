@@ -213,12 +213,29 @@ await page.evaluate(() => {
   window.__teetimeturrets.sim.matchTimeRemaining = 1 / 60;
 });
 await new Promise((r) => setTimeout(r, 400));
-const ended = await page.evaluate(() => ({
-  hidden: document.getElementById("match-results").hidden,
-  headline: document.getElementById("results-headline").textContent,
-}));
+const ended = await page.evaluate(() => {
+  const { sim } = window.__teetimeturrets;
+  return {
+    hidden: document.getElementById("match-results").hidden,
+    headline: document.getElementById("results-headline").textContent,
+    you: document.getElementById("results-you").textContent,
+    bot: document.getElementById("results-bot").textContent,
+    strokes: sim.cart.strokesTaken,
+    bestBot: sim.bestBotStrokes(),
+  };
+});
 check("results overlay appears when the clock runs out", ended.hidden === false);
 check("results overlay names an outcome", ended.headline.length > 0, ended.headline);
+// index.html now ships these two spans empty (review round 1: a placeholder "YOU 0"/"BOT 0"
+// let the check above pass even with the writer never called). Checking against the sim's own
+// numbers also pins the results-you/results-bot id mapping in matchResults.ts -- a swap of
+// those two ids would fail one of these two checks.
+check("results overlay shows the player's score", ended.you === `YOU ${ended.strokes}`, ended.you);
+check(
+  "results overlay shows the bot's score",
+  ended.bot === (Number.isFinite(ended.bestBot) ? `BOT ${ended.bestBot}` : "BOT —"),
+  ended.bot,
+);
 
 await page.click("#play-again");
 await new Promise((r) => setTimeout(r, 400));

@@ -827,6 +827,13 @@ describe("the match clock", () => {
     expect(sim.matchOutcome()).toBe("player");
   });
 
+  it("exposes the best bot score as the single source matchOutcome and the results overlay both read", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    sim.bots[0]!.strokesTaken = 3;
+    for (let i = 0; i < 5; i++) sim.step();
+    expect(sim.bestBotStrokes()).toBe(3);
+  });
+
   it("gives the win to the bot when the player took more", async () => {
     const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
     sim.cart.strokesTaken = 4;

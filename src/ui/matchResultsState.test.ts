@@ -5,11 +5,15 @@ import {
 } from "./matchResultsState";
 import type { MatchResultsSource, MatchResultsState } from "./matchResultsState";
 
+// bestBotStrokes is a function on the source (mirroring Sim.bestBotStrokes) rather than a `bots`
+// array here: the "lowest bot score" rule now lives once, in Sim, and this module only displays
+// what it's told -- see the review finding this replaced (a second copy of the min-over-bots
+// loop, which could disagree with Sim.matchOutcome's).
 function source(overrides: Partial<MatchResultsSource> = {}): MatchResultsSource {
   return {
     matchOver: true,
     cart: { strokesTaken: 2 },
-    bots: [{ strokesTaken: 5 }],
+    bestBotStrokes: () => 5,
     matchOutcome: () => "player",
     ...overrides,
   };
@@ -37,25 +41,25 @@ describe("deriveMatchResults", () => {
 
   it("announces a bot win", () => {
     const state = derive(
-      source({ cart: { strokesTaken: 6 }, bots: [{ strokesTaken: 1 }], matchOutcome: () => "bot" }),
+      source({ cart: { strokesTaken: 6 }, bestBotStrokes: () => 1, matchOutcome: () => "bot" }),
     );
     expect(state.headline).toBe("BOT WINS");
   });
 
   it("announces a draw", () => {
     const state = derive(
-      source({ cart: { strokesTaken: 3 }, bots: [{ strokesTaken: 3 }], matchOutcome: () => "draw" }),
+      source({ cart: { strokesTaken: 3 }, bestBotStrokes: () => 3, matchOutcome: () => "draw" }),
     );
     expect(state.headline).toBe("DRAW");
   });
 
-  it("reports the best bot score when there is more than one", () => {
-    const state = derive(source({ bots: [{ strokesTaken: 7 }, { strokesTaken: 4 }] }));
+  it("displays whatever bestBotStrokes() reports, rather than recomputing it", () => {
+    const state = derive(source({ bestBotStrokes: () => 4 }));
     expect(state.botText).toBe("BOT 4");
   });
 
-  it("reads a dash for the bot score when there is no bot", () => {
-    const state = derive(source({ bots: [] }));
+  it("reads a dash when bestBotStrokes() reports no bot (Infinity)", () => {
+    const state = derive(source({ bestBotStrokes: () => Number.POSITIVE_INFINITY }));
     expect(state.botText).toBe("BOT —");
   });
 

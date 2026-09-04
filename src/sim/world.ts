@@ -996,6 +996,18 @@ export class Sim {
   }
 
   /**
+   * The lowest `strokesTaken` among the bots, or +Infinity if there are none. The single
+   * definition of "the bot's score" -- `matchOutcome` below and the results overlay
+   * (`MatchResultsSource.bestBotStrokes`) both call this rather than each keeping their own copy
+   * of the loop, so the headline and the number displayed under it cannot disagree.
+   */
+  bestBotStrokes(): number {
+    let best = Number.POSITIVE_INFINITY;
+    for (const bot of this.bots) best = Math.min(best, bot.strokesTaken);
+    return best;
+  }
+
+  /**
    * Fewest strokes taken wins; an equal best score is a draw rather than an arbitrary pick.
    *
    * Read off the live `strokesTaken` counters rather than a result snapshot taken at the buzzer:
@@ -1006,9 +1018,7 @@ export class Sim {
   matchOutcome(): MatchOutcome {
     if (!this.matchOver) return "pending";
 
-    let bestBot = Number.POSITIVE_INFINITY;
-    for (const bot of this.bots) bestBot = Math.min(bestBot, bot.strokesTaken);
-
+    const bestBot = this.bestBotStrokes();
     const player = this.cart.strokesTaken;
     if (player < bestBot) return "player";
     if (bestBot < player) return "bot";

@@ -45,6 +45,9 @@ async function main(): Promise<void> {
   // bots and stands the targets back up.
   results.playAgain.addEventListener("click", () => sim.reset());
 
+  // Edge-triggers document.exitPointerLock() below: a primitive, not a per-frame allocation.
+  let resultsWereVisible = false;
+
   // Reused across frames rather than rebuilt -- GameLoop's frame callback is covered by the
   // AGENTS.md no-allocation rule just as the fixed step is.
   const view: FrameView = {
@@ -87,6 +90,15 @@ async function main(): Promise<void> {
       render.draw(view);
       drawHud(hud, sim);
       drawMatchResults(results, sim);
+
+      // Pointer-locked players (mouse aim) cannot see or reach #play-again -- the canvas has
+      // captured and hidden the cursor -- so release the lock on the tick the overlay first
+      // becomes visible rather than leaving Esc as the only undocumented way out.
+      const resultsVisible = !results.root.hidden;
+      if (resultsVisible && !resultsWereVisible && document.pointerLockElement !== null) {
+        document.exitPointerLock();
+      }
+      resultsWereVisible = resultsVisible;
     },
   });
   loop.start();

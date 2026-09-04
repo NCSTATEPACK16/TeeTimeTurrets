@@ -98,6 +98,12 @@
       #match-results {
         position: fixed;
         inset: 0;
+        /* #hud has no z-index of its own (auto), so without one here it paints on top of this
+           backdrop despite coming earlier in the DOM -- the match freezes but the timer and
+           status line stay lit above the dimmed scene. A positive z-index lifts this overlay
+           into its own paint layer above every z-index:auto sibling, matching how a modal
+           backdrop is expected to occlude the page behind it. */
+        z-index: 10;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -150,12 +156,15 @@
         <span id="ammo-count">0</span>
       </div>
     </div>
+    <!-- Empty by design: review round 1 caught a placeholder "DRAW"/"YOU 0"/"BOT 0" here making
+         the smoke check for these elements pass even with drawMatchResults never called. Blank
+         markup means the check can only pass because the writer actually ran. -->
     <div id="match-results" hidden>
       <div id="results-card">
-        <h1 id="results-headline">DRAW</h1>
+        <h1 id="results-headline"></h1>
         <div id="results-scores">
-          <span id="results-you">YOU 0</span>
-          <span id="results-bot">BOT 0</span>
+          <span id="results-you"></span>
+          <span id="results-bot"></span>
         </div>
         <button id="play-again" type="button">PLAY AGAIN</button>
       </div>
