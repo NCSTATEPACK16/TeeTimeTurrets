@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   const render = new RenderScene(container, sim.terrain, sim.targets.length, sim.bots.length);
   const plateRoot = document.getElementById("nameplates");
   if (!plateRoot) throw new Error("expected #nameplates in index.html");
-  const nameplates = new Nameplates(plateRoot, ["YOU", ...sim.bots.map((_, i) => `BOT ${i + 1}`)]);
+  const nameplates = new Nameplates(plateRoot, sim.bots.map((_, i) => `BOT ${i + 1}`));
   const input = new KeyboardMouseSource(render.renderer.domElement);
 
   // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
@@ -126,15 +126,19 @@ const NAMEPLATE_HEIGHT = 2.6;
 const plateScratch = { x: 0, y: 0 };
 
 /**
- * Projects each cart's plate anchor and places it. Reads health straight off the sim -- a read,
- * never a mutation, per the AGENTS.md rule that src/ui/** consumes sim state.
+ * Projects each bot cart's plate anchor and places it. Reads health straight off the sim -- a
+ * read, never a mutation, per the AGENTS.md rule that src/ui/** consumes sim state.
+ *
+ * The player's own cart is never plated: UI-SPEC H13's data source is "remote cart positions"
+ * (docs/UI-SPEC.md), and the chase camera already frames the player's cart with #hud-combat's
+ * health card below it -- a second health bar mid-screen over your own cart would duplicate
+ * both.
  */
 function drawNameplates(render: RenderScene, plates: Nameplates, view: FrameView, sim: Sim): void {
-  placeNameplate(render, plates, 0, view.cart, sim.cart.health);
   for (let i = 0; i < view.botCarts.length; i++) {
     const bot = sim.bots[i];
     if (bot === undefined) continue;
-    placeNameplate(render, plates, i + 1, view.botCarts[i]!, bot.health);
+    placeNameplate(render, plates, i, view.botCarts[i]!, bot.health);
   }
 }
 

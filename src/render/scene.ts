@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { BallSwarm, BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../entities/BallSwarm";
 import { GolfClub } from "../entities/GolfClub";
 import { TargetRig } from "../entities/TargetRig";
-import type { ClubType } from "../physics/Ballistics";
+import { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import { CART_COLLIDER } from "../sim/entities/Cart";
 import type { BallTransform, CartTransform } from "../sim/world";
@@ -35,6 +35,15 @@ const CHASE_MIN_GROUND_CLEARANCE = 1.5;
 
 /** The sim's cart position is the capsule centre; the cart model's origin is at ground level. */
 const CART_BODY_OFFSET_Y = CART_COLLIDER.groundOffset;
+
+/**
+ * The renderer has no per-bot club, charge or loaded-round state to draw from -- `Sim` doesn't
+ * publish one per bot today -- so every bot cart draws a fixed default club, never charged, never
+ * showing a loaded round, regardless of what that bot is actually doing. That is a known gap, not
+ * a guess dressed up as one: a bot mid-charge or holding a different club looks identical to one
+ * standing idle with a driver.
+ */
+const BOT_DEFAULT_CLUB = ClubType.Driver;
 
 /**
  * Everything the renderer needs for one frame. Passed as one object the caller reuses rather
@@ -145,9 +154,7 @@ export class RenderScene {
     for (let i = 0; i < this.botCarts.length; i++) {
       const transform = view.botCarts[i];
       if (transform === undefined) continue;
-      // A bot's club and charge are not published to the renderer: it always draws with the
-      // default model, which is honest about what the view carries rather than guessing.
-      this.poseCart(this.botCarts[i]!, transform, view.club, 0, false);
+      this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, false);
     }
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
@@ -168,8 +175,11 @@ export class RenderScene {
 
   /**
    * World point -> canvas pixels, per docs/ARCHITECTURE.md section 2c. Returns false when the
-   * point is behind the camera, which is what stops a nameplate being drawn mirrored in front of
-   * a viewer looking the other way.
+   * point is behind the camera (stops a nameplate being drawn mirrored in front of a viewer
+   * looking the other way) or outside the horizontal/vertical frustum (stops a plate for a cart
+   * off to the side or above/below frame from being placed at an off-viewport pixel coordinate
+   * instead of hidden -- at four carts on screen at once, most of them are off to a side more
+   * often than dead ahead).
    *
    * Lives here rather than in `src/ui/**` because the camera does, and `src/ui/**` must not
    * import three. Writes into `out`: this runs once per cart per frame.
@@ -177,6 +187,7 @@ export class RenderScene {
   projectToScreen(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
     this.projectScratch.set(x, y, z).project(this.camera);
     if (this.projectScratch.z > 1) return false;
+    if (Math.abs(this.projectScratch.x) > 1 || Math.abs(this.projectScratch.y) > 1) return false;
     const size = this.renderer.getSize(this.sizeScratch);
     out.x = (this.projectScratch.x * 0.5 + 0.5) * size.x;
     out.y = (1 - (this.projectScratch.y * 0.5 + 0.5)) * size.y;

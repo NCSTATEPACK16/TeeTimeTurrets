@@ -109,6 +109,13 @@ const read = () =>
         return best;
       })(),
       nameplates: document.querySelectorAll("#nameplates .nameplate").length,
+      // These three can only be produced by the per-frame draw path (Nameplates.setPlate), never
+      // by the constructor alone: a plate is built `hidden = true` with no transform and a
+      // 100% fill, so a element-count check on its own cannot tell "wired up" from "built and
+      // never touched again".
+      firstPlateHidden: document.querySelector("#nameplates .nameplate")?.hidden ?? null,
+      firstPlateTransform: document.querySelector("#nameplates .nameplate")?.style.transform ?? null,
+      firstPlateFillWidth: document.querySelector("#nameplates .nameplate-fill")?.style.width ?? null,
       hudCombatHidden: document.getElementById("hud-combat").hidden,
       hudAmmo: document.getElementById("ammo-count").textContent,
       cart: { ...sim.cart.position },
@@ -207,8 +214,53 @@ check("health and ammo are always visible", shot.hudCombatHidden === false);
 check("the ammo card matches the sim", shot.hudAmmo === String(shot.ammo), `${shot.hudAmmo} vs ${shot.ammo}`);
 
 console.log("=== NAMEPLATES ===");
+// H13's data source is remote cart positions (docs/UI-SPEC.md) -- the player's own cart is never
+// plated -- so with the default single bot there is exactly one plate, not one per cart.
 const plated = await read();
-check("one nameplate per cart", plated.nameplates === 2, `${plated.nameplates}`);
+check("one nameplate per remote cart", plated.nameplates === 1, `${plated.nameplates}`);
+
+// The count above is satisfied by Nameplates' constructor alone and proves nothing about the
+// per-frame path (main.ts's drawNameplates / RenderScene.projectToScreen / Nameplates.setPlate).
+// These three assert on state only that path can produce.
+check("bot's plate is not hidden while the bot is on screen", plated.firstPlateHidden === false, `${plated.firstPlateHidden}`);
+
+// The browser's CSSOM normalizes the trailing unitless "0" in translate3d(...) to "0px" when it
+// serializes style.transform back out, so the third component's unit is optional here.
+const transformMatch = plated.firstPlateTransform?.match(/translate3d\(([-\d.]+)px, ([-\d.]+)px, 0(?:px)?\)/) ?? null;
+const plateX = transformMatch ? Number(transformMatch[1]) : null;
+const plateY = transformMatch ? Number(transformMatch[2]) : null;
+check(
+  "bot's plate transform places it inside the viewport",
+  transformMatch !== null &&
+    plateX !== null &&
+    plateY !== null &&
+    plateX >= 0 &&
+    plateX <= canvas.w &&
+    plateY >= 0 &&
+    plateY <= canvas.h,
+  `${plated.firstPlateTransform}`,
+);
+
+check(
+  "bot's health fill is a percentage width",
+  /^\d+%$/.test(plated.firstPlateFillWidth ?? ""),
+  `${plated.firstPlateFillWidth}`,
+);
+
+// The visible === false branch (a point outside the camera's view) is reachable independent of
+// where the bot currently is: a point far behind the chase camera along the cart's own heading is
+// guaranteed behind the near plane.
+const behindCamera = await page.evaluate(() => {
+  const { render, sim } = window.__teetimeturrets;
+  const out = { x: 0, y: 0 };
+  const heading = sim.cart.heading;
+  const forwardX = Math.cos(heading);
+  const forwardZ = Math.sin(heading);
+  const p = sim.cart.position;
+  const visible = render.projectToScreen(p.x - forwardX * 100000, p.y, p.z - forwardZ * 100000, out);
+  return visible;
+});
+check("a point far behind the camera projects as not visible", behindCamera === false, `${behindCamera}`);
 
 console.log("=== MATCH RESULTS ===");
 check("results overlay is hidden while the match runs", (await read()).resultsHidden === true);
