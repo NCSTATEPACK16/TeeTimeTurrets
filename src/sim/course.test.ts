@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { fixedHoleSpec } from "./course";
+import { defaultGreen, fixedHoleSpec, isWaterAt } from "./course";
+import { pointInPolygon } from "./hazards";
+import { briefForHole } from "./briefs";
+import { SurfaceId, WOODS_WEIGHT, createSurfaceWeights, createSurfaces } from "./surfaces";
 import {
   EDGE_MARGIN,
   MAX_ATTEMPTS,
   MAX_CAMBER_GRAD,
   MIN_HOLE_LENGTH,
   REFERENCE_CARRY_M,
+  DRIVER_CARRY_M,
   derivePar,
   generateCourse,
   generateHole,
@@ -75,6 +79,10 @@ function validSpec(overrides: Partial<HoleSpec> = {}): HoleSpec {
     control: [tee, { x: 0, z: 0 }, cup],
     par: 4,
     waterLevel: -0.72,
+    water: [],
+    bunkers: [],
+    green: defaultGreen(cup),
+    corridor: [HALF_WIDTH, HALF_WIDTH, HALF_WIDTH],
     biome: biomeForIndex(0),
     stripeAngle: stripeAngleFor(1, 0, tee, cup),
     ...overrides,
@@ -135,10 +143,136 @@ describe("validateHole", () => {
     expect(validateHole(spec, fakeTerrain(spec, cone))?.check).toBe(5);
   });
 
-  it("check 6 rejects a corridor running below the water level", () => {
-    const spec = validSpec();
-    const sunken = (): number => spec.waterLevel - 0.5;
-    expect(validateHole(spec, fakeTerrain(spec, sunken))?.check).toBe(6);
+  /**
+   * Check 6 changed shape in Tier 2, and the change is not a relaxation of the old rule -- it is
+   * a different rule, because the old one had become unsatisfiable for three of the eighteen
+   * briefs.
+   *
+   * It used to be "the centreline is never below waterLevel", which was correct while water *was*
+   * terrain height. docs/COURSE_PIPELINE.md §5 proposed relaxing it to "the centreline is never
+   * inside a water polygon" -- but holes 2, 13 and 15 are forced carries and island greens, whose
+   * entire design is a centreline that crosses water. Under that wording they would have been
+   * exactly as unbuildable as before, just for a new reason.
+   *
+   * What a player actually needs is that the water be *carryable*, and that they have somewhere
+   * to stand and somewhere to land. So: tee dry, cup dry, and no single wet run longer than the
+   * driver's carry.
+   */
+  const drown = (points: readonly { x: number; z: number }[]) => ({ points });
+
+  it("check 5 polices the whole of an elongated green, not the circle inside it", () => {
+    // A green 18 m long on the approach axis. A steep patch at 15 m from the cup is on the
+    // putting surface but outside GREEN_RADIUS, so a check that samples a circle of
+    // GREEN_RADIUS would call this hole legal and ship an unputtable green.
+    const spec = validSpec({
+      green: { x: 75, z: 0, radiusX: 18, radiusZ: 8, rotation: 0 },
+    });
+    expect(15).toBeGreaterThan(GREEN_RADIUS);
+    // Off the centreline (|z| >= 1.5) so the corridor's own longitudinal grade stays legal and
+    // check 3 cannot fire first -- this has to be check 5 or it is testing nothing.
+    const steepFarEnd = (x: number, z: number): number => {
+      const along = Math.abs(x - spec.cup.x);
+      const off = Math.abs(z);
+      return along > 12 && along < 18 && off > 1.5 && off < 4.5 ? (along - 12) * 0.2 : 0;
+    };
+    expect(validateHole(spec, fakeTerrain(spec, steepFarEnd))?.check).toBe(5);
+  });
+
+  it("check 6 rejects a hole whose tee is under water", () => {
+    const spec = validSpec({
+      water: [drown([
+        { x: -90, z: -20 },
+        { x: -60, z: -20 },
+        { x: -60, z: 20 },
+        { x: -90, z: 20 },
+      ])],
+    });
+    expect(validateHole(spec, fakeTerrain(spec, FLAT))?.check).toBe(6);
+  });
+
+  it("check 6 rejects a green ringed by more water than the driver can carry", () => {
+    // There is no "is the cup wet" check and there should not be: the green beats water in
+    // `isWaterAt`, so a cup is dry by construction, and a green ringed by water is hole 13 rather
+    // than a defect. What makes an over-watered green unplayable is the carry it demands, so that
+    // is what is measured -- a 90 m moat here against a 69.5 m carry.
+    const spec = validSpec({
+      water: [drown([
+        { x: -15, z: -60 },
+        { x: 105, z: -60 },
+        { x: 105, z: 60 },
+        { x: -15, z: 60 },
+      ])],
+    });
+    expect(isWaterAt(spec, spec.cup.x, spec.cup.z)).toBe(false);
+    const rejection = validateHole(spec, fakeTerrain(spec, FLAT));
+    expect(rejection?.check).toBe(6);
+    expect(rejection?.reason).toMatch(/carry/);
+  });
+
+  it("check 6 rejects a wet run longer than the driver can carry", () => {
+    // 100 m of water across a corridor running west to east. DRIVER_CARRY_M is 69.5.
+    const spec = validSpec({
+      water: [drown([
+        { x: -50, z: -40 },
+        { x: 50, z: -40 },
+        { x: 50, z: 40 },
+        { x: -50, z: 40 },
+      ])],
+    });
+    expect(100).toBeGreaterThan(DRIVER_CARRY_M);
+    expect(validateHole(spec, fakeTerrain(spec, FLAT))?.check).toBe(6);
+  });
+
+  it("check 6 accepts a crossing the driver can carry", () => {
+    // 30 m of water across the same corridor: hole 2's forced carry, and the case the §5 wording
+    // would have rejected. This is the assertion that makes holes 2, 13 and 15 buildable at all.
+    const spec = validSpec({
+      water: [drown([
+        { x: -15, z: -40 },
+        { x: 15, z: -40 },
+        { x: 15, z: 40 },
+        { x: -15, z: 40 },
+      ])],
+    });
+    expect(30).toBeLessThan(DRIVER_CARRY_M);
+    expect(validateHole(spec, fakeTerrain(spec, FLAT))).toBeNull();
+  });
+
+  it("check 6 accepts an island green, whose cup sits inside a water polygon", () => {
+    // Hole 13. The moat is drawn solid through the cup because polygons here have no holes; the
+    // green is punched back out of it by classification order. Testing the raw polygon would
+    // reject the archetype outright, so check 6 goes through `isWaterAt`, which knows the green
+    // wins. Delete the green clause in `isWaterAt` and this is the test that fails.
+    const spec = validSpec({
+      water: [drown([
+        { x: 45, z: -30 },
+        { x: 105, z: -30 },
+        { x: 105, z: 30 },
+        { x: 45, z: 30 },
+      ])],
+    });
+    expect(pointInPolygon(spec.cup.x, spec.cup.z, spec.water[0]!)).toBe(true);
+    expect(isWaterAt(spec, spec.cup.x, spec.cup.z)).toBe(false);
+    expect(validateHole(spec, fakeTerrain(spec, FLAT))).toBeNull();
+  });
+
+  it("does not measure grade or camber across a hazard it just allowed", () => {
+    // The bank of a legal crossing is a cliff by design -- WATER_DEPTH is 1.5 m over a
+    // WATER_SHORE of 6 m, a 0.25 grade against check 3's 0.11 limit. Checks 3 and 4 are about
+    // whether the *playing surface* is fair; water is not a playing surface, and sampling it
+    // would make every forced carry fail as a slope defect.
+    const spec = validSpec({
+      water: [drown([
+        { x: -15, z: -40 },
+        { x: 15, z: -40 },
+        { x: 15, z: 40 },
+        { x: -15, z: 40 },
+      ])],
+    });
+    // Real terrain, not FLAT: the basin is actually carved here.
+    const rejection = validateHole(spec, createTerrain(spec));
+    expect(rejection?.check).not.toBe(3);
+    expect(rejection?.check).not.toBe(4);
   });
 
   it("check 7 rejects a corridor longer than three full driver shots", () => {
@@ -228,6 +362,93 @@ describe("generateHole", () => {
     expect(() =>
       generateHole(1, 0, 4, { validate: () => ({ check: 99, reason: "always rejects" }) }),
     ).toThrow(/always rejects/);
+  });
+});
+
+/**
+ * §9 build order step 6, arriving with Tier 2 rather than after it: without this the four new
+ * HoleSpec fields exist and are always empty, which is the "data with no consumer" problem the
+ * whole COURSE_PIPELINE document is about.
+ */
+describe("generateHole reads the hole's brief", () => {
+  it("takes its corridor widths from the brief's cover setting", () => {
+    // Hole 5 is `dense` (a knife fight), hole 9 is `open` (a shooting gallery).
+    expect(generateHole(4242, 4).corridor).toEqual([11, 10, 12]);
+    expect(generateHole(4242, 8).corridor).toEqual([19, 18, 19]);
+  });
+
+  it("places water on the holes whose briefs ask for it and none on the others", () => {
+    // Hole 2 is a forced carry; hole 1 is a gentle opener with no water at all.
+    expect(generateHole(4242, 1).water.length).toBeGreaterThan(0);
+    expect(generateHole(4242, 0).water).toEqual([]);
+  });
+
+  it("places exactly as many bunkers as the brief declares", () => {
+    for (const index of [0, 2, 3, 5, 10]) {
+      expect(generateHole(4242, index).bunkers).toHaveLength(
+        briefForHole(index + 1).hazards.bunkers.count,
+      );
+    }
+  });
+
+  it("leaves no sand on a hole whose brief places no bunkers", () => {
+    // Hole 2's brief has no bunkers -- under the old noise scatter it had sand anyway.
+    expect(briefForHole(2).hazards.bunkers.count).toBe(0);
+    expect(generateHole(4242, 1).bunkers).toEqual([]);
+  });
+
+  it("never puts sand in the woods", () => {
+    // Sand belongs to the fairway and the first cut beside it. A bunker out among the trees is
+    // not a hazard anybody plays around -- it is a sand patch in a forest, and it was the last
+    // thing left over from the noise-scatter era's geography.
+    //
+    // "The woods" is not a new idea invented here: it is exactly where `Trees.ts` plants, which
+    // is `corridorWeight >= WOODS_WEIGHT`. Asserting against that constant rather than a distance
+    // means sand and trees can never end up in the same place by construction, on any corridor
+    // width, and the two cannot drift apart later.
+    const course = generateCourse(0x7ee7c0, 18);
+    const weights = createSurfaceWeights();
+    const offenders: string[] = [];
+
+    for (const spec of course.holes) {
+      const terrain = createTerrain(spec);
+      const surfaces = createSurfaces(spec, terrain);
+      let sandSeen = 0;
+      for (let x = -spec.fieldSize / 2; x < spec.fieldSize / 2; x += 1.5) {
+        for (let z = -spec.fieldSize / 2; z < spec.fieldSize / 2; z += 1.5) {
+          if (surfaces.surfaceAt(x, z) !== SurfaceId.Sand) continue;
+          sandSeen += 1;
+          surfaces.weightsAt(x, z, weights);
+          if (weights.corridor >= WOODS_WEIGHT) {
+            offenders.push(
+              `hole ${spec.index + 1} at (${x.toFixed(0)}, ${z.toFixed(0)}) ` +
+                `corridor ${weights.corridor.toFixed(3)}`,
+            );
+          }
+        }
+      }
+      // Guard: a hole with no sand at all would satisfy the loop above vacuously.
+      if (spec.bunkers.length > 0) {
+        expect(sandSeen, `hole ${spec.index + 1} places bunkers but shows no sand`).toBeGreaterThan(
+          0,
+        );
+      }
+    }
+
+    expect(offenders.slice(0, 8)).toEqual([]);
+  });
+
+  it("stays deterministic now that hazards are placed", () => {
+    expect(generateHole(4242, 6)).toEqual(generateHole(4242, 6));
+    expect(generateHole(4242, 6)).not.toEqual(generateHole(4243, 6));
+  });
+
+  it("builds all eighteen holes of the course bible", () => {
+    // The end-to-end claim: every brief in the bible produces a hole that passes every check.
+    // Before Tier 2 the archetypes with water were unbuildable by construction.
+    const course = generateCourse(0x7ee7c0, 18);
+    expect(course.holes).toHaveLength(18);
+    expect(course.holes.reduce((sum, h) => sum + h.par, 0)).toBe(72);
   });
 });
 

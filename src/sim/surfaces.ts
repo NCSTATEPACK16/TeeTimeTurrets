@@ -1,15 +1,10 @@
-import { createNoise2D } from "simplex-noise";
+import { isWaterAt } from "./course";
 import type { HoleSpec } from "./course";
-import { hashChannel, mulberry32 } from "./rng";
+import { ellipseEdgeDistance, pointInEllipse } from "./hazards";
+import { hashChannel } from "./rng";
 import { createNearestPoint } from "./spline";
 import type { NearestPoint } from "./spline";
-import {
-  BLEND_WIDTH,
-  GREEN_BLEND,
-  GREEN_RADIUS,
-  HALF_WIDTH,
-  smoothstep01,
-} from "./terrain";
+import { BLEND_WIDTH, GREEN_BLEND, halfWidthAt, smoothstep01 } from "./terrain";
 import type { Terrain } from "./terrain";
 
 /**
@@ -111,20 +106,32 @@ export const SURFACES: Readonly<Record<SurfaceId, SurfaceTuning>> = {
 };
 
 /**
- * Bunkers come from their own noise channel rather than authored placement, thresholded so they
- * read as scattered patches. Channel 1 of the spec's seed, separate from the height channel so
- * bunkers do not correlate with hills.
+ * Channel 1 of the spec's seed. Bunker *placement* now happens in `course.ts` against a validated
+ * routing (a bunker at "the fairway elbow" has no meaning until the elbow exists), so this is the
+ * channel that placement draws from rather than one this module samples.
+ *
+ * **What used to be here:** a simplex field at `SAND_FREQUENCY = 0.055` thresholded at 0.72, so
+ * sand was any point where a noise function happened to be high. That produced 3.6% of the *mown
+ * corridor* as sand -- tan speckles scattered across every fairway rather than hazards anyone
+ * placed (docs/COURSE_PIPELINE.md §5.1). It is gone, not merely tuned: no threshold value makes a
+ * noise field express "guard the aggressive line".
  */
-const SAND_FREQUENCY = 0.055;
-const SAND_THRESHOLD = 0.72;
-
 export function sandChannel(spec: HoleSpec): number {
   return hashChannel(spec.seed, spec.index, 1);
 }
 
-export interface SurfaceSources {
-  readonly sand: () => number;
-}
+/**
+ * The corridor weight at which rough becomes *the woods*.
+ *
+ * One constant, two consumers, and they have to agree or the course contradicts itself:
+ * `src/render/Trees.ts` plants only at or above this weight, and `src/sim/placement.ts` keeps
+ * bunkers strictly below it. That is what makes "sand never appears in the woods" true by
+ * construction on any corridor width, rather than true for the widths somebody happened to check.
+ *
+ * 0.92 rather than 1.0 because a tree in the first cut looks like a mistake and one on the mown
+ * surface blocks a shot the validator has already certified as playable.
+ */
+export const WOODS_WEIGHT = 0.92;
 
 export interface Surfaces {
   /** Discrete. Feeds the HUD readout, Phase 4's minimap, and render colouring. */
@@ -139,46 +146,62 @@ export interface Surfaces {
   weightsAt(worldX: number, worldZ: number, out: SurfaceWeights): void;
 }
 
-export function createSurfaces(
-  spec: HoleSpec,
-  terrain: Terrain,
-  sources?: SurfaceSources,
-): Surfaces {
-  const random = sources?.sand ?? mulberry32(sandChannel(spec));
-  const sandNoise = createNoise2D(random);
-
+export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
   // Closure-owned scratch: both functions run inside the fixed tick.
   const nearestScratch: NearestPoint = createNearestPoint();
 
-  /** 0 on the green, 1 off it. */
+  /**
+   * 0 on the green, 1 off it.
+   *
+   * Measured from the green *ellipse's* rim rather than a radius about the cup, so an elongated
+   * or angled green blends out along its own shape. For a circular green of GREEN_RADIUS centred
+   * on the cup -- what every hole had before Tier 2 -- `ellipseEdgeDistance` is exact and this
+   * reduces to the previous expression term for term.
+   */
   function greenWeight(worldX: number, worldZ: number): number {
-    const toCup = Math.hypot(worldX - spec.cup.x, worldZ - spec.cup.z);
-    return smoothstep01((toCup - GREEN_RADIUS) / GREEN_BLEND);
-  }
-
-  /** 0 on the mown corridor, 1 in full rough. Fills `nearestScratch` as a side effect. */
-  function corridorWeight(worldX: number, worldZ: number): number {
-    terrain.spline.nearestInto(worldX, worldZ, nearestScratch);
-    return smoothstep01((nearestScratch.distance - HALF_WIDTH) / BLEND_WIDTH);
+    return smoothstep01(ellipseEdgeDistance(worldX, worldZ, spec.green) / GREEN_BLEND);
   }
 
   /**
-   * Classification order is a priority list, not a blend: water wins over everything (it is
-   * defined by height, so it cannot be overridden by a mowing pattern), then the green, then
+   * 0 on the mown corridor, 1 in full rough. Fills `nearestScratch` as a side effect.
+   *
+   * The width comes from `spec.corridor` via the same `halfWidthAt` the height field carves with,
+   * so a pinched corridor is narrower to the physics and to the renderer at exactly the same
+   * place. A second interpolation here would be a second corridor.
+   */
+  function corridorWeight(worldX: number, worldZ: number): number {
+    terrain.spline.nearestInto(worldX, worldZ, nearestScratch);
+    const half = halfWidthAt(spec.corridor, nearestScratch.t);
+    return smoothstep01((nearestScratch.distance - half) / BLEND_WIDTH);
+  }
+
+  /** True inside any placed bunker. */
+  function isSand(worldX: number, worldZ: number): boolean {
+    for (const b of spec.bunkers) {
+      if (pointInEllipse(worldX, worldZ, b)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Classification order is a priority list, not a blend: the green wins, then water, then
    * bunkers, then the corridor, and rough is the fallback.
+   *
+   * **The green and water swapped places in Tier 2, and the reason the old order existed went
+   * away rather than being overruled.** Water used to be defined by height, so it could not be
+   * allowed to lose to a mowing pattern -- a green painted over a lake would have been a green
+   * you could putt on the bottom of. Now that water is a placed polygon, a green inside one is
+   * not an accident, it is hole 13: an island green is *deliberately* a putting surface ringed by
+   * water, and the green has to win for it to exist at all.
    *
    * The corridor's visual edge sits where the blend crosses halfway -- smoothstep01 is 0.5 at
    * its midpoint, so `tCorridor < 0.5` is the same line the physics is already half-way across.
    * One source for the edge rather than a separate visual constant to drift.
    */
   function surfaceAt(worldX: number, worldZ: number): SurfaceId {
-    if (terrain.heightAt(worldX, worldZ) < spec.waterLevel) return SurfaceId.Water;
-    if (Math.hypot(worldX - spec.cup.x, worldZ - spec.cup.z) < GREEN_RADIUS) {
-      return SurfaceId.Green;
-    }
-    if (sandNoise(worldX * SAND_FREQUENCY, worldZ * SAND_FREQUENCY) > SAND_THRESHOLD) {
-      return SurfaceId.Sand;
-    }
+    if (pointInEllipse(worldX, worldZ, spec.green)) return SurfaceId.Green;
+    if (isWaterAt(spec, worldX, worldZ)) return SurfaceId.Water;
+    if (isSand(worldX, worldZ)) return SurfaceId.Sand;
     return corridorWeight(worldX, worldZ) < 0.5 ? SurfaceId.Fairway : SurfaceId.Rough;
   }
 

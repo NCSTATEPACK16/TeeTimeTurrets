@@ -677,11 +677,37 @@ describe("bot carts", () => {
 
 describe("driving into water", () => {
   let sim: Sim;
+
+  /**
+   * The fixture with a pond added. Since Tier 2 (docs/COURSE_PIPELINE.md §5) water is placed
+   * rather than inherited from terrain height, and `fixedHoleSpec()` is deliberately dry -- so a
+   * physics regression is never confused with a hazard landing under the ball. These tests are
+   * about what happens when a cart *is* in water, so they need a hole that has some.
+   *
+   * Sited north of the corridor: the fixture runs tee (-45, 0) to cup (45, 8) with its dog-leg
+   * apex at (0, -25), so a pond at z in [30, 60] is clear of the mown line.
+   */
+  function pondSpec() {
+    return {
+      ...fixedHoleSpec(),
+      water: [
+        {
+          points: [
+            { x: -20, z: 30 },
+            { x: 20, z: 30 },
+            { x: 20, z: 60 },
+            { x: -20, z: 60 },
+          ],
+        },
+      ],
+    };
+  }
+
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    sim = await Sim.create(pondSpec(), { botCount: 0 });
   });
 
-  /** Find a water cell on this hole -- the fixed hole has one but do not assume where. */
+  /** Find a water cell on this hole -- the pond is placed above but do not assume where. */
   function findWater(s: Sim): { x: number; z: number } {
     const half = s.terrain.spec.fieldSize / 2 - 4;
     for (let x = -half; x <= half; x += 2) {

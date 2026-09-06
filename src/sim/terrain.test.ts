@@ -7,8 +7,10 @@ import {
   GREEN_RADIUS,
   HALF_WIDTH,
   createTerrain,
+  halfWidthAt,
 } from "./terrain";
 import type { Terrain } from "./terrain";
+import type { Ellipse, Polygon } from "./hazards";
 
 const SPEC = fixedHoleSpec();
 const terrain = createTerrain(SPEC);
@@ -170,5 +172,149 @@ describe("corridor carving", () => {
       }
     }
     expect(corridor).toBeLessThan(rough);
+  });
+});
+
+/**
+ * Tier 2, docs/COURSE_PIPELINE.md §5. A placed hazard has to be shaped as well as classified --
+ * otherwise water is a blue rectangle painted on a hillside and a bunker is flat ground coloured
+ * tan, and a ball rolls across both without noticing.
+ */
+describe("hazard shaping", () => {
+  const pond: Polygon = {
+    points: [
+      { x: -20, z: 25 },
+      { x: 20, z: 25 },
+      { x: 20, z: 60 },
+      { x: -20, z: 60 },
+    ],
+  };
+  const bunker: Ellipse = { x: -30, z: 40, radiusX: 9, radiusZ: 6, rotation: 0 };
+
+  it("carves the ground under a water polygon below the water line", () => {
+    const spec = { ...SPEC, water: [pond] };
+    const wet = createTerrain(spec);
+    const dry = createTerrain({ ...SPEC, water: [] });
+
+    // Three claims, and the third is what stops the first two passing on a hole where the ground
+    // was already low. Some of this fixture's ground under the pond genuinely is below the floor
+    // already, so "strictly lower everywhere" would be false for the right reason -- a basin
+    // excavates and never fills, so it leaves a natural hollow alone.
+    let cut = 0;
+    for (let x = -16; x <= 16; x += 4) {
+      for (let z = 32; z <= 54; z += 4) {
+        const w = wet.heightAt(x, z);
+        const d = dry.heightAt(x, z);
+        // 1. Well inside the bank, the ground is always under the rendered water plane.
+        expect(w).toBeLessThan(spec.waterLevel);
+        // 2. The basin never raises ground.
+        expect(w).toBeLessThanOrEqual(d + 1e-9);
+        if (w < d - 1e-6) cut += 1;
+      }
+    }
+    // 3. ...and it did in fact dig, rather than agreeing with the terrain by luck.
+    expect(cut).toBeGreaterThan(0);
+  });
+
+  it("leaves ground outside the polygon exactly as it was", () => {
+    const dry = createTerrain({ ...SPEC, water: [] });
+    const wet = createTerrain({ ...SPEC, water: [pond] });
+    // Far from the pond: byte-identical, so a hazard cannot silently reshape a whole hole.
+    for (const [x, z] of [
+      [-60, -40],
+      [40, -10],
+      [0, -60],
+    ] as const) {
+      expect(wet.heightAt(x, z)).toBe(dry.heightAt(x, z));
+    }
+  });
+
+  it("ramps into the basin rather than dropping a cliff at the bank", () => {
+    const wet = createTerrain({ ...SPEC, water: [pond] });
+    // Walk across the northern bank. No single 0.5 m step may fall more than a modest amount,
+    // or the ball tunnels through a wall instead of rolling down a shore.
+    let worst = 0;
+    for (let z = 20; z < 35; z += 0.5) {
+      const drop = wet.heightAt(0, z) - wet.heightAt(0, z + 0.5);
+      worst = Math.max(worst, drop);
+    }
+    expect(worst).toBeLessThan(0.5);
+  });
+
+  it("dishes a bunker below the ground it sits in", () => {
+    const flat = createTerrain({ ...SPEC, bunkers: [] });
+    const dished = createTerrain({ ...SPEC, bunkers: [bunker] });
+    expect(dished.heightAt(bunker.x, bunker.z)).toBeLessThan(flat.heightAt(bunker.x, bunker.z));
+    // The rim is where the dishing stops.
+    expect(dished.heightAt(bunker.x + bunker.radiusX, bunker.z)).toBeCloseTo(
+      flat.heightAt(bunker.x + bunker.radiusX, bunker.z),
+      6,
+    );
+  });
+
+  it("dishes a bunker deepest at its centre", () => {
+    const flat = createTerrain({ ...SPEC, bunkers: [] });
+    const dished = createTerrain({ ...SPEC, bunkers: [bunker] });
+    const dropAt = (x: number, z: number) => flat.heightAt(x, z) - dished.heightAt(x, z);
+    expect(dropAt(bunker.x, bunker.z)).toBeGreaterThan(dropAt(bunker.x + 5, bunker.z));
+    expect(dropAt(bunker.x + 5, bunker.z)).toBeGreaterThan(dropAt(bunker.x + 8, bunker.z));
+  });
+
+  it("leaves a hazard-free hole's terrain untouched", () => {
+    // The regression guard for the eleven briefs that ask for nothing: adding hazard support
+    // must not move ground on a hole that has none.
+    const before = createTerrain({ ...SPEC, water: [], bunkers: [] });
+    for (let x = -70; x <= 70; x += 11) {
+      for (let z = -70; z <= 70; z += 11) {
+        expect(before.heightAt(x, z)).toBe(terrain.heightAt(x, z));
+      }
+    }
+  });
+});
+
+/**
+ * Tier 2. `HALF_WIDTH` stops being a global and becomes `spec.corridor` -- a half-width per
+ * control point, interpolated along the spline. This is the briefs' combat axis made geometric:
+ * hole 5 is a knife fight at 10 m and hole 9 a shooting gallery at 19 m.
+ */
+describe("per-hole corridor width", () => {
+  it("interpolates between the control points' half-widths", () => {
+    expect(halfWidthAt([10, 20, 10], 0)).toBeCloseTo(10, 6);
+    expect(halfWidthAt([10, 20, 10], 0.5)).toBeCloseTo(20, 6);
+    expect(halfWidthAt([10, 20, 10], 1)).toBeCloseTo(10, 6);
+    expect(halfWidthAt([10, 20, 10], 0.25)).toBeCloseTo(15, 6);
+  });
+
+  it("clamps outside [0, 1] rather than extrapolating off the ends", () => {
+    expect(halfWidthAt([10, 20, 30], -0.5)).toBeCloseTo(10, 6);
+    expect(halfWidthAt([10, 20, 30], 1.5)).toBeCloseTo(30, 6);
+  });
+
+  it("carves a wider corridor flat further out than a narrow one does", () => {
+    // 18 m off the centreline is inside a 20 m corridor and outside a 10 m one, so the wide hole
+    // has that point carved to the centreline height and the narrow hole leaves it to the noise.
+    const narrow = createTerrain({ ...SPEC, corridor: [10, 10, 10] });
+    const wide = createTerrain({ ...SPEC, corridor: [20, 20, 20] });
+
+    const t = 0.8;
+    const centre = narrow.spline.pointAt(t);
+    const tangent = { x: 0, z: 0 };
+    narrow.spline.tangentInto(t, tangent);
+    const probe = { x: centre.x - tangent.z * 18, z: centre.z + tangent.x * 18 };
+
+    const centreHeight = wide.heightAt(centre.x, centre.z);
+    expect(wide.heightAt(probe.x, probe.z)).toBeCloseTo(centreHeight, 2);
+    expect(Math.abs(narrow.heightAt(probe.x, probe.z) - centreHeight)).toBeGreaterThan(0.01);
+  });
+
+  it("reproduces today's terrain when every control point carries HALF_WIDTH", () => {
+    // The migration guard: a hole authored at the old global width must be unchanged, so a
+    // corridor-width change is visible only where somebody asked for one.
+    const uniform = createTerrain({ ...SPEC, corridor: [HALF_WIDTH, HALF_WIDTH, HALF_WIDTH] });
+    for (let x = -70; x <= 70; x += 9) {
+      for (let z = -70; z <= 70; z += 9) {
+        expect(uniform.heightAt(x, z)).toBe(terrain.heightAt(x, z));
+      }
+    }
   });
 });

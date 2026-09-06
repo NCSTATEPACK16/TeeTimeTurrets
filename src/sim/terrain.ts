@@ -2,6 +2,8 @@ import { createNoise2D } from "simplex-noise";
 import type { HoleSpec, Vec3 } from "./course";
 import { hashChannel, mulberry32 } from "./rng";
 import { createNearestPoint, createSpline } from "./spline";
+import { ellipseEdgeDistance, ellipseFalloff, polygonSignedDistance } from "./hazards";
+import type { Ellipse } from "./hazards";
 import type { MutableVec2, NearestPoint, Spline } from "./spline";
 
 /**
@@ -31,6 +33,27 @@ const TEE_PAD_RADIUS = 5;
 export const HALF_WIDTH = 15;
 export const BLEND_WIDTH = 10;
 export const GREEN_BLEND = 6;
+
+/**
+ * How a placed hazard is shaped, as opposed to merely classified (docs/COURSE_PIPELINE.md §5).
+ *
+ * A hazard that is only a classification is paint: water would be a blue region on a hillside and
+ * a bunker flat ground coloured tan, and a ball would roll across both unchanged. These carve the
+ * height field so the hazard is a real feature the physics runs over.
+ *
+ * `WATER_DEPTH` is measured below `spec.waterLevel`, not below local ground, so the basin floor is
+ * flat and the rendered water plane always has clearance beneath it. `WATER_SHORE` is the run from
+ * the bank to full depth -- long enough that a ball rolls down a beach rather than dropping off a
+ * kerb, and short enough that a 12 m creek still gets wet in the middle.
+ *
+ * `BUNKER_DEPTH` is deliberately shallow. It has to read as a dish from a chase camera without
+ * adding enough cross-slope at the corridor edge to trip `validateHole` check 4: over the check's
+ * 20 m sampling arm, 0.6 m is a 0.03 gradient against a 0.0699 limit, so a bunker at the fairway
+ * edge costs about 40% of the camber budget rather than all of it.
+ */
+export const WATER_DEPTH = 1.5;
+export const WATER_SHORE = 6;
+export const BUNKER_DEPTH = 0.6;
 
 /**
  * Slope budgets, as tan(theta). GRAD_GREEN and GRAD_FAIRWAY are the `crr` values already in
@@ -69,10 +92,46 @@ const A_MICRO = G_MICRO / (F_MICRO * NOISE_MAX_GRADIENT);
 const A_MESO = G_MESO / (F_MESO * NOISE_MAX_GRADIENT);
 const A_MACRO = G_MACRO / (F_MACRO * NOISE_MAX_GRADIENT);
 
+/**
+ * Corridor half-width at a spline parameter, interpolated between the per-control-point widths.
+ *
+ * `spec.corridor` has one entry per control point and `t` runs 0..1 across the whole spline, so
+ * this is a piecewise-linear lookup. Linear rather than smooth on purpose: the widths come from
+ * three authored numbers, and a spline through them would overshoot -- a corridor that pinches to
+ * 10 m in the middle would bulge past its own endpoints on the way there.
+ *
+ * Exported because four callers need exactly this and a second copy of it would be a second
+ * corridor: `heightAt`'s carving mask, `budgetAt`'s slope allowance, `surfaces.corridorWeight`,
+ * and hazard placement in `placement.ts`.
+ */
+export function halfWidthAt(corridor: readonly number[], t: number): number {
+  const n = corridor.length;
+  if (n === 0) return HALF_WIDTH;
+  if (n === 1) return corridor[0]!;
+  const clamped = t < 0 ? 0 : t > 1 ? 1 : t;
+  const scaled = clamped * (n - 1);
+  const i = Math.min(n - 2, Math.floor(scaled));
+  const frac = scaled - i;
+  return corridor[i]! + (corridor[i + 1]! - corridor[i]!) * frac;
+}
+
 /** Smoothstep: C1-continuous, so a pad edge has no slope discontinuity ring. */
 export function smoothstep01(t: number): number {
   const c = Math.min(1, Math.max(0, t));
   return c * c * (3 - 2 * c);
+}
+
+/**
+ * The inverse of `smoothstep01`: given a weight, the parameter that produces it.
+ *
+ * Closed form via the trigonometric solution to the depressed cubic `3c^2 - 2c^3 = y`. Exists so
+ * a caller that knows a *weight* it cares about -- "where does the rough get deep enough to plant
+ * trees" -- can turn that into a *distance* without hard-coding a number that would silently stop
+ * matching if the blend ever changed shape.
+ */
+export function inverseSmoothstep01(y: number): number {
+  const clamped = Math.min(1, Math.max(0, y));
+  return 0.5 - Math.sin(Math.asin(1 - 2 * clamped) / 3);
 }
 
 /**
@@ -94,11 +153,17 @@ export interface Terrain {
   readonly cupPosition: Vec3;
 }
 
+/**
+ * A flattened patch blended into the terrain. Circular (`radius`) for the tee; the green carries
+ * an `ellipse` instead, so a long green is flat along its whole length rather than only inside
+ * the circle that fits in it.
+ */
 interface Pad {
   readonly x: number;
   readonly z: number;
   readonly radius: number;
   readonly height: number;
+  readonly ellipse?: Ellipse;
 }
 
 /** Channel 0 of the spec's seed. See the spec's channel table, §3 "Seeding". */
@@ -121,10 +186,14 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
    * distance to the centreline, passed in rather than measured here so the carving code can ask
    * for the budget *at the centreline* (distance 0) without a second spline query.
    */
-  function budgetAt(worldX: number, worldZ: number, corridorDistance: number): number {
-    const toCup = Math.hypot(worldX - spec.cup.x, worldZ - spec.cup.z);
-    const tGreen = smoothstep01((toCup - GREEN_RADIUS) / GREEN_BLEND);
-    const tCorridor = smoothstep01((corridorDistance - HALF_WIDTH) / BLEND_WIDTH);
+  function budgetAt(
+    worldX: number,
+    worldZ: number,
+    corridorDistance: number,
+    t: number,
+  ): number {
+    const tGreen = smoothstep01(ellipseEdgeDistance(worldX, worldZ, spec.green) / GREEN_BLEND);
+    const tCorridor = smoothstep01((corridorDistance - halfWidthAt(spec.corridor, t)) / BLEND_WIDTH);
     const mown = GRAD_GREEN + (GRAD_FAIRWAY - GRAD_GREEN) * tGreen;
     return mown + (GRAD_ROUGH - mown) * tCorridor;
   }
@@ -141,8 +210,13 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
    * the same coordinate, and smoothstep01(t) > t for t > 0.5 lets the transition band sit
    * slightly over. The rejection sampler in course.ts is the enforcement.
    */
-  function noiseHeightAt(worldX: number, worldZ: number, corridorDistance: number): number {
-    let remaining = budgetAt(worldX, worldZ, corridorDistance) - G_MICRO;
+  function noiseHeightAt(
+    worldX: number,
+    worldZ: number,
+    corridorDistance: number,
+    t: number,
+  ): number {
+    let remaining = budgetAt(worldX, worldZ, corridorDistance, t) - G_MICRO;
     const mesoScale = smoothstep01(remaining / G_MESO);
     remaining -= mesoScale * G_MESO;
     const macroScale = smoothstep01(remaining / G_MACRO);
@@ -158,8 +232,13 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
   // the corridor, so distance 0 is correct and matches the carved corridor height by
   // construction -- it is the same value the carving in heightAt gives a point on the centreline.
   const pads: readonly Pad[] = [
-    { ...spec.tee, radius: TEE_PAD_RADIUS, height: noiseHeightAt(spec.tee.x, spec.tee.z, 0) },
-    { ...spec.cup, radius: GREEN_RADIUS, height: noiseHeightAt(spec.cup.x, spec.cup.z, 0) },
+    { ...spec.tee, radius: TEE_PAD_RADIUS, height: noiseHeightAt(spec.tee.x, spec.tee.z, 0, 0) },
+    {
+      ...spec.cup,
+      radius: Math.max(spec.green.radiusX, spec.green.radiusZ),
+      height: noiseHeightAt(spec.cup.x, spec.cup.z, 0, 1),
+      ellipse: spec.green,
+    },
   ];
 
   /**
@@ -179,7 +258,8 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
    */
   function heightAt(worldX: number, worldZ: number): number {
     spline.nearestInto(worldX, worldZ, nearestScratch);
-    const mask = smoothstep01((nearestScratch.distance - HALF_WIDTH) / BLEND_WIDTH);
+    const half = halfWidthAt(spec.corridor, nearestScratch.t);
+    const mask = smoothstep01((nearestScratch.distance - half) / BLEND_WIDTH);
 
     let height: number;
     // Pad flattening keys off this point rather than (worldX, worldZ) directly. Inside the
@@ -192,14 +272,16 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
     let padX = worldX;
     let padZ = worldZ;
     if (mask >= 1) {
-      height = noiseHeightAt(worldX, worldZ, nearestScratch.distance);
+      height = noiseHeightAt(worldX, worldZ, nearestScratch.distance, nearestScratch.t);
     } else {
       spline.pointInto(nearestScratch.t, centreScratch);
-      const centre = noiseHeightAt(centreScratch.x, centreScratch.z, 0);
+      const centre = noiseHeightAt(centreScratch.x, centreScratch.z, 0, nearestScratch.t);
       height =
         mask <= 0
           ? centre
-          : centre + (noiseHeightAt(worldX, worldZ, nearestScratch.distance) - centre) * mask;
+          : centre +
+            (noiseHeightAt(worldX, worldZ, nearestScratch.distance, nearestScratch.t) - centre) *
+              mask;
       padX = centreScratch.x + (worldX - centreScratch.x) * mask;
       padZ = centreScratch.z + (worldZ - centreScratch.z) * mask;
     }
@@ -207,11 +289,55 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
     // Tee and green keep an additional local flattening on top of the corridor: a putting
     // surface needs to be flatter than the corridor alone delivers.
     for (const pad of pads) {
-      const distance = Math.hypot(padX - pad.x, padZ - pad.z);
-      if (distance >= pad.radius) continue;
-      const weight = smoothstep01(1 - distance / pad.radius);
+      // An elliptical pad flattens on its own falloff; a circular one on radial distance. Both
+      // are 1 at the centre and 0 at the rim, so the blend below is identical either way.
+      const weight =
+        pad.ellipse === undefined
+          ? (() => {
+              const distance = Math.hypot(padX - pad.x, padZ - pad.z);
+              return distance >= pad.radius ? 0 : smoothstep01(1 - distance / pad.radius);
+            })()
+          : smoothstep01(ellipseFalloff(padX, padZ, pad.ellipse));
+      if (weight <= 0) continue;
       height += (pad.height - height) * weight;
     }
+
+    return shapeHazards(worldX, worldZ, height);
+  }
+
+  /**
+   * Hazard shaping, applied last so it cuts through the corridor carving and the pads rather than
+   * being smoothed away by them. That ordering is the whole point: a water crossing on hole 2 has
+   * to be a ditch *through* the fairway, and a fairway bunker a dish *in* the mown surface. Doing
+   * this before the carving would let the corridor flatten both back out.
+   *
+   * Both loops are no-ops on a hole with no hazards -- ten of the eighteen briefs have no water --
+   * so the cost lands only where something was placed.
+   */
+  function shapeHazards(worldX: number, worldZ: number, base: number): number {
+    let height = base;
+
+    for (const poly of spec.water) {
+      const signed = polygonSignedDistance(worldX, worldZ, poly);
+      if (signed >= 0) continue;
+      // 0 at the bank, 1 once WATER_SHORE metres inside. smoothstep01 rather than a clamp so
+      // the shoreline has no slope discontinuity for the ball to catch on.
+      const weight = smoothstep01(-signed / WATER_SHORE);
+      // `min`, not the floor outright: a basin excavates, it never fills. Lerping straight to
+      // the floor would *raise* ground that already sat deeper than it -- a natural hollow inside
+      // the polygon would come back up to meet the pond bottom, which is backwards. This way the
+      // deep spot stays a deep spot and the guarantee still holds: at full weight the ground is
+      // at or below the floor, so it is always under the rendered water plane.
+      const floor = Math.min(height, spec.waterLevel - WATER_DEPTH);
+      height += (floor - height) * weight;
+    }
+
+    for (const b of spec.bunkers) {
+      const falloff = ellipseFalloff(worldX, worldZ, b);
+      if (falloff <= 0) continue;
+      height -= BUNKER_DEPTH * smoothstep01(falloff);
+    }
+
     return height;
   }
 

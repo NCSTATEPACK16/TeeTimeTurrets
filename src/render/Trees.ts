@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashChannel, mulberry32 } from "../sim/rng";
-import { createSurfaceWeights } from "../sim/surfaces";
+import { WOODS_WEIGHT, createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
 import type { Terrain } from "../sim/terrain";
 import { BIOMES } from "./biomes";
@@ -26,11 +26,12 @@ import type { BiomePalette } from "./biomes";
 const CELL_M = 6;
 
 /**
- * How deep into the rough a tree must be. `corridorWeight` is 1 in full rough, so this keeps
- * trunks clear of the mown edge -- a tree standing in the first-cut looks like a mistake, and one
- * standing *on* the fairway blocks a shot the hole validator has already certified as playable.
+ * How deep into the rough a tree must be -- re-exported from the sim, not redeclared.
+ *
+ * `WOODS_WEIGHT` is shared with `src/sim/placement.ts`, which keeps bunkers strictly below it. Two
+ * copies of this number would let sand and trees drift into the same ground.
  */
-const MIN_ROUGH_WEIGHT = 0.92;
+const MIN_ROUGH_WEIGHT = WOODS_WEIGHT;
 
 /** Metres of dry land a tree needs above the water line before it will be placed. */
 const MIN_FREEBOARD = 0.4;
@@ -132,7 +133,16 @@ export function createTrees(terrain: Terrain, surfaces: Surfaces): Trees {
       if (weights.sand === 1 || weights.water === 1) continue;
 
       const y = terrain.heightAt(x, z);
-      if (y < spec.waterLevel + MIN_FREEBOARD) continue;
+      // Freeboard is measured against the hazard, not against an absolute height. Before Tier 2
+      // `waterLevel` *was* the definition of water, so "below the water line" and "in the water"
+      // were the same statement; now water is a placed polygon (`weights.water` above already
+      // rejects it) and low dry ground is just a hollow. Keeping the absolute test would strip
+      // trees off every dip on a hole with no water in it at all.
+      //
+      // What survives is the shoreline case: the basin ramps down over WATER_SHORE, so ground
+      // that has been pulled below the rendered water plane is inside a hazard's shallows even
+      // where the polygon test has not caught it yet.
+      if (spec.water.length > 0 && y < spec.waterLevel + MIN_FREEBOARD) continue;
 
       const height = palette.treeHeight * (SCALE_MIN + random() * (SCALE_MAX - SCALE_MIN));
       position.set(x, y, z);

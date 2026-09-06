@@ -7,10 +7,15 @@
  * a level format. A second course is a second list.
  */
 
-import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "./terrain";
+import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain, halfWidthAt } from "./terrain";
 import type { Terrain } from "./terrain";
+import { createSpline } from "./spline";
 import type { MutableVec2 } from "./spline";
+import { pointInEllipse, pointInPolygon } from "./hazards";
+import type { Ellipse, Polygon } from "./hazards";
 import { hashChannel, mulberry32 } from "./rng";
+import { briefForHole } from "./briefs";
+import { corridorFor, placeBunkers, placeWater } from "./placement";
 
 export interface Vec2 {
   readonly x: number;
@@ -104,7 +109,34 @@ export interface HoleSpec {
   readonly control: readonly Vec2[];
   /** Derived from corridor length by generateHole. Never authored. */
   readonly par: number;
+  /**
+   * The height the water surface renders at, and the floor a water basin is carved down to.
+   *
+   * **No longer a classifier.** Until Tier 2 this was the whole definition of water -- any point
+   * whose terrain fell below it was wet -- which drowned 37.5% of the course (§5.1). Water is now
+   * `water` below, and this is only an elevation.
+   */
   readonly waterLevel: number;
+  /**
+   * Placed water. Empty on a dry hole, and eleven of the eighteen briefs ask for exactly that.
+   * See `hazards.ts` and docs/COURSE_PIPELINE.md §5.
+   */
+  readonly water: readonly Polygon[];
+  /** Placed bunkers. Replaces the noise scatter that produced tan confetti across every fairway. */
+  readonly bunkers: readonly Ellipse[];
+  /**
+   * The putting surface. An ellipse rather than `GREEN_RADIUS` about the cup, so a green can be
+   * long-and-narrow or set at an angle to the approach. The cup sits inside it but need not sit
+   * at its centre -- that is what a pin position is.
+   */
+  readonly green: Ellipse;
+  /**
+   * Corridor half-width in metres, one per entry in `control`, interpolated along the spline.
+   *
+   * Replaces the global `HALF_WIDTH`. This is the combat axis from the briefs made geometric: a
+   * hole can now pinch through its landing zone and reopen at the green.
+   */
+  readonly corridor: readonly number[];
   /** Render-only. Which palette and prop set dresses this hole. See `biomeForIndex`. */
   readonly biome: BiomeId;
   /** Render-only. Mowing direction in radians; bands run perpendicular to it. */
@@ -144,8 +176,51 @@ export function fixedHoleSpec(): HoleSpec {
     control: [tee, { x: 0, z: -25 }, cup],
     par: 3,
     waterLevel: -0.72,
+    // Deliberately hazard-free. This fixture is what the cart, ballistics and probe suites run
+    // against, so a physics regression is never confused with a hazard landing under the ball.
+    // Holes with hazards are exercised by the generator's own tests.
+    water: [],
+    bunkers: [],
+    green: defaultGreen(cup),
+    corridor: [HALF_WIDTH, HALF_WIDTH, HALF_WIDTH],
     biome: biomeForIndex(0),
     stripeAngle: stripeAngleFor(FIXED_HOLE_SEED, 0, tee, cup),
+  };
+}
+
+/**
+ * A circular green of the legacy `GREEN_RADIUS` about the cup.
+ *
+ * The shape every hole had before Tier 2, kept as the neutral default so a spec that does not
+ * care about green shape reads the same as it always did -- and so any hole that *does* differ
+ * differs because something placed it, not because a default drifted.
+ */
+/**
+ * Whether a point is water. **The single definition** -- `surfaces.surfaceAt` and
+ * `validateHole` both call this rather than each testing the polygons themselves.
+ *
+ * The green clause is what makes that sharing necessary rather than merely tidy. Hole 13's island
+ * green is a green sitting *inside* a water polygon: polygons here have no holes, so the moat is
+ * drawn solid and the green is punched out of it by classification order. A validator that tested
+ * the polygons directly would find the cup inside water and reject the hole -- the archetype would
+ * have been unbuildable, and the failure would have looked like a placement bug rather than a
+ * disagreement about what "water" means.
+ */
+export function isWaterAt(spec: HoleSpec, x: number, z: number): boolean {
+  if (pointInEllipse(x, z, spec.green)) return false;
+  for (const poly of spec.water) {
+    if (pointInPolygon(x, z, poly)) return true;
+  }
+  return false;
+}
+
+export function defaultGreen(cup: Vec2): Ellipse {
+  return {
+    x: cup.x,
+    z: cup.z,
+    radiusX: GREEN_RADIUS,
+    radiusZ: GREEN_RADIUS,
+    rotation: 0,
   };
 }
 
@@ -168,6 +243,18 @@ export const EDGE_MARGIN = 6;
  * probe instead of silently mis-parring every hole.
  */
 export const REFERENCE_CARRY_M = 129;
+
+/**
+ * The driver's *carry*, as distinct from `REFERENCE_CARRY_M`'s total. Same Phase 0 measurement:
+ * 129 m total = 69.5 m carry + 59.5 m roll-out.
+ *
+ * Carry is the right quantity for exactly one question -- can a player fly a water hazard -- and
+ * that is what check 6 asks. Total is right for par, because a hole is reachable on where the
+ * ball ends up. Lives here rather than in `tools/holePlan.ts`, which is where it was written
+ * first: two consumers now need it, and a second copy of a measured constant is the failure
+ * AGENTS.md names.
+ */
+export const DRIVER_CARRY_M = 69.5;
 
 /** Deterministic and bounded, never an unbounded search. */
 export const MAX_ATTEMPTS = 32;
@@ -225,18 +312,39 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
     };
   }
 
-  const room = spec.fieldSize / 2 - (HALF_WIDTH + BLEND_WIDTH) - EDGE_MARGIN;
-  const arm = HALF_WIDTH + BLEND_WIDTH / 2;
+  const wet = (x: number, z: number): boolean => isWaterAt(spec, x, z);
+
+  // Check 6, first half: somewhere to stand. Cheap, and it catches a tee drawn into a lake
+  // before any run accounting.
+  //
+  // There is deliberately no matching check on the cup. The green wins over water in `isWaterAt`,
+  // so a cup is dry by construction -- and a green ringed by water is not a defect, it is hole
+  // 13. What makes an over-watered green unplayable is the *carry* it demands, and that is the
+  // wet-run rule below, which measures the thing that actually matters.
+  if (wet(spec.tee.x, spec.tee.z)) {
+    return { check: 6, reason: "the tee is inside a water hazard" };
+  }
+
+  // The widest half-width the hole authorises, so check 2's box is the box the *whole* corridor
+  // has to fit inside rather than the one its narrowest point would allow.
+  const widest = Math.max(...spec.corridor);
+  const room = spec.fieldSize / 2 - (widest + BLEND_WIDTH) - EDGE_MARGIN;
   const steps = Math.max(2, Math.ceil(spline.length / CENTRELINE_SAMPLE_M));
   const tangent: MutableVec2 = { x: 0, z: 0 };
   let previousX = 0;
   let previousZ = 0;
   let previousHeight = 0;
+  let previousWet = false;
+  // Check 6, second half. Walk the centreline accumulating the length of each contiguous wet
+  // run; the longest one is the carry the hole demands.
+  let wetRun = 0;
+  let longestWetRun = 0;
 
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const p = spline.pointAt(t);
     const height = terrain.heightAt(p.x, p.z);
+    const here = wet(p.x, p.z);
 
     if (Math.abs(p.x) > room || Math.abs(p.z) > room) {
       return {
@@ -245,16 +353,22 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
       };
     }
 
-    if (height < spec.waterLevel) {
-      return {
-        check: 6,
-        reason: `centreline height ${height.toFixed(2)} m is below the water level ${spec.waterLevel}`,
-      };
-    }
-
     if (i > 0) {
       const run = Math.hypot(p.x - previousX, p.z - previousZ);
-      if (run > 1e-6) {
+
+      if (here || previousWet) {
+        wetRun += run;
+        if (wetRun > longestWetRun) longestWetRun = wetRun;
+      } else {
+        wetRun = 0;
+      }
+
+      // Checks 3 and 4 are about whether the *playing surface* is fair, and water is not a
+      // playing surface. The bank of a legal crossing is a cliff by design -- WATER_DEPTH over
+      // WATER_SHORE is a 0.25 grade against check 3's 0.11 limit -- so sampling across it would
+      // reject every forced carry as a slope defect rather than judging it as a carry, which is
+      // check 6's job.
+      if (!here && !previousWet && run > 1e-6) {
         const grade = Math.abs(height - previousHeight) / run;
         if (grade > MAX_LONGITUDINAL_GRAD) {
           return {
@@ -267,17 +381,27 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
     previousX = p.x;
     previousZ = p.z;
     previousHeight = height;
+    previousWet = here;
+
+    if (here) continue;
 
     // Each side is measured against the centreline separately rather than across the full
     // width: averaging the two banks lets an asymmetric bowl cancel itself out and pass.
     spline.tangentInto(t, tangent);
     const normalX = -tangent.z;
     const normalZ = tangent.x;
+    // The arm follows the corridor's own width here, rather than the hole's widest point. The
+    // check asks whether the *mown surface* is cambered, so it has to sample at the mown edge:
+    // a fixed arm on a hole that pinches to 10 m would be measuring the rough and rejecting
+    // every narrow hole as a camber defect. Half a blend band past the edge is the same relative
+    // position the fixed 20 m arm used to sit at when every corridor was 15 m wide.
+    const arm = halfWidthAt(spec.corridor, t) + BLEND_WIDTH / 2;
     for (const side of [-1, 1]) {
-      const camber =
-        Math.abs(
-          terrain.heightAt(p.x + normalX * arm * side, p.z + normalZ * arm * side) - height,
-        ) / arm;
+      const armX = p.x + normalX * arm * side;
+      const armZ = p.z + normalZ * arm * side;
+      // Same reasoning as above: a bank beside the corridor is a hazard's edge, not camber.
+      if (wet(armX, armZ)) continue;
+      const camber = Math.abs(terrain.heightAt(armX, armZ) - height) / arm;
       if (camber > MAX_CAMBER_GRAD) {
         return {
           check: 4,
@@ -287,17 +411,38 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
     }
   }
 
+  if (longestWetRun > DRIVER_CARRY_M) {
+    return {
+      check: 6,
+      reason:
+        `a ${longestWetRun.toFixed(1)} m water crossing exceeds the driver's ` +
+        `${DRIVER_CARRY_M} m carry`,
+    };
+  }
+
+  // Sampled in the green's own frame, so an elongated green is policed to its ends rather than
+  // only inside the largest circle that fits in it. `fraction` walks out to the rim along each
+  // ray; scaling by the axes turns that into a point on the actual putting surface.
+  const green = spec.green;
+  const cos = Math.cos(green.rotation);
+  const sin = Math.sin(green.rotation);
+  const rings = Math.max(2, Math.ceil(Math.max(green.radiusX, green.radiusZ)));
   for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 24) {
-    for (let radius = 1; radius <= GREEN_RADIUS; radius += 1) {
-      const x = spec.cup.x + Math.cos(angle) * radius;
-      const z = spec.cup.z + Math.sin(angle) * radius;
+    for (let ring = 1; ring <= rings; ring += 1) {
+      const fraction = ring / rings;
+      const localX = Math.cos(angle) * green.radiusX * fraction;
+      const localZ = Math.sin(angle) * green.radiusZ * fraction;
+      const x = green.x + localX * cos - localZ * sin;
+      const z = green.z + localX * sin + localZ * cos;
       const dx = (terrain.heightAt(x + 0.5, z) - terrain.heightAt(x - 0.5, z)) / 1.0;
       const dz = (terrain.heightAt(x, z + 0.5) - terrain.heightAt(x, z - 0.5)) / 1.0;
       const grade = Math.hypot(dx, dz);
       if (grade > MAX_GREEN_GRAD) {
         return {
           check: 5,
-          reason: `green grade ${grade.toFixed(4)} at ${radius} m from the cup exceeds ${MAX_GREEN_GRAD.toFixed(4)}`,
+          reason:
+            `green grade ${grade.toFixed(4)} at (${x.toFixed(1)}, ${z.toFixed(1)}), ` +
+            `${(fraction * 100).toFixed(0)}% out to the green's rim, exceeds ${MAX_GREEN_GRAD.toFixed(4)}`,
         };
       }
     }
@@ -332,10 +477,17 @@ export function parForIndex(index: number): number {
  * rather than being global. `cells` tracks it to hold the cell near 1.0 m: a coarser cell makes
  * heightfield triangle seams large enough for the 0.15 m ball to trip over.
  */
-const FIELD_FOR_PAR: Readonly<Record<number, number>> = { 3: 160, 4: 220, 5: 300 };
+export const FIELD_FOR_PAR: Readonly<Record<number, number>> = { 3: 160, 4: 220, 5: 300 };
 
-/** Corridor length bands, chosen so derivePar returns the par the field was sized for. */
-const CORRIDOR_BAND: Readonly<Record<number, { min: number; max: number }>> = {
+/**
+ * Corridor length bands, chosen so derivePar returns the par the field was sized for.
+ *
+ * Exported so `briefs.test.ts` can check an authored corridor half-width against the run it
+ * leaves room for, rather than restating these numbers -- a second copy of a band table is the
+ * contradictory-source-of-truth failure AGENTS.md warns about, and it would silently stop
+ * checking anything the moment one copy moved.
+ */
+export const CORRIDOR_BAND: Readonly<Record<number, { min: number; max: number }>> = {
   3: { min: 70, max: 125 },
   4: { min: 135, max: 250 },
   5: { min: 265, max: 375 },
@@ -366,9 +518,15 @@ export function draftHole(
 ): HoleSpec {
   const seed = hashChannel(courseSeed, index, attempt);
   const random = mulberry32(hashChannel(seed, index, 2));
+  const brief = briefForHole((index % 18) + 1);
+  const corridor = corridorFor(brief, 3);
 
   const fieldSize = FIELD_FOR_PAR[par];
-  const half = fieldSize / 2 - (HALF_WIDTH + BLEND_WIDTH) - EDGE_MARGIN;
+  // The box shrinks with the corridor, because a wider mown surface needs more room beside it.
+  // Reading the widest of the brief's three half-widths keeps the layout draw and `validateHole`
+  // check 2 agreeing about where the walls are.
+  const widest = Math.max(...corridor);
+  const half = fieldSize / 2 - (widest + BLEND_WIDTH) - EDGE_MARGIN;
 
   const bearing = random() * Math.PI * 2;
   const dirX = Math.cos(bearing);
@@ -400,6 +558,12 @@ export function draftHole(
     // Placeholder: replaced with the derived value in generateHole, which has the spline.
     par,
     waterLevel: -0.72,
+    // Placeholders. `generateHole` resolves the brief's hazards once it has a spline to place
+    // them against -- a bunker at "the fairway elbow" has no meaning until the elbow exists.
+    water: [],
+    bunkers: [],
+    green: defaultGreen(cup),
+    corridor,
     // Keyed to the hole's position in the course, not to its seed: the routing is a property of
     // the card, so hole 7 is a links hole in every course, whatever its seed draws for layout.
     biome: biomeForIndex(index),
@@ -432,12 +596,47 @@ export function generateHole(
   const validate = options.validate ?? validateHole;
   let last: HoleRejection = { check: 0, reason: "no attempt was made" };
 
+  const brief = briefForHole((index % 18) + 1);
+
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const candidate = draftHole(courseSeed, index, intendedPar, attempt);
-    const terrain = createTerrain(candidate);
+
+    // Hazards are placed against the drafted routing, then the whole thing is validated as one.
+    // Placing before validating rather than after is what makes the rejection sampler do useful
+    // work: a hole whose water lands somewhere unplayable is a hole to redraw, and validating a
+    // hazard-free candidate and *then* adding hazards would ship exactly the holes the checks
+    // exist to catch.
+    //
+    // Channel 1 is the old sand-noise channel, reused for placement -- see `sandChannel`.
+    const random = mulberry32(hashChannel(candidate.seed, index, 1));
+    const drafted: HoleSpec = {
+      ...candidate,
+      bunkers: [],
+      water: [],
+    };
+    const spline = createSpline(drafted.control);
+    const routing = {
+      spline,
+      tee: drafted.tee,
+      cup: drafted.cup,
+      fieldSize: drafted.fieldSize,
+      corridor: drafted.corridor,
+      green: drafted.green,
+      water: [] as readonly Polygon[],
+    };
+    // Water first, then bunkers *against* that water: both the green and water beat sand in
+    // `surfaceAt`, so a bunker placed without knowing where the water went can end up invisible.
+    const water = placeWater(brief, routing, random);
+    const withHazards: HoleSpec = {
+      ...drafted,
+      water,
+      bunkers: placeBunkers(brief, { ...routing, water }, random),
+    };
+
+    const terrain = createTerrain(withHazards);
     // par is the only field the terrain does not depend on, so deriving it after construction
     // costs nothing and keeps "par is never authored" true.
-    const spec: HoleSpec = { ...candidate, par: derivePar(terrain.spline.length) };
+    const spec: HoleSpec = { ...withHazards, par: derivePar(terrain.spline.length) };
     const rejection = validate(spec, terrain);
     if (rejection === null) return spec;
     last = rejection;

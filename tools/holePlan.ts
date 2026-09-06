@@ -16,14 +16,17 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { REFERENCE_CARRY_M, generateCourse } from "../src/sim/course";
+import { DRIVER_CARRY_M, REFERENCE_CARRY_M, generateCourse } from "../src/sim/course";
 import type { HoleSpec } from "../src/sim/course";
-import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "../src/sim/terrain";
+import { BLEND_WIDTH, createTerrain, halfWidthAt } from "../src/sim/terrain";
 import type { Terrain } from "../src/sim/terrain";
 import { SurfaceId, createSurfaces } from "../src/sim/surfaces";
 import type { Surfaces } from "../src/sim/surfaces";
 
 /**
+ * (Moved to src/sim/course.ts, where validateHole check 6 also needs it. Kept as a re-export
+ * comment anchor only.)
+ *
  * The driver's carry, in metres, as distinct from REFERENCE_CARRY_M's 129 m total. Both numbers
  * come from the same Phase 0 probe measurement documented on REFERENCE_CARRY_M in course.ts:
  * 129 m total = 69.5 m carry + 59.5 m roll-out.
@@ -33,7 +36,7 @@ import type { Surfaces } from "../src/sim/surfaces";
  * it comes to rest, so it is the one that decides whether a green is reachable. A plan that drew
  * only one of them would silently mislead on half the design decisions.
  */
-const DRIVER_CARRY_M = 69.5;
+
 
 /** Plot area, px. The SVG scales to fit, so a 160 m par 3 and a 300 m par 5 render the same size. */
 const PLOT_PX = 1000;
@@ -224,6 +227,7 @@ function renderContours(spec: HoleSpec, terrain: Terrain, p: Projection): { svg:
 /** Centreline, plus the corridor edges offset along the spline normal. */
 function renderCorridor(terrain: Terrain, p: Projection): string {
   const spline = terrain.spline;
+  const corridor = terrain.spec.corridor;
   const centre: string[] = [];
   const left: string[] = [];
   const right: string[] = [];
@@ -236,13 +240,14 @@ function renderCorridor(terrain: Terrain, p: Projection): string {
     const normalX = -tangent.z;
     const normalZ = tangent.x;
 
+    // The hole's own half-width at this t, not a global constant: since Tier 2 a corridor
+    // pinches and reopens, and an edge drawn at a fixed width would be a picture of a different
+    // hole from the one the physics runs.
+    const half = halfWidthAt(corridor, t);
+
     centre.push(`${round(p.x(point.x))} ${round(p.y(point.z))}`);
-    left.push(
-      `${round(p.x(point.x + normalX * HALF_WIDTH))} ${round(p.y(point.z + normalZ * HALF_WIDTH))}`,
-    );
-    right.push(
-      `${round(p.x(point.x - normalX * HALF_WIDTH))} ${round(p.y(point.z - normalZ * HALF_WIDTH))}`,
-    );
+    left.push(`${round(p.x(point.x + normalX * half))} ${round(p.y(point.z + normalZ * half))}`);
+    right.push(`${round(p.x(point.x - normalX * half))} ${round(p.y(point.z - normalZ * half))}`);
   }
 
   return [
@@ -293,10 +298,17 @@ function renderMarkers(spec: HoleSpec, p: Projection): string {
   const teeY = p.y(spec.tee.z);
   const cupX = p.x(spec.cup.x);
   const cupY = p.y(spec.cup.z);
-  const greenR = GREEN_RADIUS * p.scale;
+  // The green as its actual ellipse, rotation included -- an ellipse drawn as a circle would
+  // put the putting surface somewhere it is not.
+  const g = spec.green;
+  const greenOutline =
+    `<ellipse cx="${round(p.x(g.x))}" cy="${round(p.y(g.z))}" ` +
+    `rx="${round(g.radiusX * p.scale)}" ry="${round(g.radiusZ * p.scale)}" ` +
+    `transform="rotate(${round((g.rotation * 180) / Math.PI)} ${round(p.x(g.x))} ${round(p.y(g.z))})" ` +
+    `fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.9"/>`;
 
   return [
-    `<circle cx="${round(cupX)}" cy="${round(cupY)}" r="${round(greenR)}" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.9"/>`,
+    greenOutline,
     // Flagstick, drawn as a pole and pennant so the cup reads at a glance next to the tee square.
     `<line x1="${round(cupX)}" y1="${round(cupY)}" x2="${round(cupX)}" y2="${round(cupY - 26)}" stroke="#1a1a1a" stroke-width="2.2"/>`,
     `<polygon points="${round(cupX)},${round(cupY - 26)} ${round(cupX + 16)},${round(cupY - 21)} ${round(cupX)},${round(cupY - 16)}" fill="#e23b3b"/>`,

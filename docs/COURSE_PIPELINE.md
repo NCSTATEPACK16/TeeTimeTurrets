@@ -1,7 +1,10 @@
 # Course Design Pipeline — 18 holes, from intent to geometry
 
-**Status:** the plan renderer (§6) and all of Tier 1 (§5) are built and running. The `HoleBrief`
-schema (§3) and Tier 2 (§5) are still specifications.
+**Status:** built end to end. The plan renderer (§6), Tier 1 and Tier 2 (§5), the `HoleBrief`
+schema and its eighteen briefs (§3, §4), and the generator that reads them (§9). The two defects
+§5.1 was written about are fixed and re-measured. What remains is archetype-aware *routing* — the
+generator honours a brief's hazards and corridor but still draws every centreline as a single-bend
+arc (§9 step 7).
 **Supersedes:** `docs/concept/hole-shot-prompts.md` (per-hole teebox/aerial concept art).
 **Related:** `ASSET_PIPELINE.md` (3D assets), `superpowers/specs/2026-09-01-procedural-course-design.md` (the shipped generator).
 
@@ -15,14 +18,16 @@ prompting failure and fixed it carefully: it locked an art-style block, split te
 into structurally different camera specs, and gave every hole a distinct biome so no two could
 collapse. All of that is sound work on the wrong problem.
 
-**The real constraint is schema capacity.** Here is everything the game can represent about a
-hole, from `HoleSpec` (`src/sim/course.ts:30`):
+**The real constraint was schema capacity.** This is what the game could represent about a hole
+when this document was written:
 
 ```ts
 seed, index, fieldSize, cells, tee, cup, control[3], par (derived), waterLevel
 ```
 
-That is the whole expressive surface. Specifically:
+That was the whole expressive surface. Specifically — and all three of these are now fixed, by
+Tier 1 and Tier 2 respectively; they are kept in the past tense because the *argument* is what
+matters, not the snapshot:
 
 - **There are no bunkers.** Sand is a noise threshold evaluated across the entire field —
   `SAND_FREQUENCY = 0.055`, `SAND_THRESHOLD = 0.72` (`src/sim/surfaces.ts:95`). Nothing places a
@@ -93,7 +98,15 @@ failure mode is structurally eliminated rather than discouraged by wording. See 
 
 ---
 
-## 3. `HoleBrief` — the authoring unit
+## 3. `HoleBrief` — the authoring unit. **Built.**
+
+`src/sim/briefs.ts` holds the schema below and the eighteen briefs of §4; `src/sim/briefs.test.ts`
+checks them; and **`generateHole` reads them** — corridor widths come from `cover`, and every
+bunker and water hazard is resolved from its declarative placement by `src/sim/placement.ts`.
+
+Landing the data one step before the generator that consumes it was the right order: design intent
+became reviewable before any generator work, and Tier 2 had something to be checked against rather
+than polygons hand-tuned against nothing.
 
 Decision: **authored brief → generated geometry.** You author intent; the generator produces
 coordinates. This keeps the properties that make the current system good (a hole is reconstructible
@@ -144,7 +157,25 @@ what keeps two different course seeds from producing two identical courses.
 **A failed brief names itself.** Today an exhausted sampler throws
 `generateHole(seed, 7) exhausted 32 attempts`, which tells you nothing actionable. With briefs, the
 error can say *"hole 7's cape archetype needs ≥180 m of corridor and severity 0.8 leaves only
-140 m in a 220 m field"* — a statement you can act on.
+140 m in a 220 m field"* — a statement you can act on. **Not built**; it arrives with step 6, when
+the generator starts reading briefs and can therefore fail on one.
+
+**What the test suite actually checks, and why it is written the way it is.** The briefs are
+eighteen hand-typed literals transcribed from a markdown table, so a test that reads a field back
+out of the same literal proves nothing — the failure this repo has a documented history of
+(`docs/TEST-AND-SPEC-PITFALLS.md`). Every assertion therefore checks the briefs against something
+written independently: `parTarget` against `PAR_MIX`, `biome` against `BIOME_ROUTING`, the
+adjacent-dogleg rule from §4, and — the only one that can fail on plausible numbers rather than on
+a typo — whether an authored corridor half-width still leaves the generator room to reach its par
+band, against the exported `CORRIDOR_BAND` and `FIELD_FOR_PAR`.
+
+That last check was a no-op when first written: it imported `BLEND_WIDTH` from `course.ts`, which
+imports the constant but does not re-export it, so it arrived `undefined`, `half` was `NaN`, and
+`NaN < min` is false for every hole. Vitest transpiles without type-checking, so nothing complained.
+It was caught by deliberately widening the corridor to an unbuildable 30 m and watching the test
+*not* fail. The check now asserts its own arithmetic is finite before trusting its verdict — and the
+general lesson is the one already in `TEST-AND-SPEC-PITFALLS.md`: **get the test to fail for the
+right reason before you make it pass.**
 
 ---
 
@@ -176,6 +207,27 @@ being a fiction the generator ignores.
 
 The biome routing is **built** too: `biomeForIndex` in `src/sim/course.ts`, verified across all 18
 plans.
+
+### Corridor width follows cover
+
+`HoleBrief.corridor` is three half-widths in metres and the table below has no column for them,
+because they are not eighteen independent judgement calls — they are a function of the combat axis,
+and `COVER_CORRIDOR` in `src/sim/briefs.ts` is the single place they are written:
+
+| `cover` | start / mid / end | holes | why this number |
+|---|---|---|---|
+| `dense` | 11 / 10 / 12 | 5, 12, 17 | The knife fights. Narrow enough that a cart cannot disengage. |
+| `moderate` | 15 / 14 / 15 | eleven holes | **Exactly today's `HALF_WIDTH`** (`terrain.ts`), i.e. every hole as currently built. |
+| `open` | 19 / 18 / 19 | 1, 6, 7, 9, 13, 18 | The shooting galleries. Wide enough that cover is a choice, not a given. |
+
+Two properties of this table are load-bearing:
+
+- **`moderate` sits on the shipped constant deliberately.** When Tier 2 lands and the generator
+  finally varies corridor width, the eleven moderate holes must come out byte-identical to today or
+  something is wrong — which turns a change touching all eighteen holes into one reviewable hole at
+  a time.
+- **Every setting pinches in the middle.** A corridor that narrows through the landing zone and
+  reopens at the green is what makes a drive a decision. A constant width is a hallway.
 
 ### The 18
 
@@ -251,45 +303,100 @@ either**, so neither can alter a trajectory or a hole's playability.
    deep in rough (`corridorWeight ≥ 0.92`), clear of sand and water, and above the water line.
    Placement is seeded from channel 3, so a hole grows the same wood on every machine.
 
-**Placeholder to retire:** the palettes in `src/render/biomes.ts` are hand-picked. §7.1's biome
-sheets are the intended source — generate them and eye-drop the six swatches per biome into that
-table.
+**Placeholder retired.** The palettes in `src/render/biomes.ts` are no longer hand-picked: all
+three are sampled from §7.1's biome sheets with `npm run swatches`, with six fields corrected for
+legibility and each correction documented in place.
 
-### Tier 2 — sim-side. Expensive; lands as one change.
+### Tier 2 — sim-side. **Built.**
 
-These share module constants, so they cannot be done independently.
+Landed as one change, because the four fields share module constants and each one on its own would
+have left the others reading a global that no longer meant anything.
 
-| Field | Blast radius |
+| Field | What replaced what |
 |---|---|
-| `corridorWidth: number[]` per control point | `HALF_WIDTH` is read by `terrain.ts` (`budgetAt`, `heightAt` mask), `surfaces.ts` (`corridorWeight`), and `course.ts` (`validateHole` room, `draftHole` half). Widest of the set. |
-| `green: { center, radiusX, radiusZ, rotation }` | `GREEN_RADIUS` is read by `terrain.ts` (pads, `budgetAt`), `surfaces.ts` (`greenWeight`, `surfaceAt`), `course.ts` (check 5). |
-| `bunkers: Ellipse[]` | Terrain depression + hard classification in `surfaces.ts`. Replaces the noise scatter — see §5.1. |
-| `water: Polygon[]` | **Requires relaxing `validateHole` check 6** from *"centreline never below `waterLevel`"* to *"centreline never inside a water polygon"*. Without this, holes 2, 13 and 15 are unbuildable by construction. |
+| `corridor: number[]` per control point | `HALF_WIDTH` was read by `terrain.ts` (`budgetAt`, the `heightAt` mask), `surfaces.ts` (`corridorWeight`) and `course.ts` (check 2's room, check 4's arm, `draftHole`'s box). All five now go through `halfWidthAt(spec.corridor, t)`. |
+| `green: Ellipse` | `GREEN_RADIUS` was read by `terrain.ts` (the green pad, `budgetAt`), `surfaces.ts` (`greenWeight`, `surfaceAt`) and `course.ts` (check 5). All now measure against the ellipse. |
+| `bunkers: Ellipse[]` | The `SAND_FREQUENCY`/`SAND_THRESHOLD` noise field, deleted outright. Bunkers are placed and dished (`BUNKER_DEPTH`). |
+| `water: Polygon[]` | "terrain below `waterLevel`", deleted as a classifier. `waterLevel` survives only as an elevation: the height the water plane renders at and the floor a basin is cut to. |
 
-### 5.1 Two defects the plan renderer found immediately
+Geometry lives in `src/sim/hazards.ts` (ellipse and polygon point queries), placement in
+`src/sim/placement.ts` (brief → coordinates), and `generateHole` places hazards on each drafted
+candidate *before* validating it — so a hole whose water lands somewhere unplayable is a hole the
+sampler redraws, rather than one that passes its checks and then has hazards added on top.
+
+#### Three decisions that are not what §5 originally proposed
+
+1. **Check 6 is not "the centreline is never inside a water polygon".** That was this document's
+   own proposal and it is unsatisfiable: holes 2, 13 and 15 are forced carries and an island green,
+   whose entire design is a centreline that crosses water. Under that wording they would have been
+   exactly as unbuildable as under the old rule, just for a new reason. What a player actually
+   needs is that the water be *carryable*. So check 6 is now: **the tee is dry, and no contiguous
+   wet run along the centreline exceeds `DRIVER_CARRY_M` (69.5 m).** There is deliberately no
+   matching check on the cup — the green beats water in `isWaterAt`, so a cup is dry by
+   construction, and what makes an over-watered green unplayable is the carry it demands, which the
+   wet-run rule already measures.
+2. **Checks 3 and 4 skip samples inside water.** The bank of a legal crossing is a cliff by design
+   — `WATER_DEPTH` over `WATER_SHORE` is a 0.25 grade against check 3's 0.11 limit — so sampling
+   across it would reject every forced carry as a *slope defect* rather than judging it as a carry.
+   Checks 3 and 4 ask whether the playing surface is fair; water is not a playing surface.
+3. **The green beats water, where water used to beat everything.** The old order was justified by
+   water being height-defined and therefore not overridable by a mowing pattern. Once water is
+   placed, that reasoning is gone, and hole 13 needs the green to win or the archetype cannot
+   exist. `isWaterAt` in `course.ts` is the single definition both `surfaceAt` and `validateHole`
+   call — a validator that tested the raw polygons would find the island green's cup underwater and
+   reject the hole.
+
+### 5.1 The two defects the plan renderer found — **fixed, and measured**
 
 Both were invisible before §6 existed, and neither is the kind of thing concept art can reveal.
-Measured across all 18 holes of course `0x7ee7c0` at 200×200 samples per hole:
+Measured the same way both times: all 18 holes of course `0x7ee7c0` at 200×200 samples per hole.
 
-| Surface | Share of course |
+| Surface | Before Tier 2 | After |
+|---|---|---|
+| green | 0.9% | 0.9% |
+| fairway | 16.5% | 16.3% |
+| rough | 42.8% | **77.5%** |
+| sand | 2.4% | 0.2% |
+| **water** | **37.5%** | **5.2%** |
+
+- **Over a third of the course was underwater**, holes 10 and 16 over 55%. It passed validation
+  because check 6 only sampled the *centreline* — the corridor stayed dry while the field around it
+  flooded. `A_MACRO` works out to ~4.9 m of amplitude (`terrain.ts`), which comfortably clears the
+  −0.72 water line once a field is large enough to span a macro period.
+
+  **Now:** water appears on exactly the eight holes whose briefs ask for it (2, 7, 9, 12, 13, 14,
+  15, 18) and is 0.0% on the other ten. The 5.2% that remains is placed hazard.
+- **Bunkers appeared inside the fairway** — 3.6% of the mown corridor classified as sand, scattered
+  as speckles rather than placed hazards.
+
+  **Now:** the course total is 0.2%, and it is the bunkers the briefs asked for and nothing else.
+
+**Sand geography, added after a review pass.** The first Tier 2 cut placed bunkers correctly
+*relative to the line of play* and still let them drift out among the trees, because the offset was
+`half + clearance + radiusZ` with nothing capping the far rim. Sand in the woods is not a hazard
+anybody plays around — it is a sand patch in a forest. Bunkers are now bounded by the **tree line**:
+
+| Where the sand is | Share |
 |---|---|
-| green | 0.9% |
-| fairway | 16.5% |
-| rough | 42.8% |
-| sand | 2.4% |
-| **water** | **37.5%** |
+| on the fairway | 92.0% |
+| on the rough's first cut | 8.0% |
+| **in the woods** | **0.0%** — zero cells across all 18 holes |
 
-- **Over a third of the course is underwater.** Holes 10 and 16 exceed 55%. This passes validation
-  because check 6 only samples the *centreline* — the corridor stays dry while the field around it
-  floods. `A_MACRO` works out to ~4.9 m of amplitude (`terrain.ts:70`), which comfortably clears
-  the `-0.72` water level once a field is large enough to span a macro period. The fixed test hole
-  is 160 m and shows 1.4% water; the generated 300 m par 5s show 25–46%.
-- **Bunkers appear inside the fairway.** 3.6% of the mown corridor classifies as sand, scattered as
-  small speckles rather than placed hazards — visible as tan confetti across every plan. A noise
-  threshold produces texture, not bunkers.
+The bound is derived rather than written down. `WOODS_WEIGHT` (0.92) lives in `surfaces.ts` and has
+two consumers that must agree: `render/Trees.ts` plants at or above it, and `sim/placement.ts` keeps
+every bunker's far rim strictly below it. Change the blend and the sand line follows the tree line
+automatically; there is no distance constant to fall out of step.
 
-Neither is a rendering bug. Both are the honest output of the current generator, and both are
-arguments for Tier 2 that no one had the evidence for until the plans existed.
+**The same pass found a second defect, and it is the more interesting one.** Sand loses to both the
+green and water in `surfaceAt`, so a bunker overlapping either produces *no sand at all* — hole 7's
+two greenside bunkers landed inside its inside-elbow water and were completely invisible while the
+spec cheerfully reported `bunkers.length === 2`. Placement now runs after water on each candidate
+and searches along the corridor for ground clear of both. The test that caught it asserts a hole
+placing bunkers must actually *show* sand, which is the kind of claim that is easy to assume and
+was false on 1 hole in 18.
+
+Neither was a rendering bug. Both were the honest output of the old generator, and both are the
+argument for Tier 2 that nobody had evidence for until the plans existed.
 
 ---
 
@@ -303,8 +410,20 @@ its output authoritative rather than merely plausible.
 ```
 npm run plan                                  # 18 holes → docs/course/plans/hole-NN.svg
 npm run plan -- --seed=0x1234 --holes=9       # a different course
-node tools/planPng.mjs                        # SVG → PNG, for image-model conditioning
+npm run plan:png                              # SVG → tools/.plan-png/hole-NN.png, for §7.3
 ```
+
+`plan:png` is a separate script rather than a step inside `plan` because `npm run plan` must stay
+pure: it writes the committed SVGs and its clean-`git diff` determinism check below is a house
+rule. It runs `tools/planPng.mjs --scale=2`, giving 2256 px PNGs from the 1128 px SVGs — an image
+model wants the larger raster, and the SVG rasterizes losslessly at any scale.
+
+**The PNGs land in `tools/.plan-png/`, a sibling of `tools/.plan-out/` and not a child of it.**
+That is load-bearing rather than tidy: `holePlan.vite.config.ts` sets `emptyOutDir: true` on
+`tools/.plan-out`, so every `npm run plan` wipes that directory. The PNGs originally defaulted
+inside it, which meant regenerating the plans silently deleted the conditioning images §7.3 tells
+you to attach — and since the directory is gitignored, the deletion looked exactly like never
+having run the tool.
 
 Each plan draws:
 
@@ -324,6 +443,12 @@ Each plan draws:
 The 18 plans are ~2.9 MB of text that git stores as ~0.55 MB compressed. `tools/planPng.mjs`
 rasterizes them via Puppeteer (already a devDependency, used by the scene gate and the smoke check)
 when a raster is needed for §7.3.
+
+**The PNGs are not committed** — `tools/.plan-out/` is gitignored, because they are an image
+model's input rather than documentation, and they regenerate from the SVGs in seconds. That is the
+right call and it has one cost, paid once already: a reader who finds §7.3's `[Attach: …hole-NN.png]`
+and goes looking for the directory finds nothing, with no indication whether it is missing or
+merely unbuilt. Hence the pointer in §7.3.
 
 **Determinism.** The default seed is fixed, so `npm run plan` twice produces a clean `git diff`. A
 wall-clock or random default would make every run a spurious change.
@@ -351,19 +476,20 @@ mapping from swatch label to field is:
 
 | Swatch label | `BiomePalette` field | parkland | links | marsh |
 |---|---|---|---|---|
-| PUTTING GREEN | `green` | `0x7fc94a` | `0xa8c96a` | `0x6fb55a` |
-| FAIRWAY | `fairway` | `0x4fa83f` | `0x8fb855` | `0x4c8f48` |
-| ROUGH | `rough` | `0x2e6b2e` | `0x9e9a55` | `0x3a5f3a` |
-| SAND | `sand` | `0xe4ce9a` | `0xeadbb0` | `0xc9be93` |
-| WATER | `water` | `0x3c7fc4` | `0x4e86a8` | `0x35707a` |
-| SKY | `sky` | `0x8fc7ff` | `0xc4d4dc` | `0xafc0b4` |
-| FOLIAGE LIGHT | `foliageLight` | `0x3f8b46` | `0x7c8a4c` | `0x55804d` |
-| FOLIAGE DARK | `foliageDark` | `0x275c30` | `0x5a662f` | `0x35583a` |
-| TRUNK | `trunk` | `0x5a4632` | `0x6b5a3c` | `0x4a4436` |
+| PUTTING GREEN | `green` | `0xa2db31` | `0xccbf89` † | `0xa3c240` |
+| FAIRWAY | `fairway` | `0x5fa53a` | `0xb3aa74` | `0x58863b` |
+| ROUGH | `rough` | `0x59823f` | `0x968f64` † | `0x506441` |
+| SAND | `sand` | `0xddbf84` | `0xe5cd9d` | `0x979283` † |
+| WATER | `water` | `0x4a91aa` | `0x6a8c98` | `0x564735` † |
+| SKY | `sky` | `0x55b1ef` | `0xd0d1d2` | `0x939e90` |
+| FOLIAGE LIGHT | `foliageLight` | `0x669f34` | `0xc5b884` | `0x949f62` |
+| FOLIAGE DARK | `foliageDark` | `0x446327` | `0x8a8359` | `0x404f2b` |
+| TRUNK | `trunk` | `0x654e3e` | `0x654f42` | `0x423a33` † |
 
-Those are the current hand-picked placeholders, listed so a replacement can be compared against
-what it is replacing. `treeDensity`, `treeHeight` and `treeForm` are **tuned, not sampled** — a
-sheet must never change them.
+**Done — these are the shipped values**, sampled from the three sheets with `npm run swatches`.
+Six fields marked † were corrected off the sheet for legibility; `src/render/biomes.ts` records
+each one with its before/after numbers and its reason. `treeDensity`, `treeHeight` and `treeForm`
+are **tuned, not sampled** — a sheet must never change them.
 
 **Retired: asking the model to print hex codes under the swatches.** An earlier version of these
 prompts did, on the theory that a printed value beats eye-droppering a JPEG. On the first real
@@ -386,6 +512,21 @@ npm run swatches -- <image> --inspect            # just list what it found
 The swatch *labels* do come through correctly, and are what the field mapping is read from. When a
 sheet pads its layout by duplicating a swatch, the tool refuses to guess and asks for an explicit
 `--map=<index>:<field>,...`.
+
+**What the first real run of this actually needed**, so the next one is not a surprise:
+
+- **The sheets come back as two stacked panels** — swatches above, prop silhouettes on their own
+  darker ground below — which is what the prompt asks for. The tool now finds that seam itself and
+  reads only the panel above it. (It did not originally, and failed loudly but confusingly:
+  `grid 1 x 1 = 1 swatches`, because the silhouette ground won the background vote.)
+- **A 5-across-then-4 layout detects as a 5×2 grid of ten cells**, the tenth being the empty slot
+  beside TRUNK. Ten is not nine, so the tool refuses to guess and wants a map. For all three
+  sheets so far that map is simply the canonical order:
+  `--map=0:green,1:fairway,2:rough,3:sand,4:water,5:sky,6:foliageLight,7:foliageDark,8:trunk`.
+  Read the labels off the image and confirm before trusting it — a sheet that reorders or
+  duplicates a swatch is exactly what the refusal exists to catch.
+- **Contrast is checked, not assumed.** Expect `LOW` results and treat them as a prompt to look
+  at the sheet in the game, not as an automatic rejection — see the legibility note below.
 
 These use a trimmed style preamble rather than the full art-style block from
 `concept/hole-shot-prompts.md`. That block describes a *scene* — carts, fairway stripes, cone
@@ -467,11 +608,43 @@ a watermark, or a decorative border.
   add "broad round trees" to the do-not-include list.
 
 **Applying the results.** Hand the three images to a fresh session with the handoff prompt in the
-published artifact. It maps labels to fields, tells the session to read the printed hex rather than
-eye-dropper, forbids touching the tuned fields, and specifies the verification order — `tsc`,
-`npm test`, `npm run build`, then `npm run plan`, where **the plans must come back byte-identical**:
-`biomes.ts` is render-only, so a changed plan means something leaked into `src/sim/`.
+published artifact. It maps labels to fields, tells the session to use `npm run swatches` and to
+trust neither the printed codes nor its own eye, forbids touching the tuned fields, and specifies
+the verification order — `tsc`, `npm test`, `npm run build`, then `npm run plan`, where **the plans
+must come back byte-identical**: `biomes.ts` is render-only, so a changed plan means something
+leaked into `src/sim/`. Finish by screenshotting one hole per biome (1, 7, 13) from the running
+game; the contrast numbers are a filter, not the verdict.
+
+**The legibility failure worth expecting.** The links sheet came back with `green`, `fairway` and
+`rough` within 18 luminance of each other. That reads as three plausible shades on the sheet and as
+*one flat khaki field with no corridor edge at all* from the chase camera — only the mowing stripes,
+a 7% sheen that washes out with distance, said where the fairway was. It is the biome most at risk,
+because a real links course genuinely is monochrome; the prompt's "must not look like a sunny inland
+course with lighter grass" pushes toward exactly this. **A sheet is not finished until a hole in
+that biome has been looked at.** The corrections, and the rule used to decide them, are documented
+in `src/render/biomes.ts`:
+
+- Judge same-hue-family pairs (turf against turf, foliage against foliage) on luminance. That is
+  what the tool's three built-in checks are, and why they are the right three.
+- Do **not** apply a luminance threshold across hue families. Parkland's blue water sits 15.3 from
+  its green rough and reads instantly.
+- Hue only separates a pair when both colours carry enough saturation to show it. Marsh's sampled
+  `sand` was 52° off its fairway but at sat 0.13, and read as patches of mist on the turf.
+- Correct by scaling all three channels uniformly. Hue and saturation hold; only value moves.
 ### 7.2 Prop silhouette sheet → *consumer: the modelling pass in `ASSET_PIPELINE.md`*
+
+**Run once: `docs/concept/reference/prop-silhouettes-01.jpg`**, eight props, with its deviations
+recorded in that folder's README. Two are worth carrying here because they will recur on any re-run:
+
+- **"Uniform scale across all props" does not survive.** Each prop is scaled to fill its own cell,
+  so a 2.5 m flagstick and a 0.3 m tee marker come back the same height. Treat the sheet as
+  proportion *within* a prop and never as scale *between* props. If relative scale is what you
+  need, ask for the props standing on one shared ground line with a human figure or a cart for
+  scale — that is a different sheet, and it is a scene, so it fights the rest of this block.
+- **Anything with a deck or a span reverts to three-quarter view.** The footbridge and the boardwalk
+  came back in perspective with receding planks despite "FRONT ELEVATION ONLY". This is arguably the
+  model being right — a span read dead-on is a line — but it means the deck width they show is a
+  perspective artefact, not a measurement.
 
 ```
 [ART-STYLE BLOCK]
@@ -496,8 +669,12 @@ clear space between items. No golf cart. No characters. No sky. No decorative bo
 **This is the prompt that replaces both of the images that started this document.** It takes the
 plan PNG from §6 as a conditioning image, so the layout is the engine's, not the model's.
 
+**First, run `npm run plan:png`.** `tools/.plan-png/` is gitignored and regenerable, so on a
+fresh clone it does not exist — an empty directory here means unbuilt, never missing. The three
+signature holes (7, 13, 18) are the ones worth an image model's time.
+
 ```
-[Attach: tools/.plan-out/png/hole-NN.png]
+[Attach: tools/.plan-png/hole-NN.png]
 
 [ART-STYLE BLOCK]
 
@@ -551,16 +728,41 @@ Ordinary marketing generation. No pretense of being a spec, no per-hole variants
 1. ~~**`npm run plan` against today's generator.**~~ **Done.** It established the §5.1 baseline and
    is the review surface for everything below.
 2. ~~**Tier 1 fields** (§5) — biome palette, mowing stripes, tree instancing.~~ **Done**, along
-   with the 18-hole par card. Render-only, cannot break the sim, and delivers most of the
-   perceived "18 distinct holes".
-3. **§7.1 biome sheets** for the three biomes; eye-drop into the palette constants in
-   `src/render/biomes.ts`, replacing the hand-picked placeholders. ← *next, and it needs a human
-   to run the prompt.*
-4. **`HoleBrief` schema and the 18 briefs** (§3, §4) as data, with the generator still ignoring
-   most fields. Cheap, and it makes the intent reviewable before any generator work.
-5. **Tier 2 fields** (§5), one at a time, each re-verified with `npm run plan`. Water polygons
-   first — the 37.5% finding is the most serious thing in this document.
-6. **Archetype-aware generation** — the generator finally consumes the briefs.
+   with the 18-hole par card.
+3. ~~**§7.1 biome sheets** for the three biomes, sampled into `src/render/biomes.ts`.~~ **Done.**
+4. ~~**`HoleBrief` schema and the 18 briefs** (§3, §4) as data.~~ **Done.** `src/sim/briefs.ts`.
+5. ~~**Tier 2 fields** (§5) — corridor widths, elliptical greens, placed bunkers, water polygons.~~
+   **Done**, as one change. §5.1 re-measured: water 37.5% → 5.2%, fairway sand 3.6% → 0.00%.
+6. ~~**The generator consumes the briefs.**~~ **Done**, and it landed with Tier 2 rather than after
+   it — without it the four new fields existed and were always empty, which is the "data with no
+   consumer" problem this whole document is about.
+7. **Archetype-aware routing.** ← *next.* The remaining gap, and it is §1's *second* finding rather
+   than its first: `draftHole` still picks a bearing, takes the straight run the box allows, and
+   solves one perpendicular apex offset. Every centreline is a symmetric single-bend arc. A brief's
+   `archetype` and `dogleg.severity` are read for hazard placement but **not for the shape of the
+   hole** — hole 7's `cape` and hole 4's `double-dogleg` currently differ only in where their
+   hazards land, not in how they bend. Fixing it means `control` growing past three points for the
+   s-curves and the apex offset following `dogleg.dir`/`severity` rather than a coin flip.
+8. **A failed brief that names itself** (§3). Still unbuilt. Now that the generator reads briefs it
+   can say *which constraint* was impossible instead of `exhausted 32 attempts`.
 
 Re-run `npm run plan` after every step. A course change that does not show up in the plans either
 did nothing or did something you did not intend.
+
+### Known rough edges in what shipped
+
+- **Hazard outlines are rectangles.** `placement.ts` draws water as a band in the centreline's
+  local frame and the island as a square. It is honest geometry and correct to the metre, but a
+  real hazard has an irregular bank. Jittering the polygon vertices is cheap and purely cosmetic;
+  it is deliberately not done yet because a rectangle makes a placement bug obvious in a plan and
+  a lobed blob hides one.
+- **A greenside bunker may end up on the other side.** When neither bank at any sampled `t` is
+  clear of water, placement takes the opposite side rather than shipping an invisible bunker. It
+  is a compromise on the brief's intent, and the right fix is archetype-aware routing (step 7)
+  giving the water somewhere less greedy to go.
+- **`fixedHoleSpec()` is deliberately hazard-free.** It is what the cart, ballistics and probe
+  suites run against, so a physics regression is never confused with a hazard landing under the
+  ball. Any test whose subject *is* sand or water builds its own spec.
+- **`ellipseEdgeDistance` is an approximation.** Exact for a circle — the case that had to stay
+  byte-identical — and under-estimates by at most the axis ratio elsewhere. The exact distance to
+  an ellipse needs a quartic solve, which does not belong in `heightAt`.

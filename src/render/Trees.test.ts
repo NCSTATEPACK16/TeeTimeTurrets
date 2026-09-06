@@ -36,7 +36,7 @@ describe("createTrees", () => {
   });
 
   it("plants only in rough, never on the mown corridor", () => {
-    const { terrain, surfaces, trees } = build();
+    const { surfaces, trees } = build();
     const weights = createSurfaceWeights();
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
@@ -49,6 +49,36 @@ describe("createTrees", () => {
       surfaces.weightsAt(position.x, position.z, weights);
       expect(weights.corridor).toBeGreaterThanOrEqual(0.92);
       expect(weights.sand).toBe(0);
+      expect(weights.water).toBe(0);
+    }
+    trees.dispose();
+  });
+
+  it("keeps trees out of the water and off its shallows on a hole that has some", () => {
+    // The freeboard rule, asserted where it applies. It used to be checked on the bare fixture
+    // as `y > waterLevel`, which only worked because water *was* terrain height before Tier 2 --
+    // on a hazard-free hole that assertion now just bans trees from every hollow.
+    const { terrain, surfaces, trees } = build({
+      water: [
+        {
+          points: [
+            { x: -20, z: 25 },
+            { x: 25, z: 25 },
+            { x: 25, z: 60 },
+            { x: -20, z: 60 },
+          ],
+        },
+      ],
+    });
+    const weights = createSurfaceWeights();
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+
+    expect(trees.count).toBeGreaterThan(20);
+    for (let i = 0; i < trees.count; i++) {
+      trees.mesh!.getMatrixAt(i, matrix);
+      position.setFromMatrixPosition(matrix);
+      surfaces.weightsAt(position.x, position.z, weights);
       expect(weights.water).toBe(0);
       expect(position.y).toBeGreaterThan(terrain.spec.waterLevel);
     }
