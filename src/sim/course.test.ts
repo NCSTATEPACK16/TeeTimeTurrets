@@ -9,10 +9,13 @@ import {
   derivePar,
   generateCourse,
   generateHole,
+  STRIPE_JITTER,
+  biomeForIndex,
   parForIndex,
+  stripeAngleFor,
   validateHole,
 } from "./course";
-import type { HoleSpec } from "./course";
+import type { BiomeId, HoleSpec } from "./course";
 import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { createSpline } from "./spline";
@@ -72,6 +75,8 @@ function validSpec(overrides: Partial<HoleSpec> = {}): HoleSpec {
     control: [tee, { x: 0, z: 0 }, cup],
     par: 4,
     waterLevel: -0.72,
+    biome: biomeForIndex(0),
+    stripeAngle: stripeAngleFor(1, 0, tee, cup),
     ...overrides,
   };
 }
@@ -259,8 +264,132 @@ describe("generateCourse", () => {
     }
   });
 
-  it("cycles the par mix for a course that is not nine holes", () => {
+  it("cycles the par mix past the eighteenth hole", () => {
     expect(generateCourse(2026, 18).holes).toHaveLength(18);
-    expect(parForIndex(9)).toBe(parForIndex(0));
+    expect(parForIndex(18)).toBe(parForIndex(0));
+    expect(parForIndex(-1)).toBe(parForIndex(17));
+  });
+});
+
+/** Smallest absolute angle between two bearings, handling wrap. */
+function angularDelta(a: number, b: number): number {
+  const raw = Math.abs(a - b) % (Math.PI * 2);
+  return raw > Math.PI ? Math.PI * 2 - raw : raw;
+}
+
+describe("biomeForIndex", () => {
+  it("follows the course bible's four contiguous stretches", () => {
+    // docs/COURSE_PIPELINE.md section 4: holes 1-5 parkland, 6-11 links, 12-15 marsh,
+    // 16-18 a parkland return. Written out per hole rather than as a loop over the same
+    // table the implementation uses -- a loop would pass by construction.
+    const expected: BiomeId[] = [
+      "parkland", "parkland", "parkland", "parkland", "parkland",
+      "links", "links", "links", "links", "links", "links",
+      "marsh", "marsh", "marsh", "marsh",
+      "parkland", "parkland", "parkland",
+    ];
+    for (let index = 0; index < 18; index++) {
+      expect(biomeForIndex(index)).toBe(expected[index]);
+    }
+  });
+
+  it("uses three distinct biomes and no more", () => {
+    const seen = new Set<BiomeId>();
+    for (let index = 0; index < 18; index++) seen.add(biomeForIndex(index));
+    expect(seen.size).toBe(3);
+  });
+
+  it("cycles past the eighteenth hole and tolerates a negative index", () => {
+    expect(biomeForIndex(18)).toBe(biomeForIndex(0));
+    expect(biomeForIndex(25)).toBe(biomeForIndex(7));
+    expect(biomeForIndex(-1)).toBe(biomeForIndex(17));
+  });
+});
+
+describe("hole biome and mowing stripes", () => {
+  it("puts the bible's biome on every hole of an eighteen-hole course", () => {
+    const course = generateCourse(0x51de, 18);
+    for (const hole of course.holes) {
+      expect(hole.biome).toBe(biomeForIndex(hole.index));
+    }
+  });
+
+  it("gives fixedHoleSpec both fields", () => {
+    const spec = fixedHoleSpec();
+    expect(spec.biome).toBe(biomeForIndex(0));
+    expect(Number.isFinite(spec.stripeAngle)).toBe(true);
+  });
+
+  it("mows along the tee-to-cup line, within the jitter budget", () => {
+    // The stripe angle is not arbitrary: bands run across the fairway because the angle tracks
+    // the playing line. A constant or a purely random angle would both pass a "is finite" check
+    // and neither would look like a mown fairway, so this asserts the relationship.
+    const course = generateCourse(0x51de, 18);
+    for (const hole of course.holes) {
+      const bearing = Math.atan2(hole.cup.z - hole.tee.z, hole.cup.x - hole.tee.x);
+      expect(angularDelta(hole.stripeAngle, bearing)).toBeLessThanOrEqual(STRIPE_JITTER + 1e-9);
+    }
+  });
+
+  it("varies the stripe angle between holes rather than pinning it to the bearing", () => {
+    const course = generateCourse(0x51de, 18);
+    const offsets = course.holes.map((hole) => {
+      const bearing = Math.atan2(hole.cup.z - hole.tee.z, hole.cup.x - hole.tee.x);
+      return angularDelta(hole.stripeAngle, bearing);
+    });
+    // If the jitter were dropped, every offset would be exactly 0 and the fairways would all
+    // mow identically relative to their own line.
+    expect(Math.max(...offsets)).toBeGreaterThan(0.02);
+    expect(new Set(offsets.map((o) => o.toFixed(6))).size).toBeGreaterThan(10);
+  });
+
+  it("is deterministic in the course seed", () => {
+    const a = generateCourse(0x51de, 18);
+    const b = generateCourse(0x51de, 18);
+    for (let i = 0; i < 18; i++) {
+      expect(a.holes[i]!.stripeAngle).toBe(b.holes[i]!.stripeAngle);
+      expect(a.holes[i]!.biome).toBe(b.holes[i]!.biome);
+    }
+    const other = generateCourse(0x51df, 18);
+    expect(other.holes[0]!.stripeAngle).not.toBe(a.holes[0]!.stripeAngle);
+  });
+});
+
+describe("parForIndex", () => {
+  it("follows the course bible's card, front and back", () => {
+    // docs/COURSE_PIPELINE.md section 4. Written out per hole rather than looped over the same
+    // table the implementation reads -- a loop over that would pass by construction.
+    const card = [4, 3, 4, 5, 4, 3, 4, 4, 5, 4, 5, 4, 3, 4, 4, 3, 4, 5];
+    for (let index = 0; index < 18; index++) {
+      expect(parForIndex(index)).toBe(card[index]);
+    }
+  });
+
+  it("is par 36 out, 36 in, 72 around", () => {
+    const par = (from: number, to: number): number => {
+      let total = 0;
+      for (let i = from; i < to; i++) total += parForIndex(i);
+      return total;
+    };
+    expect(par(0, 9)).toBe(36);
+    expect(par(9, 18)).toBe(36);
+    expect(par(0, 18)).toBe(72);
+  });
+
+  it("does not simply repeat the front nine on the back", () => {
+    // Both nines sum to 36, so a totals-only check would pass on a cycled nine-hole mix -- which
+    // is exactly what this used to be.
+    const front = Array.from({ length: 9 }, (_, i) => parForIndex(i));
+    const back = Array.from({ length: 9 }, (_, i) => parForIndex(i + 9));
+    expect(back).not.toEqual(front);
+  });
+
+  it("gives a generated eighteen-hole course the card's par at every hole", () => {
+    // The generator only uses parForIndex to pick a field size; the par on the spec is derived
+    // from the corridor the spline actually produced. If those two disagree the card is a
+    // fiction, so this asserts the whole path rather than the table alone.
+    for (const hole of generateCourse(2026, 18).holes) {
+      expect(hole.par).toBe(parForIndex(hole.index));
+    }
   });
 });

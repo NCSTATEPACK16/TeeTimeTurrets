@@ -3,6 +3,11 @@
 Visual targets for the phases in `../ROADMAP.md`. Reference material only — **nothing in this
 directory is loaded by the game**, and none of it is a step toward shipping bitmap assets.
 
+This README indexes the 00–15 UI/mechanic shots below. Per-hole terrain concept art is no longer
+generated: `hole-shot-prompts.md` is **superseded by `../COURSE_PIPELINE.md`**, which explains why
+per-hole teebox/aerial art could not describe a buildable hole, and replaces it with a plan renderer
+(`npm run plan`) plus a much smaller set of image jobs that do have consumers.
+
 That distinction matters because `AGENTS.md` states the rule absolutely: all playable geometry
 is first-party procedural primitives, no `.glb`/`.obj`/`.fbx` in the playable path, ever. These
 images are documentation of what that procedural geometry should *look like* when it is
@@ -77,12 +82,12 @@ Both were redundant and neither reached the first commit. Recorded so they are n
 - **`01-form-language-sheet.jpg`** — was a 1376×768 downscale of `01Formlanguagesheet.jpg`.
   Same image, half the resolution.
 
-### The shot list is missing
+### The shot list for 00–15 is still missing
 
-This file cites "the shot list" as the source of every prompt, and the provenance note below
-tells anyone forking to regenerate from those prompts. **That document is not in the repo.**
-Either check it in — it is plain text, it costs nothing, and it is the only thing that makes
-the "regenerate your own" advice actionable — or stop citing it.
+This file cites "the shot list" as the source of every prompt for images 00–15, and the
+provenance note below tells anyone forking to regenerate from those prompts. **That document is
+not in the repo** — only `hole-shot-prompts.md` (now superseded, see above) has ever been checked
+in. Either check the 00–15 prompts in too, or stop citing them.
 
 ## Known deviations in what is here
 

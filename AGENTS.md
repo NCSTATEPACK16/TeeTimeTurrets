@@ -11,8 +11,8 @@ paths; only the documented conventions and this file's own structure are adapted
 
 Browser-native Three.js + Rapier golf-combat game. Runtime combines a fixed-step 60Hz
 deterministic simulation, procedural first-party geometry (clubs, cart, terrain, targets —
-zero GLB/OBJ), and DOM-overlay UI. Phases 0 and 1.5 are built and verified; the rest is
-scaffolding.
+zero GLB/OBJ on the playable path), and DOM-overlay UI. Phases 0 and 1.5 are built and verified;
+the rest is scaffolding.
 
 ## Git
 
@@ -48,8 +48,13 @@ now has a repository and agents may commit. Two rules replace the prohibition:
   module in Node rather than a rewrite (see `docs/ARCHITECTURE.md` §1).
 - No per-frame allocation in the fixed-tick hot loop (`Sim.step`, `GameLoop`'s `frame`).
   Reuse scratch objects (see `main.ts`'s `scratchA/B/Out` quaternions for the pattern).
-- All playable geometry (clubs, cart, terrain, future targets) is first-party procedural
-  primitives assembled at runtime. No `.glb`/`.obj`/`.fbx` in the playable path, ever.
+- All playable geometry (clubs, cart, terrain, targets) is first-party procedural primitives
+  assembled at runtime. No `.glb`/`.obj`/`.fbx` in the playable path, ever. **"Playable" is
+  mechanical: if removing the asset would change a simulation result, it is playable.** Purely
+  decorative geometry that is never collided with, never replicated, and never read by
+  `src/sim/**` may ship as authored `.glb`, loaded from `src/render/**` behind a null check and
+  degrading to nothing on failure — see `docs/ASSET_PIPELINE.md` §1. AI-generated geometry is
+  never shipped on either path; it is reference to model over (§7).
 - **CCD is enabled on the ball and nothing else.** It only engages for fast relative motion,
   which ragdoll limbs at rest don't have, and it isn't free.
 - **Rapier JS binding caveats — verified against issues, not assumed from the Rust docs.**

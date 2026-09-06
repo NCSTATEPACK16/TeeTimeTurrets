@@ -7,3 +7,4 @@ tools/.gate-out/
 *.log
 .DS_Store
 .worktrees/
+tools/.plan-out/

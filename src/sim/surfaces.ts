@@ -62,6 +62,29 @@ export function createSurfaceTuning(): MutableSurfaceTuning {
   return { rolling: 0, bounceScale: 0, cartSpeedScale: 0, isHazard: false };
 }
 
+/**
+ * The raw blend weights behind a classification, exposed so a consumer can colour or shade the
+ * ground from exactly what the physics blends with.
+ *
+ * This exists to prevent a second source of truth. The renderer needs the corridor and green
+ * falloffs to draw a mown edge; recomputing them in `src/render/**` would mean the visible edge
+ * and the physical one could drift apart silently. Reading them from here means they cannot.
+ */
+export interface SurfaceWeights {
+  /** 0 on the putting green, 1 well off it. Smoothstep across GREEN_BLEND. */
+  green: number;
+  /** 0 on the mown corridor, 1 in full rough. Smoothstep across BLEND_WIDTH. */
+  corridor: number;
+  /** 1 where `surfaceAt` returns Sand, else 0. Hard-edged on purpose -- a bunker lip is abrupt. */
+  sand: number;
+  /** 1 where `surfaceAt` returns Water, else 0. */
+  water: number;
+}
+
+export function createSurfaceWeights(): SurfaceWeights {
+  return { green: 0, corridor: 0, sand: 0, water: 0 };
+}
+
 /** Nested lerp, green -> fairway -> rough, using the same weights the height budget uses. */
 function blendMown(
   green: number,
@@ -108,6 +131,12 @@ export interface Surfaces {
   surfaceAt(worldX: number, worldZ: number): SurfaceId;
   /** Continuous, per Task 11: a blended value, not a table lookup. */
   tuningAt(worldX: number, worldZ: number, out: MutableSurfaceTuning): void;
+  /**
+   * The blend weights `tuningAt` uses, and the hard sand/water flags `surfaceAt` decides from.
+   * Written into `out`; this is called once per texel when the renderer bakes its surface mask,
+   * and that is a loop worth not allocating in either.
+   */
+  weightsAt(worldX: number, worldZ: number, out: SurfaceWeights): void;
 }
 
 export function createSurfaces(
@@ -197,5 +226,19 @@ export function createSurfaces(
     out.isHazard = false;
   }
 
-  return { surfaceAt, tuningAt };
+  /**
+   * Deliberately re-derives sand and water through `surfaceAt` rather than sampling the noise
+   * again: `surfaceAt`'s priority order (water beats green beats sand beats the corridor) is the
+   * classification, and a second copy of that order here is exactly the drift this function was
+   * added to prevent.
+   */
+  function weightsAt(worldX: number, worldZ: number, out: SurfaceWeights): void {
+    const id = surfaceAt(worldX, worldZ);
+    out.sand = id === SurfaceId.Sand ? 1 : 0;
+    out.water = id === SurfaceId.Water ? 1 : 0;
+    out.green = greenWeight(worldX, worldZ);
+    out.corridor = corridorWeight(worldX, worldZ);
+  }
+
+  return { surfaceAt, tuningAt, weightsAt };
 }

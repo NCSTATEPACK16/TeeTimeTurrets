@@ -301,7 +301,9 @@ sampling), `src/sim/spline.ts` (centripetal Catmull-Rom corridor centreline), `s
 base grid and Voronoi biome colouring from the research's §1.2/§2/§3 are deferred. They produce
 exactly the geometry `tools/sceneGate.mjs` exists to guard, and that gate is still unbuilt
 (Phase 1) — so deferring buys time to build the gate before the geometry that needs it arrives.
-The Blender primitive-graph prop exporter pairs with that deferred phase, not this one.
+The Blender primitive-graph prop exporter pairs with that deferred phase, not this one; it is now
+specified in `ASSET_PIPELINE.md` §4 (format, exporter, origin rules). Course design moved to
+`COURSE_PIPELINE.md`, whose `npm run plan` renderer is the review surface for this phase's output.
 
 **The measured constant.** The per-octave max gradient `k` in `A = G / (f * k)` was measured
 directly against the installed `simplex-noise` build: max ‖∇S‖ = **7.333** (rms 2.955, mean
