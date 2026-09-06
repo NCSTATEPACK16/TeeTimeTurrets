@@ -251,9 +251,9 @@ either**, so neither can alter a trajectory or a hole's playability.
    deep in rough (`corridorWeight ≥ 0.92`), clear of sand and water, and above the water line.
    Placement is seeded from channel 3, so a hole grows the same wood on every machine.
 
-**Placeholder to retire:** the palettes in `src/render/biomes.ts` are hand-picked. §7.1's biome
-sheets are the intended source — generate them and eye-drop the six swatches per biome into that
-table.
+**Placeholder retired.** The palettes in `src/render/biomes.ts` are no longer hand-picked: all
+three are sampled from §7.1's biome sheets with `npm run swatches`, with six fields corrected for
+legibility and each correction documented in place.
 
 ### Tier 2 — sim-side. Expensive; lands as one change.
 
@@ -351,19 +351,20 @@ mapping from swatch label to field is:
 
 | Swatch label | `BiomePalette` field | parkland | links | marsh |
 |---|---|---|---|---|
-| PUTTING GREEN | `green` | `0x7fc94a` | `0xa8c96a` | `0x6fb55a` |
-| FAIRWAY | `fairway` | `0x4fa83f` | `0x8fb855` | `0x4c8f48` |
-| ROUGH | `rough` | `0x2e6b2e` | `0x9e9a55` | `0x3a5f3a` |
-| SAND | `sand` | `0xe4ce9a` | `0xeadbb0` | `0xc9be93` |
-| WATER | `water` | `0x3c7fc4` | `0x4e86a8` | `0x35707a` |
-| SKY | `sky` | `0x8fc7ff` | `0xc4d4dc` | `0xafc0b4` |
-| FOLIAGE LIGHT | `foliageLight` | `0x3f8b46` | `0x7c8a4c` | `0x55804d` |
-| FOLIAGE DARK | `foliageDark` | `0x275c30` | `0x5a662f` | `0x35583a` |
-| TRUNK | `trunk` | `0x5a4632` | `0x6b5a3c` | `0x4a4436` |
+| PUTTING GREEN | `green` | `0xa2db31` | `0xccbf89` † | `0xa3c240` |
+| FAIRWAY | `fairway` | `0x5fa53a` | `0xb3aa74` | `0x58863b` |
+| ROUGH | `rough` | `0x59823f` | `0x968f64` † | `0x506441` |
+| SAND | `sand` | `0xddbf84` | `0xe5cd9d` | `0x979283` † |
+| WATER | `water` | `0x4a91aa` | `0x6a8c98` | `0x564735` † |
+| SKY | `sky` | `0x55b1ef` | `0xd0d1d2` | `0x939e90` |
+| FOLIAGE LIGHT | `foliageLight` | `0x669f34` | `0xc5b884` | `0x949f62` |
+| FOLIAGE DARK | `foliageDark` | `0x446327` | `0x8a8359` | `0x404f2b` |
+| TRUNK | `trunk` | `0x654e3e` | `0x654f42` | `0x423a33` † |
 
-Those are the current hand-picked placeholders, listed so a replacement can be compared against
-what it is replacing. `treeDensity`, `treeHeight` and `treeForm` are **tuned, not sampled** — a
-sheet must never change them.
+**Done — these are the shipped values**, sampled from the three sheets with `npm run swatches`.
+Six fields marked † were corrected off the sheet for legibility; `src/render/biomes.ts` records
+each one with its before/after numbers and its reason. `treeDensity`, `treeHeight` and `treeForm`
+are **tuned, not sampled** — a sheet must never change them.
 
 **Retired: asking the model to print hex codes under the swatches.** An earlier version of these
 prompts did, on the theory that a printed value beats eye-droppering a JPEG. On the first real
@@ -386,6 +387,21 @@ npm run swatches -- <image> --inspect            # just list what it found
 The swatch *labels* do come through correctly, and are what the field mapping is read from. When a
 sheet pads its layout by duplicating a swatch, the tool refuses to guess and asks for an explicit
 `--map=<index>:<field>,...`.
+
+**What the first real run of this actually needed**, so the next one is not a surprise:
+
+- **The sheets come back as two stacked panels** — swatches above, prop silhouettes on their own
+  darker ground below — which is what the prompt asks for. The tool now finds that seam itself and
+  reads only the panel above it. (It did not originally, and failed loudly but confusingly:
+  `grid 1 x 1 = 1 swatches`, because the silhouette ground won the background vote.)
+- **A 5-across-then-4 layout detects as a 5×2 grid of ten cells**, the tenth being the empty slot
+  beside TRUNK. Ten is not nine, so the tool refuses to guess and wants a map. For all three
+  sheets so far that map is simply the canonical order:
+  `--map=0:green,1:fairway,2:rough,3:sand,4:water,5:sky,6:foliageLight,7:foliageDark,8:trunk`.
+  Read the labels off the image and confirm before trusting it — a sheet that reorders or
+  duplicates a swatch is exactly what the refusal exists to catch.
+- **Contrast is checked, not assumed.** Expect `LOW` results and treat them as a prompt to look
+  at the sheet in the game, not as an automatic rejection — see the legibility note below.
 
 These use a trimmed style preamble rather than the full art-style block from
 `concept/hole-shot-prompts.md`. That block describes a *scene* — carts, fairway stripes, cone
@@ -467,10 +483,29 @@ a watermark, or a decorative border.
   add "broad round trees" to the do-not-include list.
 
 **Applying the results.** Hand the three images to a fresh session with the handoff prompt in the
-published artifact. It maps labels to fields, tells the session to read the printed hex rather than
-eye-dropper, forbids touching the tuned fields, and specifies the verification order — `tsc`,
-`npm test`, `npm run build`, then `npm run plan`, where **the plans must come back byte-identical**:
-`biomes.ts` is render-only, so a changed plan means something leaked into `src/sim/`.
+published artifact. It maps labels to fields, tells the session to use `npm run swatches` and to
+trust neither the printed codes nor its own eye, forbids touching the tuned fields, and specifies
+the verification order — `tsc`, `npm test`, `npm run build`, then `npm run plan`, where **the plans
+must come back byte-identical**: `biomes.ts` is render-only, so a changed plan means something
+leaked into `src/sim/`. Finish by screenshotting one hole per biome (1, 7, 13) from the running
+game; the contrast numbers are a filter, not the verdict.
+
+**The legibility failure worth expecting.** The links sheet came back with `green`, `fairway` and
+`rough` within 18 luminance of each other. That reads as three plausible shades on the sheet and as
+*one flat khaki field with no corridor edge at all* from the chase camera — only the mowing stripes,
+a 7% sheen that washes out with distance, said where the fairway was. It is the biome most at risk,
+because a real links course genuinely is monochrome; the prompt's "must not look like a sunny inland
+course with lighter grass" pushes toward exactly this. **A sheet is not finished until a hole in
+that biome has been looked at.** The corrections, and the rule used to decide them, are documented
+in `src/render/biomes.ts`:
+
+- Judge same-hue-family pairs (turf against turf, foliage against foliage) on luminance. That is
+  what the tool's three built-in checks are, and why they are the right three.
+- Do **not** apply a luminance threshold across hue families. Parkland's blue water sits 15.3 from
+  its green rough and reads instantly.
+- Hue only separates a pair when both colours carry enough saturation to show it. Marsh's sampled
+  `sand` was 52° off its fairway but at sat 0.13, and read as patches of mist on the turf.
+- Correct by scaling all three channels uniformly. Hue and saturation hold; only value moves.
 ### 7.2 Prop silhouette sheet → *consumer: the modelling pass in `ASSET_PIPELINE.md`*
 
 ```
@@ -553,11 +588,11 @@ Ordinary marketing generation. No pretense of being a spec, no per-hole variants
 2. ~~**Tier 1 fields** (§5) — biome palette, mowing stripes, tree instancing.~~ **Done**, along
    with the 18-hole par card. Render-only, cannot break the sim, and delivers most of the
    perceived "18 distinct holes".
-3. **§7.1 biome sheets** for the three biomes; eye-drop into the palette constants in
-   `src/render/biomes.ts`, replacing the hand-picked placeholders. ← *next, and it needs a human
-   to run the prompt.*
+3. ~~**§7.1 biome sheets** for the three biomes, sampled into `src/render/biomes.ts`.~~ **Done.**
+   All three sheets generated, read with `npm run swatches`, six fields corrected for legibility.
 4. **`HoleBrief` schema and the 18 briefs** (§3, §4) as data, with the generator still ignoring
-   most fields. Cheap, and it makes the intent reviewable before any generator work.
+   most fields. Cheap, and it makes the intent reviewable before any generator work. ← *next, and
+   it needs no image model — the 18 briefs are the §4 table transcribed.*
 5. **Tier 2 fields** (§5), one at a time, each re-verified with `npm run plan`. Water polygons
    first — the 37.5% finding is the most serious thing in this document.
 6. **Archetype-aware generation** — the generator finally consumes the briefs.
