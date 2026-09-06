@@ -4,8 +4,14 @@ import { GolfClub } from "../entities/GolfClub";
 import { TargetRig } from "../entities/TargetRig";
 import { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
+import type { Surfaces } from "../sim/surfaces";
 import { CART_COLLIDER } from "../sim/entities/Cart";
 import type { BallTransform, CartTransform } from "../sim/world";
+import { BIOMES } from "./biomes";
+import { createGround } from "./ground";
+import type { Ground } from "./ground";
+import { createTrees } from "./Trees";
+import type { Trees } from "./Trees";
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
@@ -80,15 +86,24 @@ export class RenderScene {
   private readonly botCarts: GolfClub[] = [];
   private readonly targets: TargetRig;
   private readonly pooledBalls: BallSwarm;
+  private readonly ground: Ground;
+  private readonly trees: Trees;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
   private readonly projectScratch = new THREE.Vector3();
   private readonly sizeScratch = new THREE.Vector2();
 
-  constructor(container: HTMLElement, terrain: Terrain, targetCount: number, botCount: number) {
+  constructor(
+    container: HTMLElement,
+    terrain: Terrain,
+    surfaces: Surfaces,
+    targetCount: number,
+    botCount: number,
+  ) {
     this.terrain = terrain;
     const fieldSize = terrain.spec.fieldSize;
+    const palette = BIOMES[terrain.spec.biome];
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -96,10 +111,13 @@ export class RenderScene {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x8fc7ff);
+    // Sky and fog take the biome's colour and share it, so the horizon dissolves rather than
+    // banding. This is the cheapest half of "eighteen holes look like three places": an overcast
+    // links sky and a hazy marsh sky read as different weather before any geometry loads.
+    this.scene.background = new THREE.Color(palette.sky);
     // Fog and far plane are sized to fieldSize: at the old 25/65 the fog closed in well
     // inside the playable area and hid most of a full drive's landing zone.
-    this.scene.fog = new THREE.Fog(0x8fc7ff, fieldSize * 0.5, fieldSize * 2);
+    this.scene.fog = new THREE.Fog(palette.sky, fieldSize * 0.5, fieldSize * 2);
 
     this.camera = new THREE.PerspectiveCamera(
       60,
@@ -113,7 +131,11 @@ export class RenderScene {
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
-    this.scene.add(buildGroundMesh(terrain));
+    this.ground = createGround(terrain, surfaces);
+    this.scene.add(this.ground.mesh);
+
+    this.trees = createTrees(terrain, surfaces);
+    if (this.trees.mesh !== null) this.scene.add(this.trees.mesh);
 
     const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
     const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
@@ -170,6 +192,8 @@ export class RenderScene {
     for (const bot of this.botCarts) bot.dispose();
     this.targets.dispose();
     this.pooledBalls.dispose();
+    this.ground.dispose();
+    this.trees.dispose();
     this.renderer.dispose();
   }
 
@@ -249,31 +273,3 @@ export class RenderScene {
   }
 }
 
-/**
- * Vertex layout matches Rapier's heightfield exactly: PlaneGeometry iterates row-major
- * (row = heightSegments, col = widthSegments) and after rotateX(-90deg) row maps to world Z,
- * col maps to world X -- the same mapping terrain.ts uses for the physics heightfield's
- * column-major heights array (verified empirically against the installed Rapier build).
- *
- * Built once, from the terrain handed in at construction. Rebuilding it for a new hole is
- * Phase 1.75's job along with the rest of the round flow.
- */
-function buildGroundMesh(terrain: Terrain): THREE.Mesh {
-  const { fieldSize, cells } = terrain.spec;
-  const geometry = new THREE.PlaneGeometry(fieldSize, fieldSize, cells, cells);
-  const position = geometry.attributes.position;
-  for (let row = 0; row <= cells; row++) {
-    for (let col = 0; col <= cells; col++) {
-      const index = row * (cells + 1) + col;
-      const worldX = (col / cells - 0.5) * fieldSize;
-      const worldZ = (row / cells - 0.5) * fieldSize;
-      position.setZ(index, terrain.heightAt(worldX, worldZ));
-    }
-  }
-  geometry.computeVertexNormals();
-
-  const material = new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 0.95 });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.rotation.x = -Math.PI / 2;
-  return mesh;
-}

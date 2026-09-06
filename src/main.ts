@@ -6,6 +6,7 @@ import type { FrameView } from "./render/scene";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "./sim/world";
 import type { BallTransform, CartTransform } from "./sim/world";
 import { generateCourse } from "./sim/course";
+import { parseHoleIndex } from "./devHoleParam";
 import { drawHud, readHud } from "./ui/hud";
 import { drawMatchResults, readMatchResults } from "./ui/matchResults";
 import { Nameplates } from "./ui/nameplates";
@@ -25,12 +26,20 @@ async function main(): Promise<void> {
     throw new Error("expected #app, the #hud elements and #match-results in index.html");
   }
 
-  // One course, nine holes, one seed. Playing past hole 0 is Phase 1.75's round flow: the
-  // renderer's ground mesh is built once, so advancing needs a screen transition, not just
-  // sim.loadHole.
-  const course = generateCourse(COURSE_SEED, 9);
-  const sim = await Sim.create(course.holes[0]);
-  const render = new RenderScene(container, sim.terrain, sim.targets.length, sim.bots.length);
+  // One course, eighteen holes, one seed. `?hole=N` is a dev-only viewer for driving each hole
+  // and comparing it against the concept art -- switching still means a page reload, since the
+  // renderer's ground mesh is built once. Advancing holes *in-game* is Phase 1.75's round flow
+  // and needs a screen transition, not just sim.loadHole.
+  const course = generateCourse(COURSE_SEED, 18);
+  const holeIndex = parseHoleIndex(window.location.search, course.holes.length);
+  const sim = await Sim.create(course.holes[holeIndex]);
+  const render = new RenderScene(
+    container,
+    sim.terrain,
+    sim.surfaces,
+    sim.targets.length,
+    sim.bots.length,
+  );
   const plateRoot = document.getElementById("nameplates");
   if (!plateRoot) throw new Error("expected #nameplates in index.html");
   const nameplates = new Nameplates(plateRoot, sim.bots.map((_, i) => `BOT ${i + 1}`));

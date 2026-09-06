@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { fixedHoleSpec } from "./course";
+import { biomeForIndex, fixedHoleSpec, stripeAngleFor } from "./course";
 import type { HoleSpec, Vec2 } from "./course";
 import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "./terrain";
-import { SURFACES, SurfaceId, createSurfaceTuning, createSurfaces } from "./surfaces";
+import {
+  SURFACES,
+  SurfaceId,
+  createSurfaceTuning,
+  createSurfaceWeights,
+  createSurfaces,
+} from "./surfaces";
 
 const SPEC = fixedHoleSpec();
 const terrain = createTerrain(SPEC);
@@ -156,6 +162,8 @@ function nonLegacySpec(): HoleSpec {
     control: [tee, { x: (tee.x + cup.x) / 2, z: (tee.z + cup.z) / 2 }, cup],
     par: 4,
     waterLevel: -0.72,
+    biome: biomeForIndex(2),
+    stripeAngle: stripeAngleFor(0x1234abcd, 2, tee, cup),
   };
 }
 
@@ -194,5 +202,86 @@ describe("createSurfaces default sand source (no sources override)", () => {
     }
 
     expect(sawDifference).toBe(true);
+  });
+});
+
+describe("weightsAt", () => {
+  it("writes into the caller's object rather than returning a new one", () => {
+    const out = createSurfaceWeights();
+    const centre = acrossCorridor(0.8, 0);
+    surfaces.weightsAt(centre.x, centre.z, out);
+    const first = out.corridor;
+
+    const far = acrossCorridor(0.8, HALF_WIDTH + BLEND_WIDTH + 20);
+    surfaces.weightsAt(far.x, far.z, out);
+    expect(out.corridor).not.toBe(first);
+  });
+
+  it("reads 0 on the mown corridor and 1 in full rough", () => {
+    const out = createSurfaceWeights();
+
+    surfaces.weightsAt(acrossCorridor(0.8, 0).x, acrossCorridor(0.8, 0).z, out);
+    expect(out.corridor).toBeCloseTo(0, 9);
+
+    const far = acrossCorridor(0.8, HALF_WIDTH + BLEND_WIDTH + 20);
+    surfaces.weightsAt(far.x, far.z, out);
+    expect(out.corridor).toBeCloseTo(1, 9);
+  });
+
+  it("reads 0 for green at the cup and 1 well off it", () => {
+    const out = createSurfaceWeights();
+
+    surfaces.weightsAt(SPEC.cup.x, SPEC.cup.z, out);
+    expect(out.green).toBeCloseTo(0, 9);
+
+    surfaces.weightsAt(SPEC.cup.x + GREEN_RADIUS + 40, SPEC.cup.z, out);
+    expect(out.green).toBeCloseTo(1, 9);
+  });
+
+  it("agrees with tuningAt: the same weights reproduce its blended rolling value", () => {
+    // The point of exporting weights is that the renderer can colour the ground from exactly
+    // what the physics blends with. If these two ever diverge, the visible corridor edge and
+    // the physical one have drifted apart -- which is the bug this test exists to catch.
+    const weights = createSurfaceWeights();
+    const tuning = createSurfaceTuning();
+    const green = SURFACES[SurfaceId.Green];
+    const fairway = SURFACES[SurfaceId.Fairway];
+    const rough = SURFACES[SurfaceId.Rough];
+
+    for (let t = 0.05; t < 1; t += 0.05) {
+      for (const offset of [0, 6, 12, 18, 24, 30]) {
+        const p = acrossCorridor(t, offset);
+        const id = surfaces.surfaceAt(p.x, p.z);
+        if (id === SurfaceId.Sand || id === SurfaceId.Water) continue;
+
+        surfaces.weightsAt(p.x, p.z, weights);
+        surfaces.tuningAt(p.x, p.z, tuning);
+
+        const mown = green.rolling + (fairway.rolling - green.rolling) * weights.green;
+        const expected = mown + (rough.rolling - mown) * weights.corridor;
+        expect(tuning.rolling).toBeCloseTo(expected, 9);
+      }
+    }
+  });
+
+  it("flags sand and water as 1 exactly where surfaceAt calls them", () => {
+    const out = createSurfaceWeights();
+    const size = SPEC.fieldSize;
+    let sandSeen = 0;
+    let waterSeen = 0;
+
+    for (let x = -size / 2; x < size / 2; x += 3.1) {
+      for (let z = -size / 2; z < size / 2; z += 3.1) {
+        surfaces.weightsAt(x, z, out);
+        const id = surfaces.surfaceAt(x, z);
+        expect(out.sand).toBe(id === SurfaceId.Sand ? 1 : 0);
+        expect(out.water).toBe(id === SurfaceId.Water ? 1 : 0);
+        if (out.sand === 1) sandSeen++;
+        if (out.water === 1) waterSeen++;
+      }
+    }
+    // Guard against the assertions above passing because the hole has no sand or water at all.
+    expect(sandSeen).toBeGreaterThan(0);
+    expect(waterSeen).toBeGreaterThan(0);
   });
 });

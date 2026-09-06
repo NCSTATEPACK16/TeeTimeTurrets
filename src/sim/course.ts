@@ -27,6 +27,59 @@ export interface Vec3 {
   z: number;
 }
 
+/**
+ * Which set of colours and props a hole is dressed in.
+ *
+ * Three, not eighteen. The superseded shot list gave every hole its own climate -- pine forest,
+ * seaside cliff, desert canyon, alpine, tropical, volcanic, snowy, bamboo, redwood, mesa -- which
+ * reads as a theme park rather than a course and costs eighteen palettes and prop sets. Contiguous
+ * stretches give the round a sense of place and travel for a third of the asset bill. See
+ * docs/COURSE_PIPELINE.md section 4.
+ *
+ * This is render-only: nothing in the simulation branches on it, so a biome change can never
+ * alter a ball's trajectory or a hole's playability.
+ */
+export type BiomeId = "parkland" | "links" | "marsh";
+
+/**
+ * The course bible's routing, hole 1 to hole 18. Parkland opens, links takes the middle, marsh
+ * carries the hard stretch, and parkland returns for the closing three -- so three palettes cover
+ * four stretches.
+ */
+const BIOME_ROUTING: readonly BiomeId[] = [
+  "parkland", "parkland", "parkland", "parkland", "parkland",
+  "links", "links", "links", "links", "links", "links",
+  "marsh", "marsh", "marsh", "marsh",
+  "parkland", "parkland", "parkland",
+];
+
+/** Cycled for courses that are not eighteen holes, the way `parForIndex` cycles the par mix. */
+export function biomeForIndex(index: number): BiomeId {
+  const n = BIOME_ROUTING.length;
+  return BIOME_ROUTING[((index % n) + n) % n]!;
+}
+
+/**
+ * How far the mowing direction may swing off the tee-to-cup line, in radians (22.5 degrees).
+ *
+ * The angle tracks the playing line rather than being drawn freely, because that is what makes
+ * the bands run *across* the fairway -- the look in concept images 03 and 05. A freely random
+ * angle produces stripes at an arbitrary diagonal to the hole, which reads as a texture rather
+ * than as mowing. The jitter exists so eighteen fairways are not mown identically relative to
+ * their own lines.
+ */
+export const STRIPE_JITTER = Math.PI / 8;
+
+/**
+ * Channel 4 of the spec's seed -- see the channel table in the design spec's section 3
+ * "Seeding". 0 is height, 1 is sand, 2 is the layout draw, 3 is prop scatter.
+ */
+export function stripeAngleFor(seed: number, index: number, tee: Vec2, cup: Vec2): number {
+  const bearing = Math.atan2(cup.z - tee.z, cup.x - tee.x);
+  const random = mulberry32(hashChannel(seed, index, 4));
+  return bearing + (random() * 2 - 1) * STRIPE_JITTER;
+}
+
 export interface HoleSpec {
   /** uint32. Every derived noise channel and layout choice hashes from this. */
   readonly seed: number;
@@ -52,6 +105,10 @@ export interface HoleSpec {
   /** Derived from corridor length by generateHole. Never authored. */
   readonly par: number;
   readonly waterLevel: number;
+  /** Render-only. Which palette and prop set dresses this hole. See `biomeForIndex`. */
+  readonly biome: BiomeId;
+  /** Render-only. Mowing direction in radians; bands run perpendicular to it. */
+  readonly stripeAngle: number;
 }
 
 export interface Course {
@@ -87,6 +144,8 @@ export function fixedHoleSpec(): HoleSpec {
     control: [tee, { x: 0, z: -25 }, cup],
     par: 3,
     waterLevel: -0.72,
+    biome: biomeForIndex(0),
+    stripeAngle: stripeAngleFor(FIXED_HOLE_SEED, 0, tee, cup),
   };
 }
 
@@ -248,10 +307,21 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
 }
 
 /**
- * A par-36 front nine. Cycled for courses that are not nine holes, so an 18-hole course is two
- * nines rather than an error.
+ * The course bible's card: par 36 out, 36 in, 72 around. See docs/COURSE_PIPELINE.md section 4.
+ *
+ * Eighteen entries rather than a nine-hole mix cycled twice, which is what this was. Both nines
+ * sum to 36 either way, so the difference is not the total -- it is that a player walking the
+ * back nine should not be replaying the front nine's rhythm hole for hole. The back opens on a
+ * par 5 at 11 where the front opens on a par 5 at 4, and its short holes fall at 13 and 16
+ * rather than at 2 and 6.
+ *
+ * Cycled for courses that are not eighteen holes, so a nine-hole round is the front nine and a
+ * longer course repeats rather than erroring.
  */
-const PAR_MIX: readonly number[] = [4, 3, 4, 5, 4, 3, 4, 4, 5];
+const PAR_MIX: readonly number[] = [
+  4, 3, 4, 5, 4, 3, 4, 4, 5, // out -- 36
+  4, 5, 4, 3, 4, 4, 3, 4, 5, // in  -- 36
+];
 
 export function parForIndex(index: number): number {
   return PAR_MIX[((index % PAR_MIX.length) + PAR_MIX.length) % PAR_MIX.length];
@@ -330,6 +400,10 @@ export function draftHole(
     // Placeholder: replaced with the derived value in generateHole, which has the spline.
     par,
     waterLevel: -0.72,
+    // Keyed to the hole's position in the course, not to its seed: the routing is a property of
+    // the card, so hole 7 is a links hole in every course, whatever its seed draws for layout.
+    biome: biomeForIndex(index),
+    stripeAngle: stripeAngleFor(seed, index, tee, cup),
   };
 }
 

@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "vite build && node tools/smoke.mjs",
-    "probe": "vite build -c tools/probe.vite.config.ts && node tools/.probe-out/feelProbe.mjs"
+    "probe": "vite build -c tools/probe.vite.config.ts && node tools/.probe-out/feelProbe.mjs",
+    "plan": "vite build -c tools/holePlan.vite.config.ts && node tools/.plan-out/holePlan.mjs",
+    "swatches": "node tools/readSwatches.mjs"
   },
   "keywords": [
     "golf",
