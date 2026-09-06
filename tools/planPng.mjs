@@ -23,7 +23,12 @@ function arg(name, fallback) {
 
 const inDir = arg("in", join("docs", "course", "plans"));
 // Default outside docs/: these are regenerable and an image model's input, not documentation.
-const outDir = arg("out", join("tools", ".plan-out", "png"));
+//
+// A sibling of tools/.plan-out rather than a child of it, and that is not cosmetic:
+// holePlan.vite.config.ts sets `emptyOutDir: true` on tools/.plan-out, so every `npm run plan`
+// wipes that directory. Writing the PNGs inside it meant regenerating the plans silently deleted
+// the conditioning images COURSE_PIPELINE.md section 7.3 tells you to attach.
+const outDir = arg("out", join("tools", ".plan-png"));
 const scale = Number.parseFloat(arg("scale", "1"));
 
 const files = readdirSync(inDir).filter((f) => f.endsWith(".svg")).sort();

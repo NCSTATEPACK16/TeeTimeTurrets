@@ -101,7 +101,7 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 | Golf ball | primitive | 80 | Built (`entities/ballShape.ts`). |
 | Trees, 2–3 per biome | primitive-graph | 200 each | **Must be GPU-instanced.** Silhouettes from `COURSE_PIPELINE.md` §7.1. |
 | Flag + pin | primitive | 60 | Cloth as a vertex-animated quad. |
-| Course props (rake, tee marker, bridge, boardwalk) | primitive-graph | 100–400 | Sheet from `COURSE_PIPELINE.md` §7.2. |
+| Course props (rake, tee marker, bridge, boardwalk) | primitive-graph | 100–400 | Sheet in hand: `docs/concept/reference/prop-silhouettes-01.jpg` (`COURSE_PIPELINE.md` §7.2). Eight props. Scale is per-cell, not uniform — size them against cart height. |
 | Terrain | procedural heightfield | — | Built (`sim/terrain.ts`). |
 | **Clubhouse exterior** | **decorative GLB** | 3,000 | Menu backdrop and hole 18's landmark. Never collided with. |
 | **Distant scenery** | **decorative GLB** | 2,000 | Skyline dressing beyond the field edge. |
@@ -312,10 +312,13 @@ Checkpoints marked **[REVIEW]** are where a human looks at a viewport screenshot
 
 1. **Verify the connection.** `get_scene_info`. If it errors, Blender is not running with the addon
    started (§3.1). Do not proceed.
-2. **Gather reference.** `search_polypizza_models("golf cart")` — CC0, and the style already
-   matches. Import one as a **proportion reference only**, set to wireframe and non-selectable. Do
-   not model on top of it and do not ship it. **[REVIEW]** — confirm the reference reads like `03`,
-   not like `11`.
+2. **Gather reference.** Start with `docs/concept/reference/cart-turnaround-01.jpg` (§8.1) — four
+   orthographic-ish views, and the deviations in that folder's README are load-bearing: mirror the
+   SIDE view, take no dimension across panels, and author `club_bag` from `03CartTurretChasecam.jpg`
+   because the sheet omits it. For a 3D proportion check,
+   `search_polypizza_models("golf cart")` — CC0, and the style already matches. Import one as a
+   **proportion reference only**, set to wireframe and non-selectable. Do not model on top of it and
+   do not ship it. **[REVIEW]** — confirm the reference reads like `03`, not like `11`.
 3. **Block out** with primitives at gameplay fidelity, using the §2.1 comparison as the target.
    Every object gets `ttt_kind`, `ttt_params` and `ttt_slot` custom properties as it is created —
    retrofitting them across 40 objects is miserable.
@@ -380,10 +383,14 @@ Two rules if used at all:
 
 ### 8.1 Orthographic turnaround sheet → *consumer: the §5 blockout, or §7 image-to-3D*
 
-**This is the image job the concept folder is missing entirely.** Sixteen scene paintings exist and
-not one of them is usable as modelling reference, because a modeller needs orthographic elevations
-with no perspective, no shadow and no environment — and every existing image is a dramatic
-perspective shot.
+**Run once, for the cart: `docs/concept/reference/cart-turnaround-01.jpg`.** This was the image job
+the concept folder was missing entirely — sixteen scene paintings existed and not one was usable as
+modelling reference, because a modeller needs orthographic elevations with no perspective, no shadow
+and no environment, and every one of them is a dramatic perspective shot.
+
+The sheet that came back is good silhouette and material-slot reference and **is not a measured
+blueprint** — its panels share neither a baseline nor a scale. The full deviation list is in
+`docs/concept/reference/README.md`; read it before modelling from the image.
 
 ```
 Produce an orthographic turnaround reference sheet for 3D modelling. This is a technical
@@ -407,6 +414,31 @@ shadow, no reflections, no ambient occlusion, no depth of field.
 Do NOT include: a ground plane, an environment, a sky, a horizon, characters, motion effects,
 a decorative border, or any 3/4 or perspective "hero" view.
 ```
+
+#### If you re-run this sheet
+
+Three amendments, each earned by a specific failure in the first real run. Fold them into the block
+above rather than appending them, so the prompt stays one piece of text.
+
+1. **Ask for the view names as the labels, explicitly.** The block describes the layout
+   positionally — *"TOP-LEFT: FRONT view"* — and the model lettered the position word: the front
+   panel came back labelled `TOP-LEFT` and the word `FRONT` appears nowhere on the sheet. Say
+   instead: *"label the four panels with exactly these words and no others: FRONT, SIDE, REAR,
+   TOP-DOWN. Do not label a panel by its position on the page."*
+2. **Restate the shared baseline as the sheet's one hard requirement.** It is the only measurable
+   thing the block asks for and it is the one that was dropped — the SIDE panel came back larger
+   than FRONT and REAR with no common ground line, which is what demotes the result from blueprint
+   to silhouette reference. Give it its own line and say what it is for: *"all four views are of the
+   same object at one scale. Draw a single shared horizontal ground line across FRONT, SIDE and REAR
+   so heights can be measured across panels."*
+3. **Name every material slot in the subject line.** `club_bag` is one of §2.1's eight slots and it
+   is absent from all four views. A model that is not told a part exists will not invent it. For the
+   cart: *"…with a roof-mounted turret and a golf bag on the rear deck."*
+
+**A fourth thing worth accepting rather than fixing:** the model mirrors freely — the SIDE view came
+back facing left against a prompt asking for right. It was self-consistent with the TOP-DOWN, so it
+cost nothing but a note. Handedness is cheap to correct in Blender and expensive to argue with an
+image model about; check it once, mirror once, move on.
 
 ### 8.2 Image-to-3D → *consumer: a Blender reference object, never the repo*
 
@@ -469,7 +501,8 @@ in §5, call get_viewport_screenshot and stop for approval before continuing.
 3. **Port `GolfClub.ts` to a graph** as the proof. It already exists as hand-written primitives, so
    a correct port produces an identical scene-gate screenshot — which is a real test rather than a
    claim.
-4. **Model the cart** (§5). The first genuinely new asset.
+4. **Model the cart** (§5). The first genuinely new asset. **Reference is in hand** —
+   `docs/concept/reference/cart-turnaround-01.jpg`, with its deviations recorded next to it.
 5. **Trees, per biome**, from the `COURSE_PIPELINE.md` §7.1 silhouette sheets. Instanced from day
    one, never retrofitted.
 6. **The mannequin and ragdoll** (§2.2) as a standalone test scene. It is the game's signature

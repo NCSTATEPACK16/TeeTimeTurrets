@@ -8,6 +8,11 @@ generated: `hole-shot-prompts.md` is **superseded by `../COURSE_PIPELINE.md`**, 
 per-hole teebox/aerial art could not describe a buildable hole, and replaces it with a plan renderer
 (`npm run plan`) plus a much smaller set of image jobs that do have consumers.
 
+**Orthographic modelling reference lives in `reference/`**, not here — see that folder's own README.
+It is a different kind of image with a different naming rule, and, unlike these sixteen, its prompts
+are checked in. Everything this README says about the set being complete, and about the `NN`
+numbering, scopes to the 00–15 shot-list images only.
+
 That distinction matters because `AGENTS.md` states the rule absolutely: all playable geometry
 is first-party procedural primitives, no `.glb`/`.obj`/`.fbx` in the playable path, ever. These
 images are documentation of what that procedural geometry should *look like* when it is
