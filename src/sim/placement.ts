@@ -12,12 +12,11 @@
  */
 
 import type { HoleBrief } from "./briefs";
-import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./course";
+import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./carry";
 import type { Vec2 } from "./course";
 import { ellipseEdgeDistance, pointInPolygon, polygonDistance } from "./hazards";
 import type { Ellipse, Polygon } from "./hazards";
-import { BLEND_WIDTH, halfWidthAt, inverseSmoothstep01 } from "./terrain";
-import { WOODS_WEIGHT } from "./surfaces";
+import { BLEND_WIDTH, WOODS_WEIGHT, halfWidthAt, inverseSmoothstep01 } from "./terrain";
 import type { Spline } from "./spline";
 
 /** What placement needs to know about a hole. A subset of `HoleSpec`, before the hazards exist. */

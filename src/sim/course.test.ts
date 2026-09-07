@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { defaultGreen, fixedHoleSpec, isWaterAt } from "./course";
+import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./carry";
 import { pointInPolygon } from "./hazards";
 import { briefForHole } from "./briefs";
-import { SurfaceId, WOODS_WEIGHT, createSurfaceWeights, createSurfaces } from "./surfaces";
+import { SurfaceId, createSurfaceWeights, createSurfaces } from "./surfaces";
 import {
   EDGE_MARGIN,
   MAX_ATTEMPTS,
   MAX_CAMBER_GRAD,
   MIN_HOLE_LENGTH,
-  REFERENCE_CARRY_M,
-  DRIVER_CARRY_M,
   derivePar,
   generateCourse,
   generateHole,
@@ -20,7 +19,7 @@ import {
   validateHole,
 } from "./course";
 import type { BiomeId, HoleSpec } from "./course";
-import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "./terrain";
+import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, WOODS_WEIGHT, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { createSpline } from "./spline";
 
@@ -345,11 +344,20 @@ describe("generateHole", () => {
     }
   });
 
-  it("always produces a dog-legged corridor of at least three control points", () => {
-    const spec = generateHole(4242, 3);
-    expect(spec.control.length).toBe(3);
-    expect(spec.control[0]).toEqual(spec.tee);
-    expect(spec.control[2]).toEqual(spec.cup);
+  /**
+   * The `control` contract, which is what `createSpline` and `halfWidthAt` both depend on: tee
+   * first, cup last, at least three points. The count is no longer always three -- an s-curve
+   * brief drafts four -- so this asserts the invariant rather than the number it used to be.
+   * Which briefs bend which way, and by how much, is `routing.test.ts`.
+   */
+  it("puts the tee first and the cup last, over at least three control points", () => {
+    for (const index of [0, 3, 6, 12, 17]) {
+      const spec = generateHole(4242, index);
+      expect(spec.control.length, `hole index ${index}`).toBeGreaterThanOrEqual(3);
+      expect(spec.control[0]).toEqual(spec.tee);
+      expect(spec.control[spec.control.length - 1]).toEqual(spec.cup);
+      expect(spec.corridor.length, `hole index ${index} corridor`).toBe(spec.control.length);
+    }
   });
 
   it("throws rather than returning an invalid hole when attempts run out", () => {

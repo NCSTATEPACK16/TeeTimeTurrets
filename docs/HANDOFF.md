@@ -1,13 +1,15 @@
 # Handoff — next session
 
-Written 2026-09-06, at the end of the session that landed Tier 2.
+Written 2026-09-06, at the end of the session that landed dog-leg-aware routing — and that began
+by finding the built game rendering nothing but sky.
 Rewrite this file at the end of each session; it is a baton, not a log.
 
 ---
 
 ## Where things stand
 
-**`COURSE_PIPELINE.md` §9 build order: steps 1–6 are done.** Tier 2 landed this session, and the
+**`COURSE_PIPELINE.md` §9 build order: steps 1–7 are done.** Step 7 landed this session; the Tier 2
+notes below are from the session before it. The
 generator now reads the briefs. The two defects §5.1 was written about are fixed and re-measured:
 
 | Surface | Before | After |
@@ -18,7 +20,7 @@ generator now reads the briefs. The two defects §5.1 was written about are fixe
 
 Sand geography was tightened in a follow-up pass: **92.0% of sand is on the fairway, 8.0% on the
 rough's first cut, and 0.0% in the woods** (zero cells, all 18 holes). The bound is derived, not
-written down — `WOODS_WEIGHT` (0.92) in `surfaces.ts` has exactly two consumers that must agree:
+written down — `WOODS_WEIGHT` (0.92) in `terrain.ts` has exactly two consumers that must agree:
 `render/Trees.ts` plants at or above it, `sim/placement.ts` keeps every bunker's far rim below it.
 Change the blend and the sand line follows the tree line automatically.
 
@@ -69,25 +71,45 @@ found the island green's cup underwater and rejected hole 13.
 
 ---
 
-## Next: §9 step 7 — archetype-aware routing
+## What landed this session
 
-The remaining gap, and it is §1's *second* finding rather than its first. `draftHole` still picks a
-bearing, takes the straight run the box allows, and solves one perpendicular apex offset. **Every
-centreline is a symmetric single-bend arc.**
+**A blue rectangle.** The deployed game rendered sky and nothing else while `tsc` was clean, 446
+tests passed and the scene gate passed 5/5. `placement.ts` derived a module-level constant from
+`WOODS_WEIGHT` across the import cycle `course → placement → surfaces → course`; Rollup emitted the
+initialiser after the reader, the minifier had made the `const` a hoisted `var`, so the read
+returned `undefined` instead of throwing. Every bunker got NaN coordinates and `heightAt` returned
+NaN everywhere. `WOODS_WEIGHT` now lives in `terrain.ts`, strictly upstream; the two driver
+distances moved to `carry.ts` for the same reason; `tools/importCycles.test.mjs` fails the suite on
+any value-import cycle in `src/**`. Full account in `TEST-AND-SPEC-PITFALLS.md` §6 — including why
+no test in the suite could see it, and why `npm run smoke`, which *does* catch it, is not part of
+`npm run build`.
 
-A brief's `archetype` and `dogleg.severity` are read for hazard placement but not for the *shape of
-the hole*. Hole 7's `cape` and hole 4's `double-dogleg` currently differ only in where their hazards
-land, not in how they bend, and `dogleg.dir` is ignored entirely — the apex side is still
-`random() < 0.5 ? -1 : 1` (`course.ts`), which is exactly the coin flip §4's design rule 1 was
-written to replace.
+**§9 step 7, dog-leg-aware routing.** The measured before-state was worse than the previous handoff
+described: the apex offset was solved backwards out of the length residual, so bend existence,
+direction and size were all accidents of the box. Seven of eight straightaways bent (hole 11 by
+116 m at severity 0), three of four dog-legs bent the wrong way, hole 7's signature cape was dead
+straight, and `severity` was read by nothing. Now `severity × DOGLEG_MAX_TURN` is the angle each leg
+makes with the tee-to-cup line, s-curves get four control points, and the bearing is chosen from the
+arc that fits rather than drawn blind. `src/sim/routing.test.ts` pins the mapping. Acceptance is
+unchanged at 1.19 mean attempts over 720 draws, worst case 6 → 4.
 
-What it needs: `control` growing past three points for the s-curves, and the apex offset following
-`dogleg.dir` and `severity` rather than the coin flip. Everything downstream already handles a
-longer `control` — `corridorFor(brief, count)` takes the count, `halfWidthAt` interpolates over
-however many entries there are, and the spline is Catmull-Rom over an arbitrary list.
+---
 
-Then §9 step 8: **a failed brief that names itself.** Now that the generator reads briefs, an
-exhausted sampler can say which constraint was impossible instead of `exhausted 32 attempts`.
+## Next: §9 step 8 — a failed brief that names itself
+
+`generateHole` throws `exhausted 32 attempts; the last rejection was check N: <reason>`, which names
+the last *candidate's* problem rather than the *brief's*. Now that the generator reads briefs it can
+say which authored constraint was impossible, and step 7 made that question sharper rather than
+softer: the interim version of it exhausted the sampler on holes 9 and 11, and the useful sentence
+was not "check 2 again" but "a par 5 straightaway cannot be 375 m inside a 300 m field at any
+bearing". Aggregating rejections across all 32 attempts and reporting the *dominant* check, with the
+brief field implicated, is the shape of it.
+
+**Carry this into it:** `CORRIDOR_BAND[5].max` (375 m) exceeds what `FIELD_FOR_PAR[5]` (300 m) can
+hold straight even on the diagonal (342 m). `draftHole` squeezes rather than throwing, and par
+survives, but the authored numbers still contradict each other and step 8 is the feature that would
+have said so out loud. Fixing it is a design call — a larger par-5 field costs heightfield cells
+(`cells` tracks `fieldSize`), a lower band top costs par-5 length.
 
 ---
 
@@ -166,8 +188,9 @@ before 2 and 3, or the graph format gets designed around one asset.
   rectangle makes a placement bug obvious in a plan and a lobed blob hides one.
 - **A greenside bunker may end up on the other side.** When neither bank at any sampled `t` is
   clear of water, placement takes the opposite side rather than shipping an invisible bunker. A
-  compromise on the brief's intent; the real fix is step 7 giving the water somewhere less greedy
-  to go.
+  compromise on the brief's intent. Step 7 was expected to relieve it and visibly does on hole 7,
+  whose lake now fills a real elbow instead of sprawling across a straight corridor — but the
+  compromise path still exists and is still reachable.
 - **Narrow corridors are closer to the camber limit.** Check 4's arm now follows the corridor's own
   width, so a `dense` hole (10 m) samples at 15 m rather than 20 m and the same terrain reads as a
   steeper cross-slope. All eighteen holes still generate inside `MAX_ATTEMPTS`, but there is less

@@ -139,7 +139,58 @@ modal that is supposed to cover it. Nothing in a DOM-free unit test can see pain
 
 ---
 
-## 6. Reports that grade their own work
+## 6. A defect that exists only in the bundle, and in nothing the suite runs
+
+The built game rendered a plain blue rectangle — sky, and not one vertex of anything else —
+while `tsc` was clean, 446 tests passed, and the scene gate passed 5/5 with a mean signature
+delta of 0.00.
+
+`src/sim/placement.ts` computed a module-level constant from `WOODS_WEIGHT`, exported by
+`src/sim/surfaces.ts`, and the import graph was a cycle:
+`course -> placement -> surfaces -> course`. Rollup emitted `surfaces.ts`'s initialiser
+**after** `placement.ts`'s module body, and the minifier had rewritten the `const` as a
+hoisted `var`, so the read returned `undefined` rather than throwing a TDZ error.
+`inverseSmoothstep01(undefined)` is NaN, so every bunker on all eighteen holes got NaN
+coordinates, `ellipseFalloff` NaN'd `heightAt`, and all 48,841 ground vertices came out NaN.
+The sim kept running, the HUD kept counting, and the renderer kept clearing to the sky colour
+with nothing drawable in front of it.
+
+**No test could see it, and this was not an oversight in any of them:**
+
+- **`vitest` cannot reproduce it at all.** An unbundled ESM graph evaluates a cycle in the
+  order the language specifies, so the constant is always initialised in time. The suite is
+  not running the artifact that has the bug.
+- **The scene gate loads harness rigs, never a course.** Its five subjects are a cart, a ball
+  and a target on a fixed rig. It has no opinion about terrain and never builds one.
+- **`npm run smoke` *would* have caught it — and is not part of `npm run build`.** Worse, the
+  one check that would have reported it, `cart does not fall through the world`, crashed the
+  whole run with a `TypeError` instead: `page.evaluate` serialises NaN as `null`, and the
+  detail string called `.toFixed` on it. The assertion that mattered never printed a FAIL.
+
+### What actually prevents this
+
+**A constant shared across an import cycle is a shipping hazard, not a style complaint.**
+Whether it bites depends on emission order, which is the bundler's choice and not yours.
+`tools/importCycles.test.mjs` now fails `npm test` on any value-import cycle in `src/**` —
+verified red against the tree that shipped this bug, where it names the exact cycle.
+
+**Home a shared constant in a module strictly upstream of every consumer, with no path back.**
+That is why `WOODS_WEIGHT` now lives in `terrain.ts` and the two driver distances in
+`carry.ts`. Do **not** fix a failure of this kind by making the derived value lazy: that
+silences the symptom at one call site and leaves the ordering hazard in place for the next
+constant somebody adds.
+
+**A check that crashes is worse than a check that fails.** `check(...)`'s own detail string
+is code, runs before the comparison is recorded, and takes the process down with it. Format
+defensively in any detail argument that can receive a value from the page.
+
+**Ask what the passing gate actually loads.** "Build + gate green" read as "the game works".
+The gate had never rendered a course in its life. When a gate's subjects are fixtures, its
+pass says nothing about the artifact a player downloads.
+
+---
+
+## 7. Reports that grade their own work
 
 Two of the entries above were found by re-reviewers who instrumented a scenario instead of
 reading the report's rationale — and in one case disproved the fix report's own stated
@@ -155,7 +206,7 @@ part that outlives the session.
 
 ---
 
-## 7. Small things that were deferred and should not be forgotten
+## 8. Small things that were deferred and should not be forgotten
 
 Kept here because each one is a real behavior, not a cleanup, and each was deferred with a
 reason rather than fixed:

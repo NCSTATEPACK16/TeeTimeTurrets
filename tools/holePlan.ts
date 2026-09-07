@@ -16,7 +16,8 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DRIVER_CARRY_M, REFERENCE_CARRY_M, generateCourse } from "../src/sim/course";
+import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "../src/sim/carry";
+import { generateCourse } from "../src/sim/course";
 import type { HoleSpec } from "../src/sim/course";
 import { BLEND_WIDTH, createTerrain, halfWidthAt } from "../src/sim/terrain";
 import type { Terrain } from "../src/sim/terrain";

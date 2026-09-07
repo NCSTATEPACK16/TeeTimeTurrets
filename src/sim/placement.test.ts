@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { COVER_CORRIDOR } from "./briefs";
 import type { HoleBrief } from "./briefs";
-import { DRIVER_CARRY_M, REFERENCE_CARRY_M, defaultGreen } from "./course";
+import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./carry";
+import { defaultGreen } from "./course";
 import type { Vec2 } from "./course";
 import { pointInEllipse, pointInPolygon } from "./hazards";
 import { corridorFor, placeBunkers, placeWater } from "./placement";
 import type { Routing } from "./placement";
 import { mulberry32 } from "./rng";
-import { BLEND_WIDTH, inverseSmoothstep01 } from "./terrain";
-import { WOODS_WEIGHT } from "./surfaces";
+import { BLEND_WIDTH, WOODS_WEIGHT, inverseSmoothstep01 } from "./terrain";
 import { createSpline } from "./spline";
 
 /**
