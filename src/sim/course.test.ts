@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultGreen, fixedHoleSpec, isWaterAt } from "./course";
 import { pointInPolygon } from "./hazards";
 import { briefForHole } from "./briefs";
-import { SurfaceId, WOODS_WEIGHT, createSurfaceWeights, createSurfaces } from "./surfaces";
+import { SurfaceId, createSurfaceWeights, createSurfaces } from "./surfaces";
 import {
   EDGE_MARGIN,
   MAX_ATTEMPTS,
@@ -20,7 +20,7 @@ import {
   validateHole,
 } from "./course";
 import type { BiomeId, HoleSpec } from "./course";
-import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain } from "./terrain";
+import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, WOODS_WEIGHT, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { createSpline } from "./spline";
 

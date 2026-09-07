@@ -132,6 +132,46 @@ const read = () =>
 const boot = await read();
 check("starts in cart mode", boot.mode === "cart", boot.mode);
 
+// Nothing below this line, and no unit test, can see a course whose geometry has gone NaN: the
+// sim keeps running, the HUD keeps counting, and the renderer keeps clearing to the sky colour
+// while every vertex it is handed is NaN, so the page looks like a plain blue rectangle. That is
+// what shipped when `WOODS_OFFSET_M` read an uninitialised `WOODS_WEIGHT` across an import cycle
+// (see the constant's comment in src/sim/terrain.ts). Checked against the *bundle*, because the
+// bug only exists in the bundle -- vitest's module order differs and never reproduces it.
+console.log("=== COURSE GEOMETRY IS FINITE ===");
+const geometry = await page.evaluate(() => {
+  const { course, render } = window.__teetimeturrets;
+  const bad = [];
+  const finite = (v) => typeof v === "number" && Number.isFinite(v);
+  course.holes.forEach((hole, i) => {
+    for (const b of hole.bunkers) {
+      if (!finite(b.x) || !finite(b.z) || !finite(b.radiusX) || !finite(b.radiusZ) || !finite(b.rotation)) {
+        bad.push(`hole ${i} bunker`);
+      }
+    }
+    for (const poly of hole.water) {
+      for (const p of poly.points) if (!finite(p.x) || !finite(p.z)) bad.push(`hole ${i} water`);
+    }
+    for (const p of [hole.tee, hole.cup, hole.green]) {
+      if (!finite(p.x) || !finite(p.z)) bad.push(`hole ${i} anchor`);
+    }
+  });
+  const position = render.ground.mesh.geometry.getAttribute("position").array;
+  let nanVertexComponents = 0;
+  for (let i = 0; i < position.length; i++) if (!Number.isFinite(position[i])) nanVertexComponents++;
+  return { bad: bad.slice(0, 6), badCount: bad.length, nanVertexComponents };
+});
+check(
+  "every hole's placed hazards have finite coordinates",
+  geometry.badCount === 0,
+  geometry.badCount === 0 ? "18 holes" : `${geometry.badCount}: ${geometry.bad.join(", ")}`,
+);
+check(
+  "the ground mesh has no NaN vertices",
+  geometry.nanVertexComponents === 0,
+  `${geometry.nanVertexComponents} NaN components`,
+);
+
 console.log("=== DRIVE (W) ===");
 const before = boot.cart;
 await hold(page, "KeyW", 1600);
@@ -139,7 +179,10 @@ await new Promise((r) => setTimeout(r, 150));
 const driven = await read();
 const moved = Math.hypot(driven.cart.x - before.x, driven.cart.z - before.z);
 check("cart moves under throttle", moved > 3, `${moved.toFixed(1)} m`);
-check("cart does not fall through the world", Number.isFinite(driven.cart.y) && driven.cart.y > -20, `y=${driven.cart.y.toFixed(2)}`);
+// `y` arrives as null when the page's value was NaN -- page.evaluate serialises it through JSON.
+// Formatting it unguarded threw a TypeError out of the whole run, which turned the one check that
+// catches a NaN'd height field into a crash with no FAIL line. Report it instead.
+check("cart does not fall through the world", Number.isFinite(driven.cart.y) && driven.cart.y > -20, `y=${Number.isFinite(driven.cart.y) ? driven.cart.y.toFixed(2) : String(driven.cart.y)}`);
 
 console.log("=== STEER (A) ===");
 const headingBefore = driven.heading;

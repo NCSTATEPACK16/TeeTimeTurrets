@@ -120,19 +120,6 @@ export function sandChannel(spec: HoleSpec): number {
   return hashChannel(spec.seed, spec.index, 1);
 }
 
-/**
- * The corridor weight at which rough becomes *the woods*.
- *
- * One constant, two consumers, and they have to agree or the course contradicts itself:
- * `src/render/Trees.ts` plants only at or above this weight, and `src/sim/placement.ts` keeps
- * bunkers strictly below it. That is what makes "sand never appears in the woods" true by
- * construction on any corridor width, rather than true for the widths somebody happened to check.
- *
- * 0.92 rather than 1.0 because a tree in the first cut looks like a mistake and one on the mown
- * surface blocks a shot the validator has already certified as playable.
- */
-export const WOODS_WEIGHT = 0.92;
-
 export interface Surfaces {
   /** Discrete. Feeds the HUD readout, Phase 4's minimap, and render colouring. */
   surfaceAt(worldX: number, worldZ: number): SurfaceId;

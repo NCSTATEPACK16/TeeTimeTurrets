@@ -7,8 +7,7 @@ import { pointInEllipse, pointInPolygon } from "./hazards";
 import { corridorFor, placeBunkers, placeWater } from "./placement";
 import type { Routing } from "./placement";
 import { mulberry32 } from "./rng";
-import { BLEND_WIDTH, inverseSmoothstep01 } from "./terrain";
-import { WOODS_WEIGHT } from "./surfaces";
+import { BLEND_WIDTH, WOODS_WEIGHT, inverseSmoothstep01 } from "./terrain";
 import { createSpline } from "./spline";
 
 /**

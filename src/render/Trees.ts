@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashChannel, mulberry32 } from "../sim/rng";
-import { WOODS_WEIGHT, createSurfaceWeights } from "../sim/surfaces";
+import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
+import { WOODS_WEIGHT } from "../sim/terrain";
 import type { Terrain } from "../sim/terrain";
 import { BIOMES } from "./biomes";
 import type { BiomePalette } from "./biomes";

@@ -35,6 +35,29 @@ export const BLEND_WIDTH = 10;
 export const GREEN_BLEND = 6;
 
 /**
+ * The corridor weight at which rough becomes *the woods*.
+ *
+ * One constant, two consumers, and they have to agree or the course contradicts itself:
+ * `src/render/Trees.ts` plants only at or above this weight, and `src/sim/placement.ts` keeps
+ * bunkers strictly below it. That is what makes "sand never appears in the woods" true by
+ * construction on any corridor width, rather than true for the widths somebody happened to check.
+ *
+ * 0.92 rather than 1.0 because a tree in the first cut looks like a mistake and one on the mown
+ * surface blocks a shot the validator has already certified as playable.
+ *
+ * It lives *here*, beside the blend it is a weight on, rather than in `surfaces.ts` which neither
+ * defines nor uses the blend -- and that placement is load-bearing, not tidiness. `placement.ts`
+ * derives a module-level constant from it (`WOODS_OFFSET_M`), and `surfaces.ts` imports
+ * `course.ts`, which imports `placement.ts`. Homed in `surfaces.ts` the constant sat inside that
+ * import cycle, and Rollup emitted its initialiser *after* `placement.ts`'s module body: the
+ * derived constant read `undefined`, became NaN, and every bunker on the course got NaN
+ * coordinates, which NaN'd `heightAt` and left the built game rendering nothing but sky. `vitest`
+ * never saw it because an unbundled ESM graph evaluates the cycle in the other order. `terrain.ts`
+ * is strictly upstream of `placement.ts` with no path back, so its initialisers always run first.
+ */
+export const WOODS_WEIGHT = 0.92;
+
+/**
  * How a placed hazard is shaped, as opposed to merely classified (docs/COURSE_PIPELINE.md §5).
  *
  * A hazard that is only a classification is paint: water would be a blue region on a hillside and
