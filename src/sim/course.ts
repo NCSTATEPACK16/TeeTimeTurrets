@@ -16,6 +16,7 @@ import type { Ellipse, Polygon } from "./hazards";
 import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./carry";
 import { hashChannel, mulberry32 } from "./rng";
 import { briefForHole } from "./briefs";
+import type { DoglegDir } from "./briefs";
 import { corridorFor, placeBunkers, placeWater } from "./placement";
 
 export interface Vec2 {
@@ -301,10 +302,7 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
     return { check: 6, reason: "the tee is inside a water hazard" };
   }
 
-  // The widest half-width the hole authorises, so check 2's box is the box the *whole* corridor
-  // has to fit inside rather than the one its narrowest point would allow.
-  const widest = Math.max(...spec.corridor);
-  const room = spec.fieldSize / 2 - (widest + BLEND_WIDTH) - EDGE_MARGIN;
+  const room = corridorBox(spec.fieldSize, spec.corridor);
   const steps = Math.max(2, Math.ceil(spline.length / CENTRELINE_SAMPLE_M));
   const tangent: MutableVec2 = { x: 0, z: 0 };
   let previousX = 0;
@@ -469,18 +467,127 @@ export const CORRIDOR_BAND: Readonly<Record<number, { min: number; max: number }
   5: { min: 265, max: 375 },
 };
 
-/** How much of the usable box a straight run and a dog-leg apex are allowed to consume. */
-const STRAIGHT_FILL = 0.92;
-const APEX_FILL = 0.85;
+/**
+ * The angle each leg of the routing makes with the tee-to-cup line at `severity` 1.
+ *
+ * This is what `severity` *means*, and it is the whole reason the brief's number now reaches the
+ * geometry. 45 degrees is the ceiling rather than a typical value: hole 7's cape, the most severe
+ * on the card at 0.8, turns 36 degrees, and the four ordinary dog-legs sit between 18 and 32.
+ *
+ * Exported because `routing.test.ts` recovers the angle from the drafted control points and
+ * checks it against `severity * DOGLEG_MAX_TURN`. A test that restated the number would stop
+ * checking anything the moment one copy moved, and a test that only asserted "more severity, more
+ * bend" would pass on any increasing function, including one that bends a 0.4 hole by 3 metres.
+ */
+export const DOGLEG_MAX_TURN = Math.PI / 4;
+
+/**
+ * The half-width of the square the centreline must stay inside, measured from the field's centre.
+ *
+ * The widest half-width the hole authorises, so the box is the one the *whole* corridor has to fit
+ * inside rather than the one its narrowest point would allow.
+ *
+ * One function with two callers, and they have to agree exactly or the generator argues with its
+ * own validator: `validateHole` check 2 rejects a centreline that leaves this box, and `draftHole`
+ * picks a bearing that keeps it inside. Stating the formula twice would make a bearing the draw
+ * believed was legal and the check did not into a silent source of exhausted samplers.
+ */
+export function corridorBox(fieldSize: number, corridor: readonly number[]): number {
+  return fieldSize / 2 - (Math.max(...corridor) + BLEND_WIDTH) - EDGE_MARGIN;
+}
+
+/**
+ * How many bearings a draft tries before it concludes the field cannot hold the hole.
+ *
+ * One degree. That is finer than it looks like it needs to be, and the reason is the worst case:
+ * a par 5 straightaway at the top of its band needs `max(|cos|, |sin|)` below 0.708 against a
+ * floor of 0.707, so its feasible arc is under a degree wide either side of the exact diagonal.
+ * A coarser scan would miss it and fall through to the squeeze for holes that could have been
+ * drawn at full length.
+ */
+const BEARING_TRIES = 360;
+
+/** `left` is positive, matching `bulgeSide` in `placement.ts` and `lateralOffset` in the tests. */
+function doglegSide(dir: DoglegDir): number {
+  return dir === "right" ? -1 : 1;
+}
+
+/**
+ * Which way an s-curve's first bend goes.
+ *
+ * `dogleg.dir` names no side for an s-curve, so the side comes from design rule 1 of
+ * COURSE_PIPELINE.md section 4: no two adjacent holes turn the same way. The eighteen authored
+ * directions already satisfy that rule among themselves, so an s-curve taking the opposite of the
+ * hole before it makes the rule true across the whole card by construction -- which is what the
+ * rule was written to replace, since the side used to be `random() < 0.5 ? -1 : 1`.
+ */
+function firstBendSide(holeNumber: number): number {
+  return -doglegSide(briefForHole(holeNumber === 1 ? 18 : holeNumber - 1).dogleg.dir);
+}
+
+/**
+ * The control points of one routing, centred on the origin and running along (dirX, dirZ).
+ *
+ * `straight` is the tee-to-cup distance and `offset` the first bend's lateral distance from the
+ * line of play, signed positive to the left. One function rather than two because the corner-cut
+ * correction in `draftHole` measures a *probe* built here and then rebuilds the real thing here:
+ * a second copy shaped even slightly differently would make the measurement describe a routing
+ * that never shipped, and the correction would be silently wrong rather than visibly absent.
+ *
+ * A straightaway keeps a midpoint control point at zero offset rather than dropping to two points:
+ * the corridor is authored as three half-widths, and a two-point spline would throw away the `mid`
+ * pinch that makes the landing zone narrower than the tee.
+ */
+function routingControl(
+  dirX: number,
+  dirZ: number,
+  straight: number,
+  offset: number,
+  sCurve: boolean,
+): Vec2[] {
+  // The left normal of the line of play, so a positive `offset` bends left -- the sign convention
+  // `bulgeSide` reads when it decides which side of a dog-leg is the inside.
+  const normalX = -dirZ;
+  const normalZ = dirX;
+  const at = (along: number, lateral: number): Vec2 => ({
+    x: dirX * along + normalX * lateral,
+    z: dirZ * along + normalZ * lateral,
+  });
+  const tee = at(-straight / 2, 0);
+  const cup = at(straight / 2, 0);
+  return sCurve
+    ? [tee, at(-straight / 4, offset), at(straight / 4, -offset), cup]
+    : [tee, at(0, offset), cup];
+}
 
 /**
  * One candidate layout, before validation. Deterministic in (courseSeed, index, par, attempt).
  *
- * Target-first: draw the corridor length, take whatever straight distance the box allows along
- * a random bearing, then SOLVE for the apex offset that makes up the difference. Drawing the
- * apex directly instead lets the worst case fall short of its band -- a par 5 in a 300 m field
- * aligned with an axis has only 238 m of straight available and needs a ~75 m dog-leg to reach
- * 265 m. This is the sense in which the dog-leg is load-bearing rather than decorative.
+ * **Shape-first, and this used to be the other way round.** The corridor length is still drawn
+ * from `CORRIDOR_BAND`, but the bend is now the brief's to choose and the straight run is what
+ * gives. Both legs of the routing make an angle `severity * DOGLEG_MAX_TURN` with the tee-to-cup
+ * line, which fixes the lateral offset and the tee-to-cup distance together:
+ *
+ *     bendCount   1 for a dog-leg, 2 for an s-curve
+ *     offset      (target / (2 * bendCount)) * sin(turn)
+ *     straight    target * cos(turn)
+ *
+ * The polyline through those points is `target` long by construction -- for one bend that is
+ * `2 * hypot(straight/2, offset)`, for two it is `4 * hypot(straight/4, offset)`, and both reduce
+ * to `target` -- so par stays pinned to the brief while the shape becomes the brief's.
+ *
+ * **What it replaced, and why the replacement was not optional.** The apex offset used to be
+ * solved *backwards* out of the length residual: take whatever straight run the box allowed, then
+ * `sqrt((target/2)^2 - (straight/2)^2)` for the rest, on a coin-flipped side. The bend's
+ * existence, direction and size were therefore all accidents of how the box happened to clip the
+ * corridor length, and none of the three had anything to do with the brief. Seven of the eight
+ * straightaways bent -- hole 11 by 116 m, on a brief whose severity is 0 -- three of the four
+ * dog-legs bent against their stated direction, and hole 7, the signature cape at severity 0.8,
+ * came out dead straight. `severity` was read by nothing at all.
+ *
+ * The old comment defended the inversion on the grounds that drawing the apex directly lets a
+ * par 5 fall short of its band. That case is real and this handles it: `target` is what scales
+ * when the shape will not fit the box, so the *shape* survives and only the length gives.
  *
  * Exported so `npm run probe` can measure the acceptance rate: calling generateHole and
  * counting throws measures whether a *course* can be built, which is a different and much
@@ -494,34 +601,108 @@ export function draftHole(
 ): HoleSpec {
   const seed = hashChannel(courseSeed, index, attempt);
   const random = mulberry32(hashChannel(seed, index, 2));
-  const brief = briefForHole((index % 18) + 1);
-  const corridor = corridorFor(brief, 3);
+  const holeNumber = (index % 18) + 1;
+  const brief = briefForHole(holeNumber);
+  const sCurve = brief.dogleg.dir === "s-curve";
+  const bendCount = sCurve ? 2 : 1;
+  // One corridor half-width per control point, so a four-point s-curve pinches through both of
+  // its bends rather than only the first. `halfWidthAt` interpolates over however many there are.
+  const corridor = corridorFor(brief, bendCount + 2);
 
   const fieldSize = FIELD_FOR_PAR[par];
-  // The box shrinks with the corridor, because a wider mown surface needs more room beside it.
-  // Reading the widest of the brief's three half-widths keeps the layout draw and `validateHole`
-  // check 2 agreeing about where the walls are.
-  const widest = Math.max(...corridor);
-  const half = fieldSize / 2 - (widest + BLEND_WIDTH) - EDGE_MARGIN;
-
-  const bearing = random() * Math.PI * 2;
-  const dirX = Math.cos(bearing);
-  const dirZ = Math.sin(bearing);
-  // Distance from the centre to the wall of a square box along +-bearing. The perpendicular
-  // bearing swaps |dirX| and |dirZ|, so max() of the pair gives the same reach for both.
-  const reach = half / Math.max(Math.abs(dirX), Math.abs(dirZ));
-
   const band = CORRIDOR_BAND[par];
   const target = band.min + (band.max - band.min) * random();
-  const straight = Math.min(reach * 2 * STRAIGHT_FILL, target);
 
-  const tee: Vec2 = { x: (-dirX * straight) / 2, z: (-dirZ * straight) / 2 };
-  const cup: Vec2 = { x: (dirX * straight) / 2, z: (dirZ * straight) / 2 };
+  const turn = brief.dogleg.severity * DOGLEG_MAX_TURN;
+  const side = sCurve ? firstBendSide(holeNumber) : doglegSide(brief.dogleg.dir);
+  const shapeOffset = (target / (2 * bendCount)) * Math.sin(turn);
+  const shapeStraight = target * Math.cos(turn);
 
-  // Solve 2 * hypot(straight / 2, apex) = target, then clamp to the box.
-  const wanted = Math.sqrt(Math.max(0, (target / 2) ** 2 - (straight / 2) ** 2));
-  const offset = Math.min(wanted, reach * APEX_FILL) * (random() < 0.5 ? -1 : 1);
-  const apex: Vec2 = { x: -dirZ * offset, z: dirX * offset };
+  /**
+   * The polyline through the control points is `target` long by construction, but the spline
+   * *through* them cuts every corner, and the length that decides par is the spline's --
+   * `generateHole` calls `derivePar(terrain.spline.length)`. Sizing to the polyline therefore
+   * under-delivers on the band by however much the corner-cutting takes, which is nothing on a
+   * straightaway and enough on hole 4's four-point s-curve to drop it from par 5 to par 4.
+   *
+   * A Catmull-Rom scales with its control points, so one measurement corrects it exactly rather
+   * than iteratively: build the shape at any size, divide the length wanted by the length got. The
+   * probe runs along +X because neither arc length nor the shape depends on the bearing, which is
+   * what lets the bearing be chosen *after* it, below.
+   */
+  const probe = createSpline(routingControl(1, 0, shapeStraight, shapeOffset * side, sCurve));
+  const correction = target / probe.length;
+
+  /**
+   * Where the hole points, chosen rather than drawn blind.
+   *
+   * The routing is now the brief's to shape, so the bearing is the only freedom left to make it
+   * fit -- and it is a real one, because a square box holds a much longer hole on its diagonal
+   * than on an axis. A par 5 straightaway with a 19 m corridor has 242 m of room axis-aligned and
+   * 342 m on the diagonal, against a band that asks for 265 to 375. Drawing the bearing blind and
+   * letting `validateHole` reject the misses exhausts the sampler on holes 9 and 11: the arc that
+   * works is under a degree wide.
+   *
+   * So: sample the shape exactly as check 2 walks it -- the same 1 m interval, the same box, via
+   * the same `corridorBox` -- and take the first bearing at or after the drawn one that fits. The
+   * drawn bearing is still where the search starts, so a hole with room to spare still points
+   * essentially anywhere.
+   */
+  const room = corridorBox(fieldSize, corridor);
+  const steps = Math.max(2, Math.ceil(target / CENTRELINE_SAMPLE_M));
+  const shapeX: number[] = [];
+  const shapeZ: number[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const p = probe.pointAt(i / steps);
+    shapeX.push(p.x * correction);
+    shapeZ.push(p.z * correction);
+  }
+  const roomNeeded = (angle: number): number => {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    let needed = 0;
+    for (let i = 0; i < shapeX.length; i++) {
+      const x = shapeX[i]! * c - shapeZ[i]! * s;
+      const z = shapeX[i]! * s + shapeZ[i]! * c;
+      needed = Math.max(needed, Math.abs(x), Math.abs(z));
+    }
+    return needed;
+  };
+
+  const drawn = random() * Math.PI * 2;
+  let bearing: number | null = null;
+  let tightestAngle = drawn;
+  let tightest = Infinity;
+  for (let k = 0; k < BEARING_TRIES; k++) {
+    const angle = drawn + (k * 2 * Math.PI) / BEARING_TRIES;
+    const needed = roomNeeded(angle);
+    if (needed < tightest) {
+      tightest = needed;
+      tightestAngle = angle;
+    }
+    if (bearing === null && needed <= room) bearing = angle;
+  }
+
+  /**
+   * The fallback, for a hole the field cannot hold at *any* bearing: point it at the orientation
+   * that needs the least room and shrink it to fit.
+   *
+   * This is the one place length gives, and it fires only on a genuine contradiction in the
+   * authored data rather than on an unlucky draw -- `CORRIDOR_BAND[5]` runs to 375 m while a par 5
+   * has at most 342 m of diagonal, so the top of that band describes a hole no 300 m field can
+   * hold straight. Shrinking is still the right answer over bending it back: the old generator
+   * chose to bend, and a 116 m dog-leg on a severity-0 brief is a worse lie than a hole 9% short
+   * of the length it drew. The squeeze keeps a par 5 a par 5 -- 375 m squeezes to 342, well over
+   * `derivePar`'s 258 m threshold.
+   */
+  const squeeze = bearing === null ? room / tightest : 1;
+  const scale = correction * squeeze;
+  const dirX = Math.cos(bearing ?? tightestAngle);
+  const dirZ = Math.sin(bearing ?? tightestAngle);
+
+  const control = routingControl(dirX, dirZ, shapeStraight * scale, shapeOffset * scale * side, sCurve);
+  const tee = control[0]!;
+  const cup = control[control.length - 1]!;
 
   return {
     seed,
@@ -530,7 +711,7 @@ export function draftHole(
     cells: fieldSize,
     tee,
     cup,
-    control: [tee, apex, cup],
+    control,
     // Placeholder: replaced with the derived value in generateHole, which has the spline.
     par,
     waterLevel: -0.72,

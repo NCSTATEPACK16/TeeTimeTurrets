@@ -1,10 +1,10 @@
 # Course Design Pipeline — 18 holes, from intent to geometry
 
 **Status:** built end to end. The plan renderer (§6), Tier 1 and Tier 2 (§5), the `HoleBrief`
-schema and its eighteen briefs (§3, §4), and the generator that reads them (§9). The two defects
-§5.1 was written about are fixed and re-measured. What remains is archetype-aware *routing* — the
-generator honours a brief's hazards and corridor but still draws every centreline as a single-bend
-arc (§9 step 7).
+schema and its eighteen briefs (§3, §4), the generator that reads them, and dog-leg-aware routing
+(§9). The two defects §5.1 was written about are fixed and re-measured, and a brief's shape now
+reaches the centreline as well as its hazards. What remains is a failed brief that names its own
+impossible constraint (§9 step 8).
 **Supersedes:** `docs/concept/hole-shot-prompts.md` (per-hole teebox/aerial concept art).
 **Related:** `ASSET_PIPELINE.md` (3D assets), `superpowers/specs/2026-09-01-procedural-course-design.md` (the shipped generator).
 
@@ -254,9 +254,12 @@ Two properties of this table are load-bearing:
 
 ### Four design rules this table encodes
 
-1. **No two adjacent holes share a dogleg direction.** Today direction is a per-hole coin flip
-   (`course.ts:319`, `random() < 0.5 ? -1 : 1`), so a run of four same-way doglegs has probability
-   1/16 in any given window — likely to appear at least once across 18 holes.
+1. **No two adjacent holes share a dogleg direction.** Direction used to be a per-hole coin flip
+   (`random() < 0.5 ? -1 : 1`), so a run of four same-way doglegs had probability 1/16 in any given
+   window — likely to appear at least once across 18 holes. `draftHole` now reads `dogleg.dir`, and
+   because the eighteen authored directions already satisfy this rule among themselves, honouring
+   them makes it true by construction. An s-curve names no direction, so it takes the opposite of
+   the hole before it, which is the rule applied rather than an exception to it.
 2. **A combat axis.** `cover` and `corridor` widths are *arena* parameters, not just golf ones. A
    300 m dead-straight par 5 at 15 m half-width is a shooting gallery; a tight dogleg with dense
    cover is a knife fight. This game is the only one where that axis exists, and it was entirely
@@ -736,15 +739,48 @@ Ordinary marketing generation. No pretense of being a spec, no per-hole variants
 6. ~~**The generator consumes the briefs.**~~ **Done**, and it landed with Tier 2 rather than after
    it — without it the four new fields existed and were always empty, which is the "data with no
    consumer" problem this whole document is about.
-7. **Archetype-aware routing.** ← *next.* The remaining gap, and it is §1's *second* finding rather
-   than its first: `draftHole` still picks a bearing, takes the straight run the box allows, and
-   solves one perpendicular apex offset. Every centreline is a symmetric single-bend arc. A brief's
-   `archetype` and `dogleg.severity` are read for hazard placement but **not for the shape of the
-   hole** — hole 7's `cape` and hole 4's `double-dogleg` currently differ only in where their
-   hazards land, not in how they bend. Fixing it means `control` growing past three points for the
-   s-curves and the apex offset following `dogleg.dir`/`severity` rather than a coin flip.
-8. **A failed brief that names itself** (§3). Still unbuilt. Now that the generator reads briefs it
-   can say *which constraint* was impossible instead of `exhausted 32 attempts`.
+7. ~~**Archetype-aware routing.**~~ **Done**, and it turned out to be *dog-leg-aware* routing:
+   `dogleg.dir` and `dogleg.severity` fully specify a centreline, so `archetype` stays what it was,
+   a hazard-placement input. An archetype switch on top of the two fields that already say the
+   shape would have been a second and contradictory source of it.
+
+   **What was actually wrong was worse than "every centreline is a single-bend arc".** The apex
+   offset was solved *backwards* out of the length residual — take whatever straight run the box
+   allowed, then `sqrt((target/2)² − (straight/2)²)` for the rest, on a coin-flipped side — so the
+   bend's existence, direction *and* size were accidents of how the box happened to clip the
+   corridor length. Measured against the briefs: seven of the eight straightaways bent (hole 11 by
+   116 m on a severity-0 brief), three of the four dog-legs bent against their stated direction, and
+   hole 7 — the signature cape at severity 0.8 — came out dead straight. `severity` was read by
+   nothing at all.
+
+   The solve is now shape-first. `severity × DOGLEG_MAX_TURN` (45°) is the angle each leg makes with
+   the tee-to-cup line, which fixes the lateral offset and the tee-to-cup distance together and
+   leaves the polyline exactly `target` long, so par stays pinned to the brief. An s-curve gets four
+   control points and starts opposite the hole before it, which makes design rule 1 of §4 true by
+   construction rather than by a 1-in-16 coin flip. `src/sim/routing.test.ts` asserts the mapping —
+   the recovered angle against `severity × DOGLEG_MAX_TURN`, not merely that more severity bends
+   more.
+
+   **Two things fell out of building it, both worth knowing:**
+
+   - **The band and the field contradict each other for a straight par 5.** `CORRIDOR_BAND[5]` runs
+     to 375 m, but a par 5 with a 19 m corridor has 242 m of room axis-aligned in its 300 m field
+     and 342 m on the diagonal. The top of that band describes a hole no par-5 field can hold
+     straight, at any bearing. The old generator hid this by bending — hole 11's 116 m dog-leg *was*
+     this contradiction wearing a disguise. `draftHole` now chooses its bearing from the arc that
+     fits (1° resolution, because the worst case's feasible arc is under a degree wide) and, only
+     when nothing fits at any bearing, squeezes the whole routing to the tightest orientation. The
+     squeeze keeps a par 5 a par 5 — 375 m squeezes to 342, well over `derivePar`'s 258 m threshold
+     — but the honest fix is in the authored numbers, either a larger `FIELD_FOR_PAR[5]` or a lower
+     `CORRIDOR_BAND[5].max`, and that is a design call rather than a generator one.
+   - **The box is now stated once.** `draftHole` used to compute its own `reach` and clamp against
+     it while `validateHole` check 2 walked the spline against a separately-written box. Both now
+     call `corridorBox`, so a bearing the draw believes is legal is one the check accepts.
+
+   Acceptance rate is unchanged and slightly better: over 720 hole draws, mean 1.19 attempts either
+   side of the change, worst case 6 → 4, zero exhaustions.
+8. **A failed brief that names itself** (§3). ← *next.* Still unbuilt. Now that the generator reads
+   briefs it can say *which constraint* was impossible instead of `exhausted 32 attempts`.
 
 Re-run `npm run plan` after every step. A course change that does not show up in the plans either
 did nothing or did something you did not intend.
@@ -758,8 +794,10 @@ did nothing or did something you did not intend.
   a lobed blob hides one.
 - **A greenside bunker may end up on the other side.** When neither bank at any sampled `t` is
   clear of water, placement takes the opposite side rather than shipping an invisible bunker. It
-  is a compromise on the brief's intent, and the right fix is archetype-aware routing (step 7)
-  giving the water somewhere less greedy to go.
+  is a compromise on the brief's intent. Step 7 was expected to relieve this by giving the water
+  somewhere less greedy to go, and on hole 7 it visibly does — the lake now fills a real elbow
+  rather than sprawling across a straight corridor — but the compromise path still exists and is
+  still reachable.
 - **`fixedHoleSpec()` is deliberately hazard-free.** It is what the cart, ballistics and probe
   suites run against, so a physics regression is never confused with a hazard landing under the
   ball. Any test whose subject *is* sand or water builds its own spec.
