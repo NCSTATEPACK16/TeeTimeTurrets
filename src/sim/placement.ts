@@ -12,7 +12,7 @@
  */
 
 import type { HoleBrief } from "./briefs";
-import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./course";
+import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./carry";
 import type { Vec2 } from "./course";
 import { ellipseEdgeDistance, pointInPolygon, polygonDistance } from "./hazards";
 import type { Ellipse, Polygon } from "./hazards";

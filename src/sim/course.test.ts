@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultGreen, fixedHoleSpec, isWaterAt } from "./course";
+import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./carry";
 import { pointInPolygon } from "./hazards";
 import { briefForHole } from "./briefs";
 import { SurfaceId, createSurfaceWeights, createSurfaces } from "./surfaces";
@@ -8,8 +9,6 @@ import {
   MAX_ATTEMPTS,
   MAX_CAMBER_GRAD,
   MIN_HOLE_LENGTH,
-  REFERENCE_CARRY_M,
-  DRIVER_CARRY_M,
   derivePar,
   generateCourse,
   generateHole,

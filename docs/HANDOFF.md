@@ -18,7 +18,7 @@ generator now reads the briefs. The two defects §5.1 was written about are fixe
 
 Sand geography was tightened in a follow-up pass: **92.0% of sand is on the fairway, 8.0% on the
 rough's first cut, and 0.0% in the woods** (zero cells, all 18 holes). The bound is derived, not
-written down — `WOODS_WEIGHT` (0.92) in `surfaces.ts` has exactly two consumers that must agree:
+written down — `WOODS_WEIGHT` (0.92) in `terrain.ts` has exactly two consumers that must agree:
 `render/Trees.ts` plants at or above it, `sim/placement.ts` keeps every bunker's far rim below it.
 Change the blend and the sand line follows the tree line automatically.
 
