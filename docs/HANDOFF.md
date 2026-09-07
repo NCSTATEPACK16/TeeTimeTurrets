@@ -95,21 +95,70 @@ unchanged at 1.19 mean attempts over 720 draws, worst case 6 → 4.
 
 ---
 
-## Next: §9 step 8 — a failed brief that names itself
+## Next session — pick one of these two, they are not the same size
 
-`generateHole` throws `exhausted 32 attempts; the last rejection was check N: <reason>`, which names
-the last *candidate's* problem rather than the *brief's*. Now that the generator reads briefs it can
-say which authored constraint was impossible, and step 7 made that question sharper rather than
-softer: the interim version of it exhausted the sampler on holes 9 and 11, and the useful sentence
-was not "check 2 again" but "a par 5 straightaway cannot be 375 m inside a 300 m field at any
-bearing". Aggregating rejections across all 32 attempts and reporting the *dominant* check, with the
-brief field implicated, is the shape of it.
+### Where the eighteen holes actually are, because this is the first thing anyone asks
+
+All eighteen are generated at boot and every one of them is playable **right now, one at a time, by
+URL**: `teetimeturrets.netlify.app/?hole=0` through `?hole=17` (0-based — `?hole=12` is hole 13, the
+island green). `npm run plan` draws all eighteen to `docs/course/plans/`. Nothing about the course is
+missing.
+
+What is missing is a **round**. Four specific facts, in the order you will hit them:
+
+1. `main.ts:34` calls `parseHoleIndex(window.location.search, …)` **once, at boot**. The hole index
+   is never read again.
+2. `Sim.loadHole(spec)` (`src/sim/world.ts:540`) already works and is tested — it swaps the terrain,
+   surfaces, ground collider, targets, ball pool and bucket positions, and re-sizes cart health for
+   the new par. **The simulation half of hole advancement is done.**
+3. `RenderScene` builds its ground mesh once, in the constructor (`src/render/scene.ts:134`,
+   `createGround(terrain, surfaces)`), and has no rebuild path. **This is the actual blocker.** It is
+   why the comment at `main.ts:29` says switching holes still means a page reload.
+4. Nothing carries a scorecard across holes and nothing transitions between them.
+
+### Option A — `RenderScene.loadHole`, and a round (Phase 1.75)
+
+The bigger piece, and the one that turns eighteen playable holes into a game. `Sim.loadHole` gives
+you the sim side for free, so the first commit is small and self-contained:
+
+- Add `RenderScene.loadHole(terrain, surfaces)`: dispose `this.ground` and `this.trees`, rebuild both
+  from the new terrain, swap the scene children, and reset `cameraTarget`. `dispose()` already frees
+  the right things (`scene.ts:190`) — follow it exactly or the session leaks a heightfield mesh per
+  hole, which at 48,841 vertices a hole is not subtle.
+- Then `sim.loadHole` + `render.loadHole` behind a temporary key (advance on `N`) proves the pair
+  works before any screen work exists. That is the whole first commit, and it is testable in smoke:
+  drive, press N, assert the terrain changed and no console errors.
+- Only then the Phase 1.75 screen flow — `ScreenManager`, `src/sim/round.ts` for the per-hole card,
+  `ResultsScreen`. `ROADMAP.md` Phase 1.75 has the full checklist.
+
+**Watch for:** cart health is `2 × par` and `loadHole` re-sizes it, so advancing from a par 3 to a
+par 5 heals the player. That is a design question nobody has answered, not a bug — decide it out
+loud rather than letting `setMaxHealth` decide it.
+
+### Option B — §9 step 8, a failed brief that names itself
+
+The smaller piece, and the one the generator is currently missing. `generateHole` throws
+`exhausted 32 attempts; the last rejection was check N: <reason>`, which names the last *candidate's*
+problem rather than the *brief's*. Aggregate rejections across all 32 attempts, report the dominant
+check, and name the brief field implicated.
+
+Step 7 made this sharper rather than softer: its interim version exhausted the sampler on holes 9
+and 11, and the useful sentence was not "check 2 again" but *"a par 5 straightaway cannot be 375 m
+inside a 300 m field at any bearing"*.
 
 **Carry this into it:** `CORRIDOR_BAND[5].max` (375 m) exceeds what `FIELD_FOR_PAR[5]` (300 m) can
 hold straight even on the diagonal (342 m). `draftHole` squeezes rather than throwing, and par
 survives, but the authored numbers still contradict each other and step 8 is the feature that would
-have said so out loud. Fixing it is a design call — a larger par-5 field costs heightfield cells
-(`cells` tracks `fieldSize`), a lower band top costs par-5 length.
+say so out loud. Fixing it is a design call — a larger par-5 field costs heightfield cells (`cells`
+tracks `fieldSize`), a lower band top costs par-5 length.
+
+### Not optional, whichever you pick
+
+`npm run smoke` is the only gate that catches bundle-only breakage — the class of bug that shipped a
+blue rectangle to production this session — and it is **not** part of `npm run build` (which is
+`tsc && vite build && npm run gate`, and the gate renders five harness rigs, never a course). Adding
+it costs about 40 s per build. It was left out of this session's PR deliberately because it is a
+pipeline decision, not part of a fix.
 
 ---
 
