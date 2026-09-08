@@ -5,6 +5,9 @@ import { FIXED_DT, Sim } from "./sim/world";
 import { generateCourse } from "./sim/course";
 import { Round } from "./sim/round";
 import { parseHoleIndex } from "./devHoleParam";
+import { createLoadout, tireTypeFor } from "./sim/loadout";
+import { earningsFor } from "./sim/wallet";
+import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import { RoundScreen } from "./ui/screens/RoundScreen";
 import { ResultsScreen } from "./ui/screens/ResultsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
@@ -35,7 +38,7 @@ import { TitleScreen } from "./ui/screens/TitleScreen";
 const COURSE_SEED = 2026;
 const VERSION = "v0.0.1";
 
-type ScreenName = "title" | "round" | "results";
+type ScreenName = "title" | "round" | "results" | "clubhouse";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
@@ -67,10 +70,18 @@ async function main(): Promise<void> {
   let sim: Sim | null = null;
   let roundScreen: RoundScreen | null = null;
 
+  // Session-scoped for now. Persisting these is BACKLOG #48's job; the clubhouse works either way
+  // because it only ever reads and writes them through here.
+  let loadout = createLoadout();
+  let coins = 6000;
+
   const startRound = async (): Promise<void> => {
     const spec = course.holes[Math.min(round.holeIndex, course.holes.length - 1)];
     if (!spec) throw new Error("course has no holes");
-    sim = await Sim.create(spec);
+    // The one purchase that is not cosmetic: the tire the player bought is the tire the physics
+    // uses, which is what makes ROADMAP.md's "tire type is a stat, not a skin" true rather than
+    // merely stated.
+    sim = await Sim.create(spec, { tire: tireTypeFor(loadout) });
     round = new Round(
       course.holes.map((h) => h.par),
       sim.stats,
@@ -87,11 +98,9 @@ async function main(): Promise<void> {
       version: VERSION,
       actions: {
         play: () => void startRound(),
+        clubhouse: () => screens.show("clubhouse"),
         // Still undefined, so these render visibly disabled rather than absent -- ROADMAP.md
-        // asks for exactly that: a button that looks alive and does nothing is worse. CLUBHOUSE
-        // joins PLAY when its screen lands; MULTIPLAYER and SETTINGS wait for Phase 5 and a
-        // settings screen respectively.
-        clubhouse: undefined,
+        // asks for exactly that: a button that looks alive and does nothing is worse.
         multiplayer: undefined,
         settings: undefined,
       },
@@ -109,12 +118,27 @@ async function main(): Promise<void> {
       nameplateRoot,
       onHoleComplete: (strokes) => {
         round.completeHole(strokes);
+        coins += earningsFor(round);
         // Mouse-aim players are pointer-locked and cannot reach a button until it is released.
         if (document.pointerLockElement !== null) document.exitPointerLock();
         screens.show("results");
       },
     });
     return roundScreen;
+  });
+
+  screens.register("clubhouse", () => {
+    return new ClubhouseScreen({
+      root: screensRoot,
+      renderer,
+      loadout,
+      coins,
+      onConfirm: (next, remaining) => {
+        loadout = next;
+        coins = remaining;
+      },
+      onBack: () => screens.show("title"),
+    });
   });
 
   screens.register("results", () => {

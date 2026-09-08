@@ -107,12 +107,11 @@ check(
   title.labels.join(" / "),
 );
 // ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead. A button that looks
-// alive and does nothing is the failure this asserts against. PLAY is built; CLUBHOUSE,
+// alive and does nothing is the failure this asserts against. PLAY and CLUBHOUSE are built;
 // MULTIPLAYER and SETTINGS are not, and must read as "not yet" rather than silently do nothing.
-// CLUBHOUSE flips to false when its screen lands, and this assertion is how that is noticed.
 check(
   "built screens are live and unbuilt ones are disabled, not absent",
-  JSON.stringify(title.disabled) === JSON.stringify([false, true, true, true]),
+  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, true]),
   JSON.stringify(title.disabled),
 );
 check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
@@ -418,6 +417,131 @@ check(
   "20 screen entries leak no textures",
   leak.after.textures <= leak.before.textures,
   `${leak.before.textures} -> ${leak.after.textures}`,
+);
+
+
+// ROADMAP.md Phase 3.5 repeats the same gate against the clubhouse, "now run against the heaviest
+// screen". It is the one that builds a cart, a podium, a shadow-mapped three-point rig and a
+// floor on every entry, so a missed dispose shows up here first.
+const clubhouseLeak = await page.evaluate(async () => {
+  const { screens, renderer } = window.__teetimeturrets;
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+  // The clubhouse loads its backdrop GLB asynchronously, so a count taken mid-flight compares
+  // "before the backdrop arrived" against "after", and reports the backdrop itself as a leak.
+  // Settle first: wait until the geometry count stops moving, so both samples describe the same
+  // steady state and any difference between them is a real one.
+  // Stable for many consecutive frames, not merely for two: an in-flight fetch leaves the count
+  // motionless while it is still on the wire, so a two-frame check returns before the backdrop
+  // has arrived and samples a state the next sample will never match.
+  const settle = async () => {
+    let last = -1;
+    let stable = 0;
+    for (let i = 0; i < 600; i++) {
+      await frame();
+      const now = renderer.info.memory.geometries;
+      stable = now === last ? stable + 1 : 0;
+      last = now;
+      if (stable >= 45) return;
+    }
+  };
+
+  screens.show("clubhouse");
+  await settle();
+  const before = { ...renderer.info.memory };
+
+  for (let i = 0; i < 20; i++) {
+    screens.show("clubhouse");
+    await frame();
+  }
+  await settle();
+  return { before, after: { ...renderer.info.memory } };
+});
+check(
+  "20 clubhouse entries leak no geometries",
+  clubhouseLeak.after.geometries <= clubhouseLeak.before.geometries,
+  `${clubhouseLeak.before.geometries} -> ${clubhouseLeak.after.geometries}`,
+);
+check(
+  "20 clubhouse entries leak no textures",
+  clubhouseLeak.after.textures <= clubhouseLeak.before.textures,
+  `${clubhouseLeak.before.textures} -> ${clubhouseLeak.after.textures}`,
+);
+
+// The cosmetic/stat split from ROADMAP.md, asserted end to end rather than trusted: a tire is the
+// one purchase that reaches the physics.
+console.log("=== CLUBHOUSE ===");
+const club = await page.evaluate(() => {
+  const rows = [...document.querySelectorAll(".clubhouse__category")];
+  const label = (r) => r.querySelector(".clubhouse__category-label").textContent;
+  return {
+    screen: window.__teetimeturrets.screen,
+    categories: rows.map(label),
+    clubCards: [...document.querySelectorAll(".club-card__name")].map((n) => n.textContent),
+    bars: [...document.querySelectorAll(".club-card")][0]
+      ? [...document.querySelectorAll(".club-card")][0]
+          .querySelectorAll(".club-card__stat")
+          .values()
+          .toArray()
+          .map((n) => n.textContent)
+      : [],
+    coins: document.querySelector(".chip span:last-child").textContent,
+    confirmDisabled: document.querySelector(".clubhouse__actions .btn--primary").disabled,
+  };
+});
+check(
+  "clubhouse lists the three categories from image 11",
+  JSON.stringify(club.categories) === JSON.stringify(["TURRET SKIN", "CHASSIS PAINT", "TIRE TYPE"]),
+  club.categories.join(" / "),
+);
+check(
+  "clubhouse shows a stat card per club",
+  JSON.stringify(club.clubCards) === JSON.stringify(["PUTTER", "IRON", "DRIVER"]),
+  club.clubCards.join(" / "),
+);
+check(
+  "each card carries POWER / RANGE / RELOAD",
+  JSON.stringify(club.bars) === JSON.stringify(["POWER", "RANGE", "RELOAD"]),
+  club.bars.join(" / "),
+);
+check("clubhouse shows a coin balance", /^\d+$/.test(club.coins), club.coins);
+// Preview is not purchase: nothing is selected yet, so there is nothing to confirm.
+check("CONFIRM is inert until something changes", club.confirmDisabled === true);
+
+const painted = await page.evaluate(() => {
+  const rows = [...document.querySelectorAll(".clubhouse__category")];
+  const before = window.__teetimeturrets.screens.activeName;
+  rows[1].querySelectorAll(".swatch")[1].click(); // a different chassis paint
+  const confirm = document.querySelector(".clubhouse__actions .btn--primary");
+  return { before, confirmEnabled: !confirm.disabled, label: confirm.textContent };
+});
+check("selecting a swatch arms CONFIRM with a price", painted.confirmEnabled === true, painted.label);
+check("a swatch click does not leave the clubhouse", painted.before === "clubhouse");
+
+// The Phase 3.5 gate, end to end through the real UI: "a purchased tire type measurably changes
+// cart handling, proving the cosmetic/stat split is real and not decorative". Paint is appearance
+// and must NOT reach the sim; the tire must.
+const tireBefore = await page.evaluate(() => window.__teetimeturrets.sim?.cart.tire ?? null);
+await page.evaluate(() => {
+  const rows = [...document.querySelectorAll(".clubhouse__category")];
+  const tires = rows[2].querySelectorAll(".swatch");
+  tires[tires.length - 1].click(); // TURF
+  document.querySelector(".clubhouse__actions .btn--primary").click();
+  document.querySelector(".clubhouse__actions .btn").click(); // BACK -> title
+});
+await page.waitForFunction(() => window.__teetimeturrets.screen === "title", { timeout: 10000 });
+await page.evaluate(() => {
+  [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "PLAY").click();
+});
+await page.waitForFunction(() => window.__teetimeturrets.screen === "round", { timeout: 30000 });
+await new Promise((r) => setTimeout(r, 400));
+// TIRE_TUNING gives turf a different top speed, grip and off-road penalty from street, so the
+// tire the cart is actually running is the proof the purchase reached the physics, not the menu.
+const tireAfter = await page.evaluate(() => ({ tire: window.__teetimeturrets.sim.cart.tire }));
+check(
+  "a tire bought in the clubhouse is the tire the sim runs",
+  tireAfter.tire === "turf" && tireAfter.tire !== tireBefore,
+  `${tireBefore} -> ${tireAfter.tire}`,
 );
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));

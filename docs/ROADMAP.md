@@ -477,15 +477,30 @@ clubhouse borrows its *phase pattern* from that project's garage (see `REUSE-MAP
 - [ ] Cart-to-flag-ball shoving: the character controller needs
       `setApplyImpulsesToDynamicBodies(true)` and a real `setCharacterMass` or it will pass
       through the flag without moving it.
-- [ ] **Clubhouse / HQ** (image 11): registers into the Phase 1.75 screen manager rather than
+- [x] **Clubhouse / HQ** (image 11): registers into the Phase 1.75 screen manager rather than
       inventing its own lifecycle — cart on a lit turntable, category list for turret skin /
       chassis paint / tire type, per-club `POWER` / `RANGE` / `RELOAD` stat cards read from
       `CLUB_STATS`, coin balance, `BACK` / `CONFIRM`. Its own scene residency so it does not
       fight the course for GPU. Build every piece of geometry fresh — the reference garage
       contributes its *phase pattern* only, and its geometry is Reserved Content.
-- [ ] **Economy**: round earnings from the four Phase 1.75 stat tiles (direct hits, longest
+      **Built**, and it landed early because Phase 1.75's screen manager made it cheap: the
+      screen is `ClubhouseScreen.ts` and every decision it makes is in `clubhouseState.ts`,
+      which is DOM-free and unit-tested. **The turntable cart is the same `GolfClub` the round
+      uses**, not a second nicer model — `ASSET_PIPELINE.md` §2.1's art-direction call, which
+      is also what makes a paint swap a material colour write rather than a second mesh to keep
+      in step. The premium look in image 11 comes from three-point lighting, a shadow-catching
+      floor and a slow turn.
+      **The room behind it is the project's first authored `.glb`**, permitted by
+      `ASSET_PIPELINE.md` §1's decorative branch and kept honest by
+      `tools/decorBoundary.test.mjs`: mesh files live only under `public/models/`, and
+      `GLTFLoader` is imported in exactly one place.
+- [x] **Economy**: round earnings from the four Phase 1.75 stat tiles (direct hits, longest
       drive, targets down, accuracy), spent on the cosmetics above. Tire type is the one
       purchase that changes handling rather than looks, so price it as a stat and not a skin.
+      **Built.** `wallet.ts` prices a round, `loadout.ts` holds what was bought, and
+      `Sim.create` takes the tire so the purchase reaches `TIRE_TUNING` rather than stopping at
+      the menu. **Balances are session-scoped** — they reset on reload, which is BACKLOG #48 and
+      not yet done.
 - [ ] Name the three modes in one place — `STROKE` / `CTF` / `TARGETS` (image 12,
       `UI-SPEC.md` §5). `TARGETS` is the Phase 3 ragdoll work promoted to a mode with its own
       scoring; `STROKE` already exists and is the safest thing to ship first.
@@ -496,6 +511,24 @@ entering and leaving the clubhouse does not leak GPU resources across the transi
 same `renderer.info.memory` check Phase 1.75 established, now run against the heaviest screen;
 a purchased tire type measurably changes cart handling in `npm run probe`, proving the
 cosmetic/stat split is real and not decorative.
+
+**Gate status — the two clubhouse clauses pass; the CTF clauses have nothing to run against yet.**
+Both clubhouse checks are in `tools/smoke.mjs`. The leak check is the Phase 1.75 gate re-run
+against the heaviest screen, and it waits for the backdrop GLB to finish loading before taking a
+count — a mid-flight baseline compares a scene without the room against twenty scenes with it and
+reports a leak that is really an async load.
+
+The tire check moved from `npm run probe` to smoke, and the move is the point: the probe imports
+`src/sim/**` directly and can only prove `TIRE_TUNING` does something, which
+`world.cart.test.ts` already proves. What was actually in doubt is whether a **click in the
+menu** reaches the physics. So smoke buys a tire through the real UI, leaves, starts a round and
+reads `sim.cart.tire`.
+
+**The other half of the split — that paint stays out of the sim — is only asserted at the data
+level**, in `loadout.test.ts`: a tire option carries no slot colours, and `slotColorsFor` resolves
+paints and skins to slots the cart graph actually declares. Nothing yet drives a paint purchase
+end to end and confirms nothing in `Sim` moved. That is the weaker half of this gate and worth
+knowing before the next cosmetic is added.
 
 ## Phase 4 — UI: hit markers, HUD
 

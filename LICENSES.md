@@ -75,6 +75,21 @@ index are in `docs/concept/README.md`.
 The CC-BY-SA line above applies to assets a human actually authored. If one is ever added,
 record its author and license in that index, because that one genuinely does fall under it.
 
+## Shipped 3D assets
+
+One mesh file ships, and it is decorative under `docs/ASSET_PIPELINE.md` §1: nothing collides
+with it, nothing replicates it, and no code under `src/sim/**` reads it. Everything playable —
+cart, clubs, ball, targets, terrain — remains first-party procedural primitives assembled at
+runtime, with no mesh file anywhere in that path.
+
+| File | What | Provenance | Terms |
+|---|---|---|---|
+| `public/models/clubhouse.glb` | Clubhouse interior behind the loadout turntable. ~29 boxes, 324 tri, 16 KB. | First-party. Authored in Blender in this repository via the Blender MCP, following `ASSET_PIPELINE.md` §6, from `docs/concept/11ClubhouseLoadout.jpg` as visual reference only — no generated geometry, nothing traced, nothing imported. | Same grant as the rest of the first-party assets (CC-BY-SA-4.0). |
+
+The source is the Blender scene, not the `.glb`: re-author and re-export rather than editing the
+binary. The `.glb` is build output that happens to be committed because there is no asset build
+step and one 16 KB file does not justify inventing one.
+
 ## What this does not cure
 
 The Claude of Tanks repository used as architectural reference is MIT **with a Reserved
