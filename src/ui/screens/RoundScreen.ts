@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
 import { RenderScene } from "../../render/scene";
 import type { FrameView } from "../../render/scene";
+import { CLUB_STATS } from "../../physics/Ballistics";
+import type { ClubType } from "../../physics/Ballistics";
 import { POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "../../sim/world";
 import type { BallTransform, CartTransform } from "../../sim/world";
 import { drawHud, readHud } from "../hud";
@@ -74,6 +76,7 @@ export class RoundScreen implements Screen {
       ball: cloneBall(sim.current),
       cart: cloneCart(sim.currentCart),
       charge01: 0,
+      reload01: 1,
       club: sim.cart.equippedClub,
       turretLoaded: sim.cart.ammo > 0,
       targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
@@ -140,6 +143,10 @@ export class RoundScreen implements Screen {
     }
     view.charge01 = sim.cart.charge;
     view.club = sim.cart.equippedClub;
+    // Derived rather than stored, so the swing cannot drift from the reload it is animating.
+    // `reloadSeconds` is the equipped club's, and a club swap deliberately does not clear the
+    // reload -- so read the club here too rather than caching it.
+    view.reload01 = reloadFraction(sim.cart.reloadRemaining, sim.cart.equippedClub);
     view.turretLoaded = sim.cart.ammo > 0;
     interpolateTransforms(
       sim.previousTargetTransforms,
@@ -311,6 +318,18 @@ function interpolateTransforms(
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+/**
+ * `Cart.reloadRemaining` counts down in seconds; the renderer wants 0-at-the-shot rising to 1.
+ *
+ * A club with no reload left is 1, which the swing reads as "at address" -- so a cart that has
+ * never fired stands with the club down the barrel rather than mid-follow-through.
+ */
+function reloadFraction(remainingSeconds: number, club: ClubType): number {
+  const total = CLUB_STATS[club].reloadSeconds;
+  if (total <= 0) return 1;
+  return Math.min(1, Math.max(0, 1 - remainingSeconds / total));
 }
 
 function cloneBall(t: BallTransform): BallTransform {

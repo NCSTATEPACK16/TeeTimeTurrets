@@ -36,12 +36,27 @@ const SUBJECTS: Record<string, () => GateSubject> = {
   "cart-driver": () => clubSubject(ClubType.Driver),
   "cart-iron": () => clubSubject(ClubType.Iron),
   "cart-putter": () => clubSubject(ClubType.Putter),
+  "cart-backswing": () => clubSubject(ClubType.Driver, 1, 1),
+  "cart-empty": () => clubSubject(ClubType.Driver, 0, 1, false),
+  "cart-followthrough": () => clubSubject(ClubType.Driver, 0, 0.09),
   ball: () => ballSubject(),
   target: () => targetSubject(),
 };
 
-function clubSubject(club: ClubType): GateSubject {
-  const cart = new GolfClub(club);
+/**
+ * The three extra cart subjects are here because the three club subjects cannot see what they
+ * are for. All three ship every club head and swap `visible`, so they already report identical
+ * vertex counts (ASSET_PIPELINE.md section 9); they also all draw the cart at address with a
+ * rider aboard. Nothing in the gate would notice a swing that had stopped moving, or a rider who
+ * had silently vanished, without subjects that differ in exactly that.
+ *
+ * `cart-followthrough` is the pose that constrains the design: it is where the shaft comes
+ * closest to the canopy and the rider. `GolfClub.test.ts` proves it clears them in geometry;
+ * this proves it still looks right.
+ */
+function clubSubject(club: ClubType, charge01 = 0, reload01 = 1, rider = true): GateSubject {
+  const cart = new GolfClub(club, {}, { rider });
+  cart.setSwing(charge01, reload01);
   return { object: cart, dispose: () => cart.dispose() };
 }
 

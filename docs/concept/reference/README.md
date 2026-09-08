@@ -26,7 +26,99 @@ tree, because they are regenerable.
 | File | Prompt block | Consumer |
 |---|---|---|
 | `prop-silhouettes-01.jpg` | `../../COURSE_PIPELINE.md` §7.2 | `../../ASSET_PIPELINE.md` §2 manifest, row "Course props"; the §5 modelling pass |
-| `cart-turnaround-01.jpg` | `../../ASSET_PIPELINE.md` §8.1 | `../../ASSET_PIPELINE.md` §5 cart blockout (§10 step 4); optionally §8.2 image-to-3D |
+| `cart-turnaround-01.jpg` | `../../ASSET_PIPELINE.md` §8.1 | **Superseded** by `cart-turnaround-02.jpg`. Kept as the record of what the cart was blocked out from (§10 step 4) |
+| `cart-turnaround-02.jpg` | `../../ASSET_PIPELINE.md` §8.4a | The turret-geometry pass (`docs/superpowers/specs/2026-09-08-turret-geometry-and-swing-plane-design.md`). **Consumed** — for the turret's proportions only; the sheet's bodywork was ruled out of scope |
+| `driver-mannequin-01.jpg` | `../../ASSET_PIPELINE.md` §8.4b | The rider's second pass — joints, hands, neck. Same spec. **Consumed**; his blue polo was kept against the sheet, deliberately |
+| `swing-sequence-01.jpg` | `../../ASSET_PIPELINE.md` §8.4c | The swing plane and the pivot height. Same spec, and the sheet that drove it. **Consumed** — the plane, the pedestal, the 100° backswing and the pitching housing all came from here |
+| `club-heads-01.jpg` | `../../ASSET_PIPELINE.md` §8.4d | Club-head shapes and hosels. Same spec. **Consumed** — the hosel and heel mounting shipped; the scale grid was not usable |
+
+Note for anyone planning to automate this: **image models are not on Google's free API tier.** Every
+sheet here came from the Gemini / AI Studio web UI by hand, which is free; the API path needs
+billing. See `../../ASSET_PIPELINE.md` §8.4.
+
+---
+
+## `cart-turnaround-02.jpg`
+
+Re-run of §8.1 with the three amendments folded in, plus the three things `01` was missing: US
+left-hand drive, a seated rider, and the `club_bag` slot.
+
+**What it is good for:** the first sheet where all eight §2.1 material slots are present and
+separable, and the first with the rider in place so his scale can be read against the cart.
+
+### Known deviations from §8.4a
+
+- **The style is a smooth-shaded illustration, not flat low-poly.** Gradients on the bodywork,
+  soft shading on the roof. The prompt asked for "flat-shaded low-polygon forms, two or three flat
+  tones per surface" and got a rendered look closer to `../11ClubhouseLoadout.jpg` than to
+  `../03CartTurretChasecam.jpg`. Use it for **silhouette and proportion only** — the §2.1 art-style
+  choice is unchanged, and nothing here argues for re-lighting the game.
+- **Still not a measured blueprint.** The ground line is drawn across FRONT, SIDE and REAR this
+  time, but the SIDE panel is again noticeably larger than the other two. Do not take a dimension
+  across panels. Cart length is ~2.4 m per `../../ASSET_PIPELINE.md` §4.4.
+- **Heavy perspective in TOP-DOWN** — wheel sides, seat backs and the bag's interior are all
+  visible, which a true orthographic top-down would not show.
+- **The cart is a different vehicle from the shipped one**: swept bodywork, headlights, tail lights,
+  a glazed windscreen and a full-width bench. The shipped cart is boxier. That is a gap to close
+  deliberately or not at all, not an error in the sheet.
+
+## `driver-mannequin-01.jpg`
+
+**What it is good for:** the seated proportions, and — the reason to re-run the rider —
+**visible ball joints at shoulders, elbows, hips and knees**, plus a neck, fists and separate
+shoes. That is the "segmented mannequin with visibly separated joints" `../../ASSET_PIPELINE.md`
+§2.2 has always described and the shipped rider does not have: his limbs are plain capsules butted
+end to end.
+
+**First sheet in this folder to meet the baseline requirement.** Ground line across FRONT, SIDE and
+REAR, plus the requested second line at seat height. Both usable.
+
+### Known deviations from §8.4b
+
+- **TOP-DOWN is not top-down.** It is the seated figure drawn lying on its side. Unusable; read the
+  plan proportions off the cart sheet instead.
+- **Only three of the four colours separate.** Torso and arms are the same wood tone, so `skin` and
+  `shirt` are one colour on the sheet. Only `trousers` and `cap` read as their own slots.
+  *The shipped rider deliberately differs*: he wears a blue polo, because an off-white shirt
+  disappears against the cart's near-white bodywork. That is a decision, not a mismatch to fix.
+- The hands are fists with no fingers, as asked — worth noting because the shipped rider has no
+  hands at all, just forearm capsules ending near the rim.
+
+## `swing-sequence-01.jpg`
+
+**The sheet that changed a shipped decision.** See the spec cited in the index.
+
+**What it is good for:** the timing, which is what it was asked for and what it delivers — ADDRESS
+and IMPACT are drawn as the same pose, both carrying the same horizontal reference line, which is
+the sheet's whole point and the invariant `GolfClub.test.ts` asserts.
+
+**And one thing that was not asked for and is better than what shipped:** the housing itself pitches
+back on its trunnion during the backswing. The shipped rig rotates only the club inside a fixed
+housing.
+
+### Known deviations from §8.4c
+
+- **The mount is a four-legged table, not a cart roof**, against a prompt asking for "the turret and
+  the top of the cart roof". Harmless as a drawing, load-bearing as a measurement: **the pedestal
+  height in this sheet is not the cart's.** The turret sits proportionally much higher above its
+  table than the shipped turret does above the canopy, and that difference is exactly why a
+  vertical swing plane works in the drawing and fouls the roof in the game.
+- **The backswing is ~100°, not the ~155° asked for.** The follow-through is ~60°, which matches.
+- The ADDRESS arrow points down onto the head rather than along the travel direction.
+
+## `club-heads-01.jpg`
+
+**What it is good for:** three heads that are unmistakably three different clubs, and **a hosel on
+each** — the shaft bends into the head at the heel rather than meeting it dead centre. The prompt
+never asked for a hosel; it is the most useful thing on the sheet, and the shipped heads have none.
+
+### Known deviations from §8.4d
+
+- **Scale is not consistent across the grid.** The driver is drawn much larger than the iron, which
+  is true to life and was asked for — but the putter's TOP-DOWN is drawn at a different scale from
+  its own FACE, so the shared shaft-axis line does not let you measure across the whole grid.
+- **Smooth-shaded, not "chunky facets".** Same style deviation as the cart sheet. Silhouette
+  reference, not facet reference.
 
 ---
 

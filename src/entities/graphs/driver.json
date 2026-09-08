@@ -1,0 +1,714 @@
+{
+  "name": "driver",
+  "version": 1,
+  "units": "m",
+  "slots": {
+    "cap": {
+      "color": 13388599,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "shirt": {
+      "color": 4878245,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "skin": {
+      "color": 14262379,
+      "roughness": 0.85,
+      "metalness": 0.0
+    },
+    "trousers": {
+      "color": 14209732,
+      "roughness": 0.85,
+      "metalness": 0.0
+    }
+  },
+  "root": {
+    "name": "driver_pelvis",
+    "kind": "box",
+    "params": [
+      0.28,
+      0.2,
+      0.26
+    ],
+    "position": [
+      0.29,
+      1.15,
+      -0.34
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "slot": "trousers",
+    "children": [
+      {
+        "name": "driver_cap",
+        "kind": "cylinder",
+        "params": [
+          0.125,
+          0.125,
+          0.07,
+          10.0
+        ],
+        "position": [
+          0.0,
+          0.695,
+          -0.01
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "cap",
+        "children": null
+      },
+      {
+        "name": "driver_cap_brim",
+        "kind": "box",
+        "params": [
+          0.22,
+          0.022,
+          0.14
+        ],
+        "position": [
+          0.0,
+          0.665,
+          0.12
+        ],
+        "rotation": [
+          0.15,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "cap",
+        "children": null
+      },
+      {
+        "name": "driver_elbowL",
+        "kind": "sphere",
+        "params": [
+          0.0645,
+          10.0,
+          8.0
+        ],
+        "position": [
+          0.1766,
+          0.1961,
+          0.277
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_elbowR",
+        "kind": "sphere",
+        "params": [
+          0.0645,
+          10.0,
+          8.0
+        ],
+        "position": [
+          -0.1706,
+          0.1963,
+          0.2759
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_footL",
+        "kind": "box",
+        "params": [
+          0.11,
+          0.06,
+          0.24
+        ],
+        "position": [
+          0.11,
+          -0.59,
+          0.6
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_footR",
+        "kind": "box",
+        "params": [
+          0.11,
+          0.06,
+          0.24
+        ],
+        "position": [
+          -0.11,
+          -0.59,
+          0.6
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_handL",
+        "kind": "sphere",
+        "params": [
+          0.0598,
+          10.0,
+          8.0
+        ],
+        "position": [
+          0.1608,
+          0.1035,
+          0.5875
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_handR",
+        "kind": "sphere",
+        "params": [
+          0.0598,
+          10.0,
+          8.0
+        ],
+        "position": [
+          -0.0837,
+          0.1034,
+          0.588
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_head",
+        "kind": "sphere",
+        "params": [
+          0.115,
+          12.0,
+          10.0
+        ],
+        "position": [
+          0.0,
+          0.6,
+          -0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_hipL",
+        "kind": "sphere",
+        "params": [
+          0.0935,
+          10.0,
+          8.0
+        ],
+        "position": [
+          0.0938,
+          -0.0488,
+          0.1028
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_hipR",
+        "kind": "sphere",
+        "params": [
+          0.0935,
+          10.0,
+          8.0
+        ],
+        "position": [
+          -0.0938,
+          -0.0488,
+          0.1028
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_kneeL",
+        "kind": "sphere",
+        "params": [
+          0.085,
+          10.0,
+          8.0
+        ],
+        "position": [
+          0.1081,
+          -0.1559,
+          0.4253
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_kneeR",
+        "kind": "sphere",
+        "params": [
+          0.085,
+          10.0,
+          8.0
+        ],
+        "position": [
+          -0.1081,
+          -0.1559,
+          0.4253
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_lowerArmL",
+        "kind": "capsule",
+        "params": [
+          0.052,
+          0.229,
+          4.0,
+          8.0
+        ],
+        "position": [
+          0.17,
+          0.145,
+          0.44
+        ],
+        "rotation": [
+          1.8445,
+          -0.0624,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_lowerArmR",
+        "kind": "capsule",
+        "params": [
+          0.052,
+          0.2431,
+          4.0,
+          8.0
+        ],
+        "position": [
+          -0.13,
+          0.145,
+          0.44
+        ],
+        "rotation": [
+          1.8331,
+          0.3029,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_lowerLegL",
+        "kind": "capsule",
+        "params": [
+          0.072,
+          0.2836,
+          4.0,
+          8.0
+        ],
+        "position": [
+          0.11,
+          -0.34,
+          0.5
+        ],
+        "rotation": [
+          2.9534,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_lowerLegR",
+        "kind": "capsule",
+        "params": [
+          0.072,
+          0.2836,
+          4.0,
+          8.0
+        ],
+        "position": [
+          -0.11,
+          -0.34,
+          0.5
+        ],
+        "rotation": [
+          2.9534,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_neck",
+        "kind": "cylinder",
+        "params": [
+          0.058,
+          0.062,
+          0.1,
+          8.0
+        ],
+        "position": [
+          0.0,
+          0.47,
+          -0.015
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "skin",
+        "children": null
+      },
+      {
+        "name": "driver_shoulderL",
+        "kind": "sphere",
+        "params": [
+          0.0732,
+          10.0,
+          8.0
+        ],
+        "position": [
+          0.1637,
+          0.3038,
+          0.0361
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "shirt",
+        "children": null
+      },
+      {
+        "name": "driver_shoulderR",
+        "kind": "sphere",
+        "params": [
+          0.0732,
+          10.0,
+          8.0
+        ],
+        "position": [
+          -0.1637,
+          0.3038,
+          0.0361
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "shirt",
+        "children": null
+      },
+      {
+        "name": "driver_torso",
+        "kind": "box",
+        "params": [
+          0.32,
+          0.38,
+          0.24
+        ],
+        "position": [
+          0.0,
+          0.29,
+          -0.04
+        ],
+        "rotation": [
+          -0.1,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "shirt",
+        "children": null
+      },
+      {
+        "name": "driver_upperArmL",
+        "kind": "capsule",
+        "params": [
+          0.062,
+          0.2077,
+          4.0,
+          8.0
+        ],
+        "position": [
+          0.17,
+          0.26,
+          0.13
+        ],
+        "rotation": [
+          2.0066,
+          0.0666,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "shirt",
+        "children": null
+      },
+      {
+        "name": "driver_upperArmR",
+        "kind": "capsule",
+        "params": [
+          0.062,
+          0.2077,
+          4.0,
+          8.0
+        ],
+        "position": [
+          -0.17,
+          0.26,
+          0.13
+        ],
+        "rotation": [
+          2.0066,
+          -0.0666,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "shirt",
+        "children": null
+      },
+      {
+        "name": "driver_upperLegL",
+        "kind": "capsule",
+        "params": [
+          0.085,
+          0.2817,
+          4.0,
+          8.0
+        ],
+        "position": [
+          0.1,
+          -0.08,
+          0.24
+        ],
+        "rotation": [
+          1.7941,
+          0.0454,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      },
+      {
+        "name": "driver_upperLegR",
+        "kind": "capsule",
+        "params": [
+          0.085,
+          0.2817,
+          4.0,
+          8.0
+        ],
+        "position": [
+          -0.1,
+          -0.08,
+          0.24
+        ],
+        "rotation": [
+          1.7941,
+          -0.0454,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "trousers",
+        "children": null
+      }
+    ]
+  }
+}
