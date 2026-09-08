@@ -2,7 +2,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
-import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, computeMuzzle } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
@@ -220,6 +220,15 @@ export interface SimOptions {
   readonly botCount?: number;
   /** Seconds on the match clock. Defaults to MATCH_DURATION_S. */
   readonly matchDurationS?: number;
+  /**
+   * The player cart's tire. Defaults to `TireType.Street`.
+   *
+   * This is the one clubhouse purchase that is not cosmetic: `TIRE_TUNING` scales top speed,
+   * grip and how much of a surface's penalty reaches the cart. Threading it in here is what
+   * makes ROADMAP.md's "tire type is a stat, not a skin" true of the running game rather than
+   * only of the data model -- and it is what `npm run probe` measures to prove the split is real.
+   */
+  readonly tire?: TireType;
 }
 
 /** Metres past the cup, per bot. Far enough from the tee that a match opens with the bot idle. */
@@ -281,8 +290,20 @@ export class Sim {
   previousPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** Pooled ball transforms from the most recent fixed step. */
   currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
-  /** Round-level counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
+  /** This hole's counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
   readonly stats = createStats();
+
+  /**
+   * Record a completed ball flight. Keeps the longest, not the latest: the tile is a best.
+   *
+   * An explicit method rather than a public counter to write into, per the `AGENTS.md` rule that
+   * nothing outside the sim mutates its state directly. The measurement itself lives in
+   * `RoundScreen` because it is bracketed by render-side knowledge of when a ball came to rest;
+   * where the number *lands* is this class's business.
+   */
+  recordDrive(metres: number): void {
+    if (metres > this.stats.longestDriveM) this.stats.longestDriveM = metres;
+  }
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
   private readonly registry = new CombatRegistry();
   private eventQueue!: RAPIER.EventQueue;
@@ -327,7 +348,12 @@ export class Sim {
   matchOver = false;
   private readonly matchDurationS: number;
 
-  private constructor(terrain: Terrain, surfaces: Surfaces, matchDurationS: number) {
+  private constructor(
+    terrain: Terrain,
+    surfaces: Surfaces,
+    matchDurationS: number,
+    tire: TireType = TireType.Street,
+  ) {
     this.terrain = terrain;
     this.surfaces = surfaces;
     this.matchDurationS = matchDurationS;
@@ -335,7 +361,7 @@ export class Sim {
     // 2 x par: the hole's par is the strokes it is worth, and the health bar is that budget
     // doubled (spec section 5). Sized here rather than at the field initializer because the
     // initializer runs before `terrain` exists.
-    this.cart = new Cart({ maxHealth: 2 * terrain.spec.par });
+    this.cart = new Cart({ maxHealth: 2 * terrain.spec.par, tire });
     this.lastSafePosition = { ...terrain.teePosition };
     this.previous = restTransform(terrain);
     this.current = restTransform(terrain);
@@ -350,6 +376,7 @@ export class Sim {
       terrain,
       createSurfaces(hole, terrain),
       options.matchDurationS ?? MATCH_DURATION_S,
+      options.tire,
     );
 
     sim.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -970,7 +997,7 @@ export class Sim {
       rig.cart.turretOffset = 0;
       // Health, death, momentum and the match score all clear here: a new hole starts alive, at
       // full HP, standing still, on nothing. Ammo deliberately survives -- it is a round-spanning
-      // resource, HP is not. `stats` survives too, being round-level (sim/stats.ts).
+      // resource, HP is not. `stats` survives too, being the hole's own (sim/stats.ts).
       rig.cart.revive();
       rig.cart.clearStrokes();
       rig.cart.wasInWater = false;

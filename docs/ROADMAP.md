@@ -111,11 +111,18 @@ thing ending a roll. With real rolling resistance now doing that job, the leftov
 stopped a 2 m putt 0.70 m short of the cup. Now 0.6. Velocity-proportional damping bites
 hardest exactly where putting lives.
 
-## Phase 1.75 — App shell, screens, and the scorecard
+## Phase 1.75 — App shell, screens, and the scorecard — ✅ DONE
 
-> **Status note (2026-09-02):** Deprioritized, not dropped — combat gameplay (cart-vs-cart
-> shooting) is the current priority; see the ammo/pooled-ball spec below. STROKE mode stays a
-> real future destination once combat has an audience.
+> **Status note (2026-09-02, superseded):** the phase was deprioritized behind combat gameplay.
+> It has since been built. The note is kept because `BACKLOG.md` and `DECISIONS.md` refer to the
+> deferral.
+>
+> **The defect this phase shipped with is fixed.** NEXT HOLE replayed the second hole forever,
+> because `main.ts` rebuilt the `Round` on every hole to re-point it at the new `Sim`'s counters,
+> which reset `holeIndex` and emptied the card. Advancing now lives in `src/sim/session.ts`, where
+> a node test can play three holes; `Round` owns its counters and folds each hole in, so it
+> survives eighteen sims. See the note under Phase 3.5's economy for the second bug the fix
+> exposed.
 
 Inserted ahead of the cart for the same reason Phase 5 is deferred rather than sprinkled in:
 the game currently boots straight into a single always-live scene, and a screen manager
@@ -127,37 +134,64 @@ Numbered 1.75 rather than renumbering everything: `AGENTS.md`, `BACKLOG.md` and 
 all cross-reference phase numbers, and breaking those references costs more than an awkward
 decimal.
 
-- [ ] `src/app/ScreenManager.ts`: a small finite set of screens, exactly one active, explicit
+- [x] `src/app/ScreenManager.ts`: a small finite set of screens, exactly one active, explicit
       `enter()`/`exit()`. **Every screen disposes its own geometry and materials on exit**
       (`AGENTS.md` resource-cleanup rule) — this is the whole reason the phase exists, and the
       thing a later clubhouse would otherwise get wrong. Screens registered now: Title,
       Round, Results, plus a Settings stub. Lobby and Clubhouse are reserved slots, not built.
-- [ ] `src/ui/screens/TitleScreen.ts` — image 10. Logo, `PLAY` / `CLUBHOUSE` / `MULTIPLAYER` /
+      **Built.** Re-showing the active screen deliberately still rebuilds it, because Results →
+      NEXT HOLE → Round has to hand back a new round rather than the finished one, and a
+      "same screen, do nothing" shortcut would make that a silent no-op. A screen that throws on
+      exit is reported and the transition continues, so one disposal bug cannot strand the player.
+- [x] `src/ui/screens/TitleScreen.ts` — image 10. Logo, `PLAY` / `CLUBHOUSE` / `MULTIPLAYER` /
       `SETTINGS`, version string, and a **live course scene behind the panel**. The live
       backdrop is deliberate: it forces the screen manager to share the renderer with the
       round from day one instead of discovering that requirement at the clubhouse. Buttons for
       unbuilt screens are visibly disabled, not dead.
-- [ ] Par per hole, and a round. `src/sim/round.ts` owns par, the per-hole card, and the
+- [x] Par per hole, and a round. `src/sim/round.ts` owns par, the per-hole card, and the
       running total; `Sim` keeps owning the *current hole* and its existing `strokes`.
       **Don't bolt the round onto `Sim`** — `Sim` is one hole's physics, a round is a list of
       them, and merging the two is what makes multi-hole (BACKLOG #2) expensive later. Stays
       DOM-free like everything in `src/sim/**`, so `npm run probe` can score a round.
       (BACKLOG #1, pulled forward — Results has nothing to display without it.)
-- [ ] Round stats recorded from the start, even where three of four read zero:
+- [x] Round stats recorded from the start, even where three of four read zero:
       direct hits, longest drive, targets down, accuracy. Image 13 shows them, Phase 3 fills
-      them in, Phase 3.5 spends them.
-- [ ] `src/ui/screens/ResultsScreen.ts` — image 13. Nine columns plus `TOTAL`, `PAR` and
+      them in, Phase 3.5 spends them. `longestDriveM` is the counter `stats.ts` was missing.
+      **`Round` takes the counters by reference** so it wraps the very object `Sim.stats` hands
+      to `combat.ts` — copying would give the scorecard a snapshot that silently stopped
+      updating, with both objects individually correct and no test able to see it.
+- [x] `src/ui/screens/ResultsScreen.ts` — image 13. Nine columns plus `TOTAL`, `PAR` and
       `STROKES` rows, under-par ringed green and over-par boxed red, the four stat tiles,
       `MAIN MENU` / `NEXT HOLE`. **Ships nine-column with one hole live**: the layout is the
       expensive part and multi-hole (BACKLOG #2) then fills columns without touching it.
 - [ ] `tools/sceneGate.mjs` baseline extended to cover screen transitions, once Phase 1 has
-      built it.
+      built it. **Not done, and it went to `smoke.mjs` instead** — see the gate note below.
 
 **Gate:** enter and leave every registered screen 20× in a loop with no growth in
 `renderer.info.memory` (geometries/textures) — the leak this phase exists to prevent, and the
 one Phase 3.5's clubhouse gate later repeats; `npm run probe` plays a scripted round and the
 Results screen's numbers match the probe's own tally exactly, rather than being eyeballed; the
 title screen's course backdrop renders without stalling the first frame of a round.
+
+**Gate status — the memory check is built and lives in `tools/smoke.mjs`, not in the scene gate.**
+That is a deliberate move rather than a shortcut: the scene gate loads one subject on a fixed rig
+and diffs geometry against a baseline, and a screen transition has no geometry baseline to diff —
+what it has is a before/after resource count across twenty cycles, which needs a live app and a
+real `WebGLRenderer`. `smoke.mjs` already drives exactly that. Two warm-up cycles run first,
+because the very first entry allocates shared, legitimately cached things (shader programs, the
+renderer's internals) that never come back and would make a correct implementation look leaky.
+
+**This puts real weight on a check that is not part of `npm run build`.** `npm run smoke` is now
+the only place the Phase 1.75 gate runs *and* the only check that catches bundle-only breakage.
+Wiring it into the build is still open, and is now more clearly worth the ~40 s than it was.
+
+**The other two gate clauses are not met, and neither is blocking.** `npm run probe` does not play
+a scripted round and cross-check the Results numbers against its own tally — the round is scored in
+`src/sim/round.ts`, which is DOM-free and unit-tested, so the probe would be re-asserting what
+`round.test.ts` already asserts. It becomes worth building when the round has something the unit
+tests cannot compute, which is the moment stats stop being counters. The backdrop's first-frame
+cost has been observed rather than measured; it is one terrain, one ground mesh and one instanced
+tree draw, with no Rapier world, and nothing has stalled.
 
 ## Phase 2 — The cart: movement, turret, club-swap
 
@@ -444,15 +478,36 @@ clubhouse borrows its *phase pattern* from that project's garage (see `REUSE-MAP
 - [ ] Cart-to-flag-ball shoving: the character controller needs
       `setApplyImpulsesToDynamicBodies(true)` and a real `setCharacterMass` or it will pass
       through the flag without moving it.
-- [ ] **Clubhouse / HQ** (image 11): registers into the Phase 1.75 screen manager rather than
+- [x] **Clubhouse / HQ** (image 11): registers into the Phase 1.75 screen manager rather than
       inventing its own lifecycle — cart on a lit turntable, category list for turret skin /
       chassis paint / tire type, per-club `POWER` / `RANGE` / `RELOAD` stat cards read from
       `CLUB_STATS`, coin balance, `BACK` / `CONFIRM`. Its own scene residency so it does not
       fight the course for GPU. Build every piece of geometry fresh — the reference garage
       contributes its *phase pattern* only, and its geometry is Reserved Content.
-- [ ] **Economy**: round earnings from the four Phase 1.75 stat tiles (direct hits, longest
+      **Built**, and it landed early because Phase 1.75's screen manager made it cheap: the
+      screen is `ClubhouseScreen.ts` and every decision it makes is in `clubhouseState.ts`,
+      which is DOM-free and unit-tested. **The turntable cart is the same `GolfClub` the round
+      uses**, not a second nicer model — `ASSET_PIPELINE.md` §2.1's art-direction call, which
+      is also what makes a paint swap a material colour write rather than a second mesh to keep
+      in step. The premium look in image 11 comes from three-point lighting, a shadow-catching
+      floor and a slow turn.
+      **The room behind it is the project's first authored `.glb`**, permitted by
+      `ASSET_PIPELINE.md` §1's decorative branch and kept honest by
+      `tools/decorBoundary.test.mjs`: mesh files live only under `public/models/`, and
+      `GLTFLoader` is imported in exactly one place.
+- [x] **Economy**: round earnings from the four Phase 1.75 stat tiles (direct hits, longest
       drive, targets down, accuracy), spent on the cosmetics above. Tire type is the one
       purchase that changes handling rather than looks, so price it as a stat and not a skin.
+      **Built.** `wallet.ts` prices a **hole**, `loadout.ts` holds what was bought, and
+      `Sim.create` takes the tire so the purchase reaches `TIRE_TUNING` rather than stopping at
+      the menu. **Balances are page-scoped** — they reset on reload, which is BACKLOG #48 and
+      not yet done.
+      **`earningsFor(round)` became `earningsForHole(stats, strokes, par)`, and that was forced
+      rather than chosen.** A round-scoped purse paid after every hole pays for hole 1 again on
+      hole 2 and again on hole 3 — inflation that grows with the square of the holes played. It
+      was invisible while the round was being wiped between holes, because the wipe made the
+      "round" total accidentally equal to one hole's. Fixing the advance exposed it, which is the
+      useful kind of coupled bug: one of them was hiding the other.
 - [ ] Name the three modes in one place — `STROKE` / `CTF` / `TARGETS` (image 12,
       `UI-SPEC.md` §5). `TARGETS` is the Phase 3 ragdoll work promoted to a mode with its own
       scoring; `STROKE` already exists and is the safest thing to ship first.
@@ -463,6 +518,24 @@ entering and leaving the clubhouse does not leak GPU resources across the transi
 same `renderer.info.memory` check Phase 1.75 established, now run against the heaviest screen;
 a purchased tire type measurably changes cart handling in `npm run probe`, proving the
 cosmetic/stat split is real and not decorative.
+
+**Gate status — the two clubhouse clauses pass; the CTF clauses have nothing to run against yet.**
+Both clubhouse checks are in `tools/smoke.mjs`. The leak check is the Phase 1.75 gate re-run
+against the heaviest screen, and it waits for the backdrop GLB to finish loading before taking a
+count — a mid-flight baseline compares a scene without the room against twenty scenes with it and
+reports a leak that is really an async load.
+
+The tire check moved from `npm run probe` to smoke, and the move is the point: the probe imports
+`src/sim/**` directly and can only prove `TIRE_TUNING` does something, which
+`world.cart.test.ts` already proves. What was actually in doubt is whether a **click in the
+menu** reaches the physics. So smoke buys a tire through the real UI, leaves, starts a round and
+reads `sim.cart.tire`.
+
+**The other half of the split — that paint stays out of the sim — is only asserted at the data
+level**, in `loadout.test.ts`: a tire option carries no slot colours, and `slotColorsFor` resolves
+paints and skins to slots the cart graph actually declares. Nothing yet drives a paint purchase
+end to end and confirms nothing in `Sim` moved. That is the weaker half of this gate and worth
+knowing before the next cosmetic is added.
 
 ## Phase 4 — UI: hit markers, HUD
 
