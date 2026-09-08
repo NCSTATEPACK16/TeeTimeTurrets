@@ -290,8 +290,20 @@ export class Sim {
   previousPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** Pooled ball transforms from the most recent fixed step. */
   currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
-  /** Round-level counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
+  /** This hole's counters. Deliberately *not* reset by `reset()` -- see sim/stats.ts. */
   readonly stats = createStats();
+
+  /**
+   * Record a completed ball flight. Keeps the longest, not the latest: the tile is a best.
+   *
+   * An explicit method rather than a public counter to write into, per the `AGENTS.md` rule that
+   * nothing outside the sim mutates its state directly. The measurement itself lives in
+   * `RoundScreen` because it is bracketed by render-side knowledge of when a ball came to rest;
+   * where the number *lands* is this class's business.
+   */
+  recordDrive(metres: number): void {
+    if (metres > this.stats.longestDriveM) this.stats.longestDriveM = metres;
+  }
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
   private readonly registry = new CombatRegistry();
   private eventQueue!: RAPIER.EventQueue;
@@ -985,7 +997,7 @@ export class Sim {
       rig.cart.turretOffset = 0;
       // Health, death, momentum and the match score all clear here: a new hole starts alive, at
       // full HP, standing still, on nothing. Ammo deliberately survives -- it is a round-spanning
-      // resource, HP is not. `stats` survives too, being round-level (sim/stats.ts).
+      // resource, HP is not. `stats` survives too, being the hole's own (sim/stats.ts).
       rig.cart.revive();
       rig.cart.clearStrokes();
       rig.cart.wasInWater = false;

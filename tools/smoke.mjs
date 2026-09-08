@@ -387,6 +387,52 @@ check("play again restarts the match", restarted.resultsHidden === true, `t=${re
 //
 // The title screen is the subject because it is the heaviest thing that can be cycled cheaply: a
 // full terrain, ground mesh and instanced tree wood, with no Rapier world to rebuild each time.
+// Advancing a hole, through the real button rather than through the module.
+//
+// This is the wiring session.test.ts cannot reach. That suite proves the Session arithmetic in
+// node; what it cannot see is whether main.ts's startRound closure actually asks the session which
+// hole to load, because main.ts is boot code with no seam. The defect it replaced lived exactly
+// there -- every unit test was green while NEXT HOLE replayed hole 2 forever.
+//
+// Holing out for real would take a full round per hole, so the completion is fabricated and
+// everything after it is the shipped path: the Results screen is entered normally, NEXT HOLE is a
+// real click, and the hole that comes back is read off the new Sim's own spec.
+console.log("=== HOLE ADVANCE ===");
+const advanced = await page.evaluate(async () => {
+  const api = window.__teetimeturrets;
+  const first = api.sim.terrain.spec.index;
+
+  api.session.completeHole(4);
+  api.screens.show("results");
+  const next = [...document.querySelectorAll("#screens .results__actions .btn")]
+    .find((b) => b.textContent.startsWith("NEXT HOLE"));
+  const enabled = next !== undefined && !next.disabled;
+  next?.click();
+
+  for (let i = 0; i < 400 && api.screens.activeName !== "round"; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return {
+    first,
+    enabled,
+    second: api.sim.terrain.spec.index,
+    holeIndex: api.session.holeIndex,
+    card: api.round.card.map((c) => c.strokes),
+  };
+});
+check("NEXT HOLE is offered while the round is unfinished", advanced.enabled === true);
+check(
+  "NEXT HOLE loads a different hole",
+  advanced.second === advanced.first + 1,
+  `hole ${advanced.first} -> ${advanced.second}`,
+);
+check(
+  "the finished hole keeps its score on the card",
+  advanced.card[0] === 4 && advanced.card[1] === null,
+  JSON.stringify(advanced.card.slice(0, 3)),
+);
+check("the session is on the second hole", advanced.holeIndex === 1, String(advanced.holeIndex));
+
 console.log("=== SCREEN LIFECYCLE (Phase 1.75 memory gate) ===");
 const leak = await page.evaluate(async () => {
   const { screens, renderer } = window.__teetimeturrets;

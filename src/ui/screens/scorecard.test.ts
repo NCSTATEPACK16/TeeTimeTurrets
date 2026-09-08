@@ -96,11 +96,12 @@ describe("the four stat tiles", () => {
 
   it("rounds the longest drive to whole metres and accuracy to whole percent", () => {
     const round = new Round(NINE);
-    round.recordDrive(84.62);
-    round.recordShot();
-    round.recordShot();
-    round.recordShot();
-    round.recordHit();
+    round.completeHole(4, {
+      shotsFired: 3,
+      directHits: 1,
+      targetsDown: 0,
+      longestDriveM: 84.62,
+    });
     const tiles = deriveScorecard(round).tiles;
     expect(tiles[1]?.value).toBe("85 m");
     expect(tiles[3]?.value).toBe("33%");

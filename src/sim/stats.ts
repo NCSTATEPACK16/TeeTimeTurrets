@@ -1,11 +1,13 @@
 /**
- * Minimal round-scoped counters, deliberately not a round model. Phase 1.75's `round.ts` absorbs
- * this once that phase resumes (see docs/superpowers/specs/2026-09-02-targets-health-combat-design.md
- * §6); until then it exists so the numbers image 13's scorecard will want are real from the start
- * rather than hardcoded zeros.
+ * Counters for **one hole**, and the fold that turns a sequence of them into a round.
  *
- * Not reset by `Sim.reset()`: a round is a sequence of holes, and hits/accuracy read as round
- * totals. Strokes, which are per-hole, stay on `Sim` where they already live.
+ * These were round-scoped when `Sim` was the only thing that existed and a session was one hole
+ * long. They are per-hole now, and the change is what makes a per-hole purse possible: a round
+ * total cannot be priced hole by hole, because paying out a running total on every hole pays for
+ * hole 1 again on hole 2. `Round` holds the fold; `Sim` holds the hole. See `session.test.ts`.
+ *
+ * Still not reset by `Sim.reset()` -- a reset is a retry within the hole being played, and the
+ * shots fired before it were still fired. Strokes stay on `Sim`, where they already live.
  */
 
 export interface Stats {
@@ -16,15 +18,30 @@ export interface Stats {
   /** Distinct targets whose `isDown` flipped true. */
   targetsDown: number;
   /**
-   * Longest single ball flight of the round, metres. The fourth tile on image 13's scorecard,
-   * and the one the old three-counter shape was missing. Round-scoped like the rest: a round
-   * best, not a per-hole one.
+   * Longest single ball flight, metres. The fourth tile on image 13's scorecard, and the one the
+   * old three-counter shape was missing. A **best, not a total** -- which is why the fold below
+   * cannot be a blanket sum.
    */
   longestDriveM: number;
 }
 
 export function createStats(): Stats {
   return { shotsFired: 0, directHits: 0, targetsDown: 0, longestDriveM: 0 };
+}
+
+/**
+ * Folds a finished hole's counters into a running total, in place.
+ *
+ * Three of the four sum and the fourth does not: a round's longest drive is the longest single
+ * drive in it, not the sum of each hole's best. Adding a field here without deciding which kind
+ * it is, is the way this quietly starts lying -- an accuracy that reads 340% is obvious, a
+ * longest drive of 380 m is not.
+ */
+export function foldStats(total: Stats, hole: Readonly<Stats>): void {
+  total.shotsFired += hole.shotsFired;
+  total.directHits += hole.directHits;
+  total.targetsDown += hole.targetsDown;
+  total.longestDriveM = Math.max(total.longestDriveM, hole.longestDriveM);
 }
 
 /** 0 rather than NaN before the first shot -- a HUD would render "NaN%". */

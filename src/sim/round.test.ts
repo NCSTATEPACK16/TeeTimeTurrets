@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Round } from "./round";
+import { createStats } from "./stats";
+import type { Stats } from "./stats";
 
 /**
  * A round is a list of holes; `Sim` is one hole's physics. ARCHITECTURE.md keeps them apart
@@ -19,6 +21,11 @@ function round(pars: readonly number[] = PARS): Round {
 
 function playAll(r: Round, strokes: readonly number[]): void {
   for (const s of strokes) r.completeHole(s);
+}
+
+/** One finished hole's counters, as `Sim.stats` would hand them to `completeHole`. */
+function holeStats(over: Partial<Stats> = {}): Stats {
+  return { ...createStats(), ...over };
 }
 
 describe("the card", () => {
@@ -99,27 +106,40 @@ describe("round stats -- the four tiles Phase 3.5 spends", () => {
     expect(r.accuracy).toBe(0);
   });
 
-  it("keeps the longest drive, not the latest", () => {
+  it("keeps the longest drive of the round, not the latest hole's", () => {
     const r = round();
-    r.recordDrive(84.2);
-    r.recordDrive(31.9);
+    r.completeHole(4, holeStats({ longestDriveM: 84.2 }));
+    r.completeHole(4, holeStats({ longestDriveM: 31.9 }));
     expect(r.stats.longestDriveM).toBeCloseTo(84.2, 3);
   });
 
   it("derives accuracy from hits over shots and never returns NaN", () => {
     const r = round();
     expect(r.accuracy).toBe(0);
-    r.recordShot();
-    r.recordShot();
-    r.recordHit();
+    r.completeHole(4, holeStats({ shotsFired: 2, directHits: 1 }));
     expect(r.accuracy).toBeCloseTo(0.5, 6);
   });
 
-  it("accumulates across holes -- stats are round-scoped, strokes are per-hole", () => {
+  it("sums each hole's counters -- the card is a round total, the sim counts one hole", () => {
     const r = round();
-    r.recordShot();
-    r.completeHole(4);
-    r.recordShot();
+    r.completeHole(4, holeStats({ shotsFired: 1 }));
+    r.completeHole(4, holeStats({ shotsFired: 1 }));
     expect(r.stats.shotsFired).toBe(2);
+  });
+
+  /**
+   * The regression this shape exists to prevent. `Round` used to *borrow* `Sim.stats`, which meant
+   * a new sim per hole forced a new round -- and a new round wiped the card. Owning the counters is
+   * what lets one round survive eighteen sims, so it is worth an assertion rather than a comment:
+   * a hole scored with counters must not leave the round aliasing the object it was handed.
+   */
+  it("copies a hole's counters in rather than aliasing them", () => {
+    const r = round();
+    const hole = holeStats({ shotsFired: 3 });
+    r.completeHole(4, hole);
+
+    hole.shotsFired = 99;
+
+    expect(r.stats.shotsFired).toBe(3);
   });
 });
