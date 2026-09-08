@@ -1,6 +1,9 @@
 # 3D Asset Pipeline
 
-**Status:** specification. The primitive-graph format (§4) and the exporter are not yet built.
+**Status:** built, for the paths §10 steps 2–4 and 7 cover. The primitive-graph format (§4), the
+runtime assembler (`src/entities/primitiveGraph.ts`), the §4.3 Blender exporter and the cart
+(`src/entities/graphs/cart.json`) all ship; so does the first decorative GLB (§6). The rest of the
+§2 manifest — course props, the clubhouse exterior, distant scenery — is still specification.
 **Supersedes:** the previous `ASSET_PIPELINE.md` (the "CallofGolf" draft) — see §0.2.
 **Related:** `COURSE_PIPELINE.md` (course design), `AGENTS.md` (the geometry rule), `LICENSES.md`.
 
@@ -240,6 +243,26 @@ translation layer:
 Objects are tagged with custom properties and the exporter walks the selection. Run via
 `execute_blender_code`, or saved as an addon operator.
 
+**Three authoring rules the exporter below depends on and does not enforce.** Each was found on a
+deliberate asymmetric probe object before the cart was modelled, which is the cheap place to find
+them:
+
+1. **Call `bpy.context.view_layer.update()` before reading.** `matrix_local` is derived from
+   `matrix_world`, which is only recomputed on a depsgraph update. A session that builds the
+   hierarchy and exports in one script otherwise reads pre-parenting transforms — and they are
+   plausible-looking numbers, not an error.
+2. **Object scale stays `(1,1,1)` on anything with children.** Size belongs in the mesh data. A
+   scaled parent leaks into every descendant's decomposed `matrix_local`. Scale on a childless
+   leaf is safe.
+3. **Never set `matrix_parent_inverse`.** It puts compensation garbage into `matrix_local`, which
+   is exactly what the exporter reads.
+
+A fourth is about authoring rather than the exporter: **author child positions in the same space
+the parent's own origin sits in, or set `matrix_world` and let Blender derive the local.** Blender
+reads `obj.location` as parent-relative, so authoring a whole cart in ground-origin coordinates
+while parenting it to a floor pan that is not at the origin displaces everything by that pan's
+offset.
+
 ```python
 import bpy, json, math
 
@@ -342,7 +365,14 @@ The GLB path, permitted only under §1's decorative branch.
    ~30°. The look in `03` comes from *deliberately large flat facets* — keep polygon density low and
    even. **Do not decimate**; decimation produces the wrong facet distribution for flat shading.
 2. Export **glTF 2.0 (.glb)**: Selected Objects, +Y Up, Apply Modifiers. Exclude cameras and lights.
-3. Optimise: `npx @gltf-transform/cli optimize in.glb out.glb --texture-compress webp`.
+3. Optimise: `npx @gltf-transform/cli optimize in.glb out.glb --texture-compress webp --compress quantize`.
+
+   **`--compress quantize` is load-bearing, not a preference.** The command's default is
+   `meshopt`, and a meshopt-compressed GLB cannot be read by a plain `GLTFLoader`: it fails with
+   *"setMeshoptDecoder must be called before loading compressed files"*, which under step 5's
+   degrade-to-nothing rule means the asset silently never appears. Quantization
+   (`KHR_mesh_quantization`) is decoded by three.js natively and needs no extra runtime
+   dependency. Meshopt is available if the decoder is wired up first; until then, do not use it.
 4. Place under `public/models/`. **Never under `src/sim/**` or `src/physics/**`.**
 5. Load with `GLTFLoader` from `src/render/**` only, behind a null check — a decorative asset that
    fails to load must degrade to nothing, never throw. It is decoration; the game must run without
@@ -487,6 +517,13 @@ in §5, call get_viewport_screenshot and stop for approval before continuing.
   draw calls; **instance every tree**; share materials aggressively; merge static geometry per chunk.
 - **Every new asset gets a `sceneGate` baseline** before it is called done (`AGENTS.md`, Visual
   Critic protocol). `npm run gate` runs as part of `npm run build`.
+- **The cart graph weakened one half of the gate, and it is worth knowing which.** All three club
+  heads now ship in `cart.json` and a swap toggles `visible` rather than rebuilding geometry, so
+  `cart-driver`, `cart-iron` and `cart-putter` report *identical* vertex and triangle counts
+  (2,709 / 2,376). The counts can no longer tell the three subjects apart. What still can is the
+  bounding box — the barrel pitches to each club's own `loftDeg`, which moves it — and the
+  perceptual signature. A future change that swapped the heads' geometry silently would be caught
+  by the signature alone, so do not read a green count column as proof the right head is drawn.
 - **Dispose everything.** Every `THREE.Mesh`'s geometry and material, and every `InstancedMesh`
   buffer, on teardown — see `GolfClub.dispose()` for the pattern.
 
@@ -494,18 +531,34 @@ in §5, call get_viewport_screenshot and stop for approval before continuing.
 
 ## 10. Build order
 
-1. **Land the §1.1 `AGENTS.md` edit.** Until it lands, the rulebook and this document disagree, and
-   the rulebook wins.
-2. **Build the primitive-graph runtime assembler and the §4.3 exporter.** Verify the Z-up→Y-up
-   conversion on an asymmetric test object before anything real depends on it.
-3. **Port `GolfClub.ts` to a graph** as the proof. It already exists as hand-written primitives, so
-   a correct port produces an identical scene-gate screenshot — which is a real test rather than a
-   claim.
-4. **Model the cart** (§5). The first genuinely new asset. **Reference is in hand** —
-   `docs/concept/reference/cart-turnaround-01.jpg`, with its deviations recorded next to it.
-5. **Trees, per biome**, from the `COURSE_PIPELINE.md` §7.1 silhouette sheets. Instanced from day
-   one, never retrofitted.
-6. **The mannequin and ragdoll** (§2.2) as a standalone test scene. It is the game's signature
-   moment and the tuning takes real iteration; budget for it.
-7. **The clubhouse** (§6) — the first decorative GLB, and the test of whether §1's split holds up in
-   practice.
+1. ~~**Land the §1.1 `AGENTS.md` edit.**~~ **Done.**
+2. ~~**Build the primitive-graph runtime assembler and the §4.3 exporter.**~~ **Done.**
+   `src/entities/primitiveGraph.ts` is the assembler. The Z-up→Y-up conversion was verified on an
+   asymmetric probe object before the cart existed, and that probe is what produced §4.3's three
+   authoring rules.
+3. ~~**Port `GolfClub.ts` to a graph** as the proof.~~ **Done, and the proof did not hold in the
+   form it was written.** The port was expected to produce an identical scene-gate screenshot; it
+   does not, because the cart was re-authored in Blender rather than transcribed — it gained a
+   nose, fenders, a windscreen, seats, rims and a bag in the same pass. The three `cart-*`
+   baselines were reviewed and updated rather than matched. A port that changes the model cannot
+   also be a null-diff test, and pretending otherwise would have meant either a worse cart or a
+   baseline updated without anyone looking at it.
+4. ~~**Model the cart** (§5).~~ **Done.** 47 objects, eight material slots, exported to
+   `src/entities/graphs/cart.json`. Source is `art/clubhouse-and-cart.blend`.
+5. **Trees, per biome** — **superseded.** They ship as `src/render/Trees.ts`: one merged geometry
+   with baked vertex colours, one `InstancedMesh`, one draw call per hole. Authoring them in
+   Blender would cost the instancing the manifest asks for, since the graph assembler builds an
+   `Object3D` per node. The manifest row stays as a record of the decision, not as work.
+6. **The mannequin and ragdoll** (§2.2) as a standalone test scene. Procedural TypeScript, not
+   Blender — the physics rig is the character rig. It is the game's signature moment and the
+   tuning takes real iteration; budget for it.
+7. ~~**The clubhouse** (§6) — the first decorative GLB, and the test of whether §1's split holds
+   up in practice.~~ **Done for the interior**, which is what the loadout turntable needed:
+   `public/models/clubhouse.glb`, 29 boxes, 324 tri, 16 KB. The split held, and
+   `tools/decorBoundary.test.mjs` is what keeps it holding. **The exterior is a separate asset and
+   is not built** — the §2 manifest wants it as hole 18's landmark, which is a different object
+   from a room seen from inside.
+8. **Course props** (§2 manifest, `docs/concept/reference/prop-silhouettes-01.jpg`) — the next
+   Blender job. Eight props, primitive graph. Lead with the flagstick: the cup renders as nothing
+   today. Note that a **drivable** bridge is playable geometry under §1 and therefore cannot be a
+   GLB from any source, Poly.pizza included.

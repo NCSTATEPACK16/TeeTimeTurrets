@@ -1,0 +1,1299 @@
+{
+  "name": "cart",
+  "version": 1,
+  "units": "m",
+  "slots": {
+    "chassis": {
+      "color": 15723744,
+      "roughness": 0.62,
+      "metalness": 0.05
+    },
+    "club_bag": {
+      "color": 3033720,
+      "roughness": 0.7,
+      "metalness": 0.03
+    },
+    "rims": {
+      "color": 11843773,
+      "roughness": 0.42,
+      "metalness": 0.55
+    },
+    "roof": {
+      "color": 16119023,
+      "roughness": 0.55,
+      "metalness": 0.05
+    },
+    "seats": {
+      "color": 4804438,
+      "roughness": 0.75,
+      "metalness": 0.02
+    },
+    "tires": {
+      "color": 1447448,
+      "roughness": 0.92,
+      "metalness": 0.0
+    },
+    "turret_barrel": {
+      "color": 13422032,
+      "roughness": 0.3,
+      "metalness": 0.7
+    },
+    "turret_housing": {
+      "color": 12859439,
+      "roughness": 0.58,
+      "metalness": 0.08
+    }
+  },
+  "root": {
+    "name": "chassis_pan",
+    "kind": "box",
+    "params": [
+      1.26,
+      0.26,
+      2.2
+    ],
+    "position": [
+      0.0,
+      0.4,
+      -0.02
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "slot": "chassis",
+    "children": [
+      {
+        "name": "arch_fl",
+        "kind": "box",
+        "params": [
+          0.13,
+          0.42,
+          0.9
+        ],
+        "position": [
+          -0.69,
+          0.13,
+          0.78
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "arch_fr",
+        "kind": "box",
+        "params": [
+          0.13,
+          0.42,
+          0.9
+        ],
+        "position": [
+          0.69,
+          0.13,
+          0.78
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "arch_rl",
+        "kind": "box",
+        "params": [
+          0.13,
+          0.42,
+          0.9
+        ],
+        "position": [
+          -0.69,
+          0.13,
+          -0.76
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "arch_rr",
+        "kind": "box",
+        "params": [
+          0.13,
+          0.42,
+          0.9
+        ],
+        "position": [
+          0.69,
+          0.13,
+          -0.76
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "bag",
+        "kind": "cylinder",
+        "params": [
+          0.17,
+          0.2,
+          0.74,
+          10.0
+        ],
+        "position": [
+          0.34,
+          0.84,
+          -0.98
+        ],
+        "rotation": [
+          0.2,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "club_bag",
+        "children": [
+          {
+            "name": "bag_club_a",
+            "kind": "cylinder",
+            "params": [
+              0.018,
+              0.018,
+              0.36,
+              6.0
+            ],
+            "position": [
+              -0.05,
+              0.5,
+              0.04
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "club_bag",
+            "children": null
+          },
+          {
+            "name": "bag_club_b",
+            "kind": "cylinder",
+            "params": [
+              0.018,
+              0.018,
+              0.36,
+              6.0
+            ],
+            "position": [
+              0.05,
+              0.5,
+              0.02
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "club_bag",
+            "children": null
+          },
+          {
+            "name": "bag_club_c",
+            "kind": "cylinder",
+            "params": [
+              0.018,
+              0.018,
+              0.36,
+              6.0
+            ],
+            "position": [
+              -0.0,
+              0.5,
+              -0.05
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "club_bag",
+            "children": null
+          }
+        ]
+      },
+      {
+        "name": "body_tub",
+        "kind": "box",
+        "params": [
+          1.32,
+          0.36,
+          1.24
+        ],
+        "position": [
+          0.0,
+          0.31,
+          -0.32
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "bumper_front",
+        "kind": "box",
+        "params": [
+          1.26,
+          0.17,
+          0.14
+        ],
+        "position": [
+          0.0,
+          0.02,
+          1.2
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "bumper_rear",
+        "kind": "box",
+        "params": [
+          1.26,
+          0.17,
+          0.14
+        ],
+        "position": [
+          0.0,
+          0.06,
+          -1.14
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "canopy",
+        "kind": "box",
+        "params": [
+          1.48,
+          0.09,
+          2.28
+        ],
+        "position": [
+          0.0,
+          1.605,
+          0.06
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "dash",
+        "kind": "box",
+        "params": [
+          1.2,
+          0.26,
+          0.18
+        ],
+        "position": [
+          0.0,
+          0.54,
+          0.32
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "hood",
+        "kind": "box",
+        "params": [
+          1.18,
+          0.28,
+          0.84
+        ],
+        "position": [
+          0.0,
+          0.27,
+          0.68
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "nose",
+        "kind": "box",
+        "params": [
+          1.04,
+          0.22,
+          0.36
+        ],
+        "position": [
+          0.0,
+          0.2,
+          1.08
+        ],
+        "rotation": [
+          -0.38,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "post_fl",
+        "kind": "cylinder",
+        "params": [
+          0.042,
+          0.042,
+          1.06,
+          8.0
+        ],
+        "position": [
+          -0.6,
+          1.03,
+          0.82
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "post_fr",
+        "kind": "cylinder",
+        "params": [
+          0.042,
+          0.042,
+          1.06,
+          8.0
+        ],
+        "position": [
+          0.6,
+          1.03,
+          0.82
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "post_rl",
+        "kind": "cylinder",
+        "params": [
+          0.042,
+          0.042,
+          1.05,
+          8.0
+        ],
+        "position": [
+          -0.6,
+          1.035,
+          -0.92
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "post_rr",
+        "kind": "cylinder",
+        "params": [
+          0.042,
+          0.042,
+          1.05,
+          8.0
+        ],
+        "position": [
+          0.6,
+          1.035,
+          -0.92
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "rear_deck",
+        "kind": "box",
+        "params": [
+          1.22,
+          0.16,
+          0.58
+        ],
+        "position": [
+          0.0,
+          0.43,
+          -0.92
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "chassis",
+        "children": null
+      },
+      {
+        "name": "seat_back_l",
+        "kind": "box",
+        "params": [
+          0.52,
+          0.48,
+          0.14
+        ],
+        "position": [
+          -0.29,
+          0.87,
+          -0.6
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "seats",
+        "children": null
+      },
+      {
+        "name": "seat_back_r",
+        "kind": "box",
+        "params": [
+          0.52,
+          0.48,
+          0.14
+        ],
+        "position": [
+          0.29,
+          0.87,
+          -0.6
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "seats",
+        "children": null
+      },
+      {
+        "name": "seat_base",
+        "kind": "box",
+        "params": [
+          1.14,
+          0.16,
+          0.54
+        ],
+        "position": [
+          0.0,
+          0.57,
+          -0.32
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "seats",
+        "children": null
+      },
+      {
+        "name": "steer_column",
+        "kind": "cylinder",
+        "params": [
+          0.035,
+          0.035,
+          0.44,
+          8.0
+        ],
+        "position": [
+          -0.33,
+          0.62,
+          0.22
+        ],
+        "rotation": [
+          -0.55,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "seats",
+        "children": null
+      },
+      {
+        "name": "steer_wheel",
+        "kind": "torus",
+        "params": [
+          0.15,
+          0.028,
+          8.0,
+          20.0
+        ],
+        "position": [
+          -0.33,
+          0.79,
+          0.33
+        ],
+        "rotation": [
+          -1.12,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "seats",
+        "children": null
+      },
+      {
+        "name": "turret_pivot",
+        "kind": "cylinder",
+        "params": [
+          0.36,
+          0.4,
+          0.12,
+          16.0
+        ],
+        "position": [
+          0.0,
+          1.65,
+          0.02
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "turret_housing",
+        "children": [
+          {
+            "name": "barrel_pitch",
+            "kind": "sphere",
+            "params": [
+              0.09,
+              10.0,
+              8.0
+            ],
+            "position": [
+              0.0,
+              0.26,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "turret_barrel",
+            "children": [
+              {
+                "name": "head_slot",
+                "kind": "sphere",
+                "params": [
+                  0.055,
+                  8.0,
+                  6.0
+                ],
+                "position": [
+                  0.0,
+                  0.0,
+                  1.75
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "slot": "turret_barrel",
+                "children": [
+                  {
+                    "name": "head_driver",
+                    "kind": "sphere",
+                    "params": [
+                      0.3,
+                      16.0,
+                      12.0
+                    ],
+                    "position": [
+                      0.0,
+                      0.0,
+                      -0.0
+                    ],
+                    "rotation": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": [
+                      1.25,
+                      1.0,
+                      1.35
+                    ],
+                    "slot": "turret_barrel",
+                    "children": null
+                  },
+                  {
+                    "name": "head_iron",
+                    "kind": "box",
+                    "params": [
+                      0.34,
+                      0.42,
+                      0.1
+                    ],
+                    "position": [
+                      0.0,
+                      0.0,
+                      -0.0
+                    ],
+                    "rotation": [
+                      0.3,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "slot": "turret_barrel",
+                    "children": null
+                  },
+                  {
+                    "name": "head_putter",
+                    "kind": "box",
+                    "params": [
+                      0.52,
+                      0.16,
+                      0.14
+                    ],
+                    "position": [
+                      0.0,
+                      0.0,
+                      -0.0
+                    ],
+                    "rotation": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "slot": "turret_barrel",
+                    "children": null
+                  }
+                ]
+              },
+              {
+                "name": "shaft",
+                "kind": "cylinder",
+                "params": [
+                  0.05,
+                  0.07,
+                  1.75,
+                  10.0
+                ],
+                "position": [
+                  0.0,
+                  0.0,
+                  0.875
+                ],
+                "rotation": [
+                  1.5708,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "slot": "turret_barrel",
+                "children": null
+              }
+            ]
+          },
+          {
+            "name": "turret_drum",
+            "kind": "cylinder",
+            "params": [
+              0.3,
+              0.34,
+              0.38,
+              8.0
+            ],
+            "position": [
+              0.0,
+              0.25,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "turret_housing",
+            "children": null
+          },
+          {
+            "name": "turret_mantlet",
+            "kind": "box",
+            "params": [
+              0.34,
+              0.26,
+              0.24
+            ],
+            "position": [
+              0.0,
+              0.26,
+              0.3
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "turret_housing",
+            "children": null
+          }
+        ]
+      },
+      {
+        "name": "wheel_fl",
+        "kind": "cylinder",
+        "params": [
+          0.34,
+          0.34,
+          0.22,
+          16.0
+        ],
+        "position": [
+          -0.68,
+          -0.06,
+          0.78
+        ],
+        "rotation": [
+          -0.0,
+          0.0,
+          -1.5708
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "tires",
+        "children": [
+          {
+            "name": "rim_fl",
+            "kind": "cylinder",
+            "params": [
+              0.2,
+              0.2,
+              0.235,
+              12.0
+            ],
+            "position": [
+              0.0,
+              0.0,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              -0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "rims",
+            "children": null
+          }
+        ]
+      },
+      {
+        "name": "wheel_fr",
+        "kind": "cylinder",
+        "params": [
+          0.34,
+          0.34,
+          0.22,
+          16.0
+        ],
+        "position": [
+          0.68,
+          -0.06,
+          0.78
+        ],
+        "rotation": [
+          -0.0,
+          0.0,
+          -1.5708
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "tires",
+        "children": [
+          {
+            "name": "rim_fr",
+            "kind": "cylinder",
+            "params": [
+              0.2,
+              0.2,
+              0.235,
+              12.0
+            ],
+            "position": [
+              -0.0,
+              0.0,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              -0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "rims",
+            "children": null
+          }
+        ]
+      },
+      {
+        "name": "wheel_rl",
+        "kind": "cylinder",
+        "params": [
+          0.34,
+          0.34,
+          0.22,
+          16.0
+        ],
+        "position": [
+          -0.68,
+          -0.06,
+          -0.76
+        ],
+        "rotation": [
+          -0.0,
+          0.0,
+          -1.5708
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "tires",
+        "children": [
+          {
+            "name": "rim_rl",
+            "kind": "cylinder",
+            "params": [
+              0.2,
+              0.2,
+              0.235,
+              12.0
+            ],
+            "position": [
+              0.0,
+              0.0,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              -0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "rims",
+            "children": null
+          }
+        ]
+      },
+      {
+        "name": "wheel_rr",
+        "kind": "cylinder",
+        "params": [
+          0.34,
+          0.34,
+          0.22,
+          16.0
+        ],
+        "position": [
+          0.68,
+          -0.06,
+          -0.76
+        ],
+        "rotation": [
+          -0.0,
+          0.0,
+          -1.5708
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "tires",
+        "children": [
+          {
+            "name": "rim_rr",
+            "kind": "cylinder",
+            "params": [
+              0.2,
+              0.2,
+              0.235,
+              12.0
+            ],
+            "position": [
+              -0.0,
+              0.0,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              -0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "rims",
+            "children": null
+          }
+        ]
+      },
+      {
+        "name": "ws_post_l",
+        "kind": "box",
+        "params": [
+          0.055,
+          1.11,
+          0.05
+        ],
+        "position": [
+          -0.61,
+          1.005,
+          0.9
+        ],
+        "rotation": [
+          -0.15,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "ws_post_r",
+        "kind": "box",
+        "params": [
+          0.055,
+          1.11,
+          0.05
+        ],
+        "position": [
+          0.61,
+          1.005,
+          0.9
+        ],
+        "rotation": [
+          -0.15,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "ws_rail_bottom",
+        "kind": "box",
+        "params": [
+          1.22,
+          0.055,
+          0.05
+        ],
+        "position": [
+          0.0,
+          0.4562,
+          0.9829
+        ],
+        "rotation": [
+          -0.15,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      },
+      {
+        "name": "ws_rail_top",
+        "kind": "box",
+        "params": [
+          1.22,
+          0.055,
+          0.05
+        ],
+        "position": [
+          0.0,
+          1.5538,
+          0.8171
+        ],
+        "rotation": [
+          -0.15,
+          0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "slot": "roof",
+        "children": null
+      }
+    ]
+  }
+}
