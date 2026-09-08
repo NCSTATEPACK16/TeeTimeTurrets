@@ -11,10 +11,43 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234caf50'/%3E%3Ccircle cx='16' cy='14' r='8' fill='%23fff'/%3E%3Ccircle cx='13' cy='12' r='1.3' fill='%23d8d8d8'/%3E%3Ccircle cx='19' cy='12' r='1.3' fill='%23d8d8d8'/%3E%3Ccircle cx='16' cy='16' r='1.3' fill='%23d8d8d8'/%3E%3Crect x='11' y='24' width='10' height='3' rx='1.5' fill='%23205c33'/%3E%3C/svg%3E"
     />
     <style>
+      /* UI-SPEC.md section 6's visual language, stated once as tokens instead of retyped per
+         rule. Before this the panel fill and the orange accent were hand-typed literals in two
+         places each; the clubhouse would have been the third. Every value below is the one that
+         was already in use -- this is an extraction, not a restyle. */
+      :root {
+        --panel: rgba(16, 20, 24, 0.62);
+        --panel-solid: rgba(16, 20, 24, 0.94);
+        --panel-raised: rgba(30, 36, 42, 0.94);
+        --scrim: rgba(8, 12, 16, 0.72);
+        --ink: #fff;
+        --ink-dim: rgba(255, 255, 255, 0.62);
+        --accent: #ef8a2b;          /* the single accent, reserved for the primary action */
+        --accent-ink: #14181c;
+        --hp-green: #46c46a;
+        --ammo-orange: #ff9d3d;
+        --danger: #e8564a;
+        --status: #ffe27a;
+        --track: rgba(0, 0, 0, 0.5);
+        --radius-pill: 6px;
+        --radius-card: 8px;
+        --radius-modal: 12px;
+        --font: 600 13px system-ui, sans-serif;
+        --track-letter: 0.06em;
+      }
+
       html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
       #app { position: fixed; inset: 0; }
       canvas { display: block; }
 
+      /* Screens build their own DOM into here on enter() and strip it on exit(), so a screen's
+         markup has the same lifetime as its scene. That is the Phase 1.75 disposal rule applied
+         to the DOM as well as to GPU resources -- markup parked in index.html would outlive the
+         screen that owns it and quietly accumulate listeners. */
+      #screens { position: fixed; inset: 0; z-index: 20; }
+      #screens:empty { pointer-events: none; }
+
+      #hud[hidden] { display: none; }
       #hud {
         position: fixed;
         left: 50%;
@@ -34,7 +67,7 @@
         letter-spacing: 0.06em;
         margin-bottom: 4px;
       }
-      #hud-status { min-height: 1.2em; color: #ffe27a; margin-top: 5px; }
+      #hud-status { min-height: 1.2em; color: var(--status); margin-top: 5px; }
       #hud-timer { font-variant-numeric: tabular-nums; }
       #hud-help { margin-top: 8px; opacity: 0.7; font-size: 11px; }
       #power-track {
@@ -62,7 +95,7 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
-        font: 600 13px system-ui, sans-serif;
+        font: var(--font);
         letter-spacing: 0.06em;
         color: #fff;
         pointer-events: none;
@@ -86,7 +119,7 @@
         gap: 3px;
         padding: 4px 8px;
         border-radius: 6px;
-        background: rgba(16, 20, 24, 0.62);
+        background: var(--panel);
         font: 600 11px system-ui, sans-serif;
         letter-spacing: 0.08em;
         color: #fff;
@@ -98,32 +131,32 @@
         height: 4px;
         border-radius: 2px;
         overflow: hidden;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--track);
       }
-      .nameplate-fill { height: 100%; width: 100%; background: #46c46a; }
+      .nameplate-fill { height: 100%; width: 100%; background: var(--hp-green); }
       .hud-card {
         display: flex;
         align-items: center;
         gap: 8px;
         padding: 7px 11px;
         border-radius: 8px;
-        background: rgba(16, 20, 24, 0.62);
+        background: var(--panel);
       }
       #health-track {
         width: 132px;
         height: 10px;
         border-radius: 5px;
         overflow: hidden;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--track);
       }
       #health-fill {
         height: 100%;
         width: 100%;
-        background: #46c46a;
+        background: var(--hp-green);
         transition: width 90ms linear;
       }
-      #health-icon { color: #e8564a; font-size: 15px; }
-      #ammo-count { color: #ff9d3d; font-size: 17px; }
+      #health-icon { color: var(--danger); font-size: 15px; }
+      #ammo-count { color: var(--ammo-orange); font-size: 17px; }
 
       /* UI-SPEC section 6's visual language: dark translucent card, white bold condensed type.
          Not S2's full nine-column scorecard -- that is Phase 1.75's screen, and this is one
@@ -140,7 +173,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(8, 12, 16, 0.72);
+        background: var(--scrim);
         font: 600 15px system-ui, sans-serif;
         letter-spacing: 0.06em;
         color: #fff;
@@ -150,7 +183,7 @@
         min-width: 300px;
         padding: 28px 34px;
         border-radius: 12px;
-        background: rgba(16, 20, 24, 0.94);
+        background: var(--panel-solid);
         text-align: center;
       }
       #results-headline { margin: 0 0 18px; font-size: 30px; letter-spacing: 0.1em; }
@@ -167,18 +200,199 @@
         padding: 11px 0;
         border: 0;
         border-radius: 8px;
-        background: #ef8a2b;
-        color: #14181c;
+        background: var(--accent);
+        color: var(--accent-ink);
         font: inherit;
         font-size: 15px;
         letter-spacing: 0.1em;
         cursor: pointer;
       }
+
+      /* ---- Shared screen vocabulary (Phase 1.75) ------------------------------------------
+         Buttons, panels, stat tiles and the scorecard grid, defined once because the title and
+         results screens are two views of the same visual language and there is nothing to reuse
+         otherwise -- UI-SPEC section 6 describes it in prose and this is that prose made into
+         rules. The clubhouse is the third view and lands in its own change. */
+
+      .screen {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        font: var(--font);
+        letter-spacing: var(--track-letter);
+        color: var(--ink);
+      }
+      .screen--scrim { background: var(--scrim); }
+
+      .btn {
+        appearance: none;
+        border: 0;
+        border-radius: var(--radius-card);
+        padding: 12px 22px;
+        background: var(--panel-solid);
+        color: var(--ink);
+        font: var(--font);
+        font-size: 15px;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+        transition: filter 120ms linear, transform 120ms ease-out;
+      }
+      .btn:hover:not(:disabled) { filter: brightness(1.25); }
+      .btn:active:not(:disabled) { transform: translateY(1px); }
+      .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      /* Disabled means visibly disabled, not dead: ROADMAP.md asks for buttons to unbuilt
+         screens to read as "not yet", never as a click that silently does nothing. */
+      .btn:disabled { opacity: 0.38; cursor: not-allowed; }
+      .btn--primary { background: var(--accent); color: var(--accent-ink); }
+      .btn--wide { width: 100%; }
+
+      .panel {
+        background: var(--panel-solid);
+        border-radius: var(--radius-modal);
+        padding: 22px 26px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        background: var(--panel-solid);
+        font-size: 15px;
+        font-variant-numeric: tabular-nums;
+      }
+      .chip__coin { color: var(--accent); font-size: 17px; }
+
+      .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      .tile {
+        background: var(--panel-raised);
+        border-radius: var(--radius-card);
+        padding: 12px 14px;
+        text-align: center;
+      }
+      .tile__label { font-size: 10px; color: var(--ink-dim); letter-spacing: 0.12em; }
+      .tile__value {
+        margin-top: 5px;
+        font-size: 21px;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Image 13's card. Ships nine-column with one hole live: the layout is the expensive part,
+         and multi-hole then fills columns without touching it. */
+      .card-grid {
+        display: grid;
+        gap: 4px;
+        font-variant-numeric: tabular-nums;
+        overflow-x: auto;
+      }
+      .card-grid__head {
+        font-size: 10px;
+        color: var(--ink-dim);
+        letter-spacing: 0.12em;
+        text-align: center;
+        padding: 4px 0;
+      }
+      .card-grid__label {
+        font-size: 11px;
+        color: var(--ink-dim);
+        letter-spacing: 0.12em;
+        align-self: center;
+        padding-right: 8px;
+      }
+      .card-grid__cell {
+        min-width: 34px;
+        padding: 7px 0;
+        text-align: center;
+        border-radius: var(--radius-pill);
+        background: var(--panel-raised);
+        border: 2px solid transparent;
+      }
+      .card-grid__cell--empty { opacity: 0.3; }
+      /* Under par is ringed, over par is boxed -- image 13 distinguishes them by shape, not only
+         by colour, which is also what keeps the card readable without colour vision. */
+      .card-grid__cell--under { border-radius: 999px; border-color: var(--hp-green); }
+      .card-grid__cell--over { border-radius: 3px; border-color: var(--danger); }
+      .card-grid__cell--total { background: var(--accent); color: var(--accent-ink); }
+
+      .swatches { display: flex; gap: 5px; }
+      .swatch {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        padding: 0;
+      }
+      .swatch--on { border-color: var(--ink); }
+      .swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .swatch:disabled { opacity: 0.3; cursor: not-allowed; }
+
+      .meter { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+      /* A near-zero bar still shows a sliver: an empty track reads as a missing value
+         rather than as the smallest of three. */
+      .meter__fill { height: 100%; min-width: 3px; background: var(--accent); }
+
+      /* ---- S1 Title (image 10) ------------------------------------------------------------
+         Logo top-left, actions right, version bottom-right, live course behind. The panel is
+         only the type: the backdrop is the WebGL canvas showing through. */
+      .title { padding: 44px 52px; }
+      .title__brand { position: absolute; top: 44px; left: 52px; }
+      .title__logo {
+        font-size: 46px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        line-height: 0.98;
+        text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+      }
+      .title__logo--alt { color: var(--accent); }
+      .title__menu {
+        position: absolute;
+        right: 52px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+        width: 246px;
+      }
+      .title__version {
+        position: absolute;
+        right: 52px;
+        bottom: 30px;
+        font-size: 11px;
+        color: var(--ink-dim);
+      }
+
+      /* ---- S2 Results (image 13) ----------------------------------------------------------- */
+      .results { align-items: center; justify-content: center; padding: 24px; }
+      .results__panel { width: min(860px, 100%); max-height: 100%; overflow-y: auto; }
+      .results__head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+      .results__title { margin: 0; font-size: 30px; letter-spacing: 0.14em; }
+      .results__score { display: flex; align-items: baseline; gap: 10px; }
+      .results__score-label { font-size: 10px; color: var(--ink-dim); letter-spacing: 0.14em; }
+      .results__score-value {
+        font-size: 30px;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+      .results__card { margin-bottom: 20px; }
+      .results__tiles { margin-bottom: 22px; }
+      .results__actions { display: flex; gap: 11px; }
+      .results__actions .btn { flex: 1; }
     </style>
   </head>
   <body>
     <div id="app"></div>
     <div id="nameplates"></div>
+    <!-- Screens mount their own markup here and strip it on exit. Empty by design. -->
+    <div id="screens"></div>
     <div id="hud-combat" hidden>
       <div class="hud-card">
         <span id="health-icon">&#9829;</span>
@@ -203,7 +417,7 @@
         <button id="play-again" type="button">PLAY AGAIN</button>
       </div>
     </div>
-    <div id="hud">
+    <div id="hud" hidden>
       <div id="hud-row">
         <span id="hud-timer">3:00</span>
         <span id="hud-club">DRIVER</span>
