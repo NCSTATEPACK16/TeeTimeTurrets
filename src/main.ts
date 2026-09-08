@@ -1,268 +1,167 @@
 import * as THREE from "three";
+import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
-import { KeyboardMouseSource } from "./input/KeyboardMouseSource";
-import { RenderScene } from "./render/scene";
-import type { FrameView } from "./render/scene";
-import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "./sim/world";
-import type { BallTransform, CartTransform } from "./sim/world";
+import { FIXED_DT, Sim } from "./sim/world";
 import { generateCourse } from "./sim/course";
+import { Round } from "./sim/round";
 import { parseHoleIndex } from "./devHoleParam";
-import { drawHud, readHud } from "./ui/hud";
-import { drawMatchResults, readMatchResults } from "./ui/matchResults";
-import { Nameplates } from "./ui/nameplates";
+import { RoundScreen } from "./ui/screens/RoundScreen";
+import { ResultsScreen } from "./ui/screens/ResultsScreen";
+import { TitleScreen } from "./ui/screens/TitleScreen";
 
 /**
- * Fixed until a course-select screen exists (Phase 1.75). Changing it changes every hole, which
- * is the whole point of the seed -- and is the cheapest way to eyeball generation variety
- * during development.
+ * Boot and routing. Everything that used to live here -- the sim, the scene, the input, the HUD
+ * wiring, the frame view -- is now `RoundScreen`; this file's job is to own the things that
+ * outlive any one screen (the renderer, the loop, the course, the round) and to say which screen
+ * comes next.
+ *
+ * That split is Phase 1.75's whole point. One WebGL context is shared by the title backdrop, the
+ * round and later the clubhouse; each screen builds and frees its own scene around it.
+ */
+
+/*
+ * KNOWN DEFECT, fixed in the change that follows this one: NEXT HOLE does not advance a round.
+ * `startRound` below replaces `round` with a fresh `Round` on every hole, which wipes the card
+ * and resets `holeIndex` to 0 -- so the second hole is replayed forever and the round can never
+ * complete. It is left here rather than fixed in passing because the fix is a design decision
+ * about where the four scorecard counters live (see the constructor comment in `sim/round.ts`),
+ * and it wants its own change with a test that fails first.
+ */
+
+/**
+ * Fixed until a course-select screen exists. Changing it changes every hole, which is the whole
+ * point of the seed -- and is the cheapest way to eyeball generation variety during development.
  */
 const COURSE_SEED = 2026;
+const VERSION = "v0.0.1";
+
+type ScreenName = "title" | "round" | "results";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
-  const hud = readHud();
-  const results = readMatchResults();
-  if (!container || !hud || !results) {
-    throw new Error("expected #app, the #hud elements and #match-results in index.html");
+  const screensRoot = document.getElementById("screens");
+  const hudRoot = document.getElementById("hud");
+  const nameplateRoot = document.getElementById("nameplates");
+  if (!container || !screensRoot || !hudRoot || !nameplateRoot) {
+    throw new Error("expected #app, #screens, #hud and #nameplates in index.html");
   }
 
-  // One course, eighteen holes, one seed. `?hole=N` is a dev-only viewer for driving each hole
-  // and comparing it against the concept art -- switching still means a page reload, since the
-  // renderer's ground mesh is built once. Advancing holes *in-game* is Phase 1.75's round flow
-  // and needs a screen transition, not just sim.loadHole.
-  const course = generateCourse(COURSE_SEED, 18);
-  const holeIndex = parseHoleIndex(window.location.search, course.holes.length);
-  const sim = await Sim.create(course.holes[holeIndex]);
-  const render = new RenderScene(
-    container,
-    sim.terrain,
-    sim.surfaces,
-    sim.targets.length,
-    sim.bots.length,
-  );
-  const plateRoot = document.getElementById("nameplates");
-  if (!plateRoot) throw new Error("expected #nameplates in index.html");
-  const nameplates = new Nameplates(plateRoot, sim.bots.map((_, i) => `BOT ${i + 1}`));
-  const input = new KeyboardMouseSource(render.renderer.domElement);
-
-  // Dev-only inspection hook for manual tuning in the browser console (phase-0 spike, not shipped UI).
-  (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = { sim, render, course };
-
-  // Not part of PlayerIntent: "start the hole again" is a screen-level action that Phase 1.75's
-  // ScreenManager will own via the results screen's NEXT HOLE. This is a dev affordance until then.
-  window.addEventListener("keydown", (event) => {
-    if (event.code === "KeyR") sim.reset();
+  // Created once and shared. A context per screen would hit the browser's hard limit on live
+  // WebGL contexts within a few transitions, and lose the title backdrop's whole reason to exist.
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  container.appendChild(renderer.domElement);
+  window.addEventListener("resize", () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  // Same reset path R already triggers: it re-rolls the clock, clears the result, re-seeds the
-  // bots and stands the targets back up.
-  results.playAgain.addEventListener("click", () => sim.reset());
+  const course = generateCourse(COURSE_SEED, 18);
+  const holeIndex = parseHoleIndex(window.location.search, course.holes.length);
 
-  // Edge-triggers document.exitPointerLock() below: a primitive, not a per-frame allocation.
-  let resultsWereVisible = false;
+  const screens = new ScreenManager<ScreenName>();
 
-  // Reused across frames rather than rebuilt -- GameLoop's frame callback is covered by the
-  // AGENTS.md no-allocation rule just as the fixed step is.
-  const view: FrameView = {
-    ball: cloneBall(sim.current),
-    cart: cloneCart(sim.currentCart),
-    charge01: 0,
-    club: sim.cart.equippedClub,
-    turretLoaded: turretLoaded(sim),
-    targetTransforms: new Float32Array(sim.currentTargetTransforms.length),
-    targetPartCount: sim.targetPartCount,
-    poolTransforms: new Float32Array(sim.currentPoolTransforms.length),
-    botCarts: sim.currentBotCarts.map(cloneCart),
+  // One live round for the session. `Round` wraps `sim.stats` by reference once the sim exists,
+  // so the scorecard's four tiles read the same counters combat.ts writes.
+  let round = new Round(course.holes.map((h) => h.par));
+  let sim: Sim | null = null;
+  let roundScreen: RoundScreen | null = null;
+
+  const startRound = async (): Promise<void> => {
+    const spec = course.holes[Math.min(round.holeIndex, course.holes.length - 1)];
+    if (!spec) throw new Error("course has no holes");
+    sim = await Sim.create(spec);
+    round = new Round(
+      course.holes.map((h) => h.par),
+      sim.stats,
+    );
+    screens.show("round");
+  };
+
+  screens.register("title", () => {
+    const backdropHole = course.holes[holeIndex] ?? course.holes[0]!;
+    return new TitleScreen({
+      root: screensRoot,
+      renderer,
+      backdropHole,
+      version: VERSION,
+      actions: {
+        play: () => void startRound(),
+        // Still undefined, so these render visibly disabled rather than absent -- ROADMAP.md
+        // asks for exactly that: a button that looks alive and does nothing is worse. CLUBHOUSE
+        // joins PLAY when its screen lands; MULTIPLAYER and SETTINGS wait for Phase 5 and a
+        // settings screen respectively.
+        clubhouse: undefined,
+        multiplayer: undefined,
+        settings: undefined,
+      },
+    });
+  });
+
+  screens.register("round", () => {
+    const live = sim;
+    if (!live) throw new Error("round screen entered with no sim");
+    roundScreen = new RoundScreen({
+      renderer,
+      sim: live,
+      round,
+      hudRoot,
+      nameplateRoot,
+      onHoleComplete: (strokes) => {
+        round.completeHole(strokes);
+        // Mouse-aim players are pointer-locked and cannot reach a button until it is released.
+        if (document.pointerLockElement !== null) document.exitPointerLock();
+        screens.show("results");
+      },
+    });
+    return roundScreen;
+  });
+
+  screens.register("results", () => {
+    const behind = roundScreen;
+    return new ResultsScreen({
+      root: screensRoot,
+      round,
+      // Keeps the finished hole on screen under the scrim instead of a black page.
+      drawBehind: behind ? () => behind.drawStill() : undefined,
+      actions: {
+        mainMenu: () => screens.show("title"),
+        nextHole: round.complete ? undefined : () => void startRound(),
+      },
+    });
+  });
+
+  // Dev-only inspection hook for manual tuning in the browser console, and what tools/smoke.mjs
+  // drives. Getters rather than fixed values: `sim` and the scene are rebuilt on every round, so
+  // a snapshot taken at boot would go stale the moment the player pressed PLAY.
+  (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = {
+    get sim() {
+      return sim;
+    },
+    get render() {
+      return roundScreen?.scene ?? null;
+    },
+    get round() {
+      return round;
+    },
+    get screen() {
+      return screens.activeName;
+    },
+    course,
+    screens,
+    // Exposed for the Phase 1.75 memory gate in tools/smoke.mjs: `renderer.info.memory` is the
+    // only honest way to ask whether a screen gave its geometries and textures back.
+    renderer,
   };
 
   const loop = new GameLoop({
     fixedDt: FIXED_DT,
-    step: () => {
-      sim.step(input.sample());
-      input.endTick();
-    },
-    render: (alpha) => {
-      interpolateBall(sim.previous, sim.current, alpha, view.ball);
-      interpolateCart(sim.previousCart, sim.currentCart, alpha, view.cart);
-      for (let i = 0; i < view.botCarts.length; i++) {
-        interpolateCart(sim.previousBotCarts[i]!, sim.currentBotCarts[i]!, alpha, view.botCarts[i]!);
-      }
-      view.charge01 = sim.cart.charge;
-      view.club = sim.cart.equippedClub;
-      view.turretLoaded = turretLoaded(sim);
-      interpolateTransforms(
-        sim.previousTargetTransforms,
-        sim.currentTargetTransforms,
-        alpha,
-        view.targetTransforms,
-      );
-      interpolateTransforms(
-        sim.previousPoolTransforms,
-        sim.currentPoolTransforms,
-        alpha,
-        view.poolTransforms,
-        POOL_TRANSFORM_STRIDE,
-      );
-
-      render.draw(view);
-      drawNameplates(render, nameplates, view, sim);
-      drawHud(hud, sim);
-      drawMatchResults(results, sim);
-
-      // Pointer-locked players (mouse aim) cannot see or reach #play-again -- the canvas has
-      // captured and hidden the cursor -- so release the lock on the tick the overlay first
-      // becomes visible rather than leaving Esc as the only undocumented way out.
-      const resultsVisible = !results.root.hidden;
-      if (resultsVisible && !resultsWereVisible && document.pointerLockElement !== null) {
-        document.exitPointerLock();
-      }
-      resultsWereVisible = resultsVisible;
-    },
+    step: () => screens.step(),
+    render: (alpha) => screens.draw(alpha),
   });
+
+  screens.show("title");
   loop.start();
-}
-
-/**
- * What rides the club head is a round of ammo, not the course ball -- images 03 and 04, and what
- * actually fires.
- */
-function turretLoaded(sim: Sim): boolean {
-  return sim.cart.ammo > 0;
-}
-
-/** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
-const NAMEPLATE_HEIGHT = 2.6;
-const plateScratch = { x: 0, y: 0 };
-
-/**
- * Projects each bot cart's plate anchor and places it. Reads health straight off the sim -- a
- * read, never a mutation, per the AGENTS.md rule that src/ui/** consumes sim state.
- *
- * The player's own cart is never plated: UI-SPEC H13's data source is "remote cart positions"
- * (docs/UI-SPEC.md), and the chase camera already frames the player's cart with #hud-combat's
- * health card below it -- a second health bar mid-screen over your own cart would duplicate
- * both.
- */
-function drawNameplates(render: RenderScene, plates: Nameplates, view: FrameView, sim: Sim): void {
-  for (let i = 0; i < view.botCarts.length; i++) {
-    const bot = sim.bots[i];
-    if (bot === undefined) continue;
-    placeNameplate(render, plates, i, view.botCarts[i]!, bot.health);
-  }
-}
-
-/** Module-level rather than nested inside `drawNameplates`: a function declared inside a function
- *  body allocates a fresh closure on every call, and this one is called every frame. */
-function placeNameplate(
-  render: RenderScene,
-  plates: Nameplates,
-  index: number,
-  cart: CartTransform,
-  health: { readonly hp: number; readonly max: number },
-): void {
-  const visible = render.projectToScreen(
-    cart.position.x,
-    cart.position.y + NAMEPLATE_HEIGHT,
-    cart.position.z,
-    plateScratch,
-  );
-  plates.setPlate(
-    index,
-    plateScratch.x,
-    plateScratch.y,
-    visible,
-    health.max > 0 ? health.hp / health.max : 0,
-  );
-}
-
-const scratchA = new THREE.Quaternion();
-const scratchB = new THREE.Quaternion();
-const scratchOut = new THREE.Quaternion();
-
-function interpolateBall(
-  previous: BallTransform,
-  current: BallTransform,
-  alpha: number,
-  out: BallTransform,
-): void {
-  scratchA.set(previous.rotation.x, previous.rotation.y, previous.rotation.z, previous.rotation.w);
-  scratchB.set(current.rotation.x, current.rotation.y, current.rotation.z, current.rotation.w);
-  scratchOut.slerpQuaternions(scratchA, scratchB, alpha);
-
-  out.position.x = lerp(previous.position.x, current.position.x, alpha);
-  out.position.y = lerp(previous.position.y, current.position.y, alpha);
-  out.position.z = lerp(previous.position.z, current.position.z, alpha);
-  out.rotation.x = scratchOut.x;
-  out.rotation.y = scratchOut.y;
-  out.rotation.z = scratchOut.z;
-  out.rotation.w = scratchOut.w;
-}
-
-/**
- * Plain lerp on the angles is correct here rather than a shortest-arc slerp: heading and turret
- * yaw accumulate without ever being wrapped to [-PI, PI], so successive values never straddle a
- * discontinuity and a naive interpolation cannot take the long way round.
- */
-function interpolateCart(
-  previous: CartTransform,
-  current: CartTransform,
-  alpha: number,
-  out: CartTransform,
-): void {
-  out.position.x = lerp(previous.position.x, current.position.x, alpha);
-  out.position.y = lerp(previous.position.y, current.position.y, alpha);
-  out.position.z = lerp(previous.position.z, current.position.z, alpha);
-  out.heading = lerp(previous.heading, current.heading, alpha);
-  out.turretYaw = lerp(previous.turretYaw, current.turretYaw, alpha);
-}
-
-/**
- * Lerps positions and slerps rotations for a whole flat transform buffer in place. Uninterpolated,
- * a ragdoll collapsing over about a second steps visibly at any refresh rate above 60 Hz -- and
- * the collapse is the thing this rendering exists to show.
- *
- * Standing parts are interpolated too rather than special-cased: the copy costs a handful of
- * floats and keeps this one code path instead of two.
- */
-function interpolateTransforms(
-  previous: Float32Array,
-  current: Float32Array,
-  alpha: number,
-  out: Float32Array,
-  stride: number = TRANSFORM_STRIDE,
-): void {
-  const count = Math.min(previous.length, current.length, out.length);
-  for (let i = 0; i + stride <= count; i += stride) {
-    out[i] = lerp(previous[i]!, current[i]!, alpha);
-    out[i + 1] = lerp(previous[i + 1]!, current[i + 1]!, alpha);
-    out[i + 2] = lerp(previous[i + 2]!, current[i + 2]!, alpha);
-
-    scratchA.set(previous[i + 3]!, previous[i + 4]!, previous[i + 5]!, previous[i + 6]!);
-    scratchB.set(current[i + 3]!, current[i + 4]!, current[i + 5]!, current[i + 6]!);
-    scratchOut.slerpQuaternions(scratchA, scratchB, alpha);
-    out[i + 3] = scratchOut.x;
-    out[i + 4] = scratchOut.y;
-    out[i + 5] = scratchOut.z;
-    out[i + 6] = scratchOut.w;
-
-    // Anything past the transform itself is a flag, not a value: copy, never interpolate. A
-    // half-active ball would be drawn at half scale on the frame it spawns.
-    for (let extra = TRANSFORM_STRIDE; extra < stride; extra++) {
-      out[i + extra] = current[i + extra]!;
-    }
-  }
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function cloneBall(t: BallTransform): BallTransform {
-  return { position: { ...t.position }, rotation: { ...t.rotation } };
-}
-
-function cloneCart(t: CartTransform): CartTransform {
-  return { position: { ...t.position }, heading: t.heading, turretYaw: t.turretYaw };
 }
 
 main().catch((err: unknown) => {

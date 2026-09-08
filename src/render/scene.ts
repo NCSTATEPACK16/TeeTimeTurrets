@@ -93,9 +93,16 @@ export class RenderScene {
   private readonly chaseLookScratch = new THREE.Vector3();
   private readonly projectScratch = new THREE.Vector3();
   private readonly sizeScratch = new THREE.Vector2();
+  private readonly resizeListener: () => void;
 
+  /**
+   * `renderer` is passed in rather than created here. One WebGL context is shared by every screen
+   * -- title backdrop, round, clubhouse turntable -- because a context per screen would be both
+   * a hard browser limit and a guaranteed leak across transitions. `ScreenManager` owns its
+   * lifetime; this class only borrows it, and `dispose()` below deliberately does not free it.
+   */
   constructor(
-    container: HTMLElement,
+    renderer: THREE.WebGLRenderer,
     terrain: Terrain,
     surfaces: Surfaces,
     targetCount: number,
@@ -105,10 +112,7 @@ export class RenderScene {
     const fieldSize = terrain.spec.fieldSize;
     const palette = BIOMES[terrain.spec.biome];
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    container.appendChild(this.renderer.domElement);
+    this.renderer = renderer;
 
     this.scene = new THREE.Scene();
     // Sky and fog take the biome's colour and share it, so the horizon dissolves rather than
@@ -160,7 +164,11 @@ export class RenderScene {
     this.scene.add(this.pooledBalls);
 
     this.cameraTarget.set(0, 0, 0);
-    window.addEventListener("resize", () => this.onResize());
+    this.onResize();
+    // Kept as a field so `dispose` can detach it. An anonymous listener here would outlive every
+    // round the player ever plays, holding this whole scene alive with it.
+    this.resizeListener = (): void => this.onResize();
+    window.addEventListener("resize", this.resizeListener);
   }
 
   draw(view: FrameView): void {
@@ -186,15 +194,21 @@ export class RenderScene {
     this.renderer.render(this.scene, this.camera);
   }
 
-  /** Frees the cart's geometries and materials. See the AGENTS.md resource-cleanup rule. */
+  /**
+   * Frees everything this scene allocated. See the AGENTS.md resource-cleanup rule.
+   *
+   * The renderer is pointedly NOT disposed: it belongs to `ScreenManager` and outlives this
+   * scene, so freeing it here would take the WebGL context down with the first round that ended.
+   */
   dispose(): void {
+    window.removeEventListener("resize", this.resizeListener);
     this.cart.dispose();
     for (const bot of this.botCarts) bot.dispose();
     this.targets.dispose();
     this.pooledBalls.dispose();
     this.ground.dispose();
     this.trees.dispose();
-    this.renderer.dispose();
+    this.scene.clear();
   }
 
   /**

@@ -86,6 +86,45 @@ const canvas = await page.evaluate(() => {
 });
 check("canvas present and sized", canvas !== null && canvas.w > 0 && canvas.h > 0, canvas && `${canvas.w}x${canvas.h}`);
 
+// The game now boots to the title screen rather than straight into a hole (Phase 1.75), so every
+// in-round check below has to get through it first. That is worth asserting rather than skipping
+// past: the title is the first screen a player ever sees.
+console.log("=== TITLE SCREEN ===");
+const title = await page.evaluate(() => {
+  const buttons = [...document.querySelectorAll("#screens .title__menu .btn")];
+  return {
+    screen: window.__teetimeturrets.screen,
+    labels: buttons.map((b) => b.textContent),
+    disabled: buttons.map((b) => b.disabled),
+    simBeforePlay: window.__teetimeturrets.sim,
+    version: document.querySelector("#screens .title__version")?.textContent ?? null,
+  };
+});
+check("boots to the title screen", title.screen === "title", title.screen);
+check(
+  "shows the four actions from image 10",
+  JSON.stringify(title.labels) === JSON.stringify(["PLAY", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
+  title.labels.join(" / "),
+);
+// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead. A button that looks
+// alive and does nothing is the failure this asserts against. PLAY is built; CLUBHOUSE,
+// MULTIPLAYER and SETTINGS are not, and must read as "not yet" rather than silently do nothing.
+// CLUBHOUSE flips to false when its screen lands, and this assertion is how that is noticed.
+check(
+  "built screens are live and unbuilt ones are disabled, not absent",
+  JSON.stringify(title.disabled) === JSON.stringify([false, true, true, true]),
+  JSON.stringify(title.disabled),
+);
+check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
+check("shows a version string", typeof title.version === "string" && title.version.length > 0, title.version);
+
+await page.evaluate(() => {
+  [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "PLAY").click();
+});
+await page.waitForFunction(() => window.__teetimeturrets.sim !== null, { timeout: 20000 });
+await new Promise((r) => setTimeout(r, 600));
+check("PLAY starts a round", (await page.evaluate(() => window.__teetimeturrets.screen)) === "round");
+
 const read = () =>
   page.evaluate(() => {
     const { sim } = window.__teetimeturrets;
@@ -341,6 +380,45 @@ await page.click("#play-again");
 await new Promise((r) => setTimeout(r, 400));
 const restarted = await read();
 check("play again restarts the match", restarted.resultsHidden === true, `t=${restarted.timer}`);
+
+// ROADMAP.md Phase 1.75's gate, verbatim: "enter and leave every registered screen 20x in a loop
+// with no growth in renderer.info.memory (geometries/textures)". This is the check the phase
+// exists for, and the one Phase 3.5 repeats against the clubhouse -- a screen that forgets to
+// dispose its scene looks completely fine until the twentieth transition.
+//
+// The title screen is the subject because it is the heaviest thing that can be cycled cheaply: a
+// full terrain, ground mesh and instanced tree wood, with no Rapier world to rebuild each time.
+console.log("=== SCREEN LIFECYCLE (Phase 1.75 memory gate) ===");
+const leak = await page.evaluate(async () => {
+  const { screens, renderer } = window.__teetimeturrets;
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+  // Two warm-up cycles first: the very first entry allocates shared, legitimately cached things
+  // (shader programs, the renderer's own internals) that never come back, and counting those as
+  // a leak would make the gate cry wolf on a correct implementation.
+  for (let i = 0; i < 2; i++) {
+    screens.show("title");
+    await frame();
+  }
+  const before = { ...renderer.info.memory };
+
+  for (let i = 0; i < 20; i++) {
+    screens.show("title");
+    await frame();
+  }
+  const after = { ...renderer.info.memory };
+  return { before, after };
+});
+check(
+  "20 screen entries leak no geometries",
+  leak.after.geometries <= leak.before.geometries,
+  `${leak.before.geometries} -> ${leak.after.geometries}`,
+);
+check(
+  "20 screen entries leak no textures",
+  leak.after.textures <= leak.before.textures,
+  `${leak.before.textures} -> ${leak.after.textures}`,
+);
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 

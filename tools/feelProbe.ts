@@ -8,8 +8,11 @@ import { Sim, FIXED_DT } from "../src/sim/world";
 import { mulberry32 } from "../src/sim/rng";
 import { fixedHoleSpec } from "../src/sim/course";
 import { CUP_RADIUS, NOISE_MAX_GRADIENT, createTerrain } from "../src/sim/terrain";
+// REFERENCE_CARRY_M lives in sim/carry.ts, not sim/course.ts: it was moved into a leaf module to
+// break a value import cycle (see that file's header). course.ts imports it but does not re-export
+// it, so this import had been dangling and `npm run probe` could not build.
+import { REFERENCE_CARRY_M } from "../src/sim/carry";
 import {
-  REFERENCE_CARRY_M,
   derivePar,
   draftHole,
   generateCourse,

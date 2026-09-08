@@ -15,10 +15,16 @@ export interface Stats {
   directHits: number;
   /** Distinct targets whose `isDown` flipped true. */
   targetsDown: number;
+  /**
+   * Longest single ball flight of the round, metres. The fourth tile on image 13's scorecard,
+   * and the one the old three-counter shape was missing. Round-scoped like the rest: a round
+   * best, not a per-hole one.
+   */
+  longestDriveM: number;
 }
 
 export function createStats(): Stats {
-  return { shotsFired: 0, directHits: 0, targetsDown: 0 };
+  return { shotsFired: 0, directHits: 0, targetsDown: 0, longestDriveM: 0 };
 }
 
 /** 0 rather than NaN before the first shot -- a HUD would render "NaN%". */
