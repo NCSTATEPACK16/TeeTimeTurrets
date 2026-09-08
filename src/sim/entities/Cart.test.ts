@@ -9,6 +9,7 @@ import {
   MAX_AMMO,
   STARTING_AMMO,
   STARTING_HP,
+  TURRET_GEOMETRY,
   TireType,
   computeMuzzle,
 } from "./Cart";
@@ -260,12 +261,29 @@ describe("computeMuzzle", () => {
     expect(out.z).toBeCloseTo(cart.position.z, 6);
   });
 
-  it("swings the muzzle around with the turret", () => {
+  it("swings the muzzle around with the turret, from a pivot the chassis carries", () => {
+    // Two angles, not one. Slewing the turret 90 degrees swings the barrel onto +Z, but the pivot
+    // it swings from stays bolted `pivotForward` ahead of the chassis on +X -- the ring does not
+    // slide across the roof. So the muzzle ends up off the cart's centre in *both* axes, and a
+    // `computeMuzzle` that used `turretYaw` for the offset as well would put it on neither.
     const cart = new Cart();
-    cart.turretOffset = Math.PI / 2; // aiming down +Z
+    cart.heading = 0; // chassis facing +X
+    cart.turretOffset = Math.PI / 2; // turret aiming down +Z
     computeMuzzle(cart, out);
     expect(out.z).toBeGreaterThan(cart.position.z + 0.5);
-    expect(out.x).toBeCloseTo(cart.position.x, 6);
+    expect(out.x - cart.position.x).toBeCloseTo(TURRET_GEOMETRY.pivotForward, 6);
+  });
+
+  it("carries the pivot round with the chassis when the turret is centred", () => {
+    const east = new Cart({ heading: 0 });
+    const north = new Cart({ heading: Math.PI / 2 });
+    computeMuzzle(east, out);
+    const eastX = out.x;
+    computeMuzzle(north, out);
+    // Same shot, cart turned a quarter turn: the whole muzzle -- offset and reach together --
+    // has to rotate with it, so what was an X reach is now a Z reach of the same length.
+    expect(out.z).toBeCloseTo(eastX, 6);
+    expect(out.x).toBeCloseTo(0, 6);
   });
 
   it("raises the muzzle higher for a more lofted club, since the barrel is the club", () => {

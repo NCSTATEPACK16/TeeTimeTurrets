@@ -288,12 +288,12 @@
         "params": [
           1.32,
           0.36,
-          1.24
+          0.86
         ],
         "position": [
           0.0,
           0.31,
-          -0.32
+          -0.53
         ],
         "rotation": [
           0.0,
@@ -686,7 +686,7 @@
           8.0
         ],
         "position": [
-          -0.33,
+          0.33,
           0.62,
           0.22
         ],
@@ -713,7 +713,7 @@
           20.0
         ],
         "position": [
-          -0.33,
+          0.33,
           0.79,
           0.33
         ],
@@ -742,7 +742,7 @@
         "position": [
           0.0,
           1.65,
-          0.02
+          0.47
         ],
         "rotation": [
           0.0,
@@ -766,7 +766,7 @@
             ],
             "position": [
               0.0,
-              0.26,
+              0.55,
               -0.0
             ],
             "rotation": [
@@ -782,151 +782,286 @@
             "slot": "turret_barrel",
             "children": [
               {
-                "name": "head_slot",
-                "kind": "sphere",
-                "params": [
-                  0.055,
-                  8.0,
-                  6.0
-                ],
-                "position": [
-                  0.0,
-                  0.0,
-                  1.75
-                ],
-                "rotation": [
-                  0.0,
-                  0.0,
-                  0.0
-                ],
-                "scale": [
-                  1.0,
-                  1.0,
-                  1.0
-                ],
-                "slot": "turret_barrel",
-                "children": [
-                  {
-                    "name": "head_driver",
-                    "kind": "sphere",
-                    "params": [
-                      0.3,
-                      16.0,
-                      12.0
-                    ],
-                    "position": [
-                      0.0,
-                      0.0,
-                      -0.0
-                    ],
-                    "rotation": [
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "scale": [
-                      1.25,
-                      1.0,
-                      1.35
-                    ],
-                    "slot": "turret_barrel",
-                    "children": null
-                  },
-                  {
-                    "name": "head_iron",
-                    "kind": "box",
-                    "params": [
-                      0.34,
-                      0.42,
-                      0.1
-                    ],
-                    "position": [
-                      0.0,
-                      0.0,
-                      -0.0
-                    ],
-                    "rotation": [
-                      0.3,
-                      0.0,
-                      0.0
-                    ],
-                    "scale": [
-                      1.0,
-                      1.0,
-                      1.0
-                    ],
-                    "slot": "turret_barrel",
-                    "children": null
-                  },
-                  {
-                    "name": "head_putter",
-                    "kind": "box",
-                    "params": [
-                      0.52,
-                      0.16,
-                      0.14
-                    ],
-                    "position": [
-                      0.0,
-                      0.0,
-                      -0.0
-                    ],
-                    "rotation": [
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "scale": [
-                      1.0,
-                      1.0,
-                      1.0
-                    ],
-                    "slot": "turret_barrel",
-                    "children": null
-                  }
-                ]
-              },
-              {
-                "name": "shaft",
+                "name": "swing_yoke",
                 "kind": "cylinder",
                 "params": [
-                  0.05,
-                  0.07,
-                  1.75,
+                  0.075,
+                  0.075,
+                  0.15,
                   10.0
                 ],
                 "position": [
                   0.0,
                   0.0,
-                  0.875
+                  -0.0
                 ],
                 "rotation": [
-                  1.5708,
                   0.0,
-                  0.0
+                  0.0,
+                  0.25
                 ],
                 "scale": [
                   1.0,
                   1.0,
                   1.0
                 ],
-                "slot": "turret_barrel",
-                "children": null
+                "slot": "turret_housing",
+                "children": [
+                  {
+                    "name": "swing_arm",
+                    "kind": "box",
+                    "params": [
+                      0.14,
+                      0.14,
+                      0.2
+                    ],
+                    "position": [
+                      0.0,
+                      0.0,
+                      -0.0
+                    ],
+                    "rotation": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "slot": "turret_barrel",
+                    "children": [
+                      {
+                        "name": "head_slot",
+                        "kind": "sphere",
+                        "params": [
+                          0.055,
+                          8.0,
+                          6.0
+                        ],
+                        "position": [
+                          0.0,
+                          0.0,
+                          1.75
+                        ],
+                        "rotation": [
+                          0.0,
+                          0.0,
+                          -0.25
+                        ],
+                        "scale": [
+                          1.0,
+                          1.0,
+                          1.0
+                        ],
+                        "slot": "turret_barrel",
+                        "children": [
+                          {
+                            "name": "head_driver",
+                            "kind": "box",
+                            "params": [
+                              0.24,
+                              0.055,
+                              0.19
+                            ],
+                            "position": [
+                              -0.13,
+                              -0.108,
+                              -0.0
+                            ],
+                            "rotation": [
+                              0.0,
+                              0.0,
+                              0.0
+                            ],
+                            "scale": [
+                              1.0,
+                              1.0,
+                              1.0
+                            ],
+                            "slot": "turret_barrel",
+                            "children": [
+                              {
+                                "name": "head_driver_crown",
+                                "kind": "sphere",
+                                "params": [
+                                  0.15,
+                                  12.0,
+                                  8.0
+                                ],
+                                "position": [
+                                  0.0,
+                                  0.05,
+                                  -0.0
+                                ],
+                                "rotation": [
+                                  0.0,
+                                  0.0,
+                                  0.0
+                                ],
+                                "scale": [
+                                  0.85,
+                                  0.5,
+                                  0.72
+                                ],
+                                "slot": "turret_barrel",
+                                "children": null
+                              },
+                              {
+                                "name": "head_driver_face",
+                                "kind": "box",
+                                "params": [
+                                  0.22,
+                                  0.14,
+                                  0.028
+                                ],
+                                "position": [
+                                  0.0,
+                                  0.045,
+                                  0.085
+                                ],
+                                "rotation": [
+                                  -0.23,
+                                  0.0,
+                                  -0.0
+                                ],
+                                "scale": [
+                                  1.0,
+                                  1.0,
+                                  1.0
+                                ],
+                                "slot": "turret_barrel",
+                                "children": null
+                              }
+                            ]
+                          },
+                          {
+                            "name": "head_iron",
+                            "kind": "box",
+                            "params": [
+                              0.24,
+                              0.2,
+                              0.05
+                            ],
+                            "position": [
+                              -0.13,
+                              -0.183,
+                              -0.0
+                            ],
+                            "rotation": [
+                              -0.38,
+                              0.0,
+                              -0.0
+                            ],
+                            "scale": [
+                              1.0,
+                              1.0,
+                              1.0
+                            ],
+                            "slot": "turret_barrel",
+                            "children": null
+                          },
+                          {
+                            "name": "head_putter",
+                            "kind": "box",
+                            "params": [
+                              0.3,
+                              0.08,
+                              0.09
+                            ],
+                            "position": [
+                              -0.16,
+                              -0.123,
+                              -0.0
+                            ],
+                            "rotation": [
+                              -0.05,
+                              0.0,
+                              -0.0
+                            ],
+                            "scale": [
+                              1.0,
+                              1.0,
+                              1.0
+                            ],
+                            "slot": "turret_barrel",
+                            "children": null
+                          },
+                          {
+                            "name": "hosel",
+                            "kind": "cylinder",
+                            "params": [
+                              0.026,
+                              0.032,
+                              0.09,
+                              8.0
+                            ],
+                            "position": [
+                              -0.014,
+                              -0.04,
+                              -0.0
+                            ],
+                            "rotation": [
+                              0.0,
+                              0.0,
+                              -0.3
+                            ],
+                            "scale": [
+                              1.0,
+                              1.0,
+                              1.0
+                            ],
+                            "slot": "turret_barrel",
+                            "children": null
+                          }
+                        ]
+                      },
+                      {
+                        "name": "shaft",
+                        "kind": "cylinder",
+                        "params": [
+                          0.035,
+                          0.055,
+                          1.75,
+                          10.0
+                        ],
+                        "position": [
+                          0.0,
+                          0.0,
+                          0.875
+                        ],
+                        "rotation": [
+                          1.5708,
+                          0.0,
+                          0.0
+                        ],
+                        "scale": [
+                          1.0,
+                          1.0,
+                          1.0
+                        ],
+                        "slot": "turret_barrel",
+                        "children": null
+                      }
+                    ]
+                  }
+                ]
               }
             ]
           },
           {
-            "name": "turret_drum",
+            "name": "housing_pitch",
             "kind": "cylinder",
             "params": [
+              0.26,
               0.3,
-              0.34,
-              0.38,
-              8.0
+              0.4,
+              10.0
             ],
             "position": [
               0.0,
-              0.25,
+              0.55,
               -0.0
             ],
             "rotation": [
@@ -940,20 +1075,48 @@
               1.0
             ],
             "slot": "turret_housing",
-            "children": null
+            "children": [
+              {
+                "name": "turret_mantlet",
+                "kind": "box",
+                "params": [
+                  0.34,
+                  0.26,
+                  0.24
+                ],
+                "position": [
+                  0.0,
+                  0.0,
+                  0.28
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "slot": "turret_housing",
+                "children": null
+              }
+            ]
           },
           {
-            "name": "turret_mantlet",
-            "kind": "box",
+            "name": "turret_pedestal",
+            "kind": "cylinder",
             "params": [
-              0.34,
-              0.26,
-              0.24
+              0.17,
+              0.22,
+              0.55,
+              10.0
             ],
             "position": [
               0.0,
-              0.26,
-              0.3
+              0.275,
+              -0.0
             ],
             "rotation": [
               0.0,

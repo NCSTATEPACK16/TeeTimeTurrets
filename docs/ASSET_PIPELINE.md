@@ -1,9 +1,10 @@
 # 3D Asset Pipeline
 
-**Status:** built, for the paths §10 steps 2–4 and 7 cover. The primitive-graph format (§4), the
-runtime assembler (`src/entities/primitiveGraph.ts`), the §4.3 Blender exporter and the cart
-(`src/entities/graphs/cart.json`) all ship; so does the first decorative GLB (§6). The rest of the
-§2 manifest — course props, the clubhouse exterior, distant scenery — is still specification.
+**Status:** built, for the paths §10 steps 2–4, 6a and 7 cover. The primitive-graph format (§4),
+the runtime assembler (`src/entities/primitiveGraph.ts`), the §4.3 Blender exporter, the cart
+(`src/entities/graphs/cart.json`) and its rider (`driver.json`) all ship; so does the first
+decorative GLB (§6). The rest of the §2 manifest — course props, the clubhouse exterior, distant
+scenery — is still specification.
 **Supersedes:** the previous `ASSET_PIPELINE.md` (the "CallofGolf" draft) — see §0.2.
 **Related:** `COURSE_PIPELINE.md` (course design), `AGENTS.md` (the geometry rule), `LICENSES.md`.
 
@@ -100,7 +101,8 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 | Golf cart | primitive-graph | 2,000–3,000 tri | 8 material slots (§2.1). Wheels separate for rotation. |
 | Turret housing + barrel | primitive-graph | 300 | Child of cart; Y-rotation for aim. |
 | Club heads (driver, iron, putter) | primitive | 150 each | The barrel *is* the club, per image 03. |
-| Player mannequin | **primitive** | ~600 | ~15 parts, one per rigid body. §2.2. |
+| Ragdoll target mannequin | **primitive** | ~600 | ~15 parts, one per rigid body. §2.2. |
+| **Cart rider** | **primitive-graph** | 2,600 | 26 parts, no rigid bodies, four slots of its own. Built, then given the ball joints, neck and fists §2.2 always described. §2.2. |
 | Golf ball | primitive | 80 | Built (`entities/ballShape.ts`). |
 | Trees, 2–3 per biome | primitive-graph | 200 each | **Must be GPU-instanced.** Silhouettes from `COURSE_PIPELINE.md` §7.1. |
 | Flag + pin | primitive | 60 | Cloth as a vertex-animated quad. |
@@ -130,7 +132,30 @@ model so a paint swap is a material-index change rather than a mesh swap:
 
 `chassis` · `roof` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
 
-### 2.2 The mannequin is a ragdoll, not a model
+### 2.2 The mannequin is a ragdoll, not a model — except the one who is driving
+
+**Amended September 2026.** This section is about the *ragdoll targets*, and for them it stands
+exactly as written. It is not about the **cart's rider**, and the distinction is the physics, not
+the shape:
+
+| | Ragdoll target | Cart rider |
+|---|---|---|
+| Rigid bodies | Eleven, one per visible segment | None |
+| Pose comes from | Rapier, every frame | Authored once |
+| Who owns the shapes | `sim/entities/Target.ts` — the code that builds the bodies | Blender |
+| Route | **Primitive, procedural TypeScript** | **Primitive-graph** (§4) |
+
+The argument below — "the physics rig *is* the character rig", "the ragdoll is free" — is what
+makes a target procedural. None of it applies to a figure that never moves. The rider is
+decoration bolted to the cart, posed against the seat he sits on and the wheel he holds, and he
+belongs in the same tool as the seat and the wheel: `art/clubhouse-and-cart.blend`, exported to
+`src/entities/graphs/driver.json`.
+
+He carries **his own four material slots** — `skin` `shirt` `trousers` `cap` — which share no
+names with the cart's eight. That is what keeps `cartGraph.test.ts`'s exact-eight-slots assertion
+true and stops a chassis repaint reaching his trousers.
+
+The rest of this section is the ragdoll's, unchanged:
 
 `05RagdollHit.jpg` shows a segmented mannequin with visibly separated joints. Build it as ~15
 independent primitives, one per Rapier rigid body:
@@ -314,6 +339,30 @@ def export(root_name, out_path):
 produces a model lying on its side, which is obvious, or subtly mirrored, which is not. The mapping
 above is `(x, y, z) → (x, z, −y)`; verify it on an asymmetric test object before trusting it on the
 cart.
+
+#### Three ways the block above differs from the exporter that actually ran
+
+The working copy is `ttt_authoring.py`, a Text datablock inside the `.blend` (see `art/README.md`).
+Each difference was found by running the printed version and diffing the result against the file it
+was supposed to reproduce.
+
+1. **`slots` must carry only the slots the walked tree uses.** As printed it emits *every* material
+   in the file. That was harmless while the `.blend` held one asset; it now holds three, so a cart
+   export would write the clubhouse's and the rider's slots into `cart.json` — and
+   `cartGraph.test.ts` asserts an exact slot list. Collect the slots during the walk and filter.
+2. **Round the colour channels, do not truncate.** `int(c * 255)` is what is printed;
+   `int(round(c * 255))` is what produced the shipped `cart.json`. A base colour stored as
+   `0.937254…` truncates to 238 where the file holds 239, so the printed version silently
+   recolours all eight slots by a bit on the first re-export.
+3. **Sort children by name.** `obj.children` has no defined order, and an unstable order makes
+   every re-export a large diff that hides the real change.
+
+**And one limit the block cannot fix.** `(euler.x, euler.z, −euler.y)` is a component swap, and it
+is only *exact* when the Blender rotation uses X plus at most one of Y or Z. Blender's XYZ order
+builds `Rz·Ry·Rx`; the basis change `(x, y, z) → (x, z, −y)` turns that into `Ry(c)·Rz(−b)·Rx(a)`,
+while the Three Euler it is written as evaluates `Rz(−b)·Ry(c)·Rx(a)`. Those agree only when `b` or
+`c` is zero. **Author within that limit** — every node in both shipped graphs does — because the
+failure is a pose that is plausible and wrong rather than an error.
 
 ### 4.4 Origins and hierarchy
 
@@ -507,6 +556,186 @@ Verify the connection with get_scene_info before doing anything. At every [REVIE
 in §5, call get_viewport_screenshot and stop for approval before continuing.
 ```
 
+### 8.4 The four sheets run in September 2026
+
+> **All four have been run** (8 September 2026) and are filed in `docs/concept/reference/` with
+> their deviations. The prompts stay here because the sheets are regenerable and the prompts are
+> the only part a fork inherits cleanly — that is this folder's whole convention.
+>
+> **They cannot be run on a free API key.** Google lists Free Tier as "Not available" for every
+> image model, so a free AI Studio key gets text models only — no rate-limit setting changes that.
+> The web UI is free, and is what produced every sheet in the folder.
+
+Checked in rather than left in a session transcript, which is this folder's whole convention —
+`docs/concept/reference/README.md` says so, and the untracked 00–15 shot list is the standing
+example of what happens otherwise. All four fold in §8.1's three amendments: name the views
+explicitly, restate the shared baseline as the one hard requirement, name every material slot.
+
+None of them blocked the modelling they were written for; they were run after it. **§8.4c earned
+its keep anyway** — it is what showed that the shipped swing plane is wrong, and why. See
+`docs/superpowers/specs/2026-09-08-turret-geometry-and-swing-plane-design.md`.
+
+Output goes to `docs/concept/reference/` at 2048 px / JPEG q88 with a row and a deviation list
+added to that folder's index.
+
+#### 8.4a `cart-turnaround-02.jpg` — the corrected cart
+
+Supersedes `cart-turnaround-01.jpg`, which draws a right-hand-drive cart with no rider and no bag.
+
+```
+Produce an orthographic turnaround reference sheet for 3D modelling. This is a technical
+modelling reference, NOT an illustration and NOT a scene.
+
+Subject: a simple low-poly golf cart, LEFT-HAND DRIVE (steering wheel on the vehicle's LEFT,
+as in the United States), with a seated wooden-mannequin driver at the wheel, a roof-mounted
+turret whose barrel is a golf club — a thin shaft ending in an iron club head — and a golf bag
+full of clubs standing on the rear deck directly behind the driver's seat.
+
+Layout: a single image, plain neutral mid-grey background, divided into a 2x2 grid of four
+views of the SAME object at the SAME scale. Label the four panels with exactly these words and
+no others: FRONT, SIDE, REAR, TOP-DOWN. Do not label a panel by its position on the page.
+FRONT top-left, SIDE (facing right) top-right, REAR bottom-left, TOP-DOWN bottom-right.
+
+All four views are of the same object at one scale. Draw a single shared horizontal ground line
+across FRONT, SIDE and REAR so heights can be measured across panels. This is the sheet's one
+hard requirement.
+
+Every view must be TRUE ORTHOGRAPHIC PROJECTION — parallel projection, absolutely no
+perspective, no foreshortening, no vanishing points, no camera tilt.
+
+These eight parts must each be visible and distinguishable as its own flat colour: chassis,
+roof canopy, turret housing, turret barrel/club, tires, wheel rims, seats, golf bag.
+
+Rendering: flat-shaded low-polygon forms, two or three flat tones per surface, clean black
+outlines. Uniform ambient lighting with no directional light, no cast shadows, no ground
+shadow, no reflections, no ambient occlusion, no depth of field.
+
+Do NOT include: a ground plane, an environment, a sky, a horizon, motion effects, a decorative
+border, or any 3/4 or perspective "hero" view.
+```
+
+#### 8.4b `driver-mannequin-01.jpg` — the seated rider
+
+```
+Produce an orthographic turnaround reference sheet for 3D modelling. This is a technical
+modelling reference, NOT an illustration and NOT a scene.
+
+Subject: a simple segmented wooden artist's-mannequin figure in a SEATED DRIVING POSE — knees
+bent and slightly higher than the hips, feet flat and forward, back upright, both arms reaching
+forward and down as if holding a low steering wheel, wearing a flat-brimmed cap. The figure is
+built from separate smooth capsule and sphere segments with visible gaps at every joint —
+shoulders, elbows, hips, knees, neck. No clothing folds, no fingers, no facial features.
+
+Layout: a single image, plain neutral mid-grey background, divided into a 2x2 grid of four
+views of the SAME figure in the SAME seated pose at the SAME scale. Label the four panels with
+exactly these words and no others: FRONT, SIDE, REAR, TOP-DOWN. Do not label a panel by its
+position on the page. FRONT top-left, SIDE (facing right) top-right, REAR bottom-left,
+TOP-DOWN bottom-right.
+
+All four views are of the same figure at one scale. Draw a single shared horizontal ground line
+across FRONT, SIDE and REAR so heights can be measured across panels. This is the sheet's one
+hard requirement. Draw a second thin horizontal line marking the seat height, so hip height can
+be read against it.
+
+Every view must be TRUE ORTHOGRAPHIC PROJECTION — parallel projection, absolutely no
+perspective, no foreshortening, no vanishing points.
+
+These four parts must each be visible and distinguishable as its own flat colour: skin (head,
+hands, forearms), shirt (torso, upper arms), trousers (pelvis, legs), cap.
+
+Rendering: flat-shaded low-polygon forms, two or three flat tones per surface, clean black
+outlines. Uniform ambient lighting, no directional light, no cast shadows, no ground shadow,
+no reflections, no ambient occlusion, no depth of field.
+
+Do NOT include: a chair or cart, a ground plane, an environment, a sky, a horizon, a decorative
+border, or any 3/4 or perspective "hero" view.
+```
+
+#### 8.4c `swing-sequence-01.jpg` — the four swing keyframes
+
+The sheet the repo has no equivalent of, and the direct reference for `SWING` in
+`src/entities/GolfClub.ts`.
+
+```
+Produce an orthographic MOTION KEYFRAME STRIP for 3D animation reference. This is a technical
+reference, NOT an illustration and NOT a scene.
+
+Subject: a roof-mounted turret on a golf cart whose barrel is a golf club — a short cylindrical
+housing, a thin shaft, and an iron club head at the end of the shaft. Only the turret and the
+top of the cart roof are shown; the rest of the cart is omitted.
+
+Layout: a single image, plain neutral mid-grey background, divided into ONE HORIZONTAL ROW OF
+FOUR EQUAL PANELS, all at the SAME scale, sharing ONE CONTINUOUS HORIZONTAL GROUND LINE drawn
+straight across all four panels. Label the panels with exactly these words and no others:
+ADDRESS, TOP OF BACKSWING, IMPACT, FOLLOW-THROUGH.
+
+The four poses, all in TRUE ORTHOGRAPHIC SIDE ELEVATION with the club swinging in the plane of
+the page:
+  ADDRESS — the shaft points forward and slightly upward, roughly 15 degrees above horizontal,
+    head at the front. This is the neutral resting pose.
+  TOP OF BACKSWING — the shaft has swung back and up through roughly 155 degrees, head high and
+    behind the housing.
+  IMPACT — the shaft is back at the exact ADDRESS angle, head at the front. This pose is
+    geometrically identical to ADDRESS.
+  FOLLOW-THROUGH — the shaft has carried on through roughly 60 degrees past impact, head out
+    ahead of and below the housing.
+
+Draw a thin dashed arc in each panel showing the club head's path, with a small arrow for the
+direction of travel. ADDRESS and IMPACT must be drawn as visibly identical poses — that
+identity is the point of the sheet.
+
+Rendering: flat-shaded low-polygon forms, two or three flat tones per surface, clean black
+outlines. Uniform ambient lighting, no cast shadows, no motion blur, no speed lines, no impact
+effects, no golf ball.
+
+Do NOT include: a ground plane, an environment, a sky, a horizon, a character, a decorative
+border, or any 3/4 or perspective view.
+```
+
+**If you run this one, note the deviation the code already made.** The angles above describe a
+swing in a near-vertical plane, which is what reads as golf. The shipped rig swings in a plane
+1.15 rad off vertical, because the pivot is 0.30 m above the canopy and a vertical plane sweeps the
+shaft through the roof (`art/README.md`). The sheet is still the right reference for the *timing* —
+address, top, impact, through — and the wrong one for the plane.
+
+#### 8.4d `club-heads-01.jpg` — the three heads at one scale
+
+The sheet that would have prevented a driver head shipping as a 0.75 m sphere.
+
+```
+Produce an orthographic detail reference sheet for 3D modelling. This is a technical modelling
+reference, NOT an illustration and NOT a scene.
+
+Subject: the heads of three golf clubs — a DRIVER, an IRON and a PUTTER — each shown attached
+to the last 20 cm of its shaft.
+
+Layout: a single image, plain neutral mid-grey background, arranged as a 3-ROW by 3-COLUMN
+grid. One club per row, labelled at the left with exactly these words and no others: DRIVER,
+IRON, PUTTER. One view per column, labelled along the top with exactly these words and no
+others: FACE, TOE, TOP-DOWN. (FACE = looking straight at the striking surface; TOE = looking
+along the striking surface from the far end of the head; TOP-DOWN = looking down from above.)
+
+All nine panels are at ONE SINGLE SCALE — a driver head is genuinely larger than an iron head,
+and that size difference must be visible across rows. Draw a shared vertical shaft-axis line
+down each column so the three heads can be compared against each other.
+
+Every view must be TRUE ORTHOGRAPHIC PROJECTION — parallel projection, no perspective, no
+foreshortening.
+
+The three heads read as clearly different objects:
+  DRIVER — a large, deep, rounded wedge-shaped head, wide from face to back, with a flat
+    striking face angled slightly back. It is a club head, NOT a sphere and NOT a ball.
+  IRON — a thin flat blade, tall and narrow, with a strongly angled striking face.
+  PUTTER — a low, flat, elongated bar with a vertical striking face.
+
+Rendering: flat-shaded low-polygon forms, two or three flat tones per surface, clean black
+outlines, chunky facets. Uniform ambient lighting, no directional light, no cast shadows, no
+reflections, no chrome, no ambient occlusion, no depth of field.
+
+Do NOT include: a golf ball, a ground plane, an environment, a sky, a horizon, grass, a full
+club, a golfer, a decorative border, or any 3/4 or perspective "hero" view.
+```
+
 ---
 
 ## 9. Budgets and the gate
@@ -520,10 +749,22 @@ in §5, call get_viewport_screenshot and stop for approval before continuing.
 - **The cart graph weakened one half of the gate, and it is worth knowing which.** All three club
   heads now ship in `cart.json` and a swap toggles `visible` rather than rebuilding geometry, so
   `cart-driver`, `cart-iron` and `cart-putter` report *identical* vertex and triangle counts
-  (2,709 / 2,376). The counts can no longer tell the three subjects apart. What still can is the
+  (3,788 / 3,736). The counts can no longer tell the three subjects apart. What still can is the
   bounding box — the barrel pitches to each club's own `loftDeg`, which moves it — and the
   perceptual signature. A future change that swapped the heads' geometry silently would be caught
   by the signature alone, so do not read a green count column as proof the right head is drawn.
+- **Three cart subjects were added for what those three cannot see.** All of them draw the cart at
+  address with a rider aboard, so nothing in the gate would notice a swing that had stopped moving
+  or a rider who had silently vanished. `cart-backswing` (charged to the top), `cart-empty` (no
+  rider — and the only subject whose counts differ, 2,869 / 2,348) and `cart-followthrough` (the
+  pose where the shaft comes closest to the canopy) each differ in exactly one of those. Those two
+  swing subjects are what a re-baseline is *read* for: the flat scythe and the golf swing look
+  identical in every numeric check and completely different in the PNG.
+- **Draw calls went up by 53% per cart.** The graph assembler builds an `Object3D` per node, so the
+  rider is 26 more draw calls on top of the cart's 52, on every cart including the four bots —
+  15 for the original mannequin and 11 more for the joints, neck and fists. Within budget today;
+  it is the first thing to look at if the round ever gets draw-call bound, and the fix is merging
+  static nodes per slot in `primitiveGraph.ts`, not deleting riders.
 - **Dispose everything.** Every `THREE.Mesh`'s geometry and material, and every `InstancedMesh`
   buffer, on teardown — see `GolfClub.dispose()` for the pattern.
 
@@ -552,6 +793,10 @@ in §5, call get_viewport_screenshot and stop for approval before continuing.
 6. **The mannequin and ragdoll** (§2.2) as a standalone test scene. Procedural TypeScript, not
    Blender — the physics rig is the character rig. It is the game's signature moment and the
    tuning takes real iteration; budget for it.
+6a. ~~**The cart rider and the swing rig.**~~ **Done.** `src/entities/graphs/driver.json` (15
+   parts, four slots) plus `swing_yoke`/`swing_arm` in `cart.json`, US left-hand drive, and club
+   heads that are club heads rather than a 0.75 m sphere. §2.2 was amended rather than broken —
+   the rider has no rigid bodies, so none of the ragdoll's reasoning reaches him.
 7. ~~**The clubhouse** (§6) — the first decorative GLB, and the test of whether §1's split holds
    up in practice.~~ **Done for the interior**, which is what the loadout turntable needed:
    `public/models/clubhouse.glb`, 29 boxes, 324 tri, 16 KB. The split held, and

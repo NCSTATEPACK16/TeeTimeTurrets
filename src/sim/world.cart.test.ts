@@ -344,12 +344,18 @@ describe("targets, damage and respawn", () => {
   it("a ball fired into a target knocks it down and records the hit", () => {
     play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Putter } }]);
 
-    // Park the cart six metres short of the nearest target, aimed straight at it, and putt: at
-    // that standoff the putter's flat arc crosses the target plane at torso height. Placing the
-    // cart directly is the only way to get a repeatable firing line -- driving there would make
-    // the assertion a test of the terrain rather than of hit detection.
+    // Park the cart short of the nearest target, aimed straight at it, and putt: at this standoff
+    // the putter's flat arc crosses the target plane at body height. Placing the cart directly is
+    // the only way to get a repeatable firing line -- driving there would make the assertion a
+    // test of the terrain rather than of hit detection.
+    //
+    // Ten rather than the six this was written with, because the turret spec raised the muzzle
+    // 0.55 m: the same flat putt now clears a 0.82 m torso until about 6.5 m out. The band that
+    // connects is 6.5 to 14 m and this sits in the middle of it, which is the point -- an
+    // assertion parked on the edge of the band fails on the next ballistics tweak for no reason
+    // anyone can read.
     const torso = sim.targets[0].part("torso").body.translation();
-    const standoff = 6;
+    const standoff = 10;
     sim.cart.heading = 0;
     sim.cart.turretOffset = 0;
     sim.cart.position.x = torso.x - standoff;

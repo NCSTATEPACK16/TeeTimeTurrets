@@ -25,7 +25,19 @@ const BASELINE_DIR = resolve("tools/gate-baseline");
 const OUT_DIR = resolve("tools/.gate-out");
 const UPDATE = process.argv.includes("--update-baseline");
 
-const SUBJECTS = ["cart-driver", "cart-iron", "cart-putter", "ball", "target"];
+const SUBJECTS = [
+  "cart-driver",
+  "cart-iron",
+  "cart-putter",
+  // The three above ship all three club heads and differ only by which is `visible`, so their
+  // counts are identical and only the bbox and the signature tell them apart. These two differ
+  // structurally: one is mid-backswing, one has no rider.
+  "cart-backswing",
+  "cart-empty",
+  "cart-followthrough",
+  "ball",
+  "target",
+];
 
 const server = spawn("npx", ["vite", "preview", "--outDir", DIST, "--port", String(PORT)], {
   stdio: "ignore",

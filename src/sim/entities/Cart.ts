@@ -110,10 +110,34 @@ export const CART_COLLIDER = {
  * would be exactly the duplicated-source-of-truth mistake AGENTS.md warns about for club stats.
  *
  * Heights are measured from the ground the cart rests on, not from the capsule centre.
+ *
+ * **These name the barrel's pitch axis, not the yaw ring.** That distinction is the whole of the
+ * defect this replaced: `pivotHeight` used to be 2.05, the height of the ring the turret rotates
+ * on, while the club actually pivoted about a node 0.26 m higher. Both numbers described something
+ * real and neither described where a shot came from, so every ball left a quarter of a metre below
+ * the club head the player was watching. The constant now names the node the club rotates about,
+ * and `art/clubhouse-and-cart.blend` puts `barrel_pitch` exactly there.
  */
 export const TURRET_GEOMETRY = {
-  /** Roof height -- where the turret ring is bolted. */
-  pivotHeight: 2.05,
+  /**
+   * Height of the barrel's pitch axis above the ground -- the club's own pivot, on top of the
+   * pedestal, not the yaw ring at roof height (2.05) that carries it.
+   *
+   * 0.55 m of pedestal is not styling. A club swinging in a near-vertical plane crosses the roof
+   * plane at `pivotForward + (pivotHeight - roof) * cot(phi)` for a club `phi` below horizontal,
+   * and clears the canopy's front edge (z = 1.18) only while that is greater. The club's length
+   * does not appear: no shorter club fixes it, only a higher and more forward pivot.
+   */
+  pivotHeight: 2.6,
+  /**
+   * How far forward of the chassis origin the pivot sits, along the cart's own heading.
+   *
+   * Forward as well as up because height alone cannot pay for a golf swing: a 35-degree
+   * follow-through from a pivot on the chassis axis would need a 3.2 m tall cart. This is the
+   * only reason `computeMuzzle` depends on `heading` and not on `turretYaw` alone -- the ring is
+   * bolted to the roof, so the chassis carries it round, and slewing the turret spins it in place.
+   */
+  pivotForward: 0.45,
   /** Shaft length from the turret pivot out to the club head. */
   barrelLength: 1.75,
 } as const;
@@ -435,6 +459,11 @@ export class Cart {
  * and the shot that leaves the muzzle matches the angle you can see. One number driving both the
  * silhouette and the ballistics means they cannot disagree.
  *
+ * Two angles, not one. The barrel points along `turretYaw`, but the pivot it swings from is bolted
+ * to the roof `pivotForward` ahead of the chassis origin, so where that pivot *is* follows
+ * `heading`. They are equal only while the turret is centred, which is why the agreement test in
+ * `GolfClub.test.ts` insists on a case where they are not.
+ *
  * Writes into `out` rather than returning, because this runs inside the fixed tick.
  */
 export function computeMuzzle(cart: Cart, out: Vec3): void {
@@ -442,10 +471,11 @@ export function computeMuzzle(cart: Cart, out: Vec3): void {
   const reach = Math.cos(loft) * TURRET_GEOMETRY.barrelLength;
   const rise = Math.sin(loft) * TURRET_GEOMETRY.barrelLength;
   const yaw = cart.turretYaw;
+  const forward = TURRET_GEOMETRY.pivotForward;
 
-  out.x = cart.position.x + Math.cos(yaw) * reach;
+  out.x = cart.position.x + Math.cos(cart.heading) * forward + Math.cos(yaw) * reach;
   out.y = cart.position.y - CART_COLLIDER.groundOffset + TURRET_GEOMETRY.pivotHeight + rise;
-  out.z = cart.position.z + Math.sin(yaw) * reach;
+  out.z = cart.position.z + Math.sin(cart.heading) * forward + Math.sin(yaw) * reach;
 }
 
 function clamp01(v: number): number {

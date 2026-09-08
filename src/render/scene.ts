@@ -1,11 +1,10 @@
 import * as THREE from "three";
 import { BallSwarm, BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../entities/BallSwarm";
-import { GolfClub } from "../entities/GolfClub";
+import { GolfClub, placeCart } from "../entities/GolfClub";
 import { TargetRig } from "../entities/TargetRig";
 import { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import type { Surfaces } from "../sim/surfaces";
-import { CART_COLLIDER } from "../sim/entities/Cart";
 import type { BallTransform, CartTransform } from "../sim/world";
 import { BIOMES } from "./biomes";
 import { createGround } from "./ground";
@@ -39,9 +38,6 @@ const CHASE_TARGET_LERP = 0.2;
 /** Keeps the chase eye out of the terrain when the cart backs toward a slope. */
 const CHASE_MIN_GROUND_CLEARANCE = 1.5;
 
-/** The sim's cart position is the capsule centre; the cart model's origin is at ground level. */
-const CART_BODY_OFFSET_Y = CART_COLLIDER.groundOffset;
-
 /**
  * The renderer has no per-bot club, charge or loaded-round state to draw from -- `Sim` doesn't
  * publish one per bot today -- so every bot cart draws a fixed default club, never charged, never
@@ -60,6 +56,12 @@ export interface FrameView {
   ball: BallTransform;
   cart: CartTransform;
   charge01: number;
+  /**
+   * How far through the reload the cart is: 0 on the frame the shot went off, 1 when it can
+   * fire again. With `charge01` this is the whole swing -- backswing, downswing, follow-through,
+   * address -- and it is derived, not stored, so a frame cannot get out of step with the sim.
+   */
+  reload01: number;
   club: ClubType;
   /** True while a round of ammo rides the club head: drawn on the turret. Loaded does not mean
    * fireable -- `Cart.canFire` also gates on the reload timer, so a loaded round can still be
@@ -180,11 +182,14 @@ export class RenderScene {
       view.ball.rotation.w,
     );
 
-    this.poseCart(this.cart, view.cart, view.club, view.charge01, view.turretLoaded);
+    this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
     for (let i = 0; i < this.botCarts.length; i++) {
       const transform = view.botCarts[i];
       if (transform === undefined) continue;
-      this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, false);
+      // reload01 = 1 is "loaded and idle", so a bot stands at address. Same reason as the club
+      // and the charge above: Sim publishes no per-bot reload, and a guessed swing would be a
+      // bot that looks like it is shooting when it is not.
+      this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, 1, false);
     }
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
@@ -232,25 +237,18 @@ export class RenderScene {
     return true;
   }
 
-  /**
-   * Sim yaw and Three yaw are different conventions and the conversion is easy to get subtly
-   * wrong. Sim yaw 0 points down world +X; a Three object with `rotation.y = t` points its local
-   * +Z (the cart's forward) at world (sin t, 0, cos t). Setting those equal gives
-   * t = PI/2 - yaw. The turret pivot is a *child* of the cart group, so its local rotation is
-   * the difference of the two converted angles, which simplifies to (heading - turretYaw).
-   */
+  /** Chassis placement lives in `GolfClub.placeCart`; what is left here is the per-frame state. */
   private poseCart(
     model: GolfClub,
     c: CartTransform,
     club: ClubType,
     charge01: number,
+    reload01: number,
     loaded: boolean,
   ): void {
-    model.position.set(c.position.x, c.position.y - CART_BODY_OFFSET_Y, c.position.z);
-    model.rotation.y = Math.PI / 2 - c.heading;
-    model.setAimYaw(c.heading - c.turretYaw);
+    placeCart(model, c.position, c.heading, c.turretYaw);
     model.setClub(club);
-    model.setChargeVisual(charge01);
+    model.setSwing(charge01, reload01);
     model.setBallLoaded(loaded);
   }
 
