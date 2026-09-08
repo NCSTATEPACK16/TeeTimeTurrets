@@ -3,10 +3,9 @@ import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
 import { FIXED_DT, Sim } from "./sim/world";
 import { generateCourse } from "./sim/course";
-import { Round } from "./sim/round";
+import { Session } from "./sim/session";
 import { parseHoleIndex } from "./devHoleParam";
 import { createLoadout, tireTypeFor } from "./sim/loadout";
-import { earningsFor } from "./sim/wallet";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import { RoundScreen } from "./ui/screens/RoundScreen";
 import { ResultsScreen } from "./ui/screens/ResultsScreen";
@@ -20,15 +19,10 @@ import { TitleScreen } from "./ui/screens/TitleScreen";
  *
  * That split is Phase 1.75's whole point. One WebGL context is shared by the title backdrop, the
  * round and later the clubhouse; each screen builds and frees its own scene around it.
- */
-
-/*
- * KNOWN DEFECT, fixed in the change that follows this one: NEXT HOLE does not advance a round.
- * `startRound` below replaces `round` with a fresh `Round` on every hole, which wipes the card
- * and resets `holeIndex` to 0 -- so the second hole is replayed forever and the round can never
- * complete. It is left here rather than fixed in passing because the fix is a design decision
- * about where the four scorecard counters live (see the constructor comment in `sim/round.ts`),
- * and it wants its own change with a test that fails first.
+ *
+ * Which hole comes next, the card and the purse are `sim/session.ts`, not locals here. They lived
+ * here as three mutable variables and the advance between them was wrong in a way no test could
+ * see, because this file has no seam a node test can reach -- see `session.test.ts`.
  */
 
 /**
@@ -64,28 +58,26 @@ async function main(): Promise<void> {
 
   const screens = new ScreenManager<ScreenName>();
 
-  // One live round for the session. `Round` wraps `sim.stats` by reference once the sim exists,
-  // so the scorecard's four tiles read the same counters combat.ts writes.
-  let round = new Round(course.holes.map((h) => h.par));
+  // One session for the page. Built once and never replaced: replacing it is the defect
+  // `session.test.ts` exists to hold shut.
+  const session = new Session(course.holes.map((h) => h.par), 6000);
   let sim: Sim | null = null;
   let roundScreen: RoundScreen | null = null;
 
-  // Session-scoped for now. Persisting these is BACKLOG #48's job; the clubhouse works either way
-  // because it only ever reads and writes them through here.
+  // Page-scoped for now. Persisting the loadout is BACKLOG #48's job; the clubhouse works either
+  // way because it only ever reads and writes it through here.
   let loadout = createLoadout();
-  let coins = 6000;
 
   const startRound = async (): Promise<void> => {
-    const spec = course.holes[Math.min(round.holeIndex, course.holes.length - 1)];
+    const spec = course.holes[session.holeIndex];
     if (!spec) throw new Error("course has no holes");
     // The one purchase that is not cosmetic: the tire the player bought is the tire the physics
     // uses, which is what makes ROADMAP.md's "tire type is a stat, not a skin" true rather than
     // merely stated.
     sim = await Sim.create(spec, { tire: tireTypeFor(loadout) });
-    round = new Round(
-      course.holes.map((h) => h.par),
-      sim.stats,
-    );
+    // The hole's counters, held for the length of the hole: `Session` prices this hole from them
+    // and folds them into the card when it is scored.
+    session.startHole(sim.stats);
     screens.show("round");
   };
 
@@ -113,12 +105,11 @@ async function main(): Promise<void> {
     roundScreen = new RoundScreen({
       renderer,
       sim: live,
-      round,
+      round: session.card,
       hudRoot,
       nameplateRoot,
       onHoleComplete: (strokes) => {
-        round.completeHole(strokes);
-        coins += earningsFor(round);
+        session.completeHole(strokes);
         // Mouse-aim players are pointer-locked and cannot reach a button until it is released.
         if (document.pointerLockElement !== null) document.exitPointerLock();
         screens.show("results");
@@ -132,10 +123,10 @@ async function main(): Promise<void> {
       root: screensRoot,
       renderer,
       loadout,
-      coins,
+      coins: session.coins,
       onConfirm: (next, remaining) => {
         loadout = next;
-        coins = remaining;
+        session.spend(session.coins - remaining);
       },
       onBack: () => screens.show("title"),
     });
@@ -145,12 +136,12 @@ async function main(): Promise<void> {
     const behind = roundScreen;
     return new ResultsScreen({
       root: screensRoot,
-      round,
+      round: session.card,
       // Keeps the finished hole on screen under the scrim instead of a black page.
       drawBehind: behind ? () => behind.drawStill() : undefined,
       actions: {
         mainMenu: () => screens.show("title"),
-        nextHole: round.complete ? undefined : () => void startRound(),
+        nextHole: session.complete ? undefined : () => void startRound(),
       },
     });
   });
@@ -166,7 +157,10 @@ async function main(): Promise<void> {
       return roundScreen?.scene ?? null;
     },
     get round() {
-      return round;
+      return session.card;
+    },
+    get session() {
+      return session;
     },
     get screen() {
       return screens.activeName;

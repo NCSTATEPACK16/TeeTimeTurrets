@@ -11,7 +11,7 @@
  * start even while a stroke-play round leaves three of them reading zero.
  */
 
-import { accuracy, createStats } from "./stats";
+import { accuracy, createStats, foldStats } from "./stats";
 import type { Stats } from "./stats";
 
 export type HoleResult = "under" | "level" | "over";
@@ -31,16 +31,21 @@ export class Round {
   private index = 0;
 
   /**
-   * `counters` is taken by reference rather than created here so a round can wrap the very object
-   * `Sim.stats` hands to `combat.ts`. Copying it instead would give the scorecard a snapshot that
-   * silently stopped updating -- and the four tiles would read zero for reasons no test would
-   * catch, because both objects would be individually correct.
+   * The counters are **owned**, not borrowed.
+   *
+   * They used to be taken by reference so a round could wrap the very object `Sim.stats` hands to
+   * `combat.ts`, which was right while a session was one hole long. It stops being right the
+   * moment holes advance: a new `Sim` per hole means a new counters object, so the round had to be
+   * rebuilt to re-point at it -- and rebuilding the round is what wiped the card and pinned the
+   * player on hole 2. See `session.test.ts`.
+   *
+   * So the direction is reversed. `Sim.stats` counts one hole, and `completeHole` folds it in.
    */
-  constructor(pars: readonly number[], counters: Stats = createStats()) {
+  constructor(pars: readonly number[]) {
     if (pars.length === 0) throw new Error("a round needs at least one hole");
     this.pars = [...pars];
     this.strokes = pars.map(() => null);
-    this.counters = counters;
+    this.counters = createStats();
   }
 
   /** 0-based index of the hole being played. Equals the hole count once the round is complete. */
@@ -87,31 +92,21 @@ export class Round {
     return accuracy(this.counters);
   }
 
-  /** Score the current hole and move to the next. */
-  completeHole(strokes: number): void {
+  /**
+   * Score the current hole, fold in what happened on it, and move to the next.
+   *
+   * `holeStats` is the finished `Sim`'s counters. Passing them here rather than having the round
+   * watch a live object is what makes the four tiles a *round* total while leaving each hole's own
+   * numbers intact for pricing that hole -- see `wallet.ts`.
+   */
+  completeHole(strokes: number, holeStats: Readonly<Stats> = createStats()): void {
     if (this.complete) throw new Error("the round is complete; no hole left to score");
     if (!Number.isInteger(strokes) || strokes < 1) {
       throw new Error(`strokes must be a positive integer, got ${strokes}`);
     }
     this.strokes[this.index] = strokes;
     this.index++;
-  }
-
-  recordShot(): void {
-    this.counters.shotsFired++;
-  }
-
-  recordHit(): void {
-    this.counters.directHits++;
-  }
-
-  recordTargetDown(): void {
-    this.counters.targetsDown++;
-  }
-
-  /** Keeps the longest, not the latest: the tile is a round best. */
-  recordDrive(metres: number): void {
-    if (metres > this.counters.longestDriveM) this.counters.longestDriveM = metres;
+    foldStats(this.counters, holeStats);
   }
 
   private get playedCount(): number {

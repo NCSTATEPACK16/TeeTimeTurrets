@@ -111,17 +111,18 @@ thing ending a roll. With real rolling resistance now doing that job, the leftov
 stopped a 2 m putt 0.70 m short of the cup. Now 0.6. Velocity-proportional damping bites
 hardest exactly where putting lives.
 
-## Phase 1.75 — App shell, screens, and the scorecard — ✅ DONE (one defect open)
+## Phase 1.75 — App shell, screens, and the scorecard — ✅ DONE
 
 > **Status note (2026-09-02, superseded):** the phase was deprioritized behind combat gameplay.
 > It has since been built. The note is kept because `BACKLOG.md` and `DECISIONS.md` refer to the
 > deferral.
 >
-> **One defect is open and is not a gate item, it is a bug:** NEXT HOLE does not advance a round.
-> `main.ts`'s `startRound` replaces `round` with a fresh `Round` on every hole, wiping the card and
-> resetting `holeIndex`, so the second hole repeats forever and the round never completes. The fix
-> is a design decision about where the four scorecard counters live, and it lands separately with
-> a test that fails first.
+> **The defect this phase shipped with is fixed.** NEXT HOLE replayed the second hole forever,
+> because `main.ts` rebuilt the `Round` on every hole to re-point it at the new `Sim`'s counters,
+> which reset `holeIndex` and emptied the card. Advancing now lives in `src/sim/session.ts`, where
+> a node test can play three holes; `Round` owns its counters and folds each hole in, so it
+> survives eighteen sims. See the note under Phase 3.5's economy for the second bug the fix
+> exposed.
 
 Inserted ahead of the cart for the same reason Phase 5 is deferred rather than sprinkled in:
 the game currently boots straight into a single always-live scene, and a screen manager
@@ -497,10 +498,16 @@ clubhouse borrows its *phase pattern* from that project's garage (see `REUSE-MAP
 - [x] **Economy**: round earnings from the four Phase 1.75 stat tiles (direct hits, longest
       drive, targets down, accuracy), spent on the cosmetics above. Tire type is the one
       purchase that changes handling rather than looks, so price it as a stat and not a skin.
-      **Built.** `wallet.ts` prices a round, `loadout.ts` holds what was bought, and
+      **Built.** `wallet.ts` prices a **hole**, `loadout.ts` holds what was bought, and
       `Sim.create` takes the tire so the purchase reaches `TIRE_TUNING` rather than stopping at
-      the menu. **Balances are session-scoped** — they reset on reload, which is BACKLOG #48 and
+      the menu. **Balances are page-scoped** — they reset on reload, which is BACKLOG #48 and
       not yet done.
+      **`earningsFor(round)` became `earningsForHole(stats, strokes, par)`, and that was forced
+      rather than chosen.** A round-scoped purse paid after every hole pays for hole 1 again on
+      hole 2 and again on hole 3 — inflation that grows with the square of the holes played. It
+      was invisible while the round was being wiped between holes, because the wipe made the
+      "round" total accidentally equal to one hole's. Fixing the advance exposed it, which is the
+      useful kind of coupled bug: one of them was hiding the other.
 - [ ] Name the three modes in one place — `STROKE` / `CTF` / `TARGETS` (image 12,
       `UI-SPEC.md` §5). `TARGETS` is the Phase 3 ragdoll work promoted to a mode with its own
       scoring; `STROKE` already exists and is the safest thing to ship first.

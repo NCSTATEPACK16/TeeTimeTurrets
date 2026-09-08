@@ -91,8 +91,8 @@ export class RoundScreen implements Screen {
 
     this.trackLongestDrive();
 
-    // The rest of the stats are round-scoped and the sim counts them straight into the object
-    // `Round` wraps -- it was handed `sim.stats` by reference -- so there is nothing to copy.
+    // The rest of the counters the sim writes itself. `Session` reads `sim.stats` when the hole
+    // is scored, which is why nothing here has to copy or forward them.
     if (!this.reported && sim.holedOut) {
       this.reported = true;
       this.options.onHoleComplete(sim.strokes);
@@ -107,9 +107,12 @@ export class RoundScreen implements Screen {
    * A shot is bracketed by `stats.shotsFired` ticking up (the ball has left the muzzle) and
    * `isResting()` going true again. Measured flat, in the XZ plane: a drive is a distance down
    * the hole, and counting the drop off a tee shelf as extra length would flatter downhill holes.
+   *
+   * The result goes to `sim.recordDrive`, not to the round. It belongs to the hole being played,
+   * because that is what `Session` prices; the round's best is the fold of the holes' bests.
    */
   private trackLongestDrive(): void {
-    const { sim, round } = this.options;
+    const { sim } = this.options;
     const ball = sim.current.position;
 
     if (sim.stats.shotsFired !== this.lastShotCount) {
@@ -121,7 +124,7 @@ export class RoundScreen implements Screen {
 
     const dx = ball.x - this.driveOrigin.x;
     const dz = ball.z - this.driveOrigin.z;
-    round.recordDrive(Math.hypot(dx, dz));
+    sim.recordDrive(Math.hypot(dx, dz));
     this.driveOrigin = null;
   }
 
