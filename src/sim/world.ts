@@ -2,7 +2,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
-import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, computeMuzzle } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
@@ -220,6 +220,15 @@ export interface SimOptions {
   readonly botCount?: number;
   /** Seconds on the match clock. Defaults to MATCH_DURATION_S. */
   readonly matchDurationS?: number;
+  /**
+   * The player cart's tire. Defaults to `TireType.Street`.
+   *
+   * This is the one clubhouse purchase that is not cosmetic: `TIRE_TUNING` scales top speed,
+   * grip and how much of a surface's penalty reaches the cart. Threading it in here is what
+   * makes ROADMAP.md's "tire type is a stat, not a skin" true of the running game rather than
+   * only of the data model -- and it is what `npm run probe` measures to prove the split is real.
+   */
+  readonly tire?: TireType;
 }
 
 /** Metres past the cup, per bot. Far enough from the tee that a match opens with the bot idle. */
@@ -327,7 +336,12 @@ export class Sim {
   matchOver = false;
   private readonly matchDurationS: number;
 
-  private constructor(terrain: Terrain, surfaces: Surfaces, matchDurationS: number) {
+  private constructor(
+    terrain: Terrain,
+    surfaces: Surfaces,
+    matchDurationS: number,
+    tire: TireType = TireType.Street,
+  ) {
     this.terrain = terrain;
     this.surfaces = surfaces;
     this.matchDurationS = matchDurationS;
@@ -335,7 +349,7 @@ export class Sim {
     // 2 x par: the hole's par is the strokes it is worth, and the health bar is that budget
     // doubled (spec section 5). Sized here rather than at the field initializer because the
     // initializer runs before `terrain` exists.
-    this.cart = new Cart({ maxHealth: 2 * terrain.spec.par });
+    this.cart = new Cart({ maxHealth: 2 * terrain.spec.par, tire });
     this.lastSafePosition = { ...terrain.teePosition };
     this.previous = restTransform(terrain);
     this.current = restTransform(terrain);
@@ -350,6 +364,7 @@ export class Sim {
       terrain,
       createSurfaces(hole, terrain),
       options.matchDurationS ?? MATCH_DURATION_S,
+      options.tire,
     );
 
     sim.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });

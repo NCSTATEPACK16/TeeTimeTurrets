@@ -209,10 +209,10 @@
       }
 
       /* ---- Shared screen vocabulary (Phase 1.75) ------------------------------------------
-         Buttons, panels, stat tiles and the scorecard grid, defined once because the title and
-         results screens are two views of the same visual language and there is nothing to reuse
-         otherwise -- UI-SPEC section 6 describes it in prose and this is that prose made into
-         rules. The clubhouse is the third view and lands in its own change. */
+         Buttons, panels, stat tiles and the scorecard grid, defined once because the title,
+         results and clubhouse screens are three views of the same visual language and there is
+         nothing to reuse otherwise -- UI-SPEC section 6 describes it in prose and this is that
+         prose made into rules. */
 
       .screen {
         position: absolute;
@@ -386,6 +386,86 @@
       .results__tiles { margin-bottom: 22px; }
       .results__actions { display: flex; gap: 11px; }
       .results__actions .btn { flex: 1; }
+
+      /* ---- S3 Clubhouse loadout (image 11) --------------------------------------------------
+         Categories left, club stat cards right, coins top-right, BACK/CONFIRM bottom. The middle
+         is deliberately empty: that is the turntable, rendered on the shared canvas behind. */
+      .clubhouse { padding: 30px 34px; pointer-events: none; }
+      .clubhouse > * { pointer-events: auto; }
+
+      .clubhouse__categories {
+        position: absolute;
+        left: 34px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        width: 250px;
+      }
+      .clubhouse__category {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 13px;
+        border-radius: var(--radius-card);
+        background: var(--panel-solid);
+      }
+      .clubhouse__category-label { font-size: 12px; letter-spacing: 0.1em; }
+
+      .clubhouse__coins { position: absolute; top: 30px; right: 34px; }
+
+      .clubhouse__clubs {
+        position: absolute;
+        right: 34px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        width: 296px;
+      }
+      .club-card {
+        appearance: none;
+        border: 2px solid transparent;
+        border-radius: var(--radius-card);
+        background: var(--panel-solid);
+        color: var(--ink);
+        font: var(--font);
+        letter-spacing: var(--track-letter);
+        padding: 12px 14px;
+        text-align: left;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .club-card:hover { filter: brightness(1.2); }
+      .club-card--on { border-color: var(--accent); }
+      .club-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .club-card__name { font-size: 13px; letter-spacing: 0.12em; }
+      .club-card__bars { display: flex; flex-direction: column; gap: 5px; }
+      .club-card__row { display: grid; grid-template-columns: 54px 1fr 42px; align-items: center; gap: 8px; }
+      .club-card__stat { font-size: 9px; color: var(--ink-dim); letter-spacing: 0.1em; }
+      .club-card__detail {
+        font-size: 10px;
+        color: var(--ink-dim);
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .clubhouse__actions {
+        position: absolute;
+        left: 34px;
+        right: 34px;
+        bottom: 30px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      /* CONFIRM is the primary action and image 11 draws it wide; BACK stays a plain pill. */
+      .clubhouse__actions .btn--primary { flex: 1; max-width: 420px; }
     </style>
   </head>
   <body>
