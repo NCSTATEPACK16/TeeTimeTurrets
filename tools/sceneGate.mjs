@@ -42,6 +42,14 @@ const SUBJECTS = [
   // tools/gate/gateScene.ts's SUBJECTS -- a subject added to only one of the two fails confusingly.
   "flagstick",
   "flagstick-felled",
+  // The six Blender-authored props, each merged to one draw call. Same rule as above: keep this
+  // list in step with tools/gate/gateScene.ts's SUBJECTS, which builds these from PROP_NAMES.
+  "tee_marker",
+  "bunker_rake",
+  "ball_washer",
+  "distance_post",
+  "cart_path_sign",
+  "footbridge",
 ];
 
 const server = spawn("npx", ["vite", "preview", "--outDir", DIST, "--port", String(PORT)], {
@@ -102,6 +110,24 @@ try {
   const nextMetrics = {};
   const nextSignatures = {};
   const failures = [];
+
+  // The two subject lists -- this array and gateScene.ts's SUBJECTS -- have to agree, and a subject
+  // added to only one of them otherwise fails as "unknown gate subject" or as a silently unrendered
+  // asset. The harness already publishes its own list, so compare them once and say which side is
+  // missing what instead of leaving the next person to work it out from a screenshot that never
+  // appeared.
+  await page.goto(`http://localhost:${PORT}/?subject=${SUBJECTS[0]}`, { waitUntil: "networkidle0" });
+  await page.waitForFunction(() => window.__gate?.ready === true, { timeout: 20000 });
+  const harnessSubjects = await page.evaluate(() => window.__gate.subjects);
+  const missingHere = harnessSubjects.filter((s) => !SUBJECTS.includes(s));
+  const missingThere = SUBJECTS.filter((s) => !harnessSubjects.includes(s));
+  if (missingHere.length > 0 || missingThere.length > 0) {
+    throw new Error(
+      `gate subject lists disagree. In tools/gate/gateScene.ts but not tools/sceneGate.mjs: ` +
+        `[${missingHere.join(", ")}]. In tools/sceneGate.mjs but not gateScene.ts: ` +
+        `[${missingThere.join(", ")}].`,
+    );
+  }
 
   for (const subject of SUBJECTS) {
     await page.goto(`http://localhost:${PORT}/?subject=${subject}`, { waitUntil: "networkidle0" });

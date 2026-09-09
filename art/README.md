@@ -6,7 +6,7 @@ not hand-edit a `cart.json` or a `.glb`, because the next export silently revert
 
 | File | Contains |
 |---|---|
-| `clubhouse-and-cart.blend` | Three collections: `Collection` — the 52-object cart (§4 primitive graph → `src/entities/graphs/cart.json`); `driver` — the 26-object seated rider (§4 primitive graph → `src/entities/graphs/driver.json`); `backdrop` — the 29-object clubhouse interior (§6 decorative GLB → `public/models/clubhouse.glb`). |
+| `clubhouse-and-cart.blend` | Four collections: `Collection` — the 52-object cart (§4 primitive graph → `src/entities/graphs/cart.json`); `driver` — the 26-object seated rider (§4 primitive graph → `src/entities/graphs/driver.json`); `backdrop` — the 29-object clubhouse interior (§6 decorative GLB → `public/models/clubhouse.glb`); `props` — the course props (§4 primitive graph **set** → `src/entities/graphs/props.json`). |
 
 `.blend1` is Blender's own rollback of the previous save. It is ignored, not tracked.
 
@@ -22,8 +22,9 @@ object and look at Object Properties → Custom Properties:
 - `ttt_params` — the arguments for the *matching THREE geometry constructor*, in that
   constructor's order (§4.2). For a box this is `[width, height, depth]` in **Three's** axes, so
   it is the Blender dimensions with Y and Z swapped.
-- `ttt_slot` — a material slot: one of the cart's eight (§2.1) or one of the rider's four
-  (`skin` `shirt` `trousers` `cap`). The two sets share no names, deliberately — see below.
+- `ttt_slot` — a material slot: one of the cart's eight (§2.1), one of the rider's four
+  (`skin` `shirt` `trousers` `cap`), or one of the props' five (`prop_timber` `prop_timber_dark`
+  `prop_paint` `prop_metal` `prop_green`). The three sets share no names, deliberately — see below.
 
 An object without all three fails the export loudly rather than silently dropping out.
 
@@ -51,6 +52,15 @@ Both graph exports run from a Claude Code session over the Blender MCP:
 ```python
 export('chassis_pan',   '.../src/entities/graphs/cart.json',   graph_name='cart')
 export('driver_pelvis', '.../src/entities/graphs/driver.json', graph_name='driver')
+
+export_set({
+    'tee_marker':     'tee_marker_block',
+    'bunker_rake':    'rake_handle',
+    'ball_washer':    'washer_post',
+    'distance_post':  'post_body',
+    'cart_path_sign': 'sign_post',
+    'footbridge':     'bridge_deck_c',
+}, '.../src/entities/graphs/props.json', 'props')
 ```
 
 The clubhouse GLB is a different path — the step list in `ASSET_PIPELINE.md` §6. Things that bite:
@@ -176,3 +186,27 @@ will not show you.
 
 **His blue polo stays**, and that is a deviation on purpose: the sheet's wood-toned torso
 disappears against the cart's near-white bodywork.
+
+## The props
+
+`export_set` rather than `export`, and that is the whole difference. §4.1 describes one asset with
+one root, which is what a cart is; the props are six independent objects that share five material
+slots and one authoring session. Forcing them under a common root would mean either a fake container
+primitive in the shipped graph or five props inheriting a sixth's transform, so the file carries
+`props: { name -> root node }` in place of `root` and `src/entities/propGraphs.ts` slices a §4.1
+`PrimitiveGraph` back out per name.
+
+**Each prop's origin is its ground contact.** `src/render/props.ts` places one with
+`position.set(x, terrain.heightAt(x, z), z)` and nothing else, so a root authored at its own centre
+would bury or float that prop on every hole — the same trap that had the rider sitting on the floor.
+`propGraphs.test.ts` asserts it: every prop's world bounding box touches y = 0 from above, and only
+the tee marker's spike and the footbridge's abutments are allowed below it.
+
+**They are drawn merged, not built.** `mergeGraph` flattens each into one geometry with baked vertex
+colours — one draw call per prop instance instead of one per node, which is the whole of the
+`ASSET_PIPELINE.md` §9 argument. It costs per-slot recolouring, so **the cart must keep using
+`buildGraph`**: a merged cart would lose the clubhouse loadout. That is a rule, not a preference.
+
+**The flagstick is not here.** It owns a collider and a sim-side felled state, so §2.2's route rule
+puts it in procedural TypeScript (`src/entities/Flagstick.ts`) with `PIN_SHAPE` in
+`src/sim/entities/Pin.ts` as the one set of numbers the physics and the drawing both read.

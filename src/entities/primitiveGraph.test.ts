@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { buildGraph } from "./primitiveGraph";
+import { buildGraph, mergeGraph } from "./primitiveGraph";
 import type { PrimitiveGraph, PrimitiveNode } from "./primitiveGraph";
 
 /**
@@ -239,5 +239,147 @@ describe("disposal", () => {
     expect(geometryDisposals).toBe(3);
     // Two slots in use, shared across three meshes: disposing per-mesh would report 3.
     expect(materialDisposals).toBe(2);
+  });
+});
+
+/**
+ * `mergeGraph` is the draw-call half of `ASSET_PIPELINE.md` §9, which is explicit that draw calls
+ * and material count matter far more than triangle count. A cart is 78 `Object3D`s and a round
+ * draws five of them; seven graph-authored props at ~5 nodes each, a dozen instances to a hole,
+ * would be another ~60 draws. Merged it is ~12.
+ *
+ * The colour assertions are the ones that will actually catch a bug. Triangle counts and object
+ * counts are easy to get right by accident; per-node slot colours surviving a merge into one
+ * `color` attribute is the part that silently comes out uniformly grey.
+ */
+describe("mergeGraph", () => {
+  const multiSlot = (): PrimitiveGraph =>
+    graph(
+      node({
+        name: "body",
+        children: [
+          node({ name: "wheel_fl", slot: "tires", position: [1, 0, 1] }),
+          node({ name: "wheel_fr", slot: "tires", position: [-1, 0, 1] }),
+          node({ name: "roof", kind: "cylinder", params: [0.5, 0.5, 1, 8], position: [0, 2, 0] }),
+        ],
+      }),
+    );
+
+  it("draws the whole graph as one object where buildGraph gives many", () => {
+    const built = buildGraph(multiSlot());
+    const merged = mergeGraph(multiSlot());
+
+    expect(meshes(built.root).length).toBe(4);
+    expect(meshes(merged.mesh).length).toBe(1);
+    expect(merged.mesh).toBeInstanceOf(THREE.Mesh);
+    built.dispose();
+    merged.dispose();
+  });
+
+  it("keeps every triangle buildGraph would have drawn", () => {
+    const built = buildGraph(multiSlot());
+    const merged = mergeGraph(multiSlot());
+
+    let triangles = 0;
+    for (const mesh of meshes(built.root)) {
+      const index = mesh.geometry.getIndex();
+      const position = mesh.geometry.getAttribute("position");
+      triangles += (index ? index.count : position.count) / 3;
+    }
+    const mergedIndex = merged.mesh.geometry.getIndex();
+    const mergedPosition = merged.mesh.geometry.getAttribute("position");
+    expect((mergedIndex ? mergedIndex.count : mergedPosition.count) / 3).toBe(triangles);
+
+    built.dispose();
+    merged.dispose();
+  });
+
+  it("bakes each node's slot colour into the vertices, not a uniform average", () => {
+    const merged = mergeGraph(multiSlot());
+    const colour = merged.mesh.geometry.getAttribute("color");
+    expect(colour).toBeDefined();
+    expect(colour.count).toBe(merged.mesh.geometry.getAttribute("position").count);
+
+    const seen = new Set<string>();
+    for (let i = 0; i < colour.count; i++) {
+      seen.add(`${colour.getX(i).toFixed(4)},${colour.getY(i).toFixed(4)},${colour.getZ(i).toFixed(4)}`);
+    }
+    // Two slots in, two distinct colours out. One means the merge flattened them.
+    expect(seen.size).toBe(2);
+
+    const chassis = new THREE.Color(SLOTS.chassis!.color);
+    const tires = new THREE.Color(SLOTS.tires!.color);
+    expect(seen).toContain(`${chassis.r.toFixed(4)},${chassis.g.toFixed(4)},${chassis.b.toFixed(4)}`);
+    expect(seen).toContain(`${tires.r.toFixed(4)},${tires.g.toFixed(4)},${tires.b.toFixed(4)}`);
+    expect((merged.mesh.material as THREE.MeshStandardMaterial).vertexColors).toBe(true);
+    merged.dispose();
+  });
+
+  it("bakes the colour a node's own slot carries, not the one next to it", () => {
+    // The check that separates "two colours came out" from "the right two went to the right
+    // vertices". A merge that concatenated the colour arrays in a different order than the
+    // geometries would still produce two distinct colours and the wrong cart.
+    const merged = mergeGraph(
+      graph(node({ name: "body", children: [node({ name: "wheel", slot: "tires", position: [0, -5, 0] })] })),
+    );
+    const geometry = merged.mesh.geometry;
+    const position = geometry.getAttribute("position");
+    const colour = geometry.getAttribute("color");
+    const tires = new THREE.Color(SLOTS.tires!.color);
+
+    let checked = 0;
+    for (let i = 0; i < position.count; i++) {
+      // The wheel is the only thing five metres down, so its vertices are identifiable by position
+      // alone -- and every one of them must carry the tire colour.
+      if (position.getY(i) > -4) continue;
+      expect(colour.getX(i)).toBeCloseTo(tires.r, 4);
+      expect(colour.getY(i)).toBeCloseTo(tires.g, 4);
+      expect(colour.getZ(i)).toBeCloseTo(tires.b, 4);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+    merged.dispose();
+  });
+
+  it("applies each node's own world transform, so the merged shape is the assembled one", () => {
+    const built = buildGraph(multiSlot());
+    const merged = mergeGraph(multiSlot());
+    built.root.updateMatrixWorld(true);
+
+    const fromTree = new THREE.Box3().setFromObject(built.root);
+    const fromMerge = new THREE.Box3().setFromObject(merged.mesh);
+    expect(fromMerge.min.toArray()).toEqual(fromTree.min.toArray().map((v) => expect.closeTo(v, 5)));
+    expect(fromMerge.max.toArray()).toEqual(fromTree.max.toArray().map((v) => expect.closeTo(v, 5)));
+
+    built.dispose();
+    merged.dispose();
+  });
+
+  it("takes slot overrides at build time, the same as buildGraph", () => {
+    const merged = mergeGraph(multiSlot(), { tires: 0x00ff00 });
+    const colour = merged.mesh.geometry.getAttribute("color");
+    const seen = new Set<string>();
+    for (let i = 0; i < colour.count; i++) {
+      seen.add(`${colour.getX(i).toFixed(4)},${colour.getY(i).toFixed(4)},${colour.getZ(i).toFixed(4)}`);
+    }
+    const green = new THREE.Color(0x00ff00);
+    expect(seen).toContain(`${green.r.toFixed(4)},${green.g.toFixed(4)},${green.b.toFixed(4)}`);
+    merged.dispose();
+  });
+
+  it("frees the merged geometry and its material, and leaves no source geometry behind", () => {
+    const merged = mergeGraph(multiSlot());
+    const geometry = merged.mesh.geometry;
+    const material = merged.mesh.material as THREE.Material;
+    let freed = 0;
+    for (const resource of [geometry, material]) {
+      const original = resource.dispose.bind(resource);
+      resource.dispose = (): void => {
+        freed++;
+        original();
+      };
+    }
+    merged.dispose();
+    expect(freed).toBe(2);
   });
 });

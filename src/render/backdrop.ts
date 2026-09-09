@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Flagstick, placeFlagstick } from "../entities/Flagstick";
 import { BIOMES } from "./biomes";
 import { createGround } from "./ground";
+import { createProps } from "./props";
 import { createTrees } from "./Trees";
 import { createTerrain } from "../sim/terrain";
 import { createSurfaces } from "../sim/surfaces";
@@ -64,6 +65,9 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
   placeFlagstick(flagstick, terrain);
   scene.add(flagstick);
 
+  const props = createProps(terrain, surfaces);
+  for (const object of props.objects) scene.add(object);
+
   const centre = new THREE.Vector3(0, 0, 0);
   const radius = fieldSize * 0.32;
   const height = fieldSize * 0.09;
@@ -99,6 +103,8 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
       trees.dispose();
       scene.remove(flagstick);
       flagstick.dispose();
+      for (const object of props.objects) scene.remove(object);
+      props.dispose();
       scene.clear();
     },
   };

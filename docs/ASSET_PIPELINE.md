@@ -105,8 +105,8 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 | **Cart rider** | **primitive-graph** | 2,600 | 26 parts, no rigid bodies, four slots of its own. Built, then given the ball joints, neck and fists §2.2 always described. §2.2. |
 | Golf ball | primitive | 80 | Built (`entities/ballShape.ts`). |
 | Trees, 2–3 per biome | primitive-graph | 200 each | **Must be GPU-instanced.** Silhouettes from `COURSE_PIPELINE.md` §7.1. |
-| Flag + pin | primitive | 60 | Cloth as a vertex-animated quad. |
-| Course props (rake, tee marker, bridge, boardwalk) | primitive-graph | 100–400 | Sheet in hand: `docs/concept/reference/prop-silhouettes-01.jpg` (`COURSE_PIPELINE.md` §7.2). Eight props. Scale is per-cell, not uniform — size them against cart height. |
+| Flag + pin | primitive | 60 | **Built** (`src/entities/Flagstick.ts`). Procedural TypeScript, not a graph: it owns a collider and a sim-side felled state, so §2.2's route rule puts it with the ragdolls — and a graph cannot express the vertex-animated pennant this row asks for. Pole, ferrule, cup ring and pennant; `PIN_SHAPE` in `src/sim/entities/Pin.ts` is the one set of numbers both sides read. |
+| Course props (rake, tee marker, bridge, boardwalk) | primitive-graph | 100–400 | **Six built** (`art/clubhouse-and-cart.blend` `props` collection → `src/entities/graphs/props.json`): tee marker, bunker rake, ball washer, distance post, cart-path sign, footbridge. The boardwalk belongs to the crossing work. The flagstick is the row above and is *not* a graph. 36–348 tris each, one merged draw call apiece via `mergeGraph`. Scale is per-cell on the sheet, not uniform — every one of these was sized against cart height. |
 | Terrain | procedural heightfield | — | Built (`sim/terrain.ts`). |
 | **Clubhouse exterior** | **decorative GLB** | 3,000 | Menu backdrop and hole 18's landmark. Never collided with. |
 | **Distant scenery** | **decorative GLB** | 2,000 | Skyline dressing beyond the field edge. |
@@ -803,7 +803,17 @@ club, a golfer, a decorative border, or any 3/4 or perspective "hero" view.
    `tools/decorBoundary.test.mjs` is what keeps it holding. **The exterior is a separate asset and
    is not built** — the §2 manifest wants it as hole 18's landmark, which is a different object
    from a room seen from inside.
-8. **Course props** (§2 manifest, `docs/concept/reference/prop-silhouettes-01.jpg`) — the next
-   Blender job. Eight props, primitive graph. Lead with the flagstick: the cup renders as nothing
-   today. Note that a **drivable** bridge is playable geometry under §1 and therefore cannot be a
-   GLB from any source, Poly.pizza included.
+8. **Course props** (§2 manifest, `docs/concept/reference/prop-silhouettes-01.jpg`) — **done, and
+   the route splits.** The eight props are *not* eight primitive graphs, and the split is §2.2's
+   own rule rather than a convenience: the rule asks who owns the shape, and the flagstick owns a
+   collider and a sim-side felled state, which puts it with the ragdolls in procedural TypeScript
+   (`src/entities/Flagstick.ts`). The other seven never move and are Blender graphs. That also
+   resolves this step's standing contradiction with the §2 manifest's `Flag + pin | primitive` row,
+   which was right; a graph cannot express the vertex-animated pennant either way.
+
+   The props file is a **set** rather than a graph: §4.1 describes one asset with one root, and
+   these are independent objects sharing four material slots, so `props.json` carries
+   `props: { name -> root node }` and `ttt_authoring.py`'s `export_set` writes it. Note that a
+   **drivable** bridge is playable geometry under §1 and therefore cannot be a GLB from any source,
+   Poly.pizza included — and the drivable crossing is not a bridge at all; see
+   `docs/superpowers/specs/2026-09-08-course-props-and-the-drivable-crossing-design.md` §2.2.

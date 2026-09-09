@@ -76,10 +76,17 @@ Both are the same shape: an assumption that was true of one case and got applied
    flag, no pin, no cup geometry — on all eighteen holes. Highest-value object in the queue and the
    one a player notices first.
 2. Then tee marker, bunker rake, ball washer, distance post, cart-path sign.
-3. **The bridge is not a prop, it is a design change.** A drivable crossing is *playable* geometry
-   under §1, so it cannot be a GLB from any source. And it turns holes 2, 13 and 15's forced
-   carries into route choices, which means `validateHole`'s seven checks need re-thinking. That is
-   sim work, not an afternoon's modelling.
+3. **The bridge was a design change, and it has been made.** A drivable crossing is *playable*
+   geometry under §1, so it cannot be a GLB from any source — and it turned out it cannot be a
+   bridge either. The heightfield cell is exactly 1.0 m and the cart's autostep is 0.45 m, so a
+   narrow raised deck is either a ramp the cart drives up at will or a wall it cannot climb, with
+   no width in between. What ships is a **causeway** carrying `SurfaceId.Bridge`, and the sheet's
+   arched footbridge ships as decoration over water nothing drives across.
+
+   `validateHole` is **not** touched. Crossings are derived after a hole validates, so routing
+   stays bit-for-bit identical and holes 2, 13 and 15 gain an alternative to their forced carries
+   rather than being re-judged. Whether a bridged carry should *count* as playable is the natural
+   sequel and wants its own spec: it regenerates the course.
 
 **Read `docs/concept/reference/README.md` before modelling from the sheet.** Scale is per-cell, so
 size every prop against cart height and never against another panel; the footbridge and boardwalk
