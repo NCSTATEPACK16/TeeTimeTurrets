@@ -154,6 +154,10 @@ const read = () =>
       firstPlateHidden: document.querySelector("#nameplates .nameplate")?.hidden ?? null,
       firstPlateTransform: document.querySelector("#nameplates .nameplate")?.style.transform ?? null,
       firstPlateFillWidth: document.querySelector("#nameplates .nameplate-fill")?.style.width ?? null,
+      // H13's distance line, same argument again: the constructor leaves it empty, so only the
+      // per-frame path can have put a distance in it.
+      firstPlateDistance: document.querySelector("#nameplates .nameplate-distance")?.textContent ?? null,
+      firstPlateClass: document.querySelector("#nameplates .nameplate")?.className ?? null,
       // H17. As with the plates above, the transform and the label can only have been written by
       // the per-frame path (RoundScreen.drawPinMarker -> PinMarker.set): the constructor leaves
       // both empty, so an element-count check could not tell "wired up" from "built and forgotten".
@@ -332,6 +336,19 @@ check(
   "bot's health fill is a percentage width",
   /^\d+%$/.test(plated.firstPlateFillWidth ?? ""),
   `${plated.firstPlateFillWidth}`,
+);
+// The tier grammar from src/ui/plateState.ts: whole metres under 100, `~` and a multiple of 25
+// out to 300. A bot on screen at the tee is well inside that, so an empty string here is a
+// failure rather than a legitimately-distant plate.
+check(
+  "bot's plate carries a distance in the tier grammar",
+  /^~?\d+ m$/.test(plated.firstPlateDistance ?? ""),
+  `${plated.firstPlateDistance}`,
+);
+check(
+  "bot's plate carries a team class",
+  /nameplate-(ally|enemy)/.test(plated.firstPlateClass ?? ""),
+  `${plated.firstPlateClass}`,
 );
 
 console.log("=== PIN MARKER (H17) ===");
@@ -620,6 +637,48 @@ check(
   tireAfter.tire === "turf" && tireAfter.tire !== tireBefore,
   `${tireBefore} -> ${tireAfter.tire}`,
 );
+
+// === H8, the course map ===
+// The map is a canvas, so "the element is visible" proves nothing: a blank panel and a drawn
+// course are the same DOM. These count non-background pixels off the canvas itself, which is
+// the only evidence that mapGeometry ran and CourseMap painted it. Browser-visible behaviour the
+// node suite structurally cannot see -- TEST-AND-SPEC-PITFALLS section 5.
+const readMap = () =>
+  page.evaluate(() => {
+    const panel = document.querySelector(".course-map");
+    const canvas = document.querySelector(".course-map-canvas");
+    if (!panel || !canvas || panel.hidden) return { hidden: true, painted: 0, w: 0, h: 0 };
+    const ctx = canvas.getContext("2d");
+    const { width, height } = canvas;
+    if (width === 0 || height === 0) return { hidden: false, painted: 0, w: width, h: height };
+    const { data } = ctx.getImageData(0, 0, width, height);
+    let painted = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted++;
+    return { hidden: false, painted, w: width, h: height };
+  });
+
+const mapClosed = await readMap();
+check("the course map starts closed", mapClosed.hidden === true, `hidden=${mapClosed.hidden}`);
+
+await page.keyboard.press("KeyM");
+await new Promise((r) => setTimeout(r, 250));
+const mapHole = await readMap();
+check("M opens the map on the hole being played", mapHole.hidden === false, `hidden=${mapHole.hidden}`);
+check(
+  "the map has actually painted the hole, not just unhidden a panel",
+  mapHole.painted > mapHole.w * mapHole.h * 0.2,
+  `${mapHole.painted} of ${mapHole.w * mapHole.h} px`,
+);
+
+await page.keyboard.press("KeyM");
+await new Promise((r) => setTimeout(r, 250));
+const mapCourse = await readMap();
+check("a second M stays open, framing the course", mapCourse.hidden === false, `hidden=${mapCourse.hidden}`);
+check("the course view is painted too", mapCourse.painted > 0, `${mapCourse.painted} px`);
+
+await page.keyboard.press("Escape");
+await new Promise((r) => setTimeout(r, 250));
+check("Escape closes the map", (await readMap()).hidden === true);
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 
