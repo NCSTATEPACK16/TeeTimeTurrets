@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { Flagstick } from "../entities/Flagstick";
 import { fixedHoleSpec } from "../sim/course";
+import { createSurfaces } from "../sim/surfaces";
 import { createTerrain } from "../sim/terrain";
+import { derivePlacements } from "./props";
 import { createBackdrop } from "./backdrop";
 
 /**
@@ -47,6 +49,25 @@ describe("the title-screen backdrop", () => {
     expect(pin.position.x).toBeCloseTo(cup.x, 2);
     expect(pin.position.y).toBeCloseTo(cup.y, 2);
     expect(pin.position.z).toBeCloseTo(cup.z, 2);
+    backdrop.dispose();
+  });
+
+  it("puts the derived props on the title screen too", () => {
+    // Spec criterion 6, for the second factory. `props.ts` is wired into `scene.ts` as well, and
+    // nothing but this file would notice if only that one had been done.
+    const spec = fixedHoleSpec();
+    const terrain = createTerrain(spec);
+    const expected = derivePlacements(terrain, createSurfaces(spec, terrain));
+    expect(expected.length).toBeGreaterThan(0); // or the assertion below proves nothing
+
+    const backdrop = createBackdrop(spec);
+    const placed = new Set<string>();
+    backdrop.scene.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.name !== "") placed.add(child.name);
+    });
+    for (const placement of expected) {
+      expect(placed, placement.prop).toContain(placement.prop);
+    }
     backdrop.dispose();
   });
 

@@ -11,6 +11,8 @@ import type { BallTransform, CartTransform } from "../sim/world";
 import { BIOMES } from "./biomes";
 import { createGround } from "./ground";
 import type { Ground } from "./ground";
+import { createProps } from "./props";
+import type { Props } from "./props";
 import { createTrees } from "./Trees";
 import type { Trees } from "./Trees";
 
@@ -102,6 +104,7 @@ export class RenderScene {
   private readonly ground: Ground;
   private readonly trees: Trees;
   private readonly flagstick: Flagstick;
+  private readonly props: Props;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
@@ -160,6 +163,10 @@ export class RenderScene {
     this.flagstick = new Flagstick();
     placeFlagstick(this.flagstick, terrain);
     this.scene.add(this.flagstick);
+
+    // Derived from the hole, not seeded: see `props.ts`. Added here *and* to `backdrop.ts`.
+    this.props = createProps(terrain, surfaces);
+    for (const object of this.props.objects) this.scene.add(object);
 
     const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
     const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
@@ -234,6 +241,7 @@ export class RenderScene {
     this.ground.dispose();
     this.trees.dispose();
     this.flagstick.dispose();
+    this.props.dispose();
     this.scene.clear();
   }
 
