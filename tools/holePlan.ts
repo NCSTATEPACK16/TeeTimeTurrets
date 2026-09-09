@@ -22,6 +22,7 @@ import type { HoleSpec } from "../src/sim/course";
 import { BLEND_WIDTH, createTerrain, halfWidthAt } from "../src/sim/terrain";
 import type { Terrain } from "../src/sim/terrain";
 import { SurfaceId, createSurfaces } from "../src/sim/surfaces";
+import { contours, corridorPolylines, surfaceRuns } from "../src/sim/mapGeometry";
 import type { Surfaces } from "../src/sim/surfaces";
 
 /**
@@ -115,33 +116,16 @@ function escapeText(s: string): string {
  * is what keeps these files small enough to be worth committing and diffing.
  */
 function renderSurfaces(spec: HoleSpec, surfaces: Surfaces, p: Projection): string {
-  const step = spec.fieldSize / SURFACE_SAMPLES;
-  const px = (PLOT_PX / SURFACE_SAMPLES) + 0.5; // +0.5 overdraw kills hairline seams between runs
+  const cell = PLOT_PX / SURFACE_SAMPLES;
+  const px = cell + 0.5; // +0.5 overdraw kills hairline seams between runs
   const out: string[] = [];
-
-  for (let row = 0; row < SURFACE_SAMPLES; row++) {
-    const worldZ = -spec.fieldSize / 2 + (row + 0.5) * step;
-    const y = MARGIN_PX + row * (PLOT_PX / SURFACE_SAMPLES);
-
-    let runStart = 0;
-    let runSurface = surfaces.surfaceAt(-spec.fieldSize / 2 + 0.5 * step, worldZ);
-
-    for (let col = 1; col <= SURFACE_SAMPLES; col++) {
-      const surface =
-        col === SURFACE_SAMPLES
-          ? null
-          : surfaces.surfaceAt(-spec.fieldSize / 2 + (col + 0.5) * step, worldZ);
-      if (surface === runSurface) continue;
-
-      const x = MARGIN_PX + runStart * (PLOT_PX / SURFACE_SAMPLES);
-      const width = (col - runStart) * (PLOT_PX / SURFACE_SAMPLES) + 0.5;
-      out.push(
-        `<rect x="${round(x)}" y="${round(y)}" width="${round(width)}" height="${round(px)}" fill="${SURFACE_FILL[runSurface]}"/>`,
-      );
-      if (surface === null) break;
-      runStart = col;
-      runSurface = surface;
-    }
+  for (const run of surfaceRuns(spec, surfaces, SURFACE_SAMPLES)) {
+    const x = MARGIN_PX + run.colStart * cell;
+    const y = MARGIN_PX + run.row * cell;
+    const width = (run.colEnd - run.colStart) * cell + 0.5;
+    out.push(
+      `<rect x="${round(x)}" y="${round(y)}" width="${round(width)}" height="${round(px)}" fill="${SURFACE_FILL[run.surface]}"/>`,
+    );
   }
   return out.join("");
 }
@@ -152,112 +136,27 @@ function renderSurfaces(spec: HoleSpec, surfaces: Surfaces, p: Projection): stri
  * not need the topologically correct branch, and picking one keeps this readable.
  */
 function renderContours(spec: HoleSpec, terrain: Terrain, p: Projection): { svg: string; interval: number } {
-  const n = CONTOUR_SAMPLES;
-  const step = spec.fieldSize / n;
-  const grid = new Float64Array((n + 1) * (n + 1));
-  let min = Infinity;
-  let max = -Infinity;
-
-  for (let row = 0; row <= n; row++) {
-    const worldZ = -spec.fieldSize / 2 + row * step;
-    for (let col = 0; col <= n; col++) {
-      const worldX = -spec.fieldSize / 2 + col * step;
-      const h = terrain.heightAt(worldX, worldZ);
-      grid[row * (n + 1) + col] = h;
-      if (h < min) min = h;
-      if (h > max) max = h;
-    }
+  const { segments, interval } = contours(spec, terrain, CONTOUR_SAMPLES, TARGET_CONTOURS);
+  const path: string[] = [];
+  for (const seg of segments) {
+    path.push(`M${round(p.x(seg.ax))} ${round(p.y(seg.az))}L${round(p.x(seg.bx))} ${round(p.y(seg.bz))}`);
   }
-
-  // A "nice" interval (1, 2, 5 x 10^k) near range/TARGET_CONTOURS, so the legend reads in round
-  // numbers instead of 0.3714 m.
-  const raw = (max - min) / TARGET_CONTOURS;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-6))));
-  const normalised = raw / magnitude;
-  const interval = (normalised >= 5 ? 5 : normalised >= 2 ? 2 : 1) * magnitude;
-
-  const segments: string[] = [];
-  const worldOf = (col: number, row: number) => ({
-    x: -spec.fieldSize / 2 + col * step,
-    z: -spec.fieldSize / 2 + row * step,
-  });
-
-  for (let level = Math.ceil(min / interval) * interval; level <= max; level += interval) {
-    for (let row = 0; row < n; row++) {
-      for (let col = 0; col < n; col++) {
-        const h00 = grid[row * (n + 1) + col]!;
-        const h10 = grid[row * (n + 1) + col + 1]!;
-        const h11 = grid[(row + 1) * (n + 1) + col + 1]!;
-        const h01 = grid[(row + 1) * (n + 1) + col]!;
-
-        const crossings: { x: number; y: number }[] = [];
-        const edge = (
-          ha: number,
-          hb: number,
-          ax: number,
-          az: number,
-          bx: number,
-          bz: number,
-        ): void => {
-          if (ha < level === hb < level) return;
-          const t = (level - ha) / (hb - ha);
-          crossings.push({ x: p.x(ax + (bx - ax) * t), y: p.y(az + (bz - az) * t) });
-        };
-
-        const a = worldOf(col, row);
-        const b = worldOf(col + 1, row);
-        const c = worldOf(col + 1, row + 1);
-        const d = worldOf(col, row + 1);
-        edge(h00, h10, a.x, a.z, b.x, b.z);
-        edge(h10, h11, b.x, b.z, c.x, c.z);
-        edge(h11, h01, c.x, c.z, d.x, d.z);
-        edge(h01, h00, d.x, d.z, a.x, a.z);
-
-        for (let i = 0; i + 1 < crossings.length; i += 2) {
-          const from = crossings[i]!;
-          const to = crossings[i + 1]!;
-          segments.push(`M${round(from.x)} ${round(from.y)}L${round(to.x)} ${round(to.y)}`);
-        }
-      }
-    }
-  }
-
   return {
-    svg: `<path d="${segments.join("")}" fill="none" stroke="#1d3b24" stroke-width="0.7" stroke-opacity="0.32"/>`,
+    svg: `<path d="${path.join("")}" fill="none" stroke="#1d3b24" stroke-width="0.7" stroke-opacity="0.32"/>`,
     interval,
   };
 }
 
 /** Centreline, plus the corridor edges offset along the spline normal. */
 function renderCorridor(terrain: Terrain, p: Projection): string {
-  const spline = terrain.spline;
-  const corridor = terrain.spec.corridor;
-  const centre: string[] = [];
-  const left: string[] = [];
-  const right: string[] = [];
-  const tangent = { x: 0, z: 0 };
-
-  for (let i = 0; i <= CENTRELINE_STEPS; i++) {
-    const t = i / CENTRELINE_STEPS;
-    const point = spline.pointAt(t);
-    spline.tangentInto(t, tangent);
-    const normalX = -tangent.z;
-    const normalZ = tangent.x;
-
-    // The hole's own half-width at this t, not a global constant: since Tier 2 a corridor
-    // pinches and reopens, and an edge drawn at a fixed width would be a picture of a different
-    // hole from the one the physics runs.
-    const half = halfWidthAt(corridor, t);
-
-    centre.push(`${round(p.x(point.x))} ${round(p.y(point.z))}`);
-    left.push(`${round(p.x(point.x + normalX * half))} ${round(p.y(point.z + normalZ * half))}`);
-    right.push(`${round(p.x(point.x - normalX * half))} ${round(p.y(point.z - normalZ * half))}`);
-  }
+  const { centre, left, right } = corridorPolylines(terrain, CENTRELINE_STEPS);
+  const points = (line: readonly { x: number; z: number }[]): string =>
+    line.map((q) => `${round(p.x(q.x))} ${round(p.y(q.z))}`).join(" ");
 
   return [
-    `<polyline points="${left.join(" ")}" fill="none" stroke="#14532d" stroke-width="1.5" stroke-opacity="0.55" stroke-dasharray="6 5"/>`,
-    `<polyline points="${right.join(" ")}" fill="none" stroke="#14532d" stroke-width="1.5" stroke-opacity="0.55" stroke-dasharray="6 5"/>`,
-    `<polyline points="${centre.join(" ")}" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.75" stroke-dasharray="10 8"/>`,
+    `<polyline points="${points(left)}" fill="none" stroke="#14532d" stroke-width="1.5" stroke-opacity="0.55" stroke-dasharray="6 5"/>`,
+    `<polyline points="${points(right)}" fill="none" stroke="#14532d" stroke-width="1.5" stroke-opacity="0.55" stroke-dasharray="6 5"/>`,
+    `<polyline points="${points(centre)}" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.75" stroke-dasharray="10 8"/>`,
   ].join("");
 }
 
