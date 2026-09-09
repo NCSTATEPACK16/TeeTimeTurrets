@@ -7,10 +7,12 @@ holes. Rewrite this file at the end of each session; it is a baton, not a log.
 
 ## Where things stand
 
-Two branches are open. **`course-props-crossing`** is 14 commits ahead of `main` and still unmerged
-— the drivable crossing, finished last session. **`distance-plates-and-course-map`** is cut from
-*its tip*, not from `main`, and carries this session's five commits. It is intended to land as
-**one PR** when the work is done; commits along the way, one PR at the end.
+**`course-props-crossing` is merged** — it landed on `main` as PR #17, so the drivable crossing is
+shipped and no longer a branch to reason about.
+
+**`distance-plates-and-course-map`** carries this session's six commits, rebased onto `main` and
+opened as a single PR. Everything below assumes it is merged; if it is not, check before building
+on it.
 
 **Verified at the tip:** `tsc` clean · **788 tests / 51 files** (was 726/46 at the branch point) ·
 `npm run gate` **17/17 PASS** mean delta 0.00 · `npm run smoke` **PASS** including all four memory
