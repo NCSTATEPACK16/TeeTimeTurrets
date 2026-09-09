@@ -1,8 +1,29 @@
 # Course props, the flagstick, and a crossing you can drive — design
 
-**Status:** specified, not implemented. Written 8 September 2026 against
-`docs/concept/reference/prop-silhouettes-01.jpg`. Implement in a fresh session, following
+**Status:** **Phase A implemented, 8 September 2026** — D2, D3, D4 and D10. Phases B and C are
+specified, not implemented. Written the same day against
+`docs/concept/reference/prop-silhouettes-01.jpg`, following
 `docs/superpowers/plans/2026-09-08-course-props-implementation.md`.
+
+**One thing this spec got wrong, found by building it, and it is D3's whole premise.**
+
+**The standing pin cannot prevent a hole-out. It can only cause one.** This follows from §2.1's own
+arithmetic, which the spec worked out correctly and then read backwards. `isInCup` holes the ball
+whenever its centre is within `CUP_RADIUS` (0.55 m) and it is slower than `HOLE_OUT_SPEED`; the
+pole's surface is at 0.025 m, so a ball can only *touch* it once its centre is 0.175 m from the
+axis — **0.375 m inside the hole-out radius**. Anything that reaches the pole is therefore already
+deep in the cup and is unholed only because it is travelling too fast, and a collision can only take
+speed away. To escape, a rebound would have to carry the ball from 0.175 m back out past 0.55 m
+without ever dropping under 2.5 m/s, on green turf, which it does not.
+
+Measured on `fixedHoleSpec()`, a 7.0 m/s putt straight at the pole from 3 m **holes with the pin
+standing** and finishes **5.34 m past the cup with it down**. A sweep of ~180 rolling shots and ~96
+lofted approaches found no case where the standing pin turned a hole into a miss.
+
+So the pin is a **backstop**, which is real golf's flagstick-in rule pointing the other way from the
+one D3 predicted. D3 below is rewritten to what ships; §5's criteria 3 and 4 are rewritten with it.
+Nothing else moved: `CUP_RADIUS`, `PIN_SHAPE`, `isInCup` and the routing are all untouched, and D2's
+central claim — that `isInCup` needs no exception — was right for exactly the reason §2.1 gives.
 
 **Reference:** `docs/concept/reference/prop-silhouettes-01.jpg` — read that folder's `README.md`
 deviation list first. Two of them bite here: the sheet gives proportion *within* a prop and never
@@ -125,18 +146,26 @@ pole. `isInCup` is not touched and gains no exception — §2.1 proves it does n
 real golf's flagstick-in rule arrived at by *not writing a rule*, which is the version that cannot
 drift out of step with the physics.
 
-**D3. Knocking the pin down clears your putting line, and that is the whole mechanic.** The pin has
-two states, standing and felled; felled removes the collider. It is knocked down by a struck ball or
-by a cart driving into it — both already have colliders, so it falls out of the physics rather than
-out of a hit rule. **It stays down for the hole and stands again on the next**, which is where every
-other per-hole thing already resets and is the only version that cannot be farmed.
+**D3. The standing pin is a backstop, and knocking it down gives that up for a cup a cart can drive
+over.** *Rewritten after building it; see the header. The spec originally read this as "knocking the
+pin down clears your putting line", which the arithmetic in §2.1 rules out.*
 
-Spending a stroke to clear the pin is therefore a genuine choice with a price, which is the only
-reason to make the pin solid at all.
+The pin has two states, standing and felled; felled removes the collider. It is knocked down by a
+struck ball or by a cart driving into it — both already have colliders, so it falls out of the
+physics rather than out of a hit rule. **It stays down for the hole and stands again on the next**,
+which is where every other per-hole thing already resets and is the only version that cannot be
+farmed.
 
-*A consequence to state out loud, because someone will hit it:* a static collider at the cup means
-the cart can no longer drive over the hole. It has to knock the pin down first. That is a small
-emergent moment in the design's favour, not a bug.
+What the pin actually does is stop a hot approach and drop it. A shot arriving at the cup above
+`HOLE_OUT_SPEED` runs straight over the mouth and away; the same shot into a standing pin loses its
+speed against the pole and falls in. Leaving the pin in is therefore the percentage play on a long
+approach, and that is the choice — **not** whether to spend a stroke clearing your line, which was
+never available.
+
+Knocking it down still costs and still buys something. It costs the stroke, and it buys the cart a
+cup it can drive over: a static collider at the cup means the cart cannot cross the hole while the
+pin stands. Two small emergent moments in the design's favour rather than one, and both of them are
+consequences of the collider rather than rules written about it — which was D2's point.
 
 **D4. The pin is procedural TypeScript; the other seven props are Blender graphs.** This resolves
 §1's contradiction, and §2.2's own rule decides it independently of the manifest. The route table
@@ -224,11 +253,16 @@ The phases are independent in that order and each leaves the game shippable.
    mistake in this codebase.
 2. **The pin's collider and the pin's drawn pole agree to 1 cm**, and the comparison is made between
    *those two*, for the same reason.
-3. **A putt can be deflected by a standing pin, and can still hole out with it standing.** Both
-   directions asserted: a ball fired at the pole off-centre does not hole; a ball rolled into the
-   cup at putting speed does. The second is what §2.1's arithmetic promises and it must be checked,
-   not assumed.
-4. **A felled pin deflects nothing.** Same off-centre shot holes out once the pin is down.
+3. **A putt still holes out with the pin standing, and a hot approach holes *because* of it.**
+   *Rewritten after building it; see the header.* Both directions asserted, each as two real runs of
+   one shot rather than one run against a remembered number: a ball rolled into the cup at putting
+   speed drops **and the pin is still standing when it does** — that second clause is the whole
+   test, because without it the assertion passes at any pin radius at all, the fat pole simply being
+   knocked over first. And a 7.0 m/s approach that runs metres past a cleared cup is caught and
+   dropped by a standing one.
+4. **A felled pin deflects nothing**, asserted geometrically: the same shot's closest approach to
+   the cup axis is held at `PIN_SHAPE.radius + BALL_RADIUS` while the pin stands and passes through
+   the pole's own footprint once it is down. The collider is gone, not merely flagged.
 5. **The pin stands again on the next hole.** Fell it, `loadHole`, assert standing — and assert the
    collider was removed and rebuilt, per `AGENTS.md`'s removal-path rule.
 6. **Every prop appears on the title-screen backdrop as well as in a round.** `src/render/backdrop.ts`

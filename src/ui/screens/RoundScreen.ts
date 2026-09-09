@@ -4,13 +4,15 @@ import { RenderScene } from "../../render/scene";
 import type { FrameView } from "../../render/scene";
 import { CLUB_STATS } from "../../physics/Ballistics";
 import type { ClubType } from "../../physics/Ballistics";
-import { POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "../../sim/world";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "../../sim/world";
 import type { BallTransform, CartTransform } from "../../sim/world";
 import { drawHud, readHud } from "../hud";
+import { createHudStateScratch, deriveHudState } from "../hudState";
 import type { Hud } from "../hud";
 import { drawMatchResults, readMatchResults } from "../matchResults";
 import type { MatchResultsDom } from "../matchResults";
 import { Nameplates } from "../nameplates";
+import { PinMarker } from "../pinMarker";
 import { on } from "../dom";
 import type { Screen } from "../../app/ScreenManager";
 import type { Round } from "../../sim/round";
@@ -39,6 +41,7 @@ export class RoundScreen implements Screen {
   private render: RenderScene | null = null;
   private input: KeyboardMouseSource | null = null;
   private nameplates: Nameplates | null = null;
+  private pinMarker: PinMarker | null = null;
   private hud: Hud | null = null;
   private matchResults: MatchResultsDom | null = null;
   private matchResultsWereVisible = false;
@@ -47,6 +50,12 @@ export class RoundScreen implements Screen {
   /** Where the ball was when the current shot left the muzzle, or null between shots. */
   private driveOrigin: { x: number; z: number } | null = null;
   private lastShotCount = 0;
+  /**
+   * Sim time since this screen was entered, for the renderer's cosmetic cycles. Accumulated from
+   * the fixed step rather than sampled from a wall clock: a frame-rate-dependent pennant would
+   * make the scene gate's screenshot depend on how fast the machine ran.
+   */
+  private elapsedSeconds = 0;
   private readonly teardown: (() => void)[] = [];
 
   constructor(options: RoundScreenOptions) {
@@ -58,6 +67,9 @@ export class RoundScreen implements Screen {
 
     this.render = new RenderScene(renderer, sim.terrain, sim.surfaces, sim.targets.length, sim.bots.length);
     this.nameplates = new Nameplates(nameplateRoot, sim.bots.map((_, i) => `BOT ${i + 1}`));
+    // Shares #nameplates: both are world-anchored chips over the same scene, and H17 follows H13's
+    // projection (UI-SPEC §2). Stacking order is the container's, not theirs.
+    this.pinMarker = new PinMarker(nameplateRoot);
     this.input = new KeyboardMouseSource(renderer.domElement);
     this.hud = readHud();
     this.matchResults = readMatchResults();
@@ -83,6 +95,8 @@ export class RoundScreen implements Screen {
       targetPartCount: sim.targetPartCount,
       poolTransforms: new Float32Array(sim.currentPoolTransforms.length),
       botCarts: sim.currentBotCarts.map(cloneCart),
+      elapsedSeconds: 0,
+      pinStanding: sim.pinStanding,
     };
   }
 
@@ -91,6 +105,7 @@ export class RoundScreen implements Screen {
     if (!this.input) return;
     sim.step(this.input.sample());
     this.input.endTick();
+    this.elapsedSeconds += FIXED_DT;
 
     this.trackLongestDrive();
 
@@ -148,6 +163,8 @@ export class RoundScreen implements Screen {
     // reload -- so read the club here too rather than caching it.
     view.reload01 = reloadFraction(sim.cart.reloadRemaining, sim.cart.equippedClub);
     view.turretLoaded = sim.cart.ammo > 0;
+    view.elapsedSeconds = this.elapsedSeconds;
+    view.pinStanding = sim.pinStanding;
     interpolateTransforms(
       sim.previousTargetTransforms,
       sim.currentTargetTransforms,
@@ -164,6 +181,7 @@ export class RoundScreen implements Screen {
 
     this.render.draw(view);
     this.drawNameplates();
+    this.drawPinMarker();
     drawHud(this.hud, sim);
     if (this.matchResults) {
       drawMatchResults(this.matchResults, sim);
@@ -201,10 +219,30 @@ export class RoundScreen implements Screen {
     this.input = null;
     this.nameplates?.dispose();
     this.nameplates = null;
+    this.pinMarker?.dispose();
+    this.pinMarker = null;
     this.render?.dispose();
     this.render = null;
     this.view = null;
     this.hud = null;
+  }
+
+  /**
+   * H17. The distance comes from `deriveHudState`'s own derivation rather than being recomputed
+   * here, so the number on the marker and any future yardage in the HUD cannot disagree.
+   */
+  private drawPinMarker(): void {
+    const { sim } = this.options;
+    if (!this.render || !this.pinMarker) return;
+    deriveHudState(sim, pinHudScratch);
+    this.render.pinMarkerAnchor(pinAnchorScratch);
+    const onScreen = this.render.projectPinMarker(
+      pinAnchorScratch.x,
+      pinAnchorScratch.y,
+      pinAnchorScratch.z,
+      plateScratch,
+    );
+    this.pinMarker.set(plateScratch.x, plateScratch.y, onScreen, pinHudScratch.pinDistanceText);
   }
 
   private drawNameplates(): void {
@@ -222,6 +260,9 @@ export class RoundScreen implements Screen {
 /** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
 const NAMEPLATE_HEIGHT = 2.6;
 const plateScratch = { x: 0, y: 0 };
+/** Module-level scratch, reused per frame -- the render loop is covered by the no-allocation rule. */
+const pinAnchorScratch = { x: 0, y: 0, z: 0 };
+const pinHudScratch = createHudStateScratch();
 
 /** Module-level rather than nested inside the method: a function declared inside a function body
  *  allocates a fresh closure on every call, and this one runs once per cart per frame. */

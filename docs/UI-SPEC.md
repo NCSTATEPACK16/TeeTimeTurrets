@@ -77,6 +77,7 @@ and the second owns the presentation.
 | H14 | Team score strip | 07, 09 | 3.5 / 5 | mode scoring | Top-centre. Two dots for CTF (07), four dots with counts for free-for-all (09). |
 | H15 | Touch controls | 14 | 2 / 4 | `InputSource` | Left thumbstick ring; right cluster of BRAKE, mode toggle, CLUBSWAP, and a large FIRE. See §4. |
 | H16 | Coin balance | 11 | 3.5 | player wallet | Clubhouse only, not on-course. |
+| H17 | Pin marker | prop sheet | 4 | `terrain.cupPosition`, ball position | **Built.** A chip over the flagstick labelled with whole metres from the **ball** to the cup — the number a club choice is made against, and the game's only distance readout. Reuses H13's projection and persists per frame rather than being one-shot. **Edge-clamped, not hidden**, when the pin is off camera, which is the one way it differs from H13: the flagstick is modelled at true scale (~2.1 m), so from the tee it is a few pixels of white and this is what makes it findable. Derived in `src/ui/hudState.ts`, presented by `src/ui/pinMarker.ts`. |
 
 ## 3. Screen inventory
 

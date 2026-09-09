@@ -1,7 +1,9 @@
 import * as THREE from "three";
 import { BallSwarm, BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../entities/BallSwarm";
+import { Flagstick, placeFlagstick } from "../entities/Flagstick";
 import { GolfClub, placeCart } from "../entities/GolfClub";
 import { TargetRig } from "../entities/TargetRig";
+import { PIN_SHAPE } from "../sim/entities/Pin";
 import { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import type { Surfaces } from "../sim/surfaces";
@@ -75,6 +77,15 @@ export interface FrameView {
   poolTransforms: Float32Array;
   /** One entry per bot cart, laid out exactly as `cart` is. */
   botCarts: CartTransform[];
+  /**
+   * Seconds since the hole opened, for cosmetic cycles that are not simulated -- today only the
+   * pennant's. Accumulated from the fixed step rather than read off a wall clock, so a pennant
+   * looks the same in a scene-gate render as it does in a round.
+   */
+  elapsedSeconds: number;
+  /** `Sim.pinStanding`, straight through. The renderer poses the flagstick to match; it never
+   *  decides whether the pin is up. */
+  pinStanding: boolean;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -90,6 +101,7 @@ export class RenderScene {
   private readonly pooledBalls: BallSwarm;
   private readonly ground: Ground;
   private readonly trees: Trees;
+  private readonly flagstick: Flagstick;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
@@ -143,6 +155,12 @@ export class RenderScene {
     this.trees = createTrees(terrain, surfaces);
     if (this.trees.mesh !== null) this.scene.add(this.trees.mesh);
 
+    // Placed from `terrain.cupPosition` and never from a copy of it: `CUP_RADIUS` and that
+    // position are canonical for where the hole is, and the pin reads them.
+    this.flagstick = new Flagstick();
+    placeFlagstick(this.flagstick, terrain);
+    this.scene.add(this.flagstick);
+
     const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
     const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
     this.ball = new THREE.Mesh(ballGeo, ballMat);
@@ -193,6 +211,8 @@ export class RenderScene {
     }
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
+    this.flagstick.update(view.elapsedSeconds);
+    this.flagstick.setFelled(!view.pinStanding);
 
     this.frameChase(view);
 
@@ -213,6 +233,7 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.ground.dispose();
     this.trees.dispose();
+    this.flagstick.dispose();
     this.scene.clear();
   }
 
@@ -235,6 +256,42 @@ export class RenderScene {
     out.x = (this.projectScratch.x * 0.5 + 0.5) * size.x;
     out.y = (1 - (this.projectScratch.y * 0.5 + 0.5)) * size.y;
     return true;
+  }
+
+  /**
+   * As `projectToScreen`, but **clamped to the viewport edge instead of rejected** when the point is
+   * off camera, and it reports which of the two happened.
+   *
+   * H17 needs this and H13 does not, which is the whole reason it is a second method rather than a
+   * flag on the first. A nameplate for a cart you cannot see is noise and is hidden; the pin marker
+   * is the thing that tells you where the hole went after a wild drive, so it has to stay on screen
+   * pointing at it.
+   *
+   * A point behind the camera projects *mirrored* through the origin, so its NDC sign is inverted
+   * before clamping -- without that, a pin directly behind you clamps to the wrong edge, which is
+   * worse than not showing it at all.
+   *
+   * Writes into `out`: this runs once per frame.
+   */
+  projectPinMarker(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
+    this.projectScratch.set(x, y, z).project(this.camera);
+    const behind = this.projectScratch.z > 1;
+    const ndcX = behind ? -this.projectScratch.x : this.projectScratch.x;
+    const ndcY = behind ? -this.projectScratch.y : this.projectScratch.y;
+    const onScreen = !behind && Math.abs(ndcX) <= 1 && Math.abs(ndcY) <= 1;
+
+    const size = this.renderer.getSize(this.sizeScratch);
+    out.x = (clampNdc(ndcX) * 0.5 + 0.5) * size.x;
+    out.y = (1 - (clampNdc(ndcY) * 0.5 + 0.5)) * size.y;
+    return onScreen;
+  }
+
+  /** Where the marker points: the top of the pin, so the chip sits above the pennant. */
+  pinMarkerAnchor(out: { x: number; y: number; z: number }): void {
+    const cup = this.terrain.cupPosition;
+    out.x = cup.x;
+    out.y = cup.y + PIN_SHAPE.height;
+    out.z = cup.z;
   }
 
   /** Chassis placement lives in `GolfClub.placeCart`; what is left here is the per-frame state. */
@@ -285,3 +342,7 @@ export class RenderScene {
   }
 }
 
+/** NDC is [-1, 1]; anything outside is off camera and is pinned to the nearest edge. */
+function clampNdc(v: number): number {
+  return Math.min(1, Math.max(-1, v));
+}

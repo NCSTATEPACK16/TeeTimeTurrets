@@ -26,6 +26,10 @@ export interface HudSource {
     readonly respawnTimer: number;
     readonly health: { readonly hp: number; readonly max: number };
   };
+  /** The ball, from the most recent fixed step. H17 measures from here, not from the cart. */
+  readonly current: { readonly position: { readonly x: number; readonly y: number; readonly z: number } };
+  /** Only `cupPosition` is read. Structural, so this module still needs no terrain and no Rapier. */
+  readonly terrain: { readonly cupPosition: { readonly x: number; readonly y: number; readonly z: number } };
 }
 
 export interface HudState {
@@ -39,6 +43,8 @@ export interface HudState {
   healthText: string;
   ammoText: string;
   timerText: string;
+  /** UI-SPEC H17: whole metres from the ball to the cup, e.g. `"84 m"`. */
+  pinDistanceText: string;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -54,6 +60,7 @@ export function createHudStateScratch(): HudState {
     healthText: "",
     ammoText: "",
     timerText: "",
+    pinDistanceText: "",
   };
 }
 
@@ -76,6 +83,24 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.healthText = `${Math.max(0, Math.round(cart.health.hp))}`;
   out.ammoText = `${Math.max(0, Math.round(cart.ammo))}`;
   out.timerText = formatClock(source.matchTimeRemaining);
+  out.pinDistanceText = `${Math.round(flatDistance(source))} m`;
+}
+
+/**
+ * Ball to cup, in the XZ plane.
+ *
+ * Flat rather than three-dimensional, for the reason `RoundScreen.trackLongestDrive` gives about a
+ * drive: a yardage is a distance along the ground, and folding in the drop to a green below you
+ * would report a downhill hole as longer than it plays.
+ *
+ * From the ball rather than from the cart because that is the number a club choice is made against.
+ * The cart's own distance to the pin is a different and much less useful figure -- you are not
+ * hitting the ball from there.
+ */
+function flatDistance(source: HudSource): number {
+  const ball = source.current.position;
+  const cup = source.terrain.cupPosition;
+  return Math.hypot(ball.x - cup.x, ball.z - cup.z);
 }
 
 /**

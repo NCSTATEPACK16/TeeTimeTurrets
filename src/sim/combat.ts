@@ -1,6 +1,7 @@
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { applyDamage } from "./health";
 import type { Cart } from "./entities/Cart";
+import type { Pin } from "./entities/Pin";
 import type { Target, TargetPart } from "./entities/Target";
 import type { Stats } from "./stats";
 
@@ -63,11 +64,21 @@ export const SHUNT_VELOCITY_TRANSFER = 0.5;
  */
 export const KNOCKDOWN_IMPULSE_PER_MPS = 12;
 
-/** What a collider handle turns out to belong to. */
+/**
+ * What a collider handle turns out to belong to.
+ *
+ * `courseBall` is the player's own ball on the ground, and it is a separate kind from `ball` on
+ * purpose. Fired ammo can hurt a cart; the resting course ball must not, or driving forward off the
+ * tee runs the player into their own ball for a stroke -- which at 2 x par health is lethal, and is
+ * the bug that got the course ball unregistered in the first place. It is registered now only so it
+ * can knock the pin down, and every other pairing it could form is deliberately left unhandled.
+ */
 export type Actor =
   | { kind: "ball"; body: RAPIER.RigidBody }
+  | { kind: "courseBall"; body: RAPIER.RigidBody }
   | { kind: "targetPart"; target: Target; part: TargetPart }
-  | { kind: "cart"; cart: Cart };
+  | { kind: "cart"; cart: Cart }
+  | { kind: "pin"; pin: Pin };
 
 /**
  * Collider handle -> entity. A drained collision event carries two integer handles and nothing
@@ -81,8 +92,22 @@ export class CombatRegistry {
     this.actors.set(handle, { kind: "ball", body });
   }
 
+  registerCourseBall(handle: number, body: RAPIER.RigidBody): void {
+    this.actors.set(handle, { kind: "courseBall", body });
+  }
+
   registerCart(handle: number, cart: Cart): void {
     this.actors.set(handle, { kind: "cart", cart });
+  }
+
+  registerPin(handle: number, pin: Pin): void {
+    this.actors.set(handle, { kind: "pin", pin });
+  }
+
+  /** The pin's collider is destroyed when it is felled, so its handle must not outlive it: Rapier
+   *  reuses handles, and a stale entry would make some later collider answer as the pin. */
+  unregisterPin(handle: number): void {
+    this.actors.delete(handle);
   }
 
   registerTarget(target: Target): void {
@@ -110,6 +135,11 @@ export interface CombatContext {
   stats: Stats;
   /** Called once, on the contact that takes a cart from above zero HP to zero. */
   onCartKilled: (cart: Cart) => void;
+  /**
+   * Called on the contact that fells the pin. `world.ts` owns the Rapier resources, so removing the
+   * collider is its job rather than this module's -- the same split `onCartKilled` already uses.
+   */
+  onPinStruck: () => void;
 }
 
 /** Damage for a ball landing at `speed` m/s relative to what it hit. */
@@ -149,6 +179,7 @@ export function processContacts(queue: CollisionEventSource, ctx: CombatContext)
     if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.body, b.cart, ctx);
     if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.body, a.cart, ctx);
     if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a.cart, b.cart, ctx);
+    if (a.kind === "pin" || b.kind === "pin") return ballHitsPin(a, b, ctx);
   });
 }
 
@@ -169,6 +200,29 @@ function ballHitsTarget(
 
   ctx.stats.directHits += 1;
   if (!wasDown) ctx.stats.targetsDown += 1;
+}
+
+/**
+ * A ball touching the pin knocks it over -- fired ammo or the played course ball, either one.
+ *
+ * **Carts are deliberately not handled here, and that is not an omission.** A cart is kinematic and
+ * driven by the character controller, which resolves its movement to stop `CHARACTER_OFFSET`
+ * (0.02 m) short of whatever it hits -- far wider than the narrow phase's prediction distance, so a
+ * cart pressed against the pin produces a blocked movement and no contact event at all. `world.ts`
+ * reads the controller's own collision report instead. A cart branch here would be code no test
+ * could kill, which is worse than no branch: it would read as the cart's path while doing nothing.
+ *
+ * Not a damage rule and not a scoring one either: no `stats.targetsDown` entry, no hit marker, no
+ * coins (spec, out of scope). The pin is a tactical object, so the only consequence is that the
+ * collider goes away.
+ *
+ * The ground is not an actor, so a felled pin lying on the green cannot re-trigger this -- and the
+ * pin's handle is unregistered the moment it falls, so nothing can hit it twice.
+ */
+function ballHitsPin(a: Actor, b: Actor, ctx: CombatContext): void {
+  const other = a.kind === "pin" ? b : a;
+  if (other.kind !== "ball" && other.kind !== "courseBall") return;
+  ctx.onPinStruck();
 }
 
 function ballHitsCart(_ball: RAPIER.RigidBody, cart: Cart, ctx: CombatContext): void {

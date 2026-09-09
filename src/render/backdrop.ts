@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Flagstick, placeFlagstick } from "../entities/Flagstick";
 import { BIOMES } from "./biomes";
 import { createGround } from "./ground";
 import { createTrees } from "./Trees";
@@ -56,6 +57,13 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
   const trees = createTrees(terrain, surfaces);
   if (trees.mesh !== null) scene.add(trees.mesh);
 
+  // The same factory the round uses, placed from the same `terrain.cupPosition`. This is the
+  // second consumer `backdrop.test.ts` exists to keep honest: the title screen shows a real hole,
+  // and a hole with nothing at the cup is the gap this whole change closes.
+  const flagstick = new Flagstick();
+  placeFlagstick(flagstick, terrain);
+  scene.add(flagstick);
+
   const centre = new THREE.Vector3(0, 0, 0);
   const radius = fieldSize * 0.32;
   const height = fieldSize * 0.09;
@@ -70,6 +78,7 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
       Math.sin(angle) * radius,
     );
     camera.lookAt(centre);
+    flagstick.update(elapsed);
   };
   update(0);
 
@@ -88,6 +97,8 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
       ground.dispose();
       if (trees.mesh !== null) scene.remove(trees.mesh);
       trees.dispose();
+      scene.remove(flagstick);
+      flagstick.dispose();
       scene.clear();
     },
   };
