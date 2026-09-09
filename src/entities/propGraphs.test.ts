@@ -30,6 +30,10 @@ const EXPECTED_HEIGHT_M: Readonly<Record<string, [number, number]>> = {
   cart_path_sign: [1.1, 1.6],
   // A footbridge is a span, not a post: its height is the railing above the arch.
   footbridge: [1.2, 2.0],
+  // A boardwalk section is a deck with a railing on it and nothing else: 0.1 m of deck below the
+  // surface it is laid on, and a 0.85 m post above it. Anything taller is a bridge, which §2.2
+  // says the heightfield cannot express -- so this band is the spec's argument, not a tolerance.
+  boardwalk_section: [0.8, 1.1],
 };
 
 describe("the prop set", () => {

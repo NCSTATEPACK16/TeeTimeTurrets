@@ -1,8 +1,9 @@
 import * as THREE from "three";
-import { mergeGraph } from "../entities/primitiveGraph";
+import { mergeGraph, mergeGraphInstances } from "../entities/primitiveGraph";
 import { graphFor } from "../entities/propGraphs";
 import type { PropName } from "../entities/propGraphs";
 import type { HoleSpec, Vec2 } from "../sim/course";
+import { deriveCrossings } from "../sim/crossing";
 import type { Ellipse, Polygon } from "../sim/hazards";
 import { createSpline } from "../sim/spline";
 import { createSurfaceWeights } from "../sim/surfaces";
@@ -63,6 +64,14 @@ const BRIDGE_CORRIDOR_CLEARANCE_M = 6;
 /** And be at least this wide, or the bridge is longer than the water it spans. */
 const BRIDGE_MIN_SPAN_M = 6;
 
+/**
+ * Metres of deck per boardwalk section, and **the length the graph is authored at**.
+ *
+ * The two have to agree or the tiling leaves gaps, so `props.test.ts` measures the section's own
+ * geometry against this constant rather than trusting the pair to stay in step across a re-export.
+ */
+export const BOARDWALK_SECTION_M = 2;
+
 export interface PropPlacement {
   readonly prop: PropName;
   readonly x: number;
@@ -70,6 +79,20 @@ export interface PropPlacement {
   readonly z: number;
   /** Radians about +Y, in Three's convention. */
   readonly yaw: number;
+  /**
+   * Sections of decking tiled along the prop's own local +Z and centred on `(x, z)`.
+   *
+   * Only the boardwalk carries it. Every other prop is one object at one point, and a crossing is
+   * the one thing on a hole whose *length* comes from the pond rather than from the asset.
+   */
+  readonly sections?: number;
+}
+
+/** One tiled section of decking, in world space. */
+export interface BoardwalkSection {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
 }
 
 export interface Props {
@@ -147,6 +170,34 @@ export function derivePlacements(terrain: Terrain, surfaces: Surfaces): PropPlac
     );
   }
 
+  // Decking on every causeway the sim raised. **Read from `deriveCrossings`, the same function
+  // `terrain.ts` shapes the deck with and `surfaces.ts` classifies it with** -- a boardwalk derived
+  // from its own idea of where the water is would be planks laid beside the drivable surface.
+  //
+  // `put` is bypassed for the same reason the footbridge bypasses it, one step further on: the deck
+  // is `SurfaceId.Bridge` rather than water, so the hazard rejection would not fire, but the
+  // placement is a segment rather than a point and its height is sampled per section below.
+  for (const crossing of deriveCrossings(spec)) {
+    if (out.length >= MAX_PROPS_PER_HOLE) break;
+    const dx = crossing.bx - crossing.ax;
+    const dz = crossing.bz - crossing.az;
+    const length = Math.hypot(dx, dz);
+    const x = (crossing.ax + crossing.bx) / 2;
+    const z = (crossing.az + crossing.bz) / 2;
+    out.push({
+      prop: "boardwalk_section",
+      x,
+      y: terrain.heightAt(x, z),
+      z,
+      // **`atan2(dx, dz)`, and every other prop above uses `atan2(dz, dx)`.** A marker faces along
+      // its local +X; a section's length runs along its local +Z, and Three's yaw about +Y sends
+      // +Z to `(sin yaw, 0, cos yaw)`. Swapped, the decking is a row of six-metre planks laid
+      // broadside down the causeway.
+      yaw: Math.atan2(dx, dz),
+      sections: Math.max(1, Math.round(length / BOARDWALK_SECTION_M)),
+    });
+  }
+
   const bridge = bridgeSite(spec, spline);
   if (bridge !== null) {
     // The one prop allowed on water, and the reason `put`'s hazard rejection is bypassed here: a
@@ -172,7 +223,11 @@ export function derivePlacements(terrain: Terrain, surfaces: Surfaces): PropPlac
 export function createProps(terrain: Terrain, surfaces: Surfaces): Props {
   const placements = derivePlacements(terrain, surfaces);
   const built = placements.map((placement) => {
-    const merged = mergeGraph(graphFor(placement.prop));
+    const graph = graphFor(placement.prop);
+    const merged =
+      placement.sections === undefined
+        ? mergeGraph(graph)
+        : mergeGraphInstances(graph, sectionMatrices(terrain, placement));
     merged.mesh.position.set(placement.x, placement.y, placement.z);
     merged.mesh.rotation.y = placement.yaw;
     return merged;
@@ -184,6 +239,48 @@ export function createProps(terrain: Terrain, surfaces: Surfaces): Props {
       for (const merged of built) merged.dispose();
     },
   };
+}
+
+/**
+ * Where each section of a boardwalk placement's decking sits, in world space.
+ *
+ * Exported so the derivation can be asserted without building geometry, the same reason
+ * `derivePlacements` is. The offsets run along the placement's own +Z and are centred on it, so
+ * section 0 is the far end of the deck rather than its middle.
+ */
+export function boardwalkSections(terrain: Terrain, placement: PropPlacement): BoardwalkSection[] {
+  const count = placement.sections ?? 0;
+  const ux = Math.sin(placement.yaw);
+  const uz = Math.cos(placement.yaw);
+  const out: BoardwalkSection[] = [];
+  for (let i = 0; i < count; i++) {
+    const along = sectionOffset(i, count);
+    const x = placement.x + ux * along;
+    const z = placement.z + uz * along;
+    out.push({ x, y: terrain.heightAt(x, z), z });
+  }
+  return out;
+}
+
+/** Metres along the deck from its midpoint to section `i` of `count`. */
+function sectionOffset(i: number, count: number): number {
+  return (i - (count - 1) / 2) * BOARDWALK_SECTION_M;
+}
+
+/**
+ * The decking's instance matrices, in the merged mesh's **local** frame.
+ *
+ * Local rather than world so the mesh keeps the position and rotation every other prop has, which
+ * is what lets `scene.ts`, `backdrop.ts` and the placement tests treat all seven props alike. The
+ * `y` term is the only one that is not a straight tiling: it is the terrain under that section
+ * minus the terrain under the placement, which is what makes the run follow the bank up the
+ * abutments instead of running level off the end of the deck.
+ */
+function sectionMatrices(terrain: Terrain, placement: PropPlacement): THREE.Matrix4[] {
+  const sections = boardwalkSections(terrain, placement);
+  return sections.map((section, i) =>
+    new THREE.Matrix4().makeTranslation(0, section.y - placement.y, sectionOffset(i, sections.length)),
+  );
 }
 
 /** Three's yaw about +Y for a heading from `from` to `to` in world XZ. */

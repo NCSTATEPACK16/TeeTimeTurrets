@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { Flagstick } from "../entities/Flagstick";
 import { fixedHoleSpec } from "../sim/course";
+import type { HoleSpec } from "../sim/course";
 import { createSurfaces } from "../sim/surfaces";
 import { createTerrain } from "../sim/terrain";
 import { derivePlacements } from "./props";
@@ -68,6 +69,37 @@ describe("the title-screen backdrop", () => {
     for (const placement of expected) {
       expect(placed, placement.prop).toContain(placement.prop);
     }
+    backdrop.dispose();
+  });
+
+  it("puts the causeway's decking on the title screen too, on a hole that has one", () => {
+    // The test above uses `fixedHoleSpec()`, which has no water -- so it derives no crossing, and
+    // criterion 6 was **not** actually covering the boardwalk. It is the one prop whose build path
+    // differs (`mergeGraphInstances` rather than `mergeGraph`), which makes it the one most worth
+    // covering here. Confirmed red by making `createProps` skip boardwalk placements.
+    const spec: HoleSpec = {
+      ...fixedHoleSpec(),
+      water: [
+        {
+          points: [
+            { x: -34, z: -40 },
+            { x: -18, z: -40 },
+            { x: -18, z: 40 },
+            { x: -34, z: 40 },
+          ],
+        },
+      ],
+    };
+    const terrain = createTerrain(spec);
+    const expected = derivePlacements(terrain, createSurfaces(spec, terrain));
+    expect(expected.some((p) => p.prop === "boardwalk_section")).toBe(true);
+
+    const backdrop = createBackdrop(spec);
+    const placed = new Set<string>();
+    backdrop.scene.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.name !== "") placed.add(child.name);
+    });
+    expect(placed).toContain("boardwalk_section");
     backdrop.dispose();
   });
 

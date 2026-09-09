@@ -42,7 +42,7 @@ const SUBJECTS = [
   // tools/gate/gateScene.ts's SUBJECTS -- a subject added to only one of the two fails confusingly.
   "flagstick",
   "flagstick-felled",
-  // The six Blender-authored props, each merged to one draw call. Same rule as above: keep this
+  // The seven Blender-authored props, each merged to one draw call. Same rule as above: keep this
   // list in step with tools/gate/gateScene.ts's SUBJECTS, which builds these from PROP_NAMES.
   "tee_marker",
   "bunker_rake",
@@ -50,6 +50,10 @@ const SUBJECTS = [
   "distance_post",
   "cart_path_sign",
   "footbridge",
+  // One 2 m module of the causeway deck, drawn on its own. The gate sees the section, never the
+  // tiled run -- what a screenshot can settle here is the plank, the kerb and the railing, and the
+  // run's geometry is settled against the crossing in props.test.ts instead.
+  "boardwalk_section",
 ];
 
 const server = spawn("npx", ["vite", "preview", "--outDir", DIST, "--port", String(PORT)], {

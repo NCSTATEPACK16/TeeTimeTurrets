@@ -1,13 +1,22 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { PROP_NAMES } from "../entities/propGraphs";
+import { buildGraph } from "../entities/primitiveGraph";
+import { PROP_NAMES, graphFor } from "../entities/propGraphs";
 import type { PropName } from "../entities/propGraphs";
-import { fixedHoleSpec } from "../sim/course";
+import { fixedHoleSpec, generateCourse } from "../sim/course";
 import type { HoleSpec } from "../sim/course";
 import { createSpline } from "../sim/spline";
 import { createSurfaceWeights, createSurfaces } from "../sim/surfaces";
 import { createTerrain } from "../sim/terrain";
-import { MAX_PROPS_PER_HOLE, MAX_RAKES, createProps, derivePlacements } from "./props";
+import { DECK_HALF_WIDTH, deriveCrossings } from "../sim/crossing";
+import {
+  BOARDWALK_SECTION_M,
+  MAX_PROPS_PER_HOLE,
+  MAX_RAKES,
+  boardwalkSections,
+  createProps,
+  derivePlacements,
+} from "./props";
 import type { PropPlacement } from "./props";
 
 /**
@@ -47,6 +56,24 @@ const OFFSIDE_WATER: HoleSpec["water"] = [
       { x: 14, z: 42 },
       { x: 14, z: 62 },
       { x: -10, z: 62 },
+    ],
+  },
+];
+
+/**
+ * A pond straight across the corridor: the forced carry D5 builds a causeway over.
+ *
+ * Set out towards the tee rather than at mid-hole, which is not cosmetic. Mid-hole it swallows the
+ * 46 m distance post, `put` correctly drops the post for standing in water, and the "can draw every
+ * prop" fixture then fails for a reason that has nothing to do with the boardwalk.
+ */
+const CROSSED_WATER: HoleSpec["water"] = [
+  {
+    points: [
+      { x: -34, z: -40 },
+      { x: -18, z: -40 },
+      { x: -18, z: 40 },
+      { x: -34, z: 40 },
     ],
   },
 ];
@@ -302,8 +329,193 @@ describe("createProps", () => {
 
   it("can draw every prop the set carries", () => {
     // A prop authored in Blender but never placed is a prop nobody will notice is broken.
-    const { placements } = build({ bunkers: BUNKER, water: OFFSIDE_WATER });
+    //
+    // The fixture needs **two** ponds and they are not interchangeable: an off-corridor one, which
+    // is the only kind D6 will footbridge, and one straddling the line, which is the only kind D5
+    // will causeway. A single pond cannot be both, and with only the first this test went green
+    // while the boardwalk was placed nowhere at all.
+    const { placements } = build({ bunkers: BUNKER, water: [...OFFSIDE_WATER, ...CROSSED_WATER] });
     const used = new Set(placements.map((p) => p.prop));
     expect([...used].sort()).toEqual([...PROP_NAMES].sort());
+  });
+});
+
+/**
+ * The causeway's decking (spec D5, Phase C's render half).
+ *
+ * The sim raises the deck and classifies it `SurfaceId.Bridge`; without this it is turf-coloured
+ * ground standing over a pond, which reads as a bug rather than as a crossing. The boardwalk is the
+ * one prop in the set with **length**: a crossing spans whatever its pond is wide, so one 2 m
+ * section is tiled along it and `mergeGraphInstances` collapses the run to a single draw call.
+ *
+ * Every assertion here ties the decking to `deriveCrossings` — the same function the sim's surface
+ * and height field read — rather than to a remembered position. A boardwalk that agreed with a
+ * constant instead of with the crossing would be a plank deck beside the drivable one.
+ */
+describe("the boardwalk", () => {
+  const crossings = (spec: HoleSpec) => deriveCrossings(spec);
+
+  function deckOf(built: ReturnType<typeof build>) {
+    const crossing = crossings(built.spec)[0]!;
+    const dx = crossing.bx - crossing.ax;
+    const dz = crossing.bz - crossing.az;
+    return { crossing, dx, dz, length: Math.hypot(dx, dz) };
+  }
+
+  it("is authored at exactly the length the tiling assumes", () => {
+    // The drift this stops is silent and total: `BOARDWALK_SECTION_M` decides where section n goes
+    // and the .blend decides how long section n is. Re-author the deck at 2.5 m and every crossing
+    // in the game gets 0.5 m gaps between its planks, with nothing else failing. Measured on the
+    // shipped graph's own geometry, which is the only copy that can disagree.
+    const built = buildGraph(graphFor("boardwalk_section"));
+    const box = new THREE.Box3().setFromObject(built.root);
+    expect(box.max.z - box.min.z).toBeCloseTo(BOARDWALK_SECTION_M, 3);
+    // And the deck is as wide as the causeway the sim raised, or the planks are narrower than the
+    // ground they sit on and the crossing has turf shoulders down its middle.
+    expect(box.max.x - box.min.x).toBeCloseTo(2 * DECK_HALF_WIDTH, 3);
+    built.dispose();
+  });
+
+  it("lays decking along every crossing, and none on a hole with no water", () => {
+    const crossed = build({ water: CROSSED_WATER });
+    expect(of(crossed.placements, "boardwalk_section")).toHaveLength(crossings(crossed.spec).length);
+    expect(crossings(crossed.spec).length).toBeGreaterThan(0);
+
+    expect(of(build().placements, "boardwalk_section")).toHaveLength(0);
+  });
+
+  it("lays none along a pond the centreline misses, where there is no crossing to deck", () => {
+    // The other half of "derived from the crossing": an off-corridor pond gets D6's footbridge and
+    // no causeway, because the sim raised no deck there for planks to sit on.
+    const offside = build({ water: OFFSIDE_WATER });
+    expect(crossings(offside.spec)).toHaveLength(0);
+    expect(of(offside.placements, "boardwalk_section")).toHaveLength(0);
+  });
+
+  it("carries enough sections to cover the deck end to end", () => {
+    const built = build({ water: CROSSED_WATER });
+    const { length } = deckOf(built);
+    const placement = of(built.placements, "boardwalk_section")[0]!;
+
+    expect(placement.sections).toBeGreaterThan(1);
+    // Within one section of the real deck length: shorter leaves bare ground at the abutments,
+    // longer runs planks out over the bank.
+    expect(placement.sections! * BOARDWALK_SECTION_M).toBeGreaterThanOrEqual(length - BOARDWALK_SECTION_M);
+    expect(placement.sections! * BOARDWALK_SECTION_M).toBeLessThanOrEqual(length + BOARDWALK_SECTION_M);
+  });
+
+  it("centres the run on the crossing and turns it along the crossing, not across it", () => {
+    // The yaw formula here is `atan2(dx, dz)` and every other prop's is `atan2(dz, dx)`, because
+    // the section's length runs along its own local +Z where a marker's facing runs along +X.
+    // Swapped, the decking is a row of 6 m planks laid broadside down the causeway -- so this is
+    // asserted against the crossing's own direction rather than restated as a constant.
+    const built = build({ water: CROSSED_WATER });
+    const { crossing, dx, dz, length } = deckOf(built);
+    const placement = of(built.placements, "boardwalk_section")[0]!;
+
+    expect(placement.x).toBeCloseTo((crossing.ax + crossing.bx) / 2, 6);
+    expect(placement.z).toBeCloseTo((crossing.az + crossing.bz) / 2, 6);
+    expect(Math.sin(placement.yaw)).toBeCloseTo(dx / length, 6);
+    expect(Math.cos(placement.yaw)).toBeCloseTo(dz / length, 6);
+  });
+
+  it("sits every section on the deck line, at the terrain height under it", () => {
+    const built = build({ water: CROSSED_WATER });
+    const { crossing, dx, dz, length } = deckOf(built);
+    const placement = of(built.placements, "boardwalk_section")[0]!;
+    const sections = boardwalkSections(built.terrain, placement);
+
+    expect(sections).toHaveLength(placement.sections!);
+    for (const section of sections) {
+      // Perpendicular distance from the deck's own line: planks are laid on the deck, not beside it.
+      const offset = Math.abs((section.x - crossing.ax) * dz - (section.z - crossing.az) * dx) / length;
+      expect(offset).toBeLessThan(0.01);
+      expect(section.y).toBeCloseTo(built.terrain.heightAt(section.x, section.z), 6);
+    }
+  });
+
+  it("follows the bank at the abutments instead of running level off the end", () => {
+    // The reason each section carries its own matrix rather than a shared stride. The deck runs on
+    // to dry land at both ends (`DECK_ABUTMENT_M`), and `terrain.ts` keeps the higher of bank and
+    // deck, so a level run would bury its last sections in the bank or float them over it.
+    //
+    // Asserted as a *spread*, because "every section is at terrain height" is also true of a deck
+    // that is level because the ground under it happens to be.
+    const built = build({ water: CROSSED_WATER });
+    const placement = of(built.placements, "boardwalk_section")[0]!;
+    const heights = boardwalkSections(built.terrain, placement).map((s) => s.y);
+    expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(0.1);
+  });
+
+  it("draws the whole causeway as one object and one draw call", () => {
+    // D7's arithmetic is why this is not one merged prop per section: a thirty-metre crossing would
+    // otherwise be fifteen draws, most of MAX_PROPS_PER_HOLE spent on a single object.
+    const built = build({ water: CROSSED_WATER });
+    const props = createProps(built.terrain, built.surfaces);
+    const index = built.placements.findIndex((p) => p.prop === "boardwalk_section");
+    expect(index).toBeGreaterThanOrEqual(0);
+
+    const object = props.objects[index]!;
+    let meshes = 0;
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) meshes++;
+    });
+    expect(meshes).toBe(1);
+    props.dispose();
+  });
+
+  it("puts the built planks over the real deck, in world space", () => {
+    // The end-to-end check, and the only one that would catch a sign error in the local-space
+    // matrices `createProps` builds: the geometry that actually reaches the scene is measured
+    // against the crossing, after the mesh's own position and rotation have been applied.
+    const built = build({ water: CROSSED_WATER });
+    const { crossing, dx, dz, length } = deckOf(built);
+    const props = createProps(built.terrain, built.surfaces);
+    const index = built.placements.findIndex((p) => p.prop === "boardwalk_section");
+    const mesh = props.objects[index]!;
+    mesh.updateMatrixWorld(true);
+
+    const geometry = (mesh as THREE.Mesh).geometry;
+    const position = geometry.getAttribute("position");
+    const vertex = new THREE.Vector3();
+    let along = { min: Infinity, max: -Infinity };
+    let widest = 0;
+    for (let i = 0; i < position.count; i++) {
+      vertex.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+      const t = ((vertex.x - crossing.ax) * dx + (vertex.z - crossing.az) * dz) / length;
+      along = { min: Math.min(along.min, t), max: Math.max(along.max, t) };
+      widest = Math.max(widest, Math.abs((vertex.x - crossing.ax) * dz - (vertex.z - crossing.az) * dx) / length);
+    }
+
+    // Spans the crossing from one abutment to the other, within a section.
+    expect(along.min).toBeLessThan(BOARDWALK_SECTION_M);
+    expect(along.max).toBeGreaterThan(length - BOARDWALK_SECTION_M);
+    // And is deck-width across it, not 6 m of plank laid broadside down the line.
+    expect(widest).toBeCloseTo(DECK_HALF_WIDTH, 1);
+    props.dispose();
+  });
+
+  it("keeps a causeway hole inside the per-hole draw-call budget", () => {
+    const { placements } = build({ bunkers: BUNKER, water: [...OFFSIDE_WATER, ...CROSSED_WATER] });
+    expect(placements.length).toBeLessThan(MAX_PROPS_PER_HOLE);
+  });
+});
+
+describe("the real eighteen", () => {
+  it("keeps every generated hole inside the draw-call budget, crossings and all", () => {
+    // Criterion 11 against the course that ships rather than against a fixture. The fixtures above
+    // are hand-built to exercise one prop each; this is the only check that sees a hole with two
+    // crossings and a full set of bunkers at the same time.
+    const { holes } = generateCourse(0x7ee7c0, 18);
+    let withCrossings = 0;
+    for (let i = 0; i < holes.length; i++) {
+      const spec = holes[i]!;
+      const terrain = createTerrain(spec);
+      const placements = derivePlacements(terrain, createSurfaces(spec, terrain));
+      expect(placements.length, `hole ${i + 1}`).toBeLessThan(MAX_PROPS_PER_HOLE);
+      if (placements.some((p) => p.prop === "boardwalk_section")) withCrossings++;
+    }
+    // Or the loop above proves nothing about crossings: it would pass on eighteen dry holes.
+    expect(withCrossings).toBeGreaterThan(0);
   });
 });

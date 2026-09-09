@@ -1,9 +1,24 @@
 # Course props, the flagstick, and a crossing you can drive — design
 
-**Status:** **Phase A implemented, 8 September 2026** — D2, D3, D4 and D10. Phases B and C are
-specified, not implemented. Written the same day against
+**Status:** **All three phases implemented, 9 September 2026.** Phase A (D2, D3, D4, D10) and
+Phase B (D7, D8) on 8 September; Phase C (D5, D6, D9) on 9 September. Written against
 `docs/concept/reference/prop-silhouettes-01.jpg`, following
 `docs/superpowers/plans/2026-09-08-course-props-implementation.md`.
+
+**What Phase C got wrong, and it was a scoping error rather than an arithmetic one.** §4 lists
+Phase C as "`SurfaceId.Bridge`, the causeway in terrain's shaping pass, the footbridge and boardwalk
+graphs, the plan colour" — one bullet, as though the boardwalk were a seventh prop. It is not. Every
+other prop is one object at one point; **the causeway is the only thing on a hole whose length is a
+property of the world**, so the deck had to be authored as a 2 m module and tiled, and tiling it
+with `mergeGraph` would have spent fifteen of `MAX_PROPS_PER_HOLE`'s twenty draw calls on a single
+crossing. `mergeGraphInstances` is what Phase C actually needed and what §4 does not mention: D7's
+`mergeGraph`, split at the seam so n placed copies of one graph merge to one draw call.
+
+The consequence worth carrying forward is that **the sim half and the render half of a crossing are
+separable, and shipped a day apart.** The deck was drivable, classified and tested before it was
+visible — correct to drive across and shaded as turf. That is a real state a build can be in, and
+`weights.bridge` reaching `surfaces.ts` while never reaching `ground.ts`'s splat texture is what
+made it possible. See §8.
 
 **One thing this spec got wrong, found by building it, and it is D3's whole premise.**
 
@@ -335,6 +350,14 @@ Red before green on every item, per the house rule — and this codebase's speci
 
 ## 8. What this leaves for afterwards
 
+- **The ground under the deck is still shaded as turf.** `weights.bridge` is computed by
+  `surfaces.ts` and read by nobody: `ground.ts` packs its splat texture as RGBA = green, corridor,
+  sand, water, and all four channels were already spoken for before `SurfaceId.Bridge` existed. The
+  boardwalk's planks now cover the deck, so this is cosmetic rather than misleading — but a cart
+  leaving the deck crosses six metres of *shoulder* that is `Bridge` underfoot and fairway-green to
+  look at. Closing it means re-encoding the splat (sand/water/bridge as an enum in one channel
+  rather than a flag each), which touches every branch of the ground shader and moves the gate
+  baseline. Worth its own decision, not worth smuggling into a prop change.
 - **Whether a bridged carry should count as playable in `validateHole`**, which would regenerate the
   course and is the natural sequel to D9.
 - **`CHASE_HEIGHT`**, still 3.6 m, still hiding the rider. Untouched by this and still wanting a

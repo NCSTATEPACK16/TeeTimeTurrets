@@ -817,3 +817,12 @@ club, a golfer, a decorative border, or any 3/4 or perspective "hero" view.
    **drivable** bridge is playable geometry under §1 and therefore cannot be a GLB from any source,
    Poly.pizza included — and the drivable crossing is not a bridge at all; see
    `docs/superpowers/specs/2026-09-08-course-props-and-the-drivable-crossing-design.md` §2.2.
+
+   **An eighth prop followed, and it is the first with `length`.** `boardwalk_section` is one 2 m
+   module of the causeway's deck rather than a whole crossing, because a crossing spans whatever its
+   pond is wide and no authored asset can be that long in advance. `src/render/props.ts` tiles it
+   along the segment `deriveCrossings` returns and `mergeGraphInstances` collapses the run to **one
+   draw call**, which is why the tiling did not cost the twenty-prop budget: a thirty-metre crossing
+   is one object, not fifteen. That helper is `mergeGraph` split at the seam rather than a second
+   implementation of it — §9's draw-call rule applied to a thing whose instance count is a property
+   of the world.

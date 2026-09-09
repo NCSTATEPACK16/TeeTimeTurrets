@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { buildGraph, mergeGraph } from "./primitiveGraph";
+import { buildGraph, mergeGraph, mergeGraphInstances } from "./primitiveGraph";
 import type { PrimitiveGraph, PrimitiveNode } from "./primitiveGraph";
 
 /**
@@ -373,6 +373,112 @@ describe("mergeGraph", () => {
     const material = merged.mesh.material as THREE.Material;
     let freed = 0;
     for (const resource of [geometry, material]) {
+      const original = resource.dispose.bind(resource);
+      resource.dispose = (): void => {
+        freed++;
+        original();
+      };
+    }
+    merged.dispose();
+    expect(freed).toBe(2);
+  });
+});
+
+/**
+ * `mergeGraphInstances` is `mergeGraph` for a thing with *length*.
+ *
+ * The causeway is the case that needed it. A crossing is a segment whose length is a property of the
+ * pond, not of the asset, so the boardwalk is one authored section tiled along it -- and a
+ * thirty-metre crossing tiled with `mergeGraph` would be fifteen draw calls, which is most of
+ * `MAX_PROPS_PER_HOLE` spent on one object. Merged across instances it is one, and that is the whole
+ * reason this exists rather than a loop at the call site.
+ *
+ * Each instance carries its **own** matrix rather than a shared stride, because the sections of a
+ * causeway do not sit at one height: the deck runs onto dry bank at both ends and the abutments are
+ * wherever the bank happens to be.
+ */
+describe("mergeGraphInstances", () => {
+  const section = (): PrimitiveGraph =>
+    graph(node({ name: "body", children: [node({ name: "post", slot: "tires", position: [0, 1, 0] })] }));
+
+  const at = (x: number, y: number, z: number): THREE.Matrix4 =>
+    new THREE.Matrix4().makeTranslation(x, y, z);
+
+  it("draws n instances as one object", () => {
+    const merged = mergeGraphInstances(section(), [at(0, 0, 0), at(0, 0, 2), at(0, 0, 4)]);
+    expect(meshes(merged.mesh).length).toBe(1);
+    expect(merged.mesh).toBeInstanceOf(THREE.Mesh);
+    merged.dispose();
+  });
+
+  it("keeps n times the triangles of one, so nothing was silently dropped", () => {
+    const one = mergeGraph(section());
+    const three = mergeGraphInstances(section(), [at(0, 0, 0), at(0, 0, 2), at(0, 0, 4)]);
+
+    const tris = (mesh: THREE.Mesh): number => {
+      const index = mesh.geometry.getIndex();
+      return (index ? index.count : mesh.geometry.getAttribute("position").count) / 3;
+    };
+    expect(tris(three.mesh)).toBe(tris(one.mesh) * 3);
+
+    one.dispose();
+    three.dispose();
+  });
+
+  it("puts each instance where its own matrix says, not all of them at the first", () => {
+    // The failure this catches is a merge that applies one matrix to every copy: the triangle count
+    // is right, the colours are right, and the whole causeway is stacked on its first section.
+    const merged = mergeGraphInstances(section(), [at(0, 0, 0), at(0, 0, 10)]);
+    const box = new THREE.Box3().setFromObject(merged.mesh);
+    const single = new THREE.Box3().setFromObject(mergeGraph(section()).mesh);
+
+    // Ten metres of separation has to show up as ten metres of extra extent along z.
+    expect(box.max.z - box.min.z).toBeCloseTo(single.max.z - single.min.z + 10, 5);
+    merged.dispose();
+  });
+
+  it("carries each instance's rotation, not just its translation", () => {
+    // A section rotated a quarter turn about +Y puts its length along x. A merge that kept only the
+    // translation column would leave every deck section square to the world and the causeway a
+    // staircase of squares beside its own centreline.
+    const wide = (): PrimitiveGraph => graph(node({ name: "body", params: [1, 1, 6] }));
+    const turned = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+    const merged = mergeGraphInstances(wide(), [turned]);
+    const box = new THREE.Box3().setFromObject(merged.mesh);
+
+    expect(box.max.x - box.min.x).toBeCloseTo(6, 5);
+    expect(box.max.z - box.min.z).toBeCloseTo(1, 5);
+    merged.dispose();
+  });
+
+  it("bakes slot colours per instance, the same as mergeGraph does per node", () => {
+    const merged = mergeGraphInstances(section(), [at(0, 0, 0), at(0, 0, 2)]);
+    const colour = merged.mesh.geometry.getAttribute("color");
+    expect(colour.count).toBe(merged.mesh.geometry.getAttribute("position").count);
+
+    const seen = new Set<string>();
+    for (let i = 0; i < colour.count; i++) {
+      seen.add(`${colour.getX(i).toFixed(4)},${colour.getY(i).toFixed(4)},${colour.getZ(i).toFixed(4)}`);
+    }
+    expect(seen.size).toBe(2);
+    merged.dispose();
+  });
+
+  it("refuses an empty instance list rather than returning an empty mesh", () => {
+    // A causeway with no sections is a derivation bug upstream, and a zero-triangle mesh added to
+    // the scene is the least debuggable way for it to surface.
+    //
+    // The message is matched tightly on purpose. Written as `/instance/i` this assertion went
+    // **green against a function that did not exist yet** -- `TypeError: mergeGraphInstances is not
+    // a function` contains the word. That is this repo's recurring defect in miniature, caught here
+    // by running it red first and reading what the red actually said.
+    expect(() => mergeGraphInstances(section(), [])).toThrow(/at least one instance/);
+  });
+
+  it("frees the merged geometry and its material", () => {
+    const merged = mergeGraphInstances(section(), [at(0, 0, 0), at(0, 0, 2)]);
+    let freed = 0;
+    for (const resource of [merged.mesh.geometry, merged.mesh.material as THREE.Material]) {
       const original = resource.dispose.bind(resource);
       resource.dispose = (): void => {
         freed++;

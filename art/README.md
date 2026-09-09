@@ -60,8 +60,17 @@ export_set({
     'distance_post':  'post_body',
     'cart_path_sign': 'sign_post',
     'footbridge':     'bridge_deck_c',
+    'boardwalk_section': 'boardwalk_deck',
 }, '.../src/entities/graphs/props.json', 'props')
 ```
+
+The boardwalk is the one prop with **length**, and two of its numbers are load-bearing outside the
+`.blend`. Its deck is 2.0 m along Three +Z and 6.0 m across, and `src/render/props.ts` tiles it at
+`BOARDWALK_SECTION_M` over a deck `2 * DECK_HALF_WIDTH` wide. Re-author either dimension and every
+crossing in the game gets gaps or turf shoulders down its middle, with nothing else failing —
+`props.test.ts` measures the shipped graph against both constants for exactly that reason. Its root
+also sits at `y = -0.05` so the deck's **top** is at zero: a section is placed at terrain height and
+has to be flush with the surface the cart drives on, not floating over it.
 
 The clubhouse GLB is a different path — the step list in `ASSET_PIPELINE.md` §6. Things that bite:
 

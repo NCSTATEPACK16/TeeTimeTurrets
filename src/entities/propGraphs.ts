@@ -45,6 +45,14 @@ export const PROP_NAMES = [
   "distance_post",
   "cart_path_sign",
   "footbridge",
+  /**
+   * The causeway's deck, as **one 2 m module** rather than a whole crossing. A crossing spans
+   * whatever its pond is wide, so this is the only prop in the set that is tiled: `props.ts` repeats
+   * it along the deck and `mergeGraphInstances` collapses the run to one draw call. Authored with
+   * its top face at local y = 0, so a section sat at `terrain.heightAt` is flush with the surface
+   * the cart actually drives on rather than floating over it.
+   */
+  "boardwalk_section",
 ] as const;
 
 export type PropName = (typeof PROP_NAMES)[number];
