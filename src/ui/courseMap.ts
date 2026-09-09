@@ -87,7 +87,13 @@ export class CourseMap {
   private readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly holes: readonly MapHole[];
+  /**
+   * Resolved on the first open, not on construction. Sampling a hole is tens of thousands of
+   * `surfaceAt` calls, and paying that on every round entry taxes every player for a panel most
+   * of them have not asked for. Pressing M is the moment they did ask.
+   */
+  private readonly holesFactory: () => readonly MapHole[];
+  private holesCache: readonly MapHole[] | null = null;
   private readonly still: HTMLCanvasElement;
   private zoomMode: MapZoom | null = null;
   /** What the cached still was drawn for. A miss on any of these rebuilds it. */
@@ -95,7 +101,7 @@ export class CourseMap {
   private projection: MapProjection | null = null;
   private readonly scratch = { x: 0, z: 0 };
 
-  constructor(container: HTMLElement, holes: readonly MapHole[]) {
+  constructor(container: HTMLElement, holes: () => readonly MapHole[]) {
     this.root = document.createElement("div");
     this.root.className = "course-map";
     this.root.hidden = true;
@@ -108,7 +114,7 @@ export class CourseMap {
     const ctx = this.canvas.getContext("2d");
     if (!ctx) throw new Error("course map needs a 2d canvas context");
     this.ctx = ctx;
-    this.holes = holes;
+    this.holesFactory = holes;
     this.still = document.createElement("canvas");
   }
 
@@ -148,8 +154,9 @@ export class CourseMap {
     const height = this.root.clientHeight;
     if (width <= 0 || height <= 0) return;
 
-    const framed = this.zoomMode === "course" ? this.holes : this.holes.filter((h) => h.number === focusHole);
-    const shown = framed.length > 0 ? framed : this.holes;
+    const holes = (this.holesCache ??= this.holesFactory());
+    const framed = this.zoomMode === "course" ? holes : holes.filter((h) => h.number === focusHole);
+    const shown = framed.length > 0 ? framed : holes;
 
     const key = `${this.zoomMode}|${focusHole}|${width}x${height}`;
     if (this.stillKey !== key) {

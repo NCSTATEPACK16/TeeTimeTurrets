@@ -92,7 +92,7 @@ export class RoundScreen implements Screen {
     // Shares #nameplates: both are world-anchored chips over the same scene, and H17 follows H13's
     // projection (UI-SPEC §2). Stacking order is the container's, not theirs.
     this.pinMarker = new PinMarker(nameplateRoot);
-    this.courseMap = new CourseMap(nameplateRoot, [buildMapHole(sim)]);
+    this.courseMap = new CourseMap(nameplateRoot, () => [buildMapHole(sim)]);
     // UI-only, so it is a listener here rather than a PlayerIntent: UI-SPEC section 1 has src/ui
     // reading sim state and never mutating it, and opening a map is not something the sim needs
     // to know. On window because a pointer-locked player has no focused element to hit.
@@ -352,13 +352,12 @@ const mapMarkers: MapMarker[] = [];
  * Run once per screen entry, never per frame: a hole is generated from a seed and does not move,
  * which is the same reason `CourseMap` rasterises it to an offscreen canvas exactly once.
  *
- * The counts are lower than the plan's. `tools/holePlan.ts` renders a 1000 px print of a single
- * hole and can afford 200 surface samples and 80 contour samples; this is a HUD panel a few
- * hundred pixels across, where the extra detail is below a pixel and costs a longer hitch the
- * first time `M` is pressed.
+ * Surface sampling matches the plan's 200. Below that the fill is visibly stair-stepped at panel
+ * size -- a run is a rectangle, so the only cure for a blocky edge is more of them. Contours are
+ * coarser than the plan's 80 because they are a faint texture here rather than something measured.
  */
-const MAP_SURFACE_SAMPLES = 120;
-const MAP_CONTOUR_SAMPLES = 48;
+const MAP_SURFACE_SAMPLES = 200;
+const MAP_CONTOUR_SAMPLES = 64;
 const MAP_TARGET_CONTOURS = 7;
 const MAP_CENTRELINE_STEPS = 96;
 
