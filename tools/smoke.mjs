@@ -154,6 +154,10 @@ const read = () =>
       firstPlateHidden: document.querySelector("#nameplates .nameplate")?.hidden ?? null,
       firstPlateTransform: document.querySelector("#nameplates .nameplate")?.style.transform ?? null,
       firstPlateFillWidth: document.querySelector("#nameplates .nameplate-fill")?.style.width ?? null,
+      // H13's distance line, same argument again: the constructor leaves it empty, so only the
+      // per-frame path can have put a distance in it.
+      firstPlateDistance: document.querySelector("#nameplates .nameplate-distance")?.textContent ?? null,
+      firstPlateClass: document.querySelector("#nameplates .nameplate")?.className ?? null,
       // H17. As with the plates above, the transform and the label can only have been written by
       // the per-frame path (RoundScreen.drawPinMarker -> PinMarker.set): the constructor leaves
       // both empty, so an element-count check could not tell "wired up" from "built and forgotten".
@@ -332,6 +336,19 @@ check(
   "bot's health fill is a percentage width",
   /^\d+%$/.test(plated.firstPlateFillWidth ?? ""),
   `${plated.firstPlateFillWidth}`,
+);
+// The tier grammar from src/ui/plateState.ts: whole metres under 100, `~` and a multiple of 25
+// out to 300. A bot on screen at the tee is well inside that, so an empty string here is a
+// failure rather than a legitimately-distant plate.
+check(
+  "bot's plate carries a distance in the tier grammar",
+  /^~?\d+ m$/.test(plated.firstPlateDistance ?? ""),
+  `${plated.firstPlateDistance}`,
+);
+check(
+  "bot's plate carries a team class",
+  /nameplate-(ally|enemy)/.test(plated.firstPlateClass ?? ""),
+  `${plated.firstPlateClass}`,
 );
 
 console.log("=== PIN MARKER (H17) ===");

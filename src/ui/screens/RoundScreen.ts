@@ -12,6 +12,9 @@ import type { Hud } from "../hud";
 import { drawMatchResults, readMatchResults } from "../matchResults";
 import type { MatchResultsDom } from "../matchResults";
 import { Nameplates } from "../nameplates";
+import type { PlateTeam } from "../plateState";
+import { hasLineOfSight } from "../../sim/lineOfSight";
+import type { HeightSampler } from "../../sim/lineOfSight";
 import { PinMarker } from "../pinMarker";
 import { on } from "../dom";
 import type { Screen } from "../../app/ScreenManager";
@@ -56,6 +59,14 @@ export class RoundScreen implements Screen {
    * make the scene gate's screenshot depend on how fast the machine ran.
    */
   private elapsedSeconds = 0;
+  /**
+   * Wall-clock milliseconds at which each bot was last in line of sight, indexed by bot. Drives
+   * the enemy plate's fade-out; an index that has never been seen is simply absent.
+   *
+   * A wall clock rather than `elapsedSeconds` on purpose: this is a presentation fade, and unlike
+   * the renderer's cosmetic cycles it must not be reproducible frame-for-frame in the scene gate.
+   */
+  private readonly lastSeenAtMs: number[] = [];
   private readonly teardown: (() => void)[] = [];
 
   constructor(options: RoundScreenOptions) {
@@ -66,7 +77,13 @@ export class RoundScreen implements Screen {
     const { renderer, sim, hudRoot, nameplateRoot } = this.options;
 
     this.render = new RenderScene(renderer, sim.terrain, sim.surfaces, sim.targets.length, sim.bots.length);
-    this.nameplates = new Nameplates(nameplateRoot, sim.bots.map((_, i) => `BOT ${i + 1}`));
+    this.nameplates = new Nameplates(
+      nameplateRoot,
+      sim.bots.map((_, i) => `BOT ${i + 1}`),
+      // Every bot is an opponent until `src/sim/match.ts` brings real sides.
+      sim.bots.map(() => "enemy" as PlateTeam),
+    );
+    this.lastSeenAtMs.length = 0;
     // Shares #nameplates: both are world-anchored chips over the same scene, and H17 follows H13's
     // projection (UI-SPEC §2). Stacking order is the container's, not theirs.
     this.pinMarker = new PinMarker(nameplateRoot);
@@ -249,10 +266,21 @@ export class RoundScreen implements Screen {
     const { sim } = this.options;
     const view = this.view;
     if (!view || !this.render || !this.nameplates) return;
+    const now = performance.now();
     for (let i = 0; i < view.botCarts.length; i++) {
       const bot = sim.bots[i];
       if (bot === undefined) continue;
-      placeNameplate(this.render, this.nameplates, i, view.botCarts[i]!, bot.health);
+      placeNameplate(
+        this.render,
+        this.nameplates,
+        i,
+        view.cart,
+        view.botCarts[i]!,
+        bot.health,
+        sim.terrain,
+        this.lastSeenAtMs,
+        now,
+      );
     }
   }
 }
@@ -264,22 +292,69 @@ const plateScratch = { x: 0, y: 0 };
 const pinAnchorScratch = { x: 0, y: 0, z: 0 };
 const pinHudScratch = createHudStateScratch();
 
+/** Reused per cart per frame; the render loop is covered by the no-allocation rule. Mutable so it
+ *  can be rewritten in place, then read through the readonly `PlateSource` view. */
+const plateSourceScratch = {
+  team: "enemy" as PlateTeam,
+  distanceM: 0,
+  healthFraction: 0,
+  onScreen: false,
+  hasLineOfSight: false,
+  secondsSinceLastSeen: 0,
+};
+
 /** Module-level rather than nested inside the method: a function declared inside a function body
  *  allocates a fresh closure on every call, and this one runs once per cart per frame. */
 function placeNameplate(
   render: RenderScene,
   plates: Nameplates,
   index: number,
+  player: CartTransform,
   cart: CartTransform,
   health: { readonly hp: number; readonly max: number },
+  terrain: HeightSampler,
+  lastSeenAtMs: number[],
+  nowMs: number,
 ): void {
-  const visible = render.projectToScreen(
+  const onScreen = render.projectToScreen(
     cart.position.x,
     cart.position.y + NAMEPLATE_HEIGHT,
     cart.position.z,
     plateScratch,
   );
-  plates.setPlate(index, plateScratch.x, plateScratch.y, visible, health.max > 0 ? health.hp / health.max : 0);
+
+  // Sight is measured cart to cart at plate height, not from the camera: the chase camera floats
+  // behind and above the player, so a ridge the cart is actually hiding behind would read as
+  // clear from the camera's vantage. The plate answers "can I see them", not "can the camera".
+  const seen = hasLineOfSight(
+    terrain,
+    player.position.x,
+    player.position.y + NAMEPLATE_HEIGHT,
+    player.position.z,
+    cart.position.x,
+    cart.position.y + NAMEPLATE_HEIGHT,
+    cart.position.z,
+  );
+  if (seen) lastSeenAtMs[index] = nowMs;
+  const lastSeen = lastSeenAtMs[index];
+
+  // Flat rather than three-dimensional, for the reason hudState's `flatDistance` gives: a range
+  // is a distance along the ground, and folding in the drop to a cart below you overstates it.
+  plateSourceScratch.distanceM = Math.hypot(
+    cart.position.x - player.position.x,
+    cart.position.z - player.position.z,
+  );
+  // Every bot is an opponent today. Real sides arrive with `src/sim/match.ts`; until then this
+  // is the honest answer rather than a team system that does not exist yet.
+  plateSourceScratch.team = "enemy";
+  plateSourceScratch.healthFraction = health.max > 0 ? health.hp / health.max : 0;
+  plateSourceScratch.onScreen = onScreen;
+  plateSourceScratch.hasLineOfSight = seen;
+  // Never seen at all reads as infinitely stale, so a plate cannot appear before its first sighting.
+  plateSourceScratch.secondsSinceLastSeen =
+    lastSeen === undefined ? Number.POSITIVE_INFINITY : (nowMs - lastSeen) / 1000;
+
+  plates.setPlate(index, plateScratch.x, plateScratch.y, plateSourceScratch);
 }
 
 const scratchA = new THREE.Quaternion();

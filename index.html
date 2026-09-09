@@ -25,6 +25,10 @@
         --accent: #ef8a2b;          /* the single accent, reserved for the primary action */
         --accent-ink: #14181c;
         --hp-green: #46c46a;
+        /* H13 team colours. Blue and orange rather than green and red: the health bar already
+           owns green-to-red, and a red name over a red bar is unreadable at plate size. */
+        --team-ally: #6fb6ff;
+        --team-enemy: #ff9a5c;
         --ammo-orange: #ff9d3d;
         --danger: #e8564a;
         --status: #ffe27a;
@@ -134,6 +138,18 @@
         background: var(--track);
       }
       .nameplate-fill { height: 100%; width: 100%; background: var(--hp-green); }
+      /* H13's distance line. `:empty` collapses it rather than leaving a gap, which is what
+         happens past 300 m where plateState.ts drops the number on purpose. */
+      .nameplate-distance {
+        font: 600 10px system-ui, sans-serif;
+        letter-spacing: 0.06em;
+        opacity: 0.82;
+      }
+      .nameplate-distance:empty { display: none; }
+      /* Team colour is on the name alone: the plate's own panel stays neutral so a row of plates
+         reads as one family, and the health bar keeps its own red-to-green meaning. */
+      .nameplate-ally .nameplate-name { color: var(--team-ally); }
+      .nameplate-enemy .nameplate-name { color: var(--team-enemy); }
 
       /* H17, the pin marker. Shares #nameplates with the plates -- both are world-anchored chips
          over the same scene. Never hidden: it is clamped to the edge of frame when the pin is off
