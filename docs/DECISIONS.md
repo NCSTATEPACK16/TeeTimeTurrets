@@ -303,3 +303,63 @@ Tanks uses the same pattern at scale — `*.selftest.mjs` files run by
 `ROADMAP.md` Phase 1 lists Vitest. Either works, but the selftest pattern is already
 proven here, adds no dependency, and matches the project we are deliberately mirroring.
 Prefer it unless something specifically needs a framework's fixtures or mocking.
+
+## Arena mode, and a course that is one place
+
+Decided 9 Sep 2026, in the session that built the course map. This is the largest scope
+change since Phase 0 and it deliberately reverses a statement in the source.
+
+**There is a second mode, and it is not golf.** `Arena` is a timed, team-based cart
+deathmatch played across all eighteen holes joined into one drivable course. Kills score
+**points**, which decide the individual MVP; deaths score **strokes**, which are
+team-aggregated, and the team with the **fewest** strokes wins. There is no played ball,
+no scorecard, no par and no holing out — the cart's golf balls are ammunition and that is
+the only ball in the mode. Carts start spread across the eighteen holes and respawn at a
+random tee.
+
+The scoring holds a deliberate tension: the team wins by *not dying* while the MVP badge
+goes to whoever kills most. That is the design, not an oversight — do not "fix" it by
+making both awards agree.
+
+**This reverses `ROADMAP.md`'s mode-scoping rule.** That rule reads "STROKE runs with
+damage and ammo disabled," justified because finite ammo in stroke play can strand a
+player mid-hole with no legal way to finish. Arena keeps damage and ammo on, and the match
+timer is what retires the stranding problem: a match ends on the clock whatever state a
+cart is in. The rule still stands for stroke play if stroke play keeps running.
+
+**Stroke play is not decided.** It is untouched — its per-hole isolated fields, 1 m cells
+and ball physics all still ship. Whether the two modes ever share a world is explicitly
+deferred rather than answered. Do not delete the golf code on the strength of this entry,
+and do not assume it is being maintained either.
+
+**`course.ts`'s header is qualified, not overturned.** It says "a course is nine holes,
+not one nine-hole map. Each HoleSpec owns its own field, terrain and surfaces, and playing
+a round loads one at a time." That remains true of **stroke play**, which is what it was
+written about. Arena adds a course frame — `src/sim/courseLayout.ts` — that places all
+eighteen fields relative to each other and to a clubhouse. `HoleSpec` is unchanged and
+still origin-centred; the frame is a separate layer over it, not a rewrite of it.
+
+**Fields are expected to overlap; corridors are not.** Nine fields are 47 ha of ground and
+the loop they sit on is 36 ha, so they cannot all fit — but the playable corridors are
+ribbons about 40 m wide using 7.5 ha of that 36. Every clearance rule belongs on the
+corridor, never the field, and the contiguous heightfield is base noise with every hole's
+corridor carved into it. A future check that reports overlapping *fields* as a defect is
+the check being wrong.
+
+**Holes may converge on the clubhouse apron, and nowhere else.** Returning nines means 1,
+9, 10 and 18 all start or finish on the same ground. `inspectLayout` exempts corridors
+whose closest approach falls within `CLUBHOUSE_APRON_M` for exactly this reason.
+
+**2 m heightfield cells are legal where no ball is simulated.** `course.ts` requires cells
+"near 1.0 m" because "a coarser cell makes triangle seams big enough for the 0.15 m ball to
+trip over." That constraint is about the *ball*, and Arena has none — a cart capsule is an
+order of magnitude larger. Arena's contiguous course runs 2 m cells, which takes a 1,300 m
+course from ~3.4M ground triangles to ~845k and its collider from ~1.69M cells to ~422k,
+resident in one Rapier heightfield with no streaming. **Stroke play keeps 1 m.** If golf
+ever moves onto this world, the cell size moves back or the ball trips.
+
+**The roadmap was jumped deliberately.** The map is `UI-SPEC.md` H8, listed under Phase 4;
+the clubhouse is Phase 3.5; the contiguous course was in no phase at all. Phase 3's two
+open items — mode-scoping and the pickup trio — are untouched by the map and nameplate
+work, so there was no technical reason to wait. Recorded here so a reader of `ROADMAP.md`
+does not find shipped Phase 4 work with no explanation.
