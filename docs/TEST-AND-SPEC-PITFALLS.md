@@ -12,7 +12,8 @@ this file holds the ways we have violated them while believing we had not.
 
 ## 1. The recurring one: a test that passes for a reason unrelated to its name
 
-Six instances so far. This is the defect class this repo produces, and it produces it
+Seven instances in the table, and the turret session added four more that are described in that
+spec's own header rather than here. This is the defect class this repo produces, and it produces it
 faster than review catches it. In each case the suite was green, the name described the
 right behavior, and the assertion was measuring something else entirely.
 
@@ -24,6 +25,13 @@ right behavior, and the assertion was measuring something else entirely.
 | 4 | `keeps the score a cart died on` | A cart's score survives its death | The tick that killed the bot was the same tick that ended the match, and that tick returns before touching any cart. **No death was ever processed.** It would have passed if the respawn path zeroed `strokesTaken` — precisely what it existed to rule out. |
 | 5 | smoke: `results overlay names an outcome` | The overlay writes a headline | `index.html` shipped `<h1 id="results-headline">DRAW</h1>`. `headline.length > 0` is true from **static markup, before any JS runs**. It would pass with the entire feature deleted. |
 | 6 | smoke: `results overlay is hidden while the match runs` | The overlay starts hidden | `#match-results` carries `hidden` in markup. True at boot with the feature absent. |
+| 7 | `refuses an empty instance list` | `mergeGraphInstances([])` throws a deliberate error | `expect(...).toThrow(/instance/i)` — satisfied by `TypeError: mergeGraphInstances is not a function`. It went **green against a function that had not been written yet**, in the same run that showed its six siblings red. The word it matched was in the name of the missing function. Fixed by matching the message tightly (`/at least one instance/`). |
+
+Number 7 is the cheapest one here to reproduce and the most useful to have seen. It cost nothing —
+the test was red-first, as the rule says, and it was still wrong; what caught it was **reading** the
+red line rather than counting the red lines. A loose `toThrow` regex is the easiest way in this
+codebase to write an assertion that can never fail: every `TypeError` a missing symbol produces
+carries that symbol's own name.
 
 ### What actually prevents this
 

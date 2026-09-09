@@ -139,3 +139,31 @@ export function polygonSignedDistance(x: number, z: number, poly: Polygon): numb
   const d = polygonDistance(x, z, poly);
   return pointInPolygon(x, z, poly) ? -d : d;
 }
+
+/**
+ * Whether a point is water. **The single definition** -- `surfaces.surfaceAt`, `validateHole` and
+ * `crossing.deriveCrossings` all call this rather than each testing the polygons themselves.
+ *
+ * The green clause is what makes that sharing necessary rather than merely tidy. Hole 13's island
+ * green is a green sitting *inside* a water polygon: polygons here have no holes, so the moat is
+ * drawn solid and the green is punched out of it by classification order. A validator that tested
+ * the polygons directly would find the cup inside water and reject the hole -- the archetype would
+ * have been unbuildable, and the failure would have looked like a placement bug rather than a
+ * disagreement about what "water" means.
+ *
+ * It lives here, in the leaf, rather than in `course.ts` where it was written. `crossing.ts` needs
+ * it and `terrain.ts` needs `crossing.ts`, so leaving it in `course.ts` made the three a value
+ * cycle. `course.ts` re-exports the name, so every existing importer is unaffected. The parameter
+ * is structural rather than a `HoleSpec` for the same reason: this file stays a leaf.
+ */
+export function isWaterAt(
+  hole: { readonly green: Ellipse; readonly water: readonly Polygon[] },
+  x: number,
+  z: number,
+): boolean {
+  if (pointInEllipse(x, z, hole.green)) return false;
+  for (const poly of hole.water) {
+    if (pointInPolygon(x, z, poly)) return true;
+  }
+  return false;
+}

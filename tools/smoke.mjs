@@ -154,6 +154,12 @@ const read = () =>
       firstPlateHidden: document.querySelector("#nameplates .nameplate")?.hidden ?? null,
       firstPlateTransform: document.querySelector("#nameplates .nameplate")?.style.transform ?? null,
       firstPlateFillWidth: document.querySelector("#nameplates .nameplate-fill")?.style.width ?? null,
+      // H17. As with the plates above, the transform and the label can only have been written by
+      // the per-frame path (RoundScreen.drawPinMarker -> PinMarker.set): the constructor leaves
+      // both empty, so an element-count check could not tell "wired up" from "built and forgotten".
+      pinMarkers: document.querySelectorAll("#nameplates .pin-marker").length,
+      pinMarkerDistance: document.getElementById("pin-marker-distance")?.textContent ?? null,
+      pinMarkerTransform: document.getElementById("pin-marker")?.style.transform ?? null,
       hudCombatHidden: document.getElementById("hud-combat").hidden,
       hudAmmo: document.getElementById("ammo-count").textContent,
       cart: { ...sim.cart.position },
@@ -326,6 +332,31 @@ check(
   "bot's health fill is a percentage width",
   /^\d+%$/.test(plated.firstPlateFillWidth ?? ""),
   `${plated.firstPlateFillWidth}`,
+);
+
+console.log("=== PIN MARKER (H17) ===");
+check("exactly one pin marker", plated.pinMarkers === 1, `${plated.pinMarkers}`);
+// A number and a unit, not a placeholder and not an empty string. The distance is derived from the
+// ball and the cup, so at the tee of a 90 m hole it is a two-digit figure rather than 0.
+check(
+  "the pin marker carries a distance in whole metres",
+  /^\d+ m$/.test(plated.pinMarkerDistance ?? ""),
+  `${plated.pinMarkerDistance}`,
+);
+check(
+  "the pin marker reports a real distance rather than zero at the tee",
+  Number.parseInt(plated.pinMarkerDistance ?? "0", 10) > 10,
+  `${plated.pinMarkerDistance}`,
+);
+const pinTransform = plated.pinMarkerTransform?.match(/translate3d\(([-\d.]+)px, ([-\d.]+)px, 0(?:px)?\)/) ?? null;
+check(
+  "the pin marker is placed inside the viewport, clamped rather than hidden",
+  pinTransform !== null &&
+    Number(pinTransform[1]) >= 0 &&
+    Number(pinTransform[1]) <= canvas.w &&
+    Number(pinTransform[2]) >= 0 &&
+    Number(pinTransform[2]) <= canvas.h,
+  `${plated.pinMarkerTransform}`,
 );
 
 // The visible === false branch (a point outside the camera's view) is reachable independent of

@@ -5,6 +5,7 @@ import type { PlayerIntent } from "../input/InputSource";
 import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
+import { PIN_SHAPE, Pin } from "./entities/Pin";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { PARTS_PER_TARGET, Target } from "./entities/Target";
@@ -162,10 +163,17 @@ const TARGET_PLACEMENTS: readonly { along: number; lateral: number }[] = [
   { along: 0.75, lateral: 7 },
 ];
 
-/** KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one. */
+/**
+ * KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one.
+ *
+ * The two slope angles are exported because the causeway is designed against them: spec §2.2's
+ * whole argument is that at a 1.0 m heightfield cell there is no deck width that behaves like a
+ * bridge, only shoulders the cart drives up (under the climb limit) or cannot leave (over it). A
+ * second copy of 32 in a terrain test would let the crossing and the controller drift apart.
+ */
 const CHARACTER_OFFSET = 0.02;
-const CART_MAX_SLOPE_CLIMB_DEG = 45;
-const CART_MIN_SLOPE_SLIDE_DEG = 32;
+export const CART_MAX_SLOPE_CLIMB_DEG = 45;
+export const CART_MIN_SLOPE_SLIDE_DEG = 32;
 const CART_AUTOSTEP_HEIGHT = 0.45;
 const CART_AUTOSTEP_MIN_WIDTH = 0.25;
 const CART_SNAP_TO_GROUND = 0.6;
@@ -251,6 +259,14 @@ export class Sim {
   private readonly rigs: CartRig[] = [];
   private controller!: RAPIER.KinematicCharacterController;
   private groundCollider!: RAPIER.Collider;
+  /**
+   * The standing pin, and the collider that makes it solid. Both are rebuilt by `loadHole` exactly
+   * as the ground collider is; the collider is nulled the instant the pin is felled, so
+   * `pinCollider === null` and `pin.standing === false` are the same fact rather than two.
+   */
+  private readonly pin = new Pin();
+  private pinBody!: RAPIER.RigidBody;
+  private pinCollider: RAPIER.Collider | null = null;
   /** The hole this sim is playing. Swapped wholesale by `loadHole`. */
   terrain: Terrain;
   surfaces: Surfaces;
@@ -323,6 +339,11 @@ export class Sim {
   lastShotWasStrike = false;
   /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
   private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  /**
+   * Filled by `computedCollision` rather than allocated per obstacle, per the no-allocation rule.
+   * One instance is enough: it is read and discarded inside the loop that fills it.
+   */
+  private readonly cartCollisionScratch = new RAPIER.CharacterCollision();
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly botTarget = { x: 0, z: 0, dead: false };
   /** Two, not one: the cart and the ball are at different positions within the same tick. */
@@ -382,6 +403,7 @@ export class Sim {
     sim.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     sim.world.timestep = FIXED_DT;
     sim.buildGround();
+    sim.buildPin();
 
     const tee = terrain.teePosition;
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -401,7 +423,7 @@ export class Sim {
     // it made the player's own resting ball a hazard: the cart spawns behind the tee, so driving
     // forward ran it into the ball and cost strokes, which at 2 x par health is lethal. An
     // unregistered handle falls through processContacts's own `if (!a || !b) return`.
-    sim.world.createCollider(ballColliderDesc, sim.ball);
+    const courseBallCollider = sim.world.createCollider(ballColliderDesc, sim.ball);
 
     sim.controller = sim.world.createCharacterController(CHARACTER_OFFSET);
     sim.controller.setUp({ x: 0, y: 1, z: 0 });
@@ -426,10 +448,14 @@ export class Sim {
       registry: sim.registry,
       stats: sim.stats,
       onCartKilled: (cart) => sim.killCart(cart),
+      onPinStruck: () => sim.fellPin(),
     };
     for (const pooled of sim.ballPool.all) {
       sim.registry.registerBall(pooled.body.collider(0).handle, pooled.body);
     }
+    // Registered as `courseBall`, not `ball`: see the comment on the collider above and on `Actor`.
+    // It is here so a played ball can knock the pin down, and for nothing else.
+    sim.registry.registerCourseBall(courseBallCollider.handle, sim.ball);
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
       const bot = new Cart({ maxHealth: 2 * hole.par });
@@ -467,6 +493,71 @@ export class Sim {
       .setFriction(0.8)
       .setRestitution(0.15);
     this.groundCollider = this.world.createCollider(groundDesc);
+  }
+
+  /**
+   * Stands the pin in the cup: a fixed body with one thin cylinder collider. Split out of `create`
+   * for the same reason `buildGround` is -- `loadHole` has to redo exactly this and nothing else.
+   *
+   * The collider is what makes the flagstick-in rule real. `isInCup` is not touched and gains no
+   * exception: at `PIN_SHAPE.radius` the pole holds a ball's centre 0.175 m from the cup centre,
+   * well inside `CUP_RADIUS`, so a putt can still drop with the pin standing. See `Pin.ts` for the
+   * inequality and `world.props.test.ts` for it under test.
+   *
+   * Collision events are for balls only -- fired ammo and the played course ball, both dynamic, so
+   * Rapier's default active pairs cover them. A cart never reaches this collider's narrow phase: the
+   * character controller stops it `CHARACTER_OFFSET` short of touching, which is wider than the
+   * prediction distance a contact manifold needs. `checkPinRun` reads the controller's own report
+   * instead, and `combat.ts` deliberately carries no cart branch for the pin.
+   */
+  private buildPin(): void {
+    const cup = this.terrain.cupPosition;
+    this.pinBody = this.world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(cup.x, cup.y + PIN_SHAPE.halfHeight, cup.z),
+    );
+    this.pinCollider = this.world.createCollider(
+      RAPIER.ColliderDesc.cylinder(PIN_SHAPE.halfHeight, PIN_SHAPE.radius)
+        .setFriction(0.4)
+        .setRestitution(0.45)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+      this.pinBody,
+    );
+    this.registry.registerPin(this.pinCollider.handle, this.pin);
+    this.pin.stand();
+  }
+
+  /**
+   * Takes the pin out of the world. The body goes with the collider rather than being left as an
+   * empty shell: `loadHole` builds a fresh pair at the new hole's cup, and a body kept here would
+   * accumulate one per hole with nothing attached to it.
+   */
+  private removePin(): void {
+    if (this.pinCollider !== null) {
+      this.registry.unregisterPin(this.pinCollider.handle);
+      this.world.removeCollider(this.pinCollider, false);
+      this.pinCollider = null;
+    }
+    this.world.removeRigidBody(this.pinBody);
+  }
+
+  /**
+   * Fells the pin: the collider goes, the body stays until the hole is over. That is the whole
+   * mechanic -- a felled pin deflects nothing, and a cart can drive over the cup it was blocking.
+   *
+   * Down for the hole, up on the next: `loadHole` is the only thing that stands it back up, and
+   * `reset()` deliberately does not, so a player cannot re-tee to get the pin back.
+   */
+  private fellPin(): void {
+    if (!this.pin.fell()) return;
+    if (this.pinCollider === null) return;
+    this.registry.unregisterPin(this.pinCollider.handle);
+    this.world.removeCollider(this.pinCollider, false);
+    this.pinCollider = null;
+  }
+
+  /** True while the pin is up. What the renderer reads to pose the flagstick; no handle escapes. */
+  get pinStanding(): boolean {
+    return this.pin.standing;
   }
 
   /**
@@ -566,9 +657,12 @@ export class Sim {
    */
   loadHole(spec: HoleSpec): void {
     this.world.removeCollider(this.groundCollider, false);
+    this.removePin();
     this.terrain = createTerrain(spec);
     this.surfaces = createSurfaces(spec, this.terrain);
     this.buildGround();
+    // Stood back up here and nowhere else: a felled pin is down for the hole it was felled on.
+    this.buildPin();
     this.lastSafePosition = { ...this.terrain.teePosition };
 
     // Stale in-flight/landed balls and the bucket's old-hole position must not survive into the
@@ -797,6 +891,7 @@ export class Sim {
 
     this.controller.computeColliderMovement(rig.collider, this.moveScratch);
     const corrected = this.controller.computedMovement();
+    this.checkPinRun(rig);
 
     const p = rig.cart.position;
     const half = this.terrain.spec.fieldSize / 2 - CART_COLLIDER.radius;
@@ -806,6 +901,30 @@ export class Sim {
 
     if (this.controller.computedGrounded()) rig.fallSpeed = 0;
     rig.body.setNextKinematicTranslation(p);
+  }
+
+  /**
+   * Fells the pin if this cart's movement ran into it.
+   *
+   * Read off the character controller rather than out of the collision event queue, and that is not
+   * a preference. The controller resolves the cart's movement so it stops `CHARACTER_OFFSET`
+   * (0.02 m) short of whatever it hits, which is far wider than the narrow phase's prediction
+   * distance -- so a cart pressed against the pin generates a *blocked movement* but no contact
+   * manifold and no event. `computedCollision` is where the obstacle it actually hit is reported.
+   *
+   * Called immediately after `computeColliderMovement`, because that is the only call these results
+   * are valid for: the controller keeps one set of collisions, overwritten by the next cart's move.
+   */
+  private checkPinRun(rig: CartRig): void {
+    if (this.pinCollider === null || rig.cart.dead) return;
+    const pinHandle = this.pinCollider.handle;
+    for (let i = 0; i < this.controller.numComputedCollisions(); i++) {
+      const hit = this.controller.computedCollision(i, this.cartCollisionScratch);
+      if (hit?.collider?.handle === pinHandle) {
+        this.fellPin();
+        return;
+      }
+    }
   }
 
   /**

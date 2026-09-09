@@ -1,5 +1,6 @@
-import { isWaterAt } from "./course";
 import type { HoleSpec } from "./course";
+import { isWaterAt } from "./hazards";
+import { deriveCrossings, isOnCauseway } from "./crossing";
 import { ellipseEdgeDistance, pointInEllipse } from "./hazards";
 import { hashChannel } from "./rng";
 import { createNearestPoint } from "./spline";
@@ -23,6 +24,12 @@ export enum SurfaceId {
   Rough = "rough",
   Sand = "sand",
   Water = "water",
+  /**
+   * The drivable crossing: a causeway carrying the corridor over water (spec D5). Deck and
+   * shoulders alike -- the shoulders are ground the causeway raised above the pond, and a cart
+   * standing on one must not be charged a water stroke for it.
+   */
+  Bridge = "bridge",
 }
 
 export interface SurfaceTuning {
@@ -74,10 +81,14 @@ export interface SurfaceWeights {
   sand: number;
   /** 1 where `surfaceAt` returns Water, else 0. */
   water: number;
+  /** 1 where `surfaceAt` returns Bridge, else 0. Hard-edged like `sand`: a plank deck against open
+   *  water is the most abrupt boundary on the course, and blending it would leave a ball drifting
+   *  to a halt somewhere between the two. */
+  bridge: number;
 }
 
 export function createSurfaceWeights(): SurfaceWeights {
-  return { green: 0, corridor: 0, sand: 0, water: 0 };
+  return { green: 0, corridor: 0, sand: 0, water: 0, bridge: 0 };
 }
 
 /** Nested lerp, green -> fairway -> rough, using the same weights the height budget uses. */
@@ -103,6 +114,9 @@ export const SURFACES: Readonly<Record<SurfaceId, SurfaceTuning>> = {
   [SurfaceId.Rough]: { rolling: 0.22, bounceScale: 0.45, cartSpeedScale: 0.72, isHazard: false },
   [SurfaceId.Sand]: { rolling: 0.55, bounceScale: 0.12, cartSpeedScale: 0.5, isHazard: false },
   [SurfaceId.Water]: { rolling: 0.9, bounceScale: 0.05, cartSpeedScale: 0.3, isHazard: true },
+  // Planks, not turf: harder and faster than a green, and no drag on a cart at all. A ball that
+  // lands on a deck runs, which is the point -- a crossing you can putt across is a route.
+  [SurfaceId.Bridge]: { rolling: 0.04, bounceScale: 0.95, cartSpeedScale: 1.0, isHazard: false },
 };
 
 /**
@@ -136,6 +150,9 @@ export interface Surfaces {
 export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
   // Closure-owned scratch: both functions run inside the fixed tick.
   const nearestScratch: NearestPoint = createNearestPoint();
+  // Derived once per hole, after routing. `deriveCrossings` is a pure function of the spec and is
+  // not reachable from `validateHole` -- spec D9, and the reason routing does not move.
+  const crossings = deriveCrossings(spec);
 
   /**
    * 0 on the green, 1 off it.
@@ -187,6 +204,11 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
    */
   function surfaceAt(worldX: number, worldZ: number): SurfaceId {
     if (pointInEllipse(worldX, worldZ, spec.green)) return SurfaceId.Green;
+    // **Before water, and that ordering is the whole of the crossing.** A causeway is by
+    // construction inside a water polygon, so asking "is this water?" first classifies the entire
+    // deck as a hazard and charges a stroke to everything that drives across it. One line, and
+    // `surfaces.test.ts` goes red with these two swapped.
+    if (isOnCauseway(crossings, worldX, worldZ)) return SurfaceId.Bridge;
     if (isWaterAt(spec, worldX, worldZ)) return SurfaceId.Water;
     if (isSand(worldX, worldZ)) return SurfaceId.Sand;
     return corridorWeight(worldX, worldZ) < 0.5 ? SurfaceId.Fairway : SurfaceId.Rough;
@@ -198,12 +220,13 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
    * the height field's budget uses, so the visual edge and the physical gradient come from one
    * source.
    *
-   * Sand and water keep hard edges. A bunker lip and a water margin are supposed to be abrupt,
-   * and blending them would make a ball drift to a halt in a bunker rather than stop in it.
+   * Sand, water and the bridge keep hard edges. A bunker lip and a water margin are supposed to be
+   * abrupt, and blending them would make a ball drift to a halt in a bunker rather than stop in it;
+   * a plank deck against open water is more abrupt still.
    */
   function tuningAt(worldX: number, worldZ: number, out: MutableSurfaceTuning): void {
     const id = surfaceAt(worldX, worldZ);
-    if (id === SurfaceId.Sand || id === SurfaceId.Water) {
+    if (id === SurfaceId.Sand || id === SurfaceId.Water || id === SurfaceId.Bridge) {
       const hard = SURFACES[id];
       out.rolling = hard.rolling;
       out.bounceScale = hard.bounceScale;
@@ -246,6 +269,7 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
     const id = surfaceAt(worldX, worldZ);
     out.sand = id === SurfaceId.Sand ? 1 : 0;
     out.water = id === SurfaceId.Water ? 1 : 0;
+    out.bridge = id === SurfaceId.Bridge ? 1 : 0;
     out.green = greenWeight(worldX, worldZ);
     out.corridor = corridorWeight(worldX, worldZ);
   }

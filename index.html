@@ -134,6 +134,28 @@
         background: var(--track);
       }
       .nameplate-fill { height: 100%; width: 100%; background: var(--hp-green); }
+
+      /* H17, the pin marker. Shares #nameplates with the plates -- both are world-anchored chips
+         over the same scene. Never hidden: it is clamped to the edge of frame when the pin is off
+         camera, because "the hole is that way, 84 m" is the whole reason the element exists. */
+      .pin-marker {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: var(--panel);
+        font: 700 12px system-ui, sans-serif;
+        letter-spacing: 0.06em;
+        color: #fff;
+        white-space: nowrap;
+      }
+      .pin-marker-icon { font-size: 12px; }
+      /* Dimmed at the edge, so a pointer off frame reads differently from a pin you can see. */
+      .pin-marker[data-edged="true"] { opacity: 0.6; }
       .hud-card {
         display: flex;
         align-items: center;

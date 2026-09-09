@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 /**
  * The runtime half of `docs/ASSET_PIPELINE.md` section 4: Blender is a *design* tool for playable
@@ -122,6 +123,139 @@ export function buildGraph(graph: PrimitiveGraph, slotOverrides: SlotColors = {}
     dispose(): void {
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials.values()) material.dispose();
+    },
+  };
+}
+
+export interface MergedGraph {
+  /** The whole graph, as one mesh and one draw call. */
+  readonly mesh: THREE.Mesh;
+  /** Frees the merged geometry and its single material. See the AGENTS.md resource-cleanup rule. */
+  dispose(): void;
+}
+
+/**
+ * The whole graph flattened into one geometry with baked vertex colours: one draw call instead of
+ * one per node.
+ *
+ * `ASSET_PIPELINE.md` §9 is explicit that draw calls and material count matter far more than
+ * triangle count. A cart is 78 `Object3D`s and a round draws five of them; seven graph-authored
+ * props at roughly five nodes each, a dozen instances to a hole, is another ~60 draws before this
+ * and about 12 after it.
+ *
+ * **It costs per-slot recolouring, and the cart must keep using `buildGraph`. That is a rule, not a
+ * preference.** Merging bakes each node's colour into the vertices, so there is no material left to
+ * `setSlotColor` on -- a merged cart would lose the clubhouse loadout with it (`UI-SPEC.md` S3).
+ * Props do not need repainting, which is why the helper is proved on them first; the carts' own
+ * draw-call problem wants an instanced or per-slot-material variant of this, not this.
+ *
+ * Node names do not survive either, for the same reason: there is nothing left to address. A graph
+ * with a pivot something poses by name belongs in `buildGraph`.
+ */
+export function mergeGraph(graph: PrimitiveGraph, slotOverrides: SlotColors = {}): MergedGraph {
+  // Built with `buildGraph` rather than by walking the tree again, so the transforms, the slot
+  // lookup and the parameter mapping are the *same* code the unmerged path uses. A second walk
+  // here is exactly where a merged prop would quietly stop matching its own gate subject.
+  const built = buildGraph(graph, slotOverrides);
+  const parts: THREE.BufferGeometry[] = [];
+  const colours: number[] = [];
+
+  bakeInto(built, null, parts, colours);
+  built.dispose();
+
+  return meshFrom(graph.name, parts, colours);
+}
+
+/**
+ * The same flattening, applied to **n placed copies** of one graph, and still one draw call.
+ *
+ * This exists for objects whose *length* is a property of the world rather than of the asset. The
+ * causeway is the case that needed it: a crossing spans whatever the pond is wide, so the boardwalk
+ * is one authored section tiled along it, and tiling with `mergeGraph` would spend a draw call per
+ * section -- fifteen of `MAX_PROPS_PER_HOLE`'s twenty on a single object.
+ *
+ * Each instance carries **its own full matrix**, not a shared stride. A causeway's sections do not
+ * sit at one height: the deck runs onto dry bank at both ends and the abutments land wherever the
+ * bank happens to be, so the caller samples the terrain per section and hands the results in.
+ *
+ * The graph is built and posed **once** and its geometries cloned per instance, so n sections cost
+ * one `buildGraph`. Everything `mergeGraph`'s docstring says about the cost still holds: no slot
+ * recolouring and no node names survive.
+ */
+export function mergeGraphInstances(
+  graph: PrimitiveGraph,
+  instances: readonly THREE.Matrix4[],
+  slotOverrides: SlotColors = {},
+): MergedGraph {
+  if (instances.length === 0) {
+    throw new Error(`primitive graph "${graph.name}": needs at least one instance matrix`);
+  }
+
+  const built = buildGraph(graph, slotOverrides);
+  const parts: THREE.BufferGeometry[] = [];
+  const colours: number[] = [];
+
+  for (const instance of instances) bakeInto(built, instance, parts, colours);
+  built.dispose();
+
+  return meshFrom(graph.name, parts, colours);
+}
+
+/**
+ * Walks a posed graph and appends each node's world-space geometry and its slot colour.
+ *
+ * Shared by both merges rather than written twice, which is the same rule `mergeGraph` follows in
+ * calling `buildGraph`: a second walk is exactly where a tiled prop would quietly stop matching the
+ * single one its own gate subject draws.
+ */
+function bakeInto(
+  built: BuiltGraph,
+  instance: THREE.Matrix4 | null,
+  parts: THREE.BufferGeometry[],
+  colours: number[],
+): void {
+  built.root.updateMatrixWorld(true);
+  const rgb = new THREE.Color();
+
+  built.root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    // Baked into world space: the merged mesh has no tree left to carry a node's parent transform,
+    // so each node's own matrix has to be applied before its vertices are concatenated.
+    const geometry = child.geometry.clone().applyMatrix4(child.matrixWorld);
+    // And then the instance's own placement on top of it, which is what makes copy n land somewhere
+    // copy 0 does not.
+    if (instance !== null) geometry.applyMatrix4(instance);
+    parts.push(geometry);
+
+    rgb.copy((child.material as THREE.MeshStandardMaterial).color);
+    const count = geometry.getAttribute("position").count;
+    for (let i = 0; i < count; i++) colours.push(rgb.r, rgb.g, rgb.b);
+  });
+}
+
+/** Concatenates the baked parts into the single vertex-coloured mesh both merges return. */
+function meshFrom(name: string, parts: THREE.BufferGeometry[], colours: number[]): MergedGraph {
+  const merged = mergeGeometries(parts, false);
+  // Freed the moment they have been copied in, as `Trees.ts` does: the sources are scratch.
+  for (const part of parts) part.dispose();
+  if (merged === null) {
+    throw new Error(`primitive graph "${name}": geometries failed to merge`);
+  }
+  merged.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.85,
+    flatShading: true,
+  });
+  const mesh = new THREE.Mesh(merged, material);
+  mesh.name = name;
+
+  return {
+    mesh,
+    dispose(): void {
+      merged.dispose();
+      material.dispose();
     },
   };
 }

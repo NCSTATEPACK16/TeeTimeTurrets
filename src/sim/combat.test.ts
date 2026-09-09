@@ -1,6 +1,7 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Cart, STARTING_HP } from "./entities/Cart";
+import { Pin } from "./entities/Pin";
 import { Target } from "./entities/Target";
 import {
   CombatRegistry,
@@ -43,13 +44,19 @@ describe("combat contact resolution", () => {
   let ball: RAPIER.RigidBody;
   let ballHandle: number;
   let killed: Cart[];
+  let pinStrikes: number;
 
   beforeAll(async () => {
     await RAPIER.init();
   });
 
   function ctx() {
-    return { registry, stats, onCartKilled: (c: Cart) => killed.push(c) };
+    return {
+      registry,
+      stats,
+      onCartKilled: (c: Cart) => killed.push(c),
+      onPinStruck: () => pinStrikes++,
+    };
   }
 
   function makeBall(vx: number): { body: RAPIER.RigidBody; handle: number } {
@@ -65,6 +72,7 @@ describe("combat contact resolution", () => {
     registry = new CombatRegistry();
     stats = createStats();
     killed = [];
+    pinStrikes = 0;
 
     target = new Target(world, { x: 10, y: 0, z: 0 });
     registry.registerTarget(target);
@@ -273,6 +281,68 @@ describe("combat contact resolution", () => {
       expect(cart.health.hp).toBeLessThan(STARTING_HP - STROKE_DAMAGE);
       expect(cart.strokesTaken).toBe(0);
       expect(other.strokesTaken).toBe(0);
+    });
+  });
+
+  /**
+   * The pin's own seam. `world.props.test.ts` proves the pin falls when a ball actually hits it in a
+   * live world; these say what the rule *is*, including the pairings it must ignore -- a scripted
+   * contact is the only way to ask about a pairing the physics will not produce on demand.
+   */
+  describe("the pin", () => {
+    let pin: Pin;
+    let pinHandle: number;
+
+    beforeEach(() => {
+      pin = new Pin();
+      pinHandle = world.createCollider(
+        RAPIER.ColliderDesc.cylinder(1.05, 0.025),
+        world.createRigidBody(RAPIER.RigidBodyDesc.fixed()),
+      ).handle;
+      registry.registerPin(pinHandle, pin);
+    });
+
+    it("is knocked down by fired ammo", () => {
+      processContacts(queueOf([ballHandle, pinHandle, true]), ctx());
+      expect(pinStrikes).toBe(1);
+    });
+
+    it("is knocked down by the played course ball, whichever order the handles arrive in", () => {
+      const played = makeBall(9);
+      registry.registerCourseBall(played.handle, played.body);
+      processContacts(queueOf([pinHandle, played.handle, true]), ctx());
+      expect(pinStrikes).toBe(1);
+    });
+
+    it("costs no health, no stroke and no stats -- it is not a scoring target", () => {
+      processContacts(queueOf([ballHandle, pinHandle, true]), ctx());
+      expect(stats.directHits).toBe(0);
+      expect(stats.targetsDown).toBe(0);
+      expect(cart.strokesTaken).toBe(0);
+      expect(killed).toHaveLength(0);
+    });
+
+    it("is not felled by a cart contact here -- that path is the character controller's", () => {
+      // Not an oversight: a kinematic cart never reaches this collider's narrow phase, because the
+      // controller stops it CHARACTER_OFFSET short of touching. `world.ts`'s `checkPinRun` owns it,
+      // and `world.props.test.ts` drives a real cart into a real pin to prove it.
+      processContacts(queueOf([cartHandle, pinHandle, true]), ctx());
+      expect(pinStrikes).toBe(0);
+    });
+
+    it("stops answering as the pin once its handle has been unregistered", () => {
+      // Rapier reuses collider handles. A felled pin whose handle stayed in the registry would make
+      // whichever collider inherited that handle report as the pin, so the unregister is not
+      // housekeeping -- it is what stops a later target or a rebuilt ground answering for it.
+      registry.unregisterPin(pinHandle);
+      processContacts(queueOf([ballHandle, pinHandle, true]), ctx());
+      expect(pinStrikes).toBe(0);
+    });
+
+    it("ignores a contact between the pin and a target part", () => {
+      processContacts(queueOf([target.part("torso").collider.handle, pinHandle, true]), ctx());
+      expect(pinStrikes).toBe(0);
+      expect(target.isDown).toBe(false);
     });
   });
 });

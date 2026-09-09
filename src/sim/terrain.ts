@@ -1,4 +1,6 @@
 import { createNoise2D } from "simplex-noise";
+import { DECK_FREEBOARD, causewayInfluence, deriveCrossings } from "./crossing";
+import { inverseSmoothstep01, smoothstep01 } from "./curves";
 import type { HoleSpec, Vec3 } from "./course";
 import { hashChannel, mulberry32 } from "./rng";
 import { createNearestPoint, createSpline } from "./spline";
@@ -138,24 +140,12 @@ export function halfWidthAt(corridor: readonly number[], t: number): number {
   return corridor[i]! + (corridor[i + 1]! - corridor[i]!) * frac;
 }
 
-/** Smoothstep: C1-continuous, so a pad edge has no slope discontinuity ring. */
-export function smoothstep01(t: number): number {
-  const c = Math.min(1, Math.max(0, t));
-  return c * c * (3 - 2 * c);
-}
-
 /**
- * The inverse of `smoothstep01`: given a weight, the parameter that produces it.
- *
- * Closed form via the trigonometric solution to the depressed cubic `3c^2 - 2c^3 = y`. Exists so
- * a caller that knows a *weight* it cares about -- "where does the rough get deep enough to plant
- * trees" -- can turn that into a *distance* without hard-coding a number that would silently stop
- * matching if the blend ever changed shape.
+ * Re-exported from `curves.ts` rather than defined here. The curve moved to a leaf so `crossing.ts`
+ * could use it for the causeway's shoulders without this module and that one importing each other;
+ * every existing `from "./terrain"` import of these two names still resolves.
  */
-export function inverseSmoothstep01(y: number): number {
-  const clamped = Math.min(1, Math.max(0, y));
-  return 0.5 - Math.sin(Math.asin(1 - 2 * clamped) / 3);
-}
+export { inverseSmoothstep01, smoothstep01 };
 
 /**
  * Injected randomness for the noise permutation. Defaulted from the spec's seed channel; the
@@ -164,7 +154,22 @@ export function inverseSmoothstep01(y: number): number {
  * source instead of depending on the spec's seed-derived channel.
  */
 export interface TerrainSources {
-  readonly height: () => number;
+  /** Optional so a caller can set `crossings` alone without also having to supply the noise
+   *  source -- passing the wrong RNG here silently regenerates every hole. */
+  readonly height?: () => number;
+  /**
+   * Shape the derived water crossings into the height field. Defaults to true, which is what a
+   * played hole wants.
+   *
+   * **`generateHole` sets it false, and that is spec D9 made mechanical.** Crossings are derived
+   * *after* a hole validates, so `validateHole` must be shown the un-bridged hole: a causeway is a
+   * built structure crossing a pond, its shoulders are far steeper than the fairway grade budget,
+   * and terrain carrying one fails check 3 on the very hole the crossing exists to make playable.
+   * Routing would then move -- par, corridor, field size and the acceptance rate with it -- which is
+   * exactly what D9 forbids. Holes 2, 13 and 15 gain an alternative to their forced carries rather
+   * than being re-judged.
+   */
+  readonly crossings?: boolean;
 }
 
 export interface Terrain {
@@ -196,6 +201,10 @@ export function heightChannel(spec: HoleSpec): number {
 
 export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain {
   const random = sources?.height ?? mulberry32(heightChannel(spec));
+  // Derived once per hole, after routing. Empty on the ten of eighteen briefs with no water, so
+  // `shapeHazards` pays nothing for it there -- and empty for `validateHole`, always. See
+  // `TerrainSources.crossings`.
+  const crossings = sources?.crossings === false ? [] : deriveCrossings(spec);
   const noise2D = createNoise2D(random);
 
   const spline = createSpline(spec.control);
@@ -359,6 +368,22 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
       const falloff = ellipseFalloff(worldX, worldZ, b);
       if (falloff <= 0) continue;
       height -= BUNKER_DEPTH * smoothstep01(falloff);
+    }
+
+    // The causeway, **after the water loop and not before it**. The two overlap by construction --
+    // a crossing is only derived where the centreline runs through a pond -- so a deck raised first
+    // is a deck the excavation immediately takes back down to the pond floor, 1.5 m under the water
+    // line. Ordering is the whole of it, and `terrain.test.ts` asserts the deck survives the cut.
+    //
+    // `max`, not a lerp: a causeway fills, it never excavates. Where the bank is already higher
+    // than the deck -- the abutments run onto dry ground at both ends -- the ground stays where it
+    // is rather than being dug down to meet the deck.
+    if (crossings.length > 0) {
+      const influence = causewayInfluence(crossings, worldX, worldZ);
+      if (influence > 0) {
+        const deck = spec.waterLevel + DECK_FREEBOARD;
+        height = Math.max(height, height + (deck - height) * influence);
+      }
     }
 
     return height;

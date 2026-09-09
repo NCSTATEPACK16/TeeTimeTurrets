@@ -29,8 +29,18 @@ function source(overrides: Partial<HudSource> = {}): HudSource {
       respawnTimer: 0,
       health: { hp: 100, max: 100 },
     },
+    current: { position: { x: 0, y: 0, z: 0 } },
+    terrain: { cupPosition: { x: 0, y: 0, z: 0 } },
     ...overrides,
   };
+}
+
+/** A source whose ball and cup are `dx`/`dz` apart, at different heights. */
+function separated(dx: number, dz: number, dy = 0): HudSource {
+  return source({
+    current: { position: { x: 12, y: 3 + dy, z: -4 } },
+    terrain: { cupPosition: { x: 12 + dx, y: 3, z: -4 + dz } },
+  });
 }
 
 describe("combat element visibility", () => {
@@ -122,5 +132,34 @@ describe("the rest of the readout", () => {
     expect(derive(source({ matchTimeRemaining: 65.9 })).timerText).toBe("1:05");
     expect(derive(source({ matchTimeRemaining: 9 })).timerText).toBe("0:09");
     expect(derive(source({ matchTimeRemaining: 0 })).timerText).toBe("0:00");
+  });
+});
+
+/**
+ * UI-SPEC H17. The number is measured **from the ball**, not from the cart: that is what makes a
+ * club choice mean something, and it is the reading a real yardage gives you.
+ */
+describe("the pin marker's distance", () => {
+  it("reports whole metres from the ball to the cup", () => {
+    expect(derive(separated(30, 40)).pinDistanceText).toBe("50 m");
+    expect(derive(separated(3, 4)).pinDistanceText).toBe("5 m");
+  });
+
+  it("rounds rather than truncating", () => {
+    expect(derive(separated(7.6, 0)).pinDistanceText).toBe("8 m");
+    expect(derive(separated(7.4, 0)).pinDistanceText).toBe("7 m");
+  });
+
+  it("measures flat, so a downhill green does not read as further away", () => {
+    // The same argument `RoundScreen.trackLongestDrive` already makes about a drive: counting the
+    // drop off a tee shelf as extra length would flatter downhill holes. A yardage to the pin is a
+    // distance along the ground.
+    expect(derive(separated(30, 40, 20)).pinDistanceText).toBe("50 m");
+    expect(derive(separated(30, 40, -20)).pinDistanceText).toBe("50 m");
+  });
+
+  it("reads zero when the ball is in the cup rather than going blank", () => {
+    // The frame the ball drops is the frame the marker would otherwise show something stale.
+    expect(derive(separated(0, 0)).pinDistanceText).toBe("0 m");
   });
 });

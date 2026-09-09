@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import { BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../../src/entities/BallSwarm";
+import { Flagstick } from "../../src/entities/Flagstick";
 import { GolfClub } from "../../src/entities/GolfClub";
+import { mergeGraph } from "../../src/entities/primitiveGraph";
+import { PROP_NAMES, graphFor } from "../../src/entities/propGraphs";
+import type { PropName } from "../../src/entities/propGraphs";
 import { TargetRig } from "../../src/entities/TargetRig";
 import { ClubType } from "../../src/physics/Ballistics";
 import { PARTS_PER_TARGET, TARGET_PART_SHAPES } from "../../src/sim/entities/Target";
@@ -41,6 +45,9 @@ const SUBJECTS: Record<string, () => GateSubject> = {
   "cart-followthrough": () => clubSubject(ClubType.Driver, 0, 0.09),
   ball: () => ballSubject(),
   target: () => targetSubject(),
+  flagstick: () => flagstickSubject(false),
+  "flagstick-felled": () => flagstickSubject(true),
+  ...Object.fromEntries(PROP_NAMES.map((name) => [name, () => propSubject(name)])),
 };
 
 /**
@@ -93,6 +100,44 @@ function targetSubject(): GateSubject {
   }
   rig.setFromTransforms(transforms, PARTS_PER_TARGET);
   return { object: rig, dispose: () => rig.dispose() };
+}
+
+/**
+ * The pin, standing and felled.
+ *
+ * Two subjects because the poses are **indistinguishable in every numeric check** -- same meshes,
+ * same triangles, same vertices, and a bounding box that only swaps its axes -- and obviously
+ * different in the PNG. That is exactly what a gate picture is for, and the same reason
+ * `cart-backswing` and `cart-followthrough` exist.
+ *
+ * Buildable with no Rapier, no terrain and no seed, which is what the gate requires: `Flagstick`
+ * owns the geometry and `placeFlagstick` owns where it goes, so the two are separable. The pennant
+ * is advanced to a fixed time rather than left at rest, so the gate measures the flag it ships with
+ * -- and to a *constant*, so the signature does not depend on when the run happened.
+ */
+function flagstickSubject(felled: boolean): GateSubject {
+  const pin = new Flagstick();
+  pin.setFelled(felled);
+  pin.update(GATE_PENNANT_SECONDS);
+  return { object: pin, dispose: () => pin.dispose() };
+}
+
+/** Off the wave's zero crossing, so the flag in the picture is actually flying. */
+const GATE_PENNANT_SECONDS = 0.35;
+
+/**
+ * One course prop, exactly as a hole draws it: merged to a single mesh with baked vertex colours.
+ *
+ * `mergeGraph` rather than `buildGraph` on purpose -- the gate must measure the shipped geometry,
+ * and what ships is the merged form. That also makes each subject's vertex count the check on D7:
+ * merging must not lose or duplicate a triangle.
+ *
+ * Buildable with no Rapier, no terrain and no seed because `props.ts` keeps the geometry
+ * (`graphFor`) separable from the placement (`derivePlacements`), which is the gate's requirement.
+ */
+function propSubject(name: PropName): GateSubject {
+  const merged = mergeGraph(graphFor(name));
+  return { object: merged.mesh, dispose: () => merged.dispose() };
 }
 
 function countGeometry(root: THREE.Object3D): { vertices: number; triangles: number } {
