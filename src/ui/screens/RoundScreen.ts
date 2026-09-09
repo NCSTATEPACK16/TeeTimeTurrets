@@ -12,8 +12,12 @@ import type { Hud } from "../hud";
 import { drawMatchResults, readMatchResults } from "../matchResults";
 import type { MatchResultsDom } from "../matchResults";
 import { Nameplates } from "../nameplates";
+import { CourseMap } from "../courseMap";
+import type { MapHole, MapMarker } from "../courseMap";
+import { contours, corridorPolylines, surfaceRuns } from "../../sim/mapGeometry";
 import type { PlateTeam } from "../plateState";
 import { hasLineOfSight } from "../../sim/lineOfSight";
+import { ENEMY_FADE_S } from "../plateState";
 import type { HeightSampler } from "../../sim/lineOfSight";
 import { PinMarker } from "../pinMarker";
 import { on } from "../dom";
@@ -44,6 +48,7 @@ export class RoundScreen implements Screen {
   private render: RenderScene | null = null;
   private input: KeyboardMouseSource | null = null;
   private nameplates: Nameplates | null = null;
+  private courseMap: CourseMap | null = null;
   private pinMarker: PinMarker | null = null;
   private hud: Hud | null = null;
   private matchResults: MatchResultsDom | null = null;
@@ -87,6 +92,16 @@ export class RoundScreen implements Screen {
     // Shares #nameplates: both are world-anchored chips over the same scene, and H17 follows H13's
     // projection (UI-SPEC §2). Stacking order is the container's, not theirs.
     this.pinMarker = new PinMarker(nameplateRoot);
+    this.courseMap = new CourseMap(nameplateRoot, [buildMapHole(sim)]);
+    // UI-only, so it is a listener here rather than a PlayerIntent: UI-SPEC section 1 has src/ui
+    // reading sim state and never mutating it, and opening a map is not something the sim needs
+    // to know. On window because a pointer-locked player has no focused element to hit.
+    this.teardown.push(
+      on(window, "keydown", (event) => {
+        if (event.code === "KeyM") this.courseMap?.cycle();
+        else if (event.code === "Escape") this.courseMap?.close();
+      }),
+    );
     this.input = new KeyboardMouseSource(renderer.domElement);
     this.hud = readHud();
     this.matchResults = readMatchResults();
@@ -199,6 +214,7 @@ export class RoundScreen implements Screen {
     this.render.draw(view);
     this.drawNameplates();
     this.drawPinMarker();
+    this.drawCourseMap();
     drawHud(this.hud, sim);
     if (this.matchResults) {
       drawMatchResults(this.matchResults, sim);
@@ -224,6 +240,8 @@ export class RoundScreen implements Screen {
   }
 
   exit(): void {
+    this.courseMap?.dispose();
+    this.courseMap = null;
     for (const off of this.teardown) off();
     this.teardown.length = 0;
     this.options.hudRoot.hidden = true;
@@ -262,6 +280,43 @@ export class RoundScreen implements Screen {
     this.pinMarker.set(plateScratch.x, plateScratch.y, onScreen, pinHudScratch.pinDistanceText);
   }
 
+  /**
+   * The `M` map. Costs nothing while closed -- `CourseMap.draw` returns immediately -- so this is
+   * called unconditionally rather than behind a visibility check the map already does.
+   *
+   * Enemies appear only where they would appear on a plate: in sight, or within the fade window
+   * after sight broke. A map that showed every enemy through terrain would hand back exactly the
+   * information `plateState.ts` withholds, and the plate rule would be decoration.
+   */
+  private drawCourseMap(): void {
+    const map = this.courseMap;
+    const view = this.view;
+    if (!map || !map.visible || !view) return;
+    const { sim } = this.options;
+
+    mapMarkers.length = 0;
+    mapMarkers.push({
+      x: view.cart.position.x,
+      z: view.cart.position.z,
+      kind: "self",
+      heading: sim.cart.heading,
+    });
+
+    const now = performance.now();
+    for (let i = 0; i < view.botCarts.length; i++) {
+      const lastSeen = this.lastSeenAtMs[i];
+      if (lastSeen === undefined || (now - lastSeen) / 1000 > ENEMY_FADE_S) continue;
+      const bot = view.botCarts[i]!;
+      mapMarkers.push({ x: bot.position.x, z: bot.position.z, kind: "enemy", heading: 0 });
+    }
+
+    for (const pickup of sim.pickups) {
+      mapMarkers.push({ x: pickup.position.x, z: pickup.position.z, kind: "pickup", heading: 0 });
+    }
+
+    map.draw(mapMarkers, 1);
+  }
+
   private drawNameplates(): void {
     const { sim } = this.options;
     const view = this.view;
@@ -287,6 +342,42 @@ export class RoundScreen implements Screen {
 
 /** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
 const NAMEPLATE_HEIGHT = 2.6;
+
+/** Reused per frame while the map is open; the render loop is covered by the no-allocation rule. */
+const mapMarkers: MapMarker[] = [];
+
+/**
+ * Samples one hole into the static geometry the map draws.
+ *
+ * Run once per screen entry, never per frame: a hole is generated from a seed and does not move,
+ * which is the same reason `CourseMap` rasterises it to an offscreen canvas exactly once.
+ *
+ * The counts are lower than the plan's. `tools/holePlan.ts` renders a 1000 px print of a single
+ * hole and can afford 200 surface samples and 80 contour samples; this is a HUD panel a few
+ * hundred pixels across, where the extra detail is below a pixel and costs a longer hitch the
+ * first time `M` is pressed.
+ */
+const MAP_SURFACE_SAMPLES = 120;
+const MAP_CONTOUR_SAMPLES = 48;
+const MAP_TARGET_CONTOURS = 7;
+const MAP_CENTRELINE_STEPS = 96;
+
+function buildMapHole(sim: Sim): MapHole {
+  const spec = sim.terrain.spec;
+  return {
+    // One hole is loaded at a time, so the map holds a single-entry course. The frame is here now
+    // so that `src/sim/courseLayout.ts` placing all eighteen is a longer array, not a rewrite.
+    number: spec.index + 1,
+    field: { fieldSize: spec.fieldSize, offsetX: 0, offsetZ: 0, rotation: 0 },
+    samples: MAP_SURFACE_SAMPLES,
+    runs: surfaceRuns(spec, sim.surfaces, MAP_SURFACE_SAMPLES),
+    contours: contours(spec, sim.terrain, MAP_CONTOUR_SAMPLES, MAP_TARGET_CONTOURS).segments,
+    corridor: corridorPolylines(sim.terrain, MAP_CENTRELINE_STEPS),
+    green: spec.green,
+    tee: spec.tee,
+    cup: spec.cup,
+  };
+}
 const plateScratch = { x: 0, y: 0 };
 /** Module-level scratch, reused per frame -- the render loop is covered by the no-allocation rule. */
 const pinAnchorScratch = { x: 0, y: 0, z: 0 };

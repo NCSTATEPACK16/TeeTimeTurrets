@@ -561,6 +561,15 @@ export class Sim {
   }
 
   /**
+   * The buckets on this hole, for the map to mark. Readonly, and the array is the live one rather
+   * than a copy: this is read once per frame while the map is open, and UI is a pure consumer of
+   * sim state (UI-SPEC section 1), so handing it the array costs nothing and grants nothing.
+   */
+  get pickups(): readonly Bucket[] {
+    return this.buckets;
+  }
+
+  /**
    * Creates one cart's body and collider at `spawn`, registers it for contact dispatch, and
    * files the rig. Every cart -- the player's and every bot's -- goes through here, so a bot is
    * physically identical to the player rather than a cheaper approximation of one.

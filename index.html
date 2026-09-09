@@ -151,6 +151,27 @@
       .nameplate-ally .nameplate-name { color: var(--team-ally); }
       .nameplate-enemy .nameplate-name { color: var(--team-enemy); }
 
+      /* H8, the course map. Centred rather than full-bleed: the round keeps running underneath and
+         the player is still being shot at, so the map deliberately does not cover the edges of
+         frame where movement is read. `hidden` rather than opacity, so a closed map costs no
+         compositing. Sized in vmin so it stays square-ish on any viewport, which matters because
+         the projection fits one scale to both axes. */
+      .course-map {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(74vmin, 720px);
+        height: min(74vmin, 720px);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--panel-solid);
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+        pointer-events: none;
+      }
+      .course-map[hidden] { display: none; }
+      .course-map-canvas { display: block; width: 100%; height: 100%; }
+
       /* H17, the pin marker. Shares #nameplates with the plates -- both are world-anchored chips
          over the same scene. Never hidden: it is clamped to the edge of frame when the pin is off
          camera, because "the hole is that way, 84 m" is the whole reason the element exists. */

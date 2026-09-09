@@ -46,10 +46,10 @@ export function el<K extends keyof HTMLElementTagNameMap>(
  * listener left attached to a node that has been detached keeps that whole subtree -- and its
  * closure -- alive: the DOM half of exactly the leak the Phase 1.75 memory gate looks for.
  */
-export function on<K extends keyof HTMLElementEventMap>(
-  target: HTMLElement,
+export function on<K extends keyof GlobalEventHandlersEventMap>(
+  target: HTMLElement | Window,
   event: K,
-  handler: (ev: HTMLElementEventMap[K]) => void,
+  handler: (ev: GlobalEventHandlersEventMap[K]) => void,
 ): () => void {
   target.addEventListener(event, handler as EventListener);
   return () => target.removeEventListener(event, handler as EventListener);
