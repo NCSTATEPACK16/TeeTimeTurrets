@@ -163,10 +163,17 @@ const TARGET_PLACEMENTS: readonly { along: number; lateral: number }[] = [
   { along: 0.75, lateral: 7 },
 ];
 
-/** KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one. */
+/**
+ * KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one.
+ *
+ * The two slope angles are exported because the causeway is designed against them: spec §2.2's
+ * whole argument is that at a 1.0 m heightfield cell there is no deck width that behaves like a
+ * bridge, only shoulders the cart drives up (under the climb limit) or cannot leave (over it). A
+ * second copy of 32 in a terrain test would let the crossing and the controller drift apart.
+ */
 const CHARACTER_OFFSET = 0.02;
-const CART_MAX_SLOPE_CLIMB_DEG = 45;
-const CART_MIN_SLOPE_SLIDE_DEG = 32;
+export const CART_MAX_SLOPE_CLIMB_DEG = 45;
+export const CART_MIN_SLOPE_SLIDE_DEG = 32;
 const CART_AUTOSTEP_HEIGHT = 0.45;
 const CART_AUTOSTEP_MIN_WIDTH = 0.25;
 const CART_SNAP_TO_GROUND = 0.6;

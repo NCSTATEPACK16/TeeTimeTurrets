@@ -11,7 +11,7 @@ import { BLEND_WIDTH, GREEN_RADIUS, HALF_WIDTH, createTerrain, halfWidthAt } fro
 import type { Terrain } from "./terrain";
 import { createSpline } from "./spline";
 import type { MutableVec2 } from "./spline";
-import { pointInEllipse, pointInPolygon } from "./hazards";
+import { isWaterAt } from "./hazards";
 import type { Ellipse, Polygon } from "./hazards";
 import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "./carry";
 import { hashChannel, mulberry32 } from "./rng";
@@ -198,23 +198,11 @@ export function fixedHoleSpec(): HoleSpec {
  * differs because something placed it, not because a default drifted.
  */
 /**
- * Whether a point is water. **The single definition** -- `surfaces.surfaceAt` and
- * `validateHole` both call this rather than each testing the polygons themselves.
- *
- * The green clause is what makes that sharing necessary rather than merely tidy. Hole 13's island
- * green is a green sitting *inside* a water polygon: polygons here have no holes, so the moat is
- * drawn solid and the green is punched out of it by classification order. A validator that tested
- * the polygons directly would find the cup inside water and reject the hole -- the archetype would
- * have been unbuildable, and the failure would have looked like a placement bug rather than a
- * disagreement about what "water" means.
+ * Re-exported from `hazards.ts`, where it now lives so `crossing.ts` can use it without making
+ * `course.ts` and `terrain.ts` a value cycle. Still the single definition; see its docstring for
+ * why the green clause is load-bearing.
  */
-export function isWaterAt(spec: HoleSpec, x: number, z: number): boolean {
-  if (pointInEllipse(x, z, spec.green)) return false;
-  for (const poly of spec.water) {
-    if (pointInPolygon(x, z, poly)) return true;
-  }
-  return false;
-}
+export { isWaterAt } from "./hazards";
 
 export function defaultGreen(cup: Vec2): Ellipse {
   return {
@@ -790,7 +778,9 @@ export function generateHole(
       bunkers: placeBunkers(brief, { ...routing, water }, random),
     };
 
-    const terrain = createTerrain(withHazards);
+    // Built with crossings suppressed: routing is judged on the hole as routed, never on a hole a
+    // causeway has already changed. Spec D9, and `TerrainSources.crossings` carries the argument.
+    const terrain = createTerrain(withHazards, { crossings: false });
     // par is the only field the terrain does not depend on, so deriving it after construction
     // costs nothing and keeps "par is never authored" true.
     const spec: HoleSpec = { ...withHazards, par: derivePar(terrain.spline.length) };

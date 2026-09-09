@@ -10,6 +10,8 @@ import { POOL_SIZE } from "./entities/BallPool";
 import type { BallPool, PooledBall } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { SurfaceId } from "./surfaces";
+import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing";
+import type { Crossing } from "./crossing";
 import { MATCH_DURATION_S, POOL_TRANSFORM_STRIDE, Sim, SwingMode } from "./world";
 import { neutralIntent } from "../input/InputSource";
 
@@ -915,5 +917,91 @@ describe("the match clock", () => {
     expect(sim.matchOver).toBe(false);
     expect(sim.matchTimeRemaining).toBeCloseTo(5 / 60, 9);
     expect(sim.matchOutcome()).toBe("pending");
+  });
+});
+
+/**
+ * The causeway (spec D5), driven rather than described. **This is the test that proves the design**:
+ * a crossing is only worth building if a cart can actually get over the water on it, and every
+ * other assertion about the crossing is about geometry rather than about play.
+ */
+describe("driving a crossing", () => {
+  /** The fixture with a pond straight across the corridor -- holes 2, 13 and 15's forced carry. */
+  function carrySpec(): HoleSpec {
+    return {
+      ...fixedHoleSpec(),
+      water: [
+        {
+          points: [
+            { x: -20, z: -40 },
+            { x: 4, z: -40 },
+            { x: 4, z: 40 },
+            { x: -20, z: 40 },
+          ],
+        },
+      ],
+    };
+  }
+
+  /**
+   * Drives the cart from `fromT` to `toT` along the deck and reports what it cost.
+   *
+   * Position is written and the world stepped, the same way `driving into water`'s tests above
+   * place a cart on a pond: what is under test is the surface classification and the height field,
+   * not the throttle curve.
+   */
+  function driveAlong(sim: Sim, deck: Crossing, samples: number) {
+    let strokes = 0;
+    let lowest = Infinity;
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const x = deck.ax + (deck.bx - deck.ax) * t;
+      const z = deck.az + (deck.bz - deck.az) * t;
+      sim.cart.position.x = x;
+      sim.cart.position.z = z;
+      sim.cart.position.y = sim.terrain.heightAt(x, z) + CART_COLLIDER.groundOffset;
+      sim.step();
+      strokes = sim.cart.strokesTaken;
+      lowest = Math.min(lowest, sim.terrain.heightAt(x, z));
+    }
+    return { strokes, lowest };
+  }
+
+  it("carries a cart over the water without a single stroke", async () => {
+    const sim = await Sim.create(carrySpec(), { botCount: 0 });
+    play(sim, [{ ticks: 30, intent: {} }]);
+    expect(sim.cart.strokesTaken).toBe(0);
+
+    const deck = deriveCrossings(carrySpec())[0]!;
+    const run = driveAlong(sim, deck, 60);
+
+    expect(run.strokes).toBe(0);
+    // And it really did go over the pond rather than round it: the deck is above the water line
+    // the whole way, on ground the pond would otherwise have excavated 1.5 m below it.
+    expect(run.lowest).toBeGreaterThan(carrySpec().waterLevel);
+  });
+
+  it("still charges the crossing's own pond a stroke a metre off the shoulder", async () => {
+    // The other half, and what stops the first test passing because the pond stopped being water.
+    const sim = await Sim.create(carrySpec(), { botCount: 0 });
+    play(sim, [{ ticks: 30, intent: {} }]);
+
+    const deck = deriveCrossings(carrySpec())[0]!;
+    const dx = deck.bx - deck.ax;
+    const dz = deck.bz - deck.az;
+    const length = Math.hypot(dx, dz);
+    const offset = DECK_HALF_WIDTH + DECK_SHOULDER_RUN + 1;
+    const x = (deck.ax + deck.bx) / 2 - (dz / length) * offset;
+    const z = (deck.az + deck.bz) / 2 + (dx / length) * offset;
+
+    expect(sim.surfaces.surfaceAt(x, z)).toBe(SurfaceId.Water);
+    sim.cart.position.x = x;
+    sim.cart.position.z = z;
+    sim.step();
+    expect(sim.cart.strokesTaken).toBe(1);
+  });
+
+  it("leaves a dry hole with no crossing to drive", async () => {
+    expect(deriveCrossings(fixedHoleSpec())).toHaveLength(0);
   });
 });

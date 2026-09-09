@@ -11,6 +11,7 @@ import {
   createSurfaceWeights,
   createSurfaces,
 } from "./surfaces";
+import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing";
 
 const SPEC = fixedHoleSpec();
 const terrain = createTerrain(SPEC);
@@ -532,5 +533,106 @@ describe("elliptical greens", () => {
         expect(surf.surfaceAt(x, z)).toBe(surfaces.surfaceAt(x, z));
       }
     }
+  });
+});
+
+/**
+ * `SurfaceId.Bridge` -- the drivable crossing (spec D5).
+ *
+ * **The ordering is the entire trick and it is one line.** `surfaceAt` is a priority list, and the
+ * bridge test has to come *before* the water test: the deck is by construction inside a water
+ * polygon, so a chain that asks "is this water?" first classifies the whole causeway as a hazard and
+ * charges a stroke to everything that drives across it. The test below is written to go red with
+ * those two lines swapped, and that was confirmed rather than assumed.
+ */
+describe("the crossing surface", () => {
+  /** A pond straddling the corridor, so the derived causeway crosses it. */
+  const CROSSED: HoleSpec = {
+    ...SPEC,
+    water: [
+      {
+        points: [
+          { x: -20, z: -40 },
+          { x: 4, z: -40 },
+          { x: 4, z: 40 },
+          { x: -20, z: 40 },
+        ],
+      },
+    ],
+  };
+  const crossedTerrain = createTerrain(CROSSED);
+  const crossed = createSurfaces(CROSSED, crossedTerrain);
+  const deck = deriveCrossings(CROSSED)[0]!;
+
+  /** A point `offset` metres square across the deck from its midpoint. */
+  function across(offset: number): { x: number; z: number } {
+    const dx = deck.bx - deck.ax;
+    const dz = deck.bz - deck.az;
+    const length = Math.hypot(dx, dz);
+    return {
+      x: (deck.ax + deck.bx) / 2 - (dz / length) * offset,
+      z: (deck.az + deck.bz) / 2 + (dx / length) * offset,
+    };
+  }
+
+  it("reads Bridge on the deck and Water a metre off its shoulder", () => {
+    const onDeck = across(0);
+    expect(crossed.surfaceAt(onDeck.x, onDeck.z)).toBe(SurfaceId.Bridge);
+
+    const offShoulder = across(DECK_HALF_WIDTH + DECK_SHOULDER_RUN + 1);
+    expect(crossed.surfaceAt(offShoulder.x, offShoulder.z)).toBe(SurfaceId.Water);
+  });
+
+  it("carries the shoulders too, so a cart leaving the deck is not in the water yet", () => {
+    // The shoulders are ground the causeway raised above the pond. Classifying them as water would
+    // charge a stroke for standing on the ramp the deck is reached by.
+    for (const offset of [DECK_HALF_WIDTH + 0.5, DECK_HALF_WIDTH + DECK_SHOULDER_RUN - 0.5]) {
+      const point = across(offset);
+      expect(crossed.surfaceAt(point.x, point.z), `${offset} m out`).toBe(SurfaceId.Bridge);
+    }
+  });
+
+  it("is not a hazard, unlike the water it crosses", () => {
+    expect(SURFACES[SurfaceId.Bridge].isHazard).toBe(false);
+    expect(SURFACES[SurfaceId.Water].isHazard).toBe(true);
+  });
+
+  it("is hard and fast: a deck rolls further than a green and drives at full speed", () => {
+    // Spec D5. Planks, not turf.
+    expect(SURFACES[SurfaceId.Bridge].rolling).toBeLessThan(SURFACES[SurfaceId.Green].rolling);
+    expect(SURFACES[SurfaceId.Bridge].bounceScale).toBeGreaterThan(SURFACES[SurfaceId.Green].bounceScale);
+    expect(SURFACES[SurfaceId.Bridge].cartSpeedScale).toBe(1);
+  });
+
+  it("keeps a hard edge in tuningAt rather than blending into the pond", () => {
+    // Sand and water keep hard edges for the same reason a bunker lip is abrupt; a deck edge is a
+    // plank against open water and is more abrupt still. Blended, a ball would drift to a halt
+    // somewhere between the two.
+    const onDeck = across(0);
+    const tuning = createSurfaceTuning();
+    crossed.tuningAt(onDeck.x, onDeck.z, tuning);
+    expect(tuning.rolling).toBeCloseTo(SURFACES[SurfaceId.Bridge].rolling, 9);
+    expect(tuning.bounceScale).toBeCloseTo(SURFACES[SurfaceId.Bridge].bounceScale, 9);
+    expect(tuning.isHazard).toBe(false);
+  });
+
+  it("publishes a hard-edged bridge weight beside sand and water", () => {
+    const onDeck = across(0);
+    const weights = createSurfaceWeights();
+    crossed.weightsAt(onDeck.x, onDeck.z, weights);
+    expect(weights.bridge).toBe(1);
+    expect(weights.water).toBe(0);
+
+    const offShoulder = across(DECK_HALF_WIDTH + DECK_SHOULDER_RUN + 1);
+    crossed.weightsAt(offShoulder.x, offShoulder.z, weights);
+    expect(weights.bridge).toBe(0);
+    expect(weights.water).toBe(1);
+  });
+
+  it("leaves a hole with no water carrying no bridge anywhere", () => {
+    expect(surfaces.surfaceAt(0, 0)).not.toBe(SurfaceId.Bridge);
+    const weights = createSurfaceWeights();
+    surfaces.weightsAt(0, 0, weights);
+    expect(weights.bridge).toBe(0);
   });
 });

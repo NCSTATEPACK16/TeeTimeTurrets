@@ -73,6 +73,9 @@ const SURFACE_FILL: Readonly<Record<SurfaceId, string>> = {
   [SurfaceId.Rough]: "#2f7d43",
   [SurfaceId.Sand]: "#e6cf9b",
   [SurfaceId.Water]: "#3f86d4",
+  // The drivable crossing. Warm against the pond's blue on purpose: a plan is read to answer "can
+  // I get across here?", and a deck that tinted toward the water would answer it wrongly.
+  [SurfaceId.Bridge]: "#b08046",
 };
 
 interface Projection {

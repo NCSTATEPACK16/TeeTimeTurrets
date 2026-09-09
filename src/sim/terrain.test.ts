@@ -6,11 +6,15 @@ import {
   GRAD_GREEN,
   GREEN_RADIUS,
   HALF_WIDTH,
+  WATER_DEPTH,
   createTerrain,
   halfWidthAt,
 } from "./terrain";
 import type { Terrain } from "./terrain";
+import type { HoleSpec } from "./course";
 import type { Ellipse, Polygon } from "./hazards";
+import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing";
+import { CART_MIN_SLOPE_SLIDE_DEG } from "./world";
 
 const SPEC = fixedHoleSpec();
 const terrain = createTerrain(SPEC);
@@ -314,6 +318,92 @@ describe("per-hole corridor width", () => {
     for (let x = -70; x <= 70; x += 9) {
       for (let z = -70; z <= 70; z += 9) {
         expect(uniform.heightAt(x, z)).toBe(terrain.heightAt(x, z));
+      }
+    }
+  });
+});
+
+/**
+ * The causeway (spec D5). Shaped inside `shapeHazards` and **ordered after the water loop**, which
+ * is the only ordering that works: the two overlap by construction, so a deck raised before the
+ * basin is excavated is a deck the excavation immediately takes back down to the pond floor.
+ */
+describe("the causeway", () => {
+  const CROSSED: HoleSpec = {
+    ...fixedHoleSpec(),
+    water: [
+      {
+        points: [
+          { x: -20, z: -40 },
+          { x: 4, z: -40 },
+          { x: 4, z: 40 },
+          { x: -20, z: 40 },
+        ],
+      },
+    ],
+  };
+  const crossedTerrain = createTerrain(CROSSED);
+  const deck = deriveCrossings(CROSSED)[0]!;
+
+  function across(offset: number): { x: number; z: number } {
+    const dx = deck.bx - deck.ax;
+    const dz = deck.bz - deck.az;
+    const length = Math.hypot(dx, dz);
+    return {
+      x: (deck.ax + deck.bx) / 2 - (dz / length) * offset,
+      z: (deck.az + deck.bz) / 2 + (dx / length) * offset,
+    };
+  }
+
+  it("stands the deck above the water and leaves the pond below it", () => {
+    const onDeck = across(0);
+    expect(crossedTerrain.heightAt(onDeck.x, onDeck.z)).toBeGreaterThan(CROSSED.waterLevel);
+
+    const offShoulder = across(DECK_HALF_WIDTH + DECK_SHOULDER_RUN + 1);
+    expect(crossedTerrain.heightAt(offShoulder.x, offShoulder.z)).toBeLessThan(CROSSED.waterLevel);
+  });
+
+  it("holds the deck flat across its whole width", () => {
+    // A crowned or tilted deck at 1 m cells is a set of seams the 0.15 m ball trips over. Flat is
+    // not tidiness; it is what the cell size can express without a ridge down the middle.
+    const heights: number[] = [];
+    for (let offset = -DECK_HALF_WIDTH; offset <= DECK_HALF_WIDTH; offset += 0.5) {
+      const point = across(offset);
+      heights.push(crossedTerrain.heightAt(point.x, point.z));
+    }
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(0.01);
+  });
+
+  it("runs the shoulder down at a grade the cart holds and can climb back up", () => {
+    // Spec §2.2's arithmetic is what makes this a causeway rather than a bridge: the controller
+    // slides below 32 degrees and cannot climb above 45. A shoulder outside that band is either a
+    // slide the cart cannot stop on or a wall it cannot leave the deck by.
+    let steepest = 0;
+    const step = 0.25;
+    for (let offset = DECK_HALF_WIDTH; offset < DECK_HALF_WIDTH + DECK_SHOULDER_RUN; offset += step) {
+      const a = across(offset);
+      const b = across(offset + step);
+      const rise = Math.abs(crossedTerrain.heightAt(a.x, a.z) - crossedTerrain.heightAt(b.x, b.z));
+      steepest = Math.max(steepest, (Math.atan(rise / step) * 180) / Math.PI);
+    }
+    expect(steepest).toBeLessThan(CART_MIN_SLOPE_SLIDE_DEG);
+  });
+
+  it("survives the water excavation that runs in the same pass", () => {
+    // The ordering bug, asserted directly rather than trusted: a deck shaped before the basin is
+    // cut ends up at the pond floor, which is 1.5 m *below* the water line rather than above it.
+    const onDeck = across(0);
+    const height = crossedTerrain.heightAt(onDeck.x, onDeck.z);
+    expect(height).toBeGreaterThan(CROSSED.waterLevel - WATER_DEPTH + 1);
+  });
+
+  it("leaves a hole with no water exactly as it was", () => {
+    // Spec criterion 8's other half: a hole with no crossing must be untouched, to the last bit.
+    const plain = createTerrain(fixedHoleSpec());
+    const reference = createTerrain(fixedHoleSpec());
+    for (let x = -70; x <= 70; x += 7) {
+      for (let z = -70; z <= 70; z += 7) {
+        expect(plain.heightAt(x, z)).toBe(reference.heightAt(x, z));
       }
     }
   });
