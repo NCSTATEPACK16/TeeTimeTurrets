@@ -98,6 +98,15 @@
       "z": 160
     }
   },
+  "course-ground": {
+    "vertices": 56868,
+    "triangles": 111400,
+    "bbox": {
+      "x": 438.81146240234375,
+      "y": 11.680784702301025,
+      "z": 432.8707580566406
+    }
+  },
   "tee_marker": {
     "vertices": 64,
     "triangles": 36,

@@ -45,6 +45,8 @@ const SUBJECTS = [
   // The only shipped geometry with a hand-written shader in it. Built from `fixedHoleSpec()`, so
   // it is as deterministic as a prop despite being terrain.
   "hole-ground",
+  // Three holes of arena's tiled course ground, near builds finished.
+  "course-ground",
   // The seven Blender-authored props, each merged to one draw call. Same rule as above: keep this
   // list in step with tools/gate/gateScene.ts's SUBJECTS, which builds these from PROP_NAMES.
   "tee_marker",

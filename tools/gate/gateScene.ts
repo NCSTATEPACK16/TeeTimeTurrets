@@ -13,6 +13,12 @@ import { fixedHoleSpec } from "../../src/sim/course";
 import { createTerrain } from "../../src/sim/terrain";
 import { createSurfaces } from "../../src/sim/surfaces";
 import { createGround } from "../../src/render/ground";
+import { createCourseGround } from "../../src/render/courseGround";
+import { generateCourse } from "../../src/sim/course";
+import { solveCourseLayout } from "../../src/sim/courseLayout";
+import { createCourseTerrain } from "../../src/sim/courseTerrain";
+import { createCourseSurfaces } from "../../src/sim/courseSurfaces";
+import { mulberry32 } from "../../src/sim/rng";
 
 /**
  * One subject, one fixed rig. No Sim, no terrain, no input, no randomness -- AGENTS.md's Scene
@@ -52,6 +58,7 @@ const SUBJECTS: Record<string, () => GateSubject> = {
   flagstick: () => flagstickSubject(false),
   "flagstick-felled": () => flagstickSubject(true),
   "hole-ground": () => holeGroundSubject(),
+  "course-ground": () => courseGroundSubject(),
   ...Object.fromEntries(PROP_NAMES.map((name) => [name, () => propSubject(name)])),
 };
 
@@ -161,6 +168,47 @@ function holeGroundSubject(): GateSubject {
   const ground = createGround(terrain, createSurfaces(spec, terrain));
   return { object: ground.mesh, dispose: () => ground.dispose() };
 }
+
+/**
+ * Three holes of the course ground, assembled and tiled exactly as arena assembles it.
+ *
+ * Three rather than eighteen because the gate frames a subject by its bounding sphere, and a
+ * 1.6 km course reduces to a smear: at three holes the corridors, the mown stripes and the blend
+ * between two biomes are all legible in a 640x360 picture. The seed is the one the committed
+ * course plans are drawn from, so the subject is fixed.
+ *
+ * `update` is called until every tile has finished its near build, which is what the picture is
+ * of -- the far tiles are what the course looks like before you get there, and they are one
+ * `NEAR_RADIUS_M` away from being the same thing.
+ */
+function courseGroundSubject(): GateSubject {
+  const course = generateCourse(GATE_COURSE_SEED, GATE_COURSE_HOLES);
+  const layout = solveCourseLayout(
+    course.holes.map((h) => ({ index: h.index, tee: h.tee, cup: h.cup, control: h.control })),
+  );
+  const holes = layout.placements.map((placement) => {
+    const spec = course.holes[placement.index]!;
+    return { placement, spec, terrain: createTerrain(spec) };
+  });
+  const terrain = createCourseTerrain(holes, { rough: mulberry32(GATE_COURSE_SEED) });
+  const surfaces = createCourseSurfaces(
+    terrain,
+    holes.map((hole) => createSurfaces(hole.spec, hole.terrain)),
+  );
+  const ground = createCourseGround(terrain, surfaces);
+
+  const centreX = (terrain.bounds.minX + terrain.bounds.maxX) / 2;
+  const centreZ = (terrain.bounds.minZ + terrain.bounds.maxZ) / 2;
+  // Bounded rather than while(true): a tile that never finishes is a bug, and a gate run that
+  // hangs on it reports nothing at all.
+  for (let i = 0; i < 5000; i++) ground.update(centreX, centreZ);
+
+  return { object: ground.group, dispose: () => ground.dispose() };
+}
+
+/** The seed docs/course/plans is drawn from, so the gate and the plans show the same course. */
+const GATE_COURSE_SEED = 0x7ee71e5;
+const GATE_COURSE_HOLES = 3;
 
 function countGeometry(root: THREE.Object3D): { vertices: number; triangles: number } {
   let vertices = 0;
