@@ -385,3 +385,45 @@ the clubhouse is Phase 3.5; the contiguous course was in no phase at all. Phase 
 open items — mode-scoping and the pickup trio — are untouched by the map and nameplate
 work, so there was no technical reason to wait. Recorded here so a reader of `ROADMAP.md`
 does not find shipped Phase 4 work with no explanation.
+
+## Assembling the course: influence, not a mosaic
+
+Decided 9 Sep 2026, building Stage B of arena mode. The entry above says the contiguous
+heightfield is "base noise with every hole's corridor carved into it"; this is what that turned
+into when it was built, and the parts a later change has to preserve.
+
+**A point does not belong to a field.** Nine fields cover 47 ha of a 36 ha loop, so "which field
+is this in" has no single answer, and any rule that picks one leaves a cliff along the line where
+the pick changes. What has an answer is how much a hole's *corridor* claims a point.
+`courseTerrain.ts` gives each hole an influence that is 1 out to the edge of its own blend band —
+where `Terrain.heightAt` has stopped carving and is returning plain noise — and falls to 0 over
+`COURSE_BLEND_M` (40 m). Inside a corridor the ground is therefore *exactly* what stroke play
+builds, to the last decimal. Nothing is re-derived.
+
+**Weights are cubed before blending.** Corridors clear each other by 35 m and influence reaches
+about 65 m, so most fairways sit inside a neighbour's band; at raw weights the neighbour's rough
+drags a third of a metre of camber onto ground `validateHole` proved was flat. Cubing leaves a
+neighbour at half influence contributing an eighth. It is one function, `blendWeight`, and
+`courseSurfaces.ts` blends materials over the same weights so ground that drives like fairway
+looks like fairway.
+
+**Hazards hold their ground where the corridor has let go of it.** A pond faded into rough is
+ground standing above the water plane — a pond a cart drives across.
+
+**The invariant to test against is the grade, not the height.** The blend does move a corridor:
+a green 30 m from the next tee is inside that hole's ground too, and the two average, by up to
+2 m. What it must not do is steepen one, and it does not — the steepest ground on the assembled
+course is the same causeway shoulder on hole 2 that stroke play has, to 3e-6 of grade.
+
+**`Sim` stands on a `Playfield`, not on a hole.** Height, material, boundary and heightfield are
+the four questions `Sim` asked `Terrain` that are not about holes; they moved behind an interface
+with two implementations. That is what makes `isPastFieldEdge` mean something in a mode with no
+field edges, and it deliberately carries nothing about tees, cups or par — a mode with no par
+should not be handed one through the ground it drives on.
+
+**The renderer's limit is build time, not draw calls.** `weightsAt` costs 3.0 us (the spline
+nearest-point scan, eighteen of them), so stroke play's 0.5 m surface mask over the course would
+be ten minutes of baking. `courseGround.ts` tiles instead: every tile gets an 8 m build at
+construction and a 2 m one on approach, a few rows per frame. 2 m is the physics cell, so what
+you see resolves what you can drive on. Re-measure with `npm run probe:terrain` before assuming
+any of this is still true.

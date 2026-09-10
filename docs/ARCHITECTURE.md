@@ -30,7 +30,11 @@ TeeTimeTurrets/
       world.ts                    [BUILT] Rapier world bootstrap, terrain collider, ball body, tick orchestration, golf rules (strokes, hole-out, water penalty)
       terrain.ts                  [BUILT] heightfield + shared noise function (physics and mesh read the same numbers), tee/green pads, cup, water level
       surfaces.ts                 [BUILT] green/fairway/rough/sand/water as a pure function of (x,z); per-surface rolling resistance, bounce, cart speed
-      round.ts                    [Phase 1.75] par, per-hole card, running total, round stats. Sim owns one hole; round.ts owns the list of them.
+      round.ts                    [Phase 1.75] par, per-hole card, running total, round stats. In **stroke play** Sim owns one hole; round.ts owns the list of them.
+      playfield.ts                [BUILT] the ground Sim stands on -- height, material, boundary, heightfield -- as one hole or as the whole course. What makes the line above true of stroke play only.
+      courseLayout.ts             [BUILT] where the eighteen holes sit relative to each other and the clubhouse, plus the course frame (toCourseFrame/toHoleFrame) everything else transforms through.
+      courseTerrain.ts            [BUILT] the eighteen holes as one heightfield at 2 m cells: course rough with each hole's own ground blended into it by corridor influence.
+      courseSurfaces.ts           [BUILT] the same blend over materials, so ground that drives like fairway looks like fairway.
       health.ts                   [Phase 3] HP, damage from ball impact and cart shunting, death/respawn. Mode-scoped: off in STROKE.
       entities/                   [Phase 2] Cart.ts (chassis position, turret yaw, equipped club, reload timer, ammo, tire-type grip),
                                    Ball.ts (extracted from world.ts once there can be >1 ball), Target.ts (Phase 3 ragdolls)
@@ -39,6 +43,7 @@ TeeTimeTurrets/
       Ballistics.ts               [BUILT] pure math: club stats, launch vector, aim spread, drag formulas. Zero engine deps -- unit-testable standalone, reusable verbatim on a future server.
     render/
       scene.ts                    [BUILT] Three.js scene/camera/lighting, ground mesh, ball mesh, aim indicator. Pure consumer of interpolated sim state.
+      ground.ts / courseGround.ts [BUILT] one hole's ground mesh, and the course's as tiles that refine on approach. Both draw through groundShader.ts, which owns the one rule for turning a surface mask into a colour.
     entities/
       GolfClub.ts                 [BUILT, not yet wired] render-facing cart+turret+club-head. Procedural primitives, no GLB/OBJ. See its file header for the sim/render boundary it's designed to respect once Cart.ts exists.
     ui/

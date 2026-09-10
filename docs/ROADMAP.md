@@ -590,6 +590,31 @@ horizontal scroll; the preview arc's endpoint lands within a stated tolerance of
 ball actually finishes for all three clubs — a preview that lies is worse than no preview; and
 `Sim` state is byte-identical before and after a preview call.
 
+## Arena mode — the course as one place (out of phase, deliberately)
+
+Added 9 Sep 2026. `docs/DECISIONS.md` § "Arena mode, and a course that is one place" is the
+decision and § "Assembling the course" is how it was built; this is only where it sits against
+the phases above.
+
+**Shipped:** the course frame and the eighteen placements (`courseLayout.ts`), the contiguous
+2 m heightfield (`courseTerrain.ts`), course-wide materials (`courseSurfaces.ts`), `Sim` standing
+on either ground through `playfield.ts` and `loadCourse`, and the tiled ground renderer
+(`courseGround.ts`). A cart can drive all eighteen holes end to end.
+
+**Next, in order:** the mode itself — teams, kills as points, deaths as strokes, the match clock
+and MVP (`match.ts`), spawn selection across the eighteen tees (`spawn.ts`), and every tunable in
+`matchConfig.ts` as a placeholder to be set from playtesting. Then the pickup trio, then the
+Blender clubhouse and tee signs. Wiring `courseGround` into `RenderScene` belongs with the mode
+plumbing, because choosing between a hole and a course is a mode decision.
+
+**Stroke play's status is open.** It is untouched and still ships — per-hole fields, 1 m cells,
+ball physics, the scorecard. Whether it keeps running is deferred rather than decided, so do not
+delete it on the strength of arena and do not assume it is being maintained either.
+
+**This reverses the mode-scoping rule below for arena only:** "STROKE runs with damage and ammo
+disabled" still holds for stroke play. Arena keeps both on, and the match clock is what retires
+the stranding problem that rule existed for.
+
 ## Phase 5 — Server-authoritative multiplayer (do not start early)
 
 The research doc's strongest warning applies directly: deferring this to "later" on a
