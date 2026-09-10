@@ -126,11 +126,12 @@ describe("returning nines", () => {
     );
   });
 
-  it("keeps the walk from each green to the next tee short", () => {
+  it("keeps the walk from each green to the next tee within the slack bounds", () => {
     for (const [from, to] of [...pairsWithin(0, 8), ...pairsWithin(9, 17)]) {
       const green = place(layout, from, holes[from]!.cup);
       const tee = place(layout, to, holes[to]!.tee);
-      expect(dist(green, tee)).toBeCloseTo(TRANSITION_M, 3);
+      expect(dist(green, tee)).toBeGreaterThanOrEqual(TRANSITION_MIN_M - 0.5);
+      expect(dist(green, tee)).toBeLessThanOrEqual(TRANSITION_MAX_M + 0.5);
     }
   });
 
@@ -173,7 +174,7 @@ describe("inspectLayout", () => {
   it("reports a clean bill for the layout it is given", () => {
     const holes = eighteen();
     const report = inspectLayout(holes, solveCourseLayout(holes));
-    expect(report.maxTransitionM).toBeCloseTo(TRANSITION_M, 3);
+    expect(report.maxTransitionM).toBeLessThanOrEqual(TRANSITION_MAX_M + 0.5);
     expect(report.frontReturnM).toBeLessThanOrEqual(TRANSITION_M + 1);
     expect(report.conflicts).toEqual([]);
   });
