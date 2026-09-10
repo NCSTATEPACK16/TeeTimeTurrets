@@ -1,6 +1,7 @@
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { applyDamage } from "./health";
 import type { Cart } from "./entities/Cart";
+import type { PooledBall } from "./entities/BallPool";
 import type { Pin } from "./entities/Pin";
 import type { Target, TargetPart } from "./entities/Target";
 import type { Stats } from "./stats";
@@ -74,10 +75,10 @@ export const KNOCKDOWN_IMPULSE_PER_MPS = 12;
  * can knock the pin down, and every other pairing it could form is deliberately left unhandled.
  */
 export type Actor =
-  | { kind: "ball"; body: RAPIER.RigidBody }
+  | { kind: "ball"; ball: PooledBall }
   | { kind: "courseBall"; body: RAPIER.RigidBody }
   | { kind: "targetPart"; target: Target; part: TargetPart }
-  | { kind: "cart"; cart: Cart }
+  | { kind: "cart"; cart: Cart; index: number }
   | { kind: "pin"; pin: Pin };
 
 /**
@@ -88,16 +89,20 @@ export type Actor =
 export class CombatRegistry {
   private readonly actors = new Map<number, Actor>();
 
-  registerBall(handle: number, body: RAPIER.RigidBody): void {
-    this.actors.set(handle, { kind: "ball", body });
+  /** The pooled ball itself, not just its body: `firedBy` is what a kill is attributed to. */
+  registerBall(handle: number, ball: PooledBall): void {
+    this.actors.set(handle, { kind: "ball", ball });
   }
 
+  /** The course ball has no shooter and deliberately does not acquire a fake one. */
   registerCourseBall(handle: number, body: RAPIER.RigidBody): void {
     this.actors.set(handle, { kind: "courseBall", body });
   }
 
-  registerCart(handle: number, cart: Cart): void {
-    this.actors.set(handle, { kind: "cart", cart });
+  /** `index` is the cart's index in `Sim.rigs` -- the same index the scoreboard, the bot
+   *  array and the nameplates all use, so no second identity has to be mapped to it. */
+  registerCart(handle: number, cart: Cart, index: number): void {
+    this.actors.set(handle, { kind: "cart", cart, index });
   }
 
   registerPin(handle: number, pin: Pin): void {
@@ -133,8 +138,23 @@ export interface CollisionEventSource {
 export interface CombatContext {
   registry: CombatRegistry;
   stats: Stats;
-  /** Called once, on the contact that takes a cart from above zero HP to zero. */
-  onCartKilled: (cart: Cart) => void;
+  /**
+   * A fired ball connected with something, and `shooter` is the rig that fired it.
+   *
+   * This replaces `ctx.stats.directHits += 1` written inline here, and the move is the fix for
+   * `docs/TEST-AND-SPEC-PITFALLS.md` §4: `Stats` is the **player's**, and crediting it from a
+   * module that could not tell whose ball it was meant a bot's hit inflated the player's
+   * accuracy. `world.ts` now decides, and it decides by asking whether `shooter` is rig 0.
+   */
+  onBallHit: (shooter: number) => void;
+  /**
+   * Called once, on the contact that takes a cart from above zero HP to zero.
+   *
+   * `victim` and `killer` are rig indices; `killer` is `NO_KILLER` for a death nobody caused.
+   * Both are passed rather than looked up, because a `rigs.indexOf` at the point of a kill would
+   * be a second way of answering a question the registry already answered.
+   */
+  onCartKilled: (cart: Cart, victim: number, killer: number) => void;
   /**
    * Called on the contact that fells the pin. `world.ts` owns the Rapier resources, so removing the
    * collider is its job rather than this module's -- the same split `onCartKilled` already uses.
@@ -174,22 +194,22 @@ export function processContacts(queue: CollisionEventSource, ctx: CombatContext)
     const b = ctx.registry.get(handle2);
     if (!a || !b) return;
 
-    if (a.kind === "ball" && b.kind === "targetPart") return ballHitsTarget(a.body, b, ctx);
-    if (b.kind === "ball" && a.kind === "targetPart") return ballHitsTarget(b.body, a, ctx);
-    if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.body, b.cart, ctx);
-    if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.body, a.cart, ctx);
-    if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a.cart, b.cart, ctx);
+    if (a.kind === "ball" && b.kind === "targetPart") return ballHitsTarget(a.ball, b, ctx);
+    if (b.kind === "ball" && a.kind === "targetPart") return ballHitsTarget(b.ball, a, ctx);
+    if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.ball, b, ctx);
+    if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.ball, a, ctx);
+    if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a, b, ctx);
     if (a.kind === "pin" || b.kind === "pin") return ballHitsPin(a, b, ctx);
   });
 }
 
 function ballHitsTarget(
-  ball: RAPIER.RigidBody,
+  ball: PooledBall,
   hit: { target: Target; part: TargetPart },
   ctx: CombatContext,
 ): void {
   const wasDown = hit.target.isDown;
-  const v = ball.linvel();
+  const v = ball.body.linvel();
   const speed = Math.hypot(v.x, v.y, v.z);
   const scale = speed < 1e-6 ? 0 : KNOCKDOWN_IMPULSE_PER_MPS;
 
@@ -198,7 +218,9 @@ function ballHitsTarget(
   impulseScratch.z = v.z * scale;
   hit.target.knockDown(hit.part, impulseScratch);
 
-  ctx.stats.directHits += 1;
+  ctx.onBallHit(ball.firedBy);
+  // `targetsDown` is deliberately still unattributed: it counts ragdolls down on this hole,
+  // which is a fact about the world rather than about whoever knocked one over.
   if (!wasDown) ctx.stats.targetsDown += 1;
 }
 
@@ -225,14 +247,19 @@ function ballHitsPin(a: Actor, b: Actor, ctx: CombatContext): void {
   ctx.onPinStruck();
 }
 
-function ballHitsCart(_ball: RAPIER.RigidBody, cart: Cart, ctx: CombatContext): void {
+function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, ctx: CombatContext): void {
+  const cart = victim.cart;
   // A cart awaiting respawn is out of the world: it takes no damage, no stroke, and generates
   // no accuracy credit for whoever shot at it. `world.ts` freezes it for the same reason.
   if (cart.dead) return;
+  // Spawn protection reads exactly like death here, and for the same reason: the cart is not a
+  // valid thing to have hit, so the shot earns nothing either. Ramming is deliberately not
+  // guarded -- a cart that cannot be shot and cannot be pushed can park inside an enemy.
+  if (cart.protectedFor > 0) return;
 
-  ctx.stats.directHits += 1;
+  ctx.onBallHit(ball.firedBy);
   cart.strokesTaken += 1;
-  if (applyDamage(cart.health, STROKE_DAMAGE)) ctx.onCartKilled(cart);
+  if (applyDamage(cart.health, STROKE_DAMAGE)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
 }
 
 /**
@@ -241,8 +268,19 @@ function ballHitsCart(_ball: RAPIER.RigidBody, cart: Cart, ctx: CombatContext): 
  * receives none (docs/DECISIONS.md, physics ownership).
  *
  * Not counted in `directHits`: that stat feeds shot accuracy, and ramming is not a shot.
+ *
+ * A ram kill is attributed to the **other** cart -- a ram is something one cart did to another,
+ * which is what a kill is. Both dying in one contact scores both, each against the other; that is
+ * two deaths and two kills, and pretending it is anything else would need a rule nobody has asked
+ * for.
  */
-function cartsShunt(a: Cart, b: Cart, ctx: CombatContext): void {
+function cartsShunt(
+  first: { cart: Cart; index: number },
+  second: { cart: Cart; index: number },
+  ctx: CombatContext,
+): void {
+  const a = first.cart;
+  const b = second.cart;
   cartVelocity(a, velA);
   cartVelocity(b, velB);
   const closing = Math.hypot(velA.x - velB.x, velA.z - velB.z);
@@ -250,8 +288,8 @@ function cartsShunt(a: Cart, b: Cart, ctx: CombatContext): void {
 
   // A ram can kill, and it takes the same stroke penalty a shot does -- death has one path.
   const damage = closing * SHUNT_DAMAGE_PER_MPS;
-  if (applyDamage(a.health, damage)) ctx.onCartKilled(a);
-  if (applyDamage(b.health, damage)) ctx.onCartKilled(b);
+  if (applyDamage(a.health, damage)) ctx.onCartKilled(a, first.index, second.index);
+  if (applyDamage(b.health, damage)) ctx.onCartKilled(b, second.index, first.index);
 
   // Along the line between them, so the pair separates rather than being flung sideways. Two
   // carts exactly co-located (only reachable synthetically) fall back to the closing direction.

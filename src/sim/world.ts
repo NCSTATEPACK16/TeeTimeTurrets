@@ -24,7 +24,7 @@ import type { CourseTerrain } from "./courseTerrain";
 import { BOT_CHANNEL, computeBotIntent } from "./bot";
 import type { BotTarget } from "./bot";
 import { Match } from "./match";
-import { MATCH_DURATION_S } from "./matchConfig";
+import { MATCH_DURATION_S, NO_KILLER, SPAWN_PROTECTION_S } from "./matchConfig";
 import { hashChannel, mulberry32 } from "./rng";
 
 export type { Vec3 } from "./course";
@@ -215,6 +215,15 @@ export interface CartTransform {
  * every time. Rig 0 is always the player's; the rest are bots, in `bots` order.
  */
 interface CartRig {
+  /**
+   * Its own position in `Sim.rigs`, kept rather than looked up. 0 is always the player's.
+   *
+   * It is the identity of a player everywhere in the project -- `bots[i - 1]`,
+   * `currentBotCarts[i - 1]`, the nameplates and the scoreboard all index by it -- and a kill
+   * has to be attributed on the tick it happens, where an `indexOf` would be a second way of
+   * answering a question `addCartRig` already knew the answer to.
+   */
+  readonly index: number;
   readonly cart: Cart;
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
@@ -477,11 +486,12 @@ export class Sim {
     sim.combatContext = {
       registry: sim.registry,
       stats: sim.stats,
-      onCartKilled: (cart) => sim.killCart(cart),
+      onBallHit: (shooter) => sim.creditHit(shooter),
+      onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
       onPinStruck: () => sim.fellPin(),
     };
     for (const pooled of sim.ballPool.all) {
-      sim.registry.registerBall(pooled.body.collider(0).handle, pooled.body);
+      sim.registry.registerBall(pooled.body.collider(0).handle, pooled);
     }
     // Registered as `courseBall`, not `ball`: see the comment on the collider above and on `Actor`.
     // It is here so a played ball can knock the pin down, and for nothing else.
@@ -626,8 +636,11 @@ export class Sim {
     cart.position.x = spawn.x;
     cart.position.y = spawn.y;
     cart.position.z = spawn.z;
-    this.registry.registerCart(collider.handle, cart);
+    // Before the push, so it is the index this rig is about to occupy.
+    const index = this.rigs.length;
+    this.registry.registerCart(collider.handle, cart, index);
     this.rigs.push({
+      index,
       cart,
       body,
       collider,
@@ -684,10 +697,23 @@ export class Sim {
    * No stroke is charged here. The hit that took the last point of HP already counted its own
    * stroke against `cart.strokesTaken`; charging again for the death would double it.
    */
-  private killCart(cart: Cart): void {
+  private killCart(cart: Cart, victim: number, killer: number): void {
     if (cart.dead) return;
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
+    this.match.scoreKill(killer, victim);
+  }
+
+  /**
+   * A fired ball connected, and `shooter` is the rig that fired it.
+   *
+   * `Sim.stats` is the **player's** -- `stats.shotsFired` is the accuracy denominator the results
+   * screen reports -- so only rig 0's hits may write it. `combat.ts` used to increment it inline
+   * with no way to tell whose ball it was, which is the latent defect
+   * `docs/TEST-AND-SPEC-PITFALLS.md` §4 recorded: a bot's hit inflated the player's accuracy.
+   */
+  private creditHit(shooter: number): void {
+    if (shooter === 0) this.stats.directHits += 1;
   }
 
   /**
@@ -914,7 +940,7 @@ export class Sim {
 
     if (cart.shot.fired) {
       cart.shot.fired = false;
-      this.resolveShot(cart);
+      this.resolveShot(rig);
     }
   }
 
@@ -932,6 +958,9 @@ export class Sim {
     rig.cart.position.y = spawn.y;
     rig.cart.position.z = spawn.z;
     rig.cart.revive();
+    // After `revive`, which clears it: protection is a property of respawning, granted here and
+    // nowhere else, so `Sim.reset` starting a fresh hole does not start it behind a shield.
+    rig.cart.protectedFor = SPAWN_PROTECTION_S;
     rig.fallSpeed = 0;
     rig.body.setTranslation(spawn, true);
   }
@@ -1029,7 +1058,8 @@ export class Sim {
     cart.wasInWater = true;
 
     cart.strokesTaken += 1;
-    if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart);
+    // Drowning is the unattributed death: a stroke against the team, and a point for nobody.
+    if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart, rig.index, NO_KILLER);
 
     const safe = cart.lastSafePosition;
     p.x = safe.x;
@@ -1053,7 +1083,8 @@ export class Sim {
    * accuracy denominator the results screen reports. So only the player's shot may write them,
    * and the stationary branch, which plays the player's own course ball, is his alone.
    */
-  private resolveShot(cart: Cart): void {
+  private resolveShot(rig: CartRig): void {
+    const cart = rig.cart;
     const isPlayer = cart === this.cart;
     if (this.mode === SwingMode.Cart) {
       // No ball is scooped off the course here and none ever will be: the ammo fork replaced
@@ -1065,7 +1096,7 @@ export class Sim {
         return;
       }
 
-      const pooled = this.ballPool.acquire();
+      const pooled = this.ballPool.acquire(rig.index);
       if (!pooled) {
         // All POOL_SIZE bodies are in flight simultaneously -- an extreme, likely
         // untestable-in-practice case (spec §6). Cart.fire() already decremented ammo on the

@@ -14,6 +14,7 @@ import {
   processContacts,
 } from "./combat";
 import type { CollisionEventSource } from "./combat";
+import type { PooledBall } from "./entities/BallPool";
 import { createStats } from "./stats";
 import type { Stats } from "./stats";
 
@@ -41,9 +42,14 @@ describe("combat contact resolution", () => {
   let target: Target;
   let cart: Cart;
   let cartHandle: number;
-  let ball: RAPIER.RigidBody;
+  let ball: PooledBall;
   let ballHandle: number;
   let killed: Cart[];
+  /** Every `onCartKilled` call, so a test can assert who was credited and not merely that
+   *  somebody died. `killed` stays as the cart list the older tests read. */
+  let kills: { victim: number; killer: number }[];
+  /** Every `onBallHit` shooter, in order. */
+  let hits: number[];
   let pinStrikes: number;
 
   beforeAll(async () => {
@@ -54,16 +60,28 @@ describe("combat contact resolution", () => {
     return {
       registry,
       stats,
-      onCartKilled: (c: Cart) => killed.push(c),
+      // `Sim.creditHit` is what decides whose accuracy a hit belongs to; here the raw shooter is
+      // recorded and `stats.directHits` is credited unconditionally, so the existing tests that
+      // assert on `directHits` keep asserting what they always did.
+      onBallHit: (shooter: number) => {
+        hits.push(shooter);
+        stats.directHits += 1;
+      },
+      onCartKilled: (c: Cart, victim: number, killer: number) => {
+        killed.push(c);
+        kills.push({ victim, killer });
+      },
       onPinStruck: () => pinStrikes++,
     };
   }
 
-  function makeBall(vx: number): { body: RAPIER.RigidBody; handle: number } {
+  /** A pooled ball, shaped as `BallPool` builds them. `firedBy` defaults to rig 0 -- the player --
+   *  because that is what every pre-Stage-C test implicitly assumed. */
+  function makeBall(vx: number, firedBy = 0): { ball: PooledBall; handle: number } {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(0.15).setDensity(1130), body);
     body.setLinvel({ x: vx, y: 0, z: 0 }, true);
-    return { body, handle: collider.handle };
+    return { ball: { body, state: "flying", landedAt: 0, firedBy }, handle: collider.handle };
   }
 
   beforeEach(() => {
@@ -72,6 +90,8 @@ describe("combat contact resolution", () => {
     registry = new CombatRegistry();
     stats = createStats();
     killed = [];
+    kills = [];
+    hits = [];
     pinStrikes = 0;
 
     target = new Target(world, { x: 10, y: 0, z: 0 });
@@ -80,10 +100,10 @@ describe("combat contact resolution", () => {
     cart = new Cart({ position: { x: 0, y: 0, z: 0 } });
     const cartBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     cartHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), cartBody).handle;
-    registry.registerCart(cartHandle, cart);
+    registry.registerCart(cartHandle, cart, 0);
 
     const made = makeBall(30);
-    ball = made.body;
+    ball = made.ball;
     ballHandle = made.handle;
     registry.registerBall(ballHandle, ball);
   });
@@ -123,6 +143,97 @@ describe("combat contact resolution", () => {
     expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
   });
 
+  describe("who fired it", () => {
+    it("reports the shooter a ball carries, not the cart it hit", () => {
+      const fromBot = makeBall(20, 3);
+      registry.registerBall(fromBot.handle, fromBot.ball);
+      processContacts(queueOf([fromBot.handle, cartHandle, true]), ctx());
+
+      // 3, and specifically not 0. Every ball reported 0 before Stage C, because there was
+      // nowhere for the answer to live -- and 0 is the player, so it read as correct.
+      expect(hits).toEqual([3]);
+    });
+
+    it("reports the shooter of a ball that hit a target too", () => {
+      // The control on the assertion above, and the other half of pitfall §4: the target path
+      // credited `directHits` inline with exactly the same blind spot.
+      const fromBot = makeBall(20, 2);
+      registry.registerBall(fromBot.handle, fromBot.ball);
+      processContacts(queueOf([fromBot.handle, target.part("torso").collider.handle, true]), ctx());
+
+      expect(hits).toEqual([2]);
+    });
+
+    it("attributes a lethal hit to the shooter and names the victim's own index", () => {
+      cart.health.hp = 1;
+      const fromBot = makeBall(20, 3);
+      registry.registerBall(fromBot.handle, fromBot.ball);
+      processContacts(queueOf([fromBot.handle, cartHandle, true]), ctx());
+
+      expect(kills).toEqual([{ victim: 0, killer: 3 }]);
+    });
+
+    it("attributes a ram kill to the other cart, both ways in one contact", () => {
+      const other = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
+      const otherBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
+      const otherHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), otherBody).handle;
+      registry.registerCart(otherHandle, other, 1);
+      cart.health.hp = 1;
+      other.health.hp = 1;
+      cart.heading = 0;
+      cart.speed = 14;
+      other.speed = 14;
+
+      processContacts(queueOf([cartHandle, otherHandle, true]), ctx());
+
+      // Two deaths, each credited to the other cart. Not `NO_KILLER`, which is what a ram would
+      // score if the shunt path forwarded a death without saying who caused it.
+      expect(kills).toEqual([
+        { victim: 0, killer: 1 },
+        { victim: 1, killer: 0 },
+      ]);
+    });
+  });
+
+  describe("spawn protection", () => {
+    it("takes no damage and earns the shooter no credit while it holds", () => {
+      cart.protectedFor = 3;
+      processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(STARTING_HP);
+      expect(cart.strokesTaken).toBe(0);
+      expect(hits).toEqual([]);
+      expect(stats.directHits).toBe(0);
+    });
+
+    it("stops mattering the moment it runs out", () => {
+      // The control. Without it the test above passes against `ballHitsCart` returning
+      // unconditionally, which would make the cart immortal rather than protected.
+      cart.protectedFor = 0;
+      processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
+      expect(hits).toEqual([0]);
+    });
+
+    it("does not stop a ram", () => {
+      // Deliberate, per the design: a cart that can be neither shot nor pushed can park itself
+      // inside an enemy with impunity.
+      const other = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
+      const otherBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
+      const otherHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), otherBody).handle;
+      registry.registerCart(otherHandle, other, 1);
+      cart.protectedFor = 3;
+      cart.heading = 0;
+      cart.speed = 14;
+      other.speed = 14;
+
+      processContacts(queueOf([cartHandle, otherHandle, true]), ctx());
+
+      expect(cart.health.hp).toBeLessThan(STARTING_HP);
+    });
+  });
+
   it("clamps a full-charge driver hit to MAX_HIT_DAMAGE and a putter tap to MIN_HIT_DAMAGE", () => {
     expect(hitDamage(40)).toBe(MAX_HIT_DAMAGE);
     expect(hitDamage(2)).toBe(MIN_HIT_DAMAGE);
@@ -154,7 +265,7 @@ describe("combat contact resolution", () => {
     const other = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
     const otherBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     const otherHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), otherBody).handle;
-    registry.registerCart(otherHandle, other);
+    registry.registerCart(otherHandle, other, 1);
 
     cart.heading = 0;
     cart.speed = 14;
@@ -176,7 +287,7 @@ describe("combat contact resolution", () => {
     const other = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
     const otherBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     const otherHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), otherBody).handle;
-    registry.registerCart(otherHandle, other);
+    registry.registerCart(otherHandle, other, 1);
     cart.speed = SHUNT_MIN_SPEED / 4;
     other.speed = SHUNT_MIN_SPEED / 4;
 
@@ -201,7 +312,7 @@ describe("combat contact resolution", () => {
 
   it("ignores ball-vs-ball contacts", () => {
     const second = makeBall(-30);
-    registry.registerBall(second.handle, second.body);
+    registry.registerBall(second.handle, second.ball);
     processContacts(queueOf([ballHandle, second.handle, true]), ctx());
     expect(stats.directHits).toBe(0);
   });
@@ -217,13 +328,13 @@ describe("combat contact resolution", () => {
   describe("a ball hit is exactly one stroke", () => {
     it("costs one point of health and one stroke, whatever the ball's speed", () => {
       const slow = makeBall(3);
-      registry.registerBall(slow.handle, slow.body);
+      registry.registerBall(slow.handle, slow.ball);
       processContacts(queueOf([slow.handle, cartHandle, true]), ctx());
       expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
       expect(cart.strokesTaken).toBe(1);
 
       const fast = makeBall(40);
-      registry.registerBall(fast.handle, fast.body);
+      registry.registerBall(fast.handle, fast.ball);
       processContacts(queueOf([fast.handle, cartHandle, true]), ctx());
       expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE * 2);
       expect(cart.strokesTaken).toBe(2);
@@ -231,7 +342,7 @@ describe("combat contact resolution", () => {
 
     it("still counts the hit as a direct hit for accuracy stats", () => {
       const ball = makeBall(20);
-      registry.registerBall(ball.handle, ball.body);
+      registry.registerBall(ball.handle, ball.ball);
       processContacts(queueOf([ball.handle, cartHandle, true]), ctx());
       expect(stats.directHits).toBe(1);
     });
@@ -242,9 +353,9 @@ describe("combat contact resolution", () => {
         RAPIER.ColliderDesc.capsule(0.35, 0.6),
         world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
       );
-      registry.registerCart(collider.handle, small);
+      registry.registerCart(collider.handle, small, 1);
       const ball = makeBall(20);
-      registry.registerBall(ball.handle, ball.body);
+      registry.registerBall(ball.handle, ball.ball);
 
       processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
       expect(killed).toHaveLength(0);
@@ -257,7 +368,7 @@ describe("combat contact resolution", () => {
     it("ignores a hit on a cart that is already dead and awaiting respawn", () => {
       cart.dead = true;
       const ball = makeBall(20);
-      registry.registerBall(ball.handle, ball.body);
+      registry.registerBall(ball.handle, ball.ball);
       processContacts(queueOf([ball.handle, cartHandle, true]), ctx());
       expect(cart.health.hp).toBe(STARTING_HP);
       expect(cart.strokesTaken).toBe(0);
@@ -270,7 +381,7 @@ describe("combat contact resolution", () => {
         RAPIER.ColliderDesc.capsule(0.35, 0.6),
         world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
       );
-      registry.registerCart(collider.handle, other);
+      registry.registerCart(collider.handle, other, 1);
       cart.heading = 0;
       cart.speed = 10;
       other.heading = Math.PI;
@@ -309,7 +420,7 @@ describe("combat contact resolution", () => {
 
     it("is knocked down by the played course ball, whichever order the handles arrive in", () => {
       const played = makeBall(9);
-      registry.registerCourseBall(played.handle, played.body);
+      registry.registerCourseBall(played.handle, played.ball.body);
       processContacts(queueOf([pinHandle, played.handle, true]), ctx());
       expect(pinStrikes).toBe(1);
     });

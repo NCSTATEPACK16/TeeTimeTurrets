@@ -1,4 +1,5 @@
 import RAPIER from "@dimforge/rapier3d-compat";
+import { NO_KILLER } from "../matchConfig";
 import { BALL_RADIUS as POOLED_BALL_RADIUS } from "./ballShape";
 
 /** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
@@ -10,6 +11,18 @@ export interface PooledBall {
   body: RAPIER.RigidBody;
   state: BallState;
   landedAt: number;
+  /**
+   * Which rig fired this ball, or `NO_KILLER` while it belongs to nobody.
+   *
+   * Arena scores a kill against whoever fired the ball, so this is the fact the whole scoring
+   * system rests on -- and until Stage C it did not exist anywhere in the sim.
+   * `docs/TEST-AND-SPEC-PITFALLS.md` §4 records the consequence: `combat.ts` credited every
+   * ball's hit to the player, latent only because `accuracy()` had no non-test caller.
+   *
+   * Cleared on release, because a pool of 32 bodies recycles and a stale owner on an idle body
+   * is a kill waiting to be credited to the wrong cart.
+   */
+  firedBy: number;
 }
 
 export const POOL_SIZE = 32;
@@ -65,7 +78,7 @@ export class BallPool {
         .setEnabled(false);
       world.createCollider(colliderDesc, body);
 
-      this.balls.push({ body, state: "idle", landedAt: 0 });
+      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER });
       this.restTicks.set(body, 0);
     }
   }
@@ -74,20 +87,25 @@ export class BallPool {
    * idle -> flying. Force-recycles the oldest `landed` ball if no `idle` body remains (never a
    * `flying` one -- an in-flight shot must never vanish mid-arc). Returns null only when every
    * pooled body is simultaneously `flying`; the caller must degrade to a blank shot in that case.
+   *
+   * `firedBy` has **no default**, on purpose. Every call site has to answer "whose shot is this"
+   * rather than inherit an answer, because the wrong answer here is a kill credited to the wrong
+   * cart and nothing about it would look wrong at the call site.
    */
-  acquire(): PooledBall | null {
+  acquire(firedBy: number): PooledBall | null {
     const idle = this.balls.find((b) => b.state === "idle");
-    if (idle) return this.beginFlight(idle);
+    if (idle) return this.beginFlight(idle, firedBy);
 
     const landed = this.balls.filter((b) => b.state === "landed");
     if (landed.length === 0) return null;
     let oldest = landed[0];
     for (const b of landed) if (b.landedAt < oldest.landedAt) oldest = b;
-    return this.beginFlight(oldest);
+    return this.beginFlight(oldest, firedBy);
   }
 
-  private beginFlight(ball: PooledBall): PooledBall {
+  private beginFlight(ball: PooledBall, firedBy: number): PooledBall {
     ball.state = "flying";
+    ball.firedBy = firedBy;
     ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
     this.restTicks.set(ball.body, 0);
@@ -99,6 +117,7 @@ export class BallPool {
    * gravity, so leaving it enabled would have it fall forever). */
   release(ball: PooledBall): void {
     ball.state = "idle";
+    ball.firedBy = NO_KILLER;
     ball.body.setTranslation(PARKED_POSITION, true);
     ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     ball.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
