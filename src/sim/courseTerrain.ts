@@ -58,6 +58,23 @@ export const COURSE_MARGIN_M = 40;
 /** Channel for the course rough when the caller does not inject one. */
 const COURSE_ROUGH_SEED = 0xc0125e;
 
+/**
+ * An influence turned into a blend weight.
+ *
+ * Cubed, so the hole a point is actually on wins it. Corridors are laid out 35 m apart at the
+ * closest and a hole's influence reaches ~65 m, so a fairway sample is usually inside a
+ * neighbour's band as well -- at raw weights that neighbour's rough would drag a third of a metre
+ * of camber onto ground `validateHole` proved was flat. Cubing leaves a neighbour at half
+ * influence contributing an eighth, keeps the falloff continuous at both ends (0 and 1 are fixed
+ * points), and costs two multiplies.
+ *
+ * Exported because `courseSurfaces.ts` blends over the same weights: ground that drives like
+ * fairway where it looks like fairway means both answers come from one function.
+ */
+export function blendWeight(influence: number): number {
+  return influence * influence * influence;
+}
+
 export interface PlacedHole {
   readonly placement: HolePlacement;
   readonly spec: HoleSpec;
@@ -193,13 +210,7 @@ export function createCourseTerrain(
       toHoleFrame(context.hole.placement, x, z, localScratch);
       const influence = influenceLocal(context, localScratch.x, localScratch.z);
       if (influence <= 0) continue;
-      // Cubed, so the hole a point is actually on wins it. Corridors are laid out 35 m apart at
-      // the closest, and a hole's influence reaches ~65 m, so a fairway sample is usually inside
-      // a neighbour's band as well -- at raw weights that neighbour's rough would drag a third of
-      // a metre of camber onto ground the hole spent `validateHole` proving was flat. Cubing
-      // leaves a neighbour at half influence contributing an eighth as much, keeps the falloff
-      // continuous at both ends (0 and 1 are fixed points), and costs two multiplies.
-      const weight = influence * influence * influence;
+      const weight = blendWeight(influence);
       sumWeight += weight;
       sumHeight += weight * context.hole.terrain.heightAt(localScratch.x, localScratch.z);
     }
