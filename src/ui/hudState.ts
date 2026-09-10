@@ -30,7 +30,25 @@ export interface HudSource {
   readonly current: { readonly position: { readonly x: number; readonly y: number; readonly z: number } };
   /** Only `cupPosition` is read. Structural, so this module still needs no terrain and no Rapier. */
   readonly terrain: { readonly cupPosition: { readonly x: number; readonly y: number; readonly z: number } };
+  /**
+   * True in arena. Optional so every existing fixture -- and stroke play itself -- constructs a
+   * valid source without knowing the mode exists.
+   */
+  readonly arena?: boolean;
+  /**
+   * The scoreboard, in arena. Two methods rather than the arrays behind them, because `Match`
+   * keeps those private and a HUD has no business holding a writable handle to the score.
+   */
+  readonly match?: {
+    teamStrokes(team: number): number;
+    pointsFor(index: number): number;
+  };
 }
+
+/** The player is always rig 0 and always team 0; see `matchConfig.teamOf`. */
+const PLAYER = 0;
+const PLAYER_TEAM = 0;
+const ENEMY_TEAM = 1;
 
 export interface HudState {
   clubText: string;
@@ -45,6 +63,16 @@ export interface HudState {
   timerText: string;
   /** UI-SPEC H17: whole metres from the ball to the cup, e.g. `"84 m"`. */
   pinDistanceText: string;
+  /**
+   * Whether the golf fields (strokes, pin distance) and the arena ones (team score, kills) are
+   * showing. Never both. The strings behind each are derived either way -- see `deriveHudState`.
+   */
+  golfVisible: boolean;
+  arenaVisible: boolean;
+  /** Both sides' deaths, the player's first: `"US 4 — THEM 7"`. */
+  teamScoreText: string;
+  /** The player's own kills: `"KILLS 3"`. */
+  pointsText: string;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -61,6 +89,10 @@ export function createHudStateScratch(): HudState {
     ammoText: "",
     timerText: "",
     pinDistanceText: "",
+    golfVisible: false,
+    arenaVisible: false,
+    teamScoreText: "",
+    pointsText: "",
   };
 }
 
@@ -84,6 +116,19 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.ammoText = `${Math.max(0, Math.round(cart.ammo))}`;
   out.timerText = formatClock(source.matchTimeRemaining);
   out.pinDistanceText = `${Math.round(flatDistance(source))} m`;
+
+  // Visibility is the only thing the mode decides. Both sets of strings are derived in both
+  // modes, on purpose: a blank field is a rendering decision and a missing one is a crash, and
+  // this function runs inside the render loop where a throw is a black screen rather than a
+  // wrong number. That is also why `match` is read defensively -- `Sim` always has one, and a
+  // source that claims arena without a scoreboard still has to render.
+  const arena = source.arena === true;
+  out.arenaVisible = arena;
+  out.golfVisible = !arena;
+  out.teamScoreText = `US ${source.match?.teamStrokes(PLAYER_TEAM) ?? 0} — THEM ${
+    source.match?.teamStrokes(ENEMY_TEAM) ?? 0
+  }`;
+  out.pointsText = `KILLS ${source.match?.pointsFor(PLAYER) ?? 0}`;
 }
 
 /**

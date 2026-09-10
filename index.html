@@ -561,6 +561,11 @@
         <span id="hud-timer">3:00</span>
         <span id="hud-club">DRIVER</span>
         <span id="hud-strokes">STROKES 0</span>
+        <!-- Empty by design, and it is not a stylistic choice: `docs/TEST-AND-SPEC-PITFALLS.md`
+             §1 instances 5 and 6 are two smoke checks that passed against placeholder markup with
+             the feature deleted. A blank element can only be filled by the code under test. -->
+        <span id="hud-team-score" hidden></span>
+        <span id="hud-points" hidden></span>
       </div>
       <div id="power-track"><div id="power-fill"></div></div>
       <div id="hud-status"></div>
