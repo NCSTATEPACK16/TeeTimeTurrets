@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "smoke": "vite build && node tools/smoke.mjs",
     "probe": "vite build -c tools/probe.vite.config.ts && node tools/.probe-out/feelProbe.mjs",
+    "probe:terrain": "vite build -c tools/terrainProbe.vite.config.ts && node tools/.terrain-out/terrainProbe.mjs",
     "plan": "vite build -c tools/holePlan.vite.config.ts && node tools/.plan-out/holePlan.mjs",
     "plan:course": "vite build -c tools/coursePlan.vite.config.ts && node tools/.course-out/coursePlan.mjs",
     "plan:png": "node tools/planPng.mjs --scale=2",

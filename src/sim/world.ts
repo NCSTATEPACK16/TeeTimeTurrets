@@ -83,7 +83,7 @@ const ANGULAR_DAMPING = 0.6;
  * has a static threshold: it holds the ball on any grade shallower than atan(crr) and brings
  * it to a full stop in finite time.
  */
-const GRAVITY = 9.81;
+export const GRAVITY = 9.81;
 
 /** Ball must be this slow and inside the cup radius to count as holed rather than lipping out. */
 const HOLE_OUT_SPEED = 2.5;
@@ -170,13 +170,17 @@ const TARGET_PLACEMENTS: readonly { along: number; lateral: number }[] = [
  * whole argument is that at a 1.0 m heightfield cell there is no deck width that behaves like a
  * bridge, only shoulders the cart drives up (under the climb limit) or cannot leave (over it). A
  * second copy of 32 in a terrain test would let the crossing and the controller drift apart.
+ *
+ * The rest are exported for `tools/terrainProbe.ts`, and for the same reason: a probe that times
+ * `computeColliderMovement` against its own controller settings is timing a different vehicle,
+ * and the answer it gives about cell size would be about that vehicle rather than this one.
  */
-const CHARACTER_OFFSET = 0.02;
+export const CHARACTER_OFFSET = 0.02;
 export const CART_MAX_SLOPE_CLIMB_DEG = 45;
 export const CART_MIN_SLOPE_SLIDE_DEG = 32;
-const CART_AUTOSTEP_HEIGHT = 0.45;
-const CART_AUTOSTEP_MIN_WIDTH = 0.25;
-const CART_SNAP_TO_GROUND = 0.6;
+export const CART_AUTOSTEP_HEIGHT = 0.45;
+export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
+export const CART_SNAP_TO_GROUND = 0.6;
 
 export interface Quat {
   x: number;

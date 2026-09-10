@@ -358,6 +358,27 @@ course from ~3.4M ground triangles to ~845k and its collider from ~1.69M cells t
 resident in one Rapier heightfield with no streaming. **Stroke play keeps 1 m.** If golf
 ever moves onto this world, the cell size moves back or the ball trips.
 
+**Measured 9 Sep 2026, and the reasoned numbers above were never checked before that.**
+`tools/terrainProbe.ts` (`npm run probe:terrain`) builds the real thing — the eighteen
+generated holes placed by `courseLayout.ts`, sampled through their own `heightAt`, as one
+Rapier heightfield — and drives 24 KCC carts across it for 600 ticks. The field bounding box
+is **976 × 1533 m**, not the square 1,300 m the paragraph above assumed, so 2 m cells are
+**374k** cells and ~748k triangles rather than 422k and 845k. Cost at 2 m: heights sampled in
+**302 ms**, collider built in **0.8 ms**, **1.39 ms mean** per tick (p95 1.68, max 3.15) for
+`world.step()` plus 24 character-controller moves, **82 MB** resident. The budgets it is
+judged against are a quarter of a 16.67 ms frame as a mean and half as a p95, since the frame
+holds a render too.
+
+**So the 4 m fallback is not needed, and neither is tiled streaming.** The probe sweeps
+1/2/4/8 m to prove it is measuring cell size at all — 1.90 / 1.39 / 0.74 / 0.60 ms mean and
+1142 / 302 / 76 / 22 ms to sample — and even **1 m clears every budget** (1.90 ms mean,
+136 MB). 2 m is kept because it is what the mode needs, not because finer was unaffordable.
+Two guards decide whether a run is evidence at all: carts must be grounded ≥ 90% of ticks and
+must travel ≥ 40% of free speed. They are not decoration — the first run of the probe reported
+a cheerful 0.81 ms on a control whose carts had been fanned off the edge of the field and were
+in free fall, touching nothing. An idle world is cheap for reasons that have nothing to do
+with cell size.
+
 **The roadmap was jumped deliberately.** The map is `UI-SPEC.md` H8, listed under Phase 4;
 the clubhouse is Phase 3.5; the contiguous course was in no phase at all. Phase 3's two
 open items — mode-scoping and the pickup trio — are untouched by the map and nameplate
