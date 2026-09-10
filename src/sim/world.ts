@@ -23,6 +23,8 @@ import type { Playfield } from "./playfield";
 import type { CourseTerrain } from "./courseTerrain";
 import { BOT_CHANNEL, computeBotIntent } from "./bot";
 import type { BotTarget } from "./bot";
+import { Match } from "./match";
+import { MATCH_DURATION_S } from "./matchConfig";
 import { hashChannel, mulberry32 } from "./rng";
 
 export type { Vec3 } from "./course";
@@ -31,11 +33,11 @@ export type { Vec3 } from "./course";
 export const FIXED_DT = 1 / 60;
 
 /**
- * Match length in seconds. Three minutes is long enough for the engagement range to matter and
- * short enough that a match is a sitting rather than a session. Overridable per `Sim.create` so
- * a test can run a match to its end in a handful of ticks instead of 180 real seconds.
+ * Re-exported from `matchConfig.ts`, which is where it lives as of Stage C along with every
+ * other arena tunable. Kept exported here because `world.cart.test.ts` and the smoke driver
+ * import it from this module and there is no reason to make them move.
  */
-export const MATCH_DURATION_S = 180;
+export { MATCH_DURATION_S };
 
 /** Who won, once the clock has run out. */
 export type MatchOutcome = "pending" | "player" | "bot" | "draw";
@@ -375,11 +377,23 @@ export class Sim {
   private lastSafePosition: Vec3;
   /** Consecutive ticks the ball has been slow and grounded; see REST_HOLD_TICKS. */
   private restTicks = REST_HOLD_TICKS;
+  /**
+   * The clock and the scoreboard. Owned in **both** modes -- stroke play has a match clock too --
+   * so there is one countdown in the project rather than two that can drift apart.
+   *
+   * Its roster is set in `create` rather than here: this constructor runs before a single bot
+   * exists. Its scoreboard goes unread in stroke play, which is cheaper and far less
+   * error-prone than a nullable clock every caller has to branch on.
+   */
+  readonly match: Match;
   /** Seconds left on the match clock. Counts down every `step()` until it hits zero. */
-  matchTimeRemaining: number;
+  get matchTimeRemaining(): number {
+    return this.match.remaining;
+  }
   /** Set once, on the tick the clock reaches zero. Every later `step()` is a no-op. */
-  matchOver = false;
-  private readonly matchDurationS: number;
+  get matchOver(): boolean {
+    return this.match.over;
+  }
 
   private constructor(
     terrain: Terrain,
@@ -389,8 +403,7 @@ export class Sim {
   ) {
     this.terrain = terrain;
     this.playfield = holePlayfield(terrain, surfaces);
-    this.matchDurationS = matchDurationS;
-    this.matchTimeRemaining = matchDurationS;
+    this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     // 2 x par: the hole's par is the strokes it is worth, and the health bar is that budget
     // doubled (spec section 5). Sized here rather than at the field initializer because the
     // initializer runs before `terrain` exists.
@@ -483,6 +496,9 @@ export class Sim {
         mulberry32(hashChannel(hole.seed, hole.index, BOT_CHANNEL, i)),
       );
     }
+    // Now that every rig exists. The scoreboard is indexed by rig index, so this is the count
+    // it has to score over; see the note on `Match.playerCount`.
+    sim.match.setRoster(sim.rigs.length);
     sim.buildTargets();
 
     sim.syncCurrent();
@@ -752,14 +768,12 @@ export class Sim {
     // renderer keeps lerping between that stale pair forever. So on the single tick that ends
     // the match we collapse every previous/current pair onto its current value -- the same
     // pattern `reset()` uses -- before returning, so a live scene actually holds still.
-    if (this.matchOver) return;
-    this.matchTimeRemaining -= FIXED_DT;
-    // Half a tick of slack, not `<= 0`. Repeated subtraction of 1/60 leaves a float residue --
-    // a five-tick match ends on 6.9e-18, not on 0 -- so an exact test never fires and the clock
-    // runs a tick long, or forever. The threshold makes "the tick that brings it to zero" exact.
-    if (this.matchTimeRemaining <= FIXED_DT * 0.5) {
-      this.matchTimeRemaining = 0;
-      this.matchOver = true;
+    if (this.match.over) return;
+    // The countdown itself, and the float-residue threshold that makes "the tick that brings it
+    // to zero" exact, are `Match.tick`'s as of Stage C. The freeze below stays here: it is about
+    // this class's interpolation pairs, which the scoreboard knows nothing about.
+    this.match.tick(FIXED_DT);
+    if (this.match.over) {
       this.previous = this.current;
       this.syncCurrentCart();
       this.previousCart = this.currentCart;
@@ -1161,8 +1175,7 @@ export class Sim {
     this.lastShotOutOfBounds = false;
     this.lastShotInWater = false;
     this.lastShotWasStrike = false;
-    this.matchTimeRemaining = this.matchDurationS;
-    this.matchOver = false;
+    this.match.reset();
 
     for (const rig of this.rigs) {
       const spawn = this.spawnFor(rig);
