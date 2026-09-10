@@ -10,70 +10,21 @@
  * map does not have to be rebuilt when `src/sim/courseLayout.ts` places all eighteen.
  */
 
-/** A hole's square field, placed in the course frame. */
-export interface PlacedField {
-  /** Metres along a side. The field is square and centred on the hole's own origin. */
-  readonly fieldSize: number;
-  /** The field centre's position in the course frame. */
-  readonly offsetX: number;
-  readonly offsetZ: number;
-  /** Rotation of the hole's local frame within the course frame, radians. */
-  readonly rotation: number;
-}
+/**
+ * The frame itself moved to `src/sim/courseLayout.ts` once the contiguous terrain needed it:
+ * the sim cannot import from `src/ui/**`, and two copies of a rotation would drift. Re-exported
+ * here so the map keeps reading the frame from the module it has always read it from.
+ */
+import type { Bounds } from "../sim/courseLayout";
 
-/** An axis-aligned box in course-frame metres. */
-export interface Bounds {
-  readonly minX: number;
-  readonly minZ: number;
-  readonly maxX: number;
-  readonly maxZ: number;
-}
+export { boundsOf, toCourseFrame, toHoleFrame } from "../sim/courseLayout";
+export type { Bounds, CourseFrame, PlacedField } from "../sim/courseLayout";
 
 /** World metres -> canvas pixels, preserving aspect so the course is never stretched. */
 export interface MapProjection {
   readonly scale: number;
   x(courseX: number): number;
   y(courseZ: number): number;
-}
-
-/** A point in a hole's local frame, expressed in the course frame. */
-export function toCourseFrame(
-  field: PlacedField,
-  localX: number,
-  localZ: number,
-  out: { x: number; z: number },
-): void {
-  const cos = Math.cos(field.rotation);
-  const sin = Math.sin(field.rotation);
-  // Rotate about the field's own centre, then translate: the offset is where the centre lands,
-  // so rotating after translating would swing the hole around the course origin instead.
-  out.x = field.offsetX + localX * cos - localZ * sin;
-  out.z = field.offsetZ + localX * sin + localZ * cos;
-}
-
-/**
- * The axis-aligned box a set of placed fields occupies, including the sweep of any rotation.
- *
- * A square of side s turned by t needs s * (|cos t| + |sin t|) to contain it -- at 45 degrees that
- * is s * sqrt(2). Using the unrotated side would clip the corners of every angled hole.
- */
-export function boundsOf(fields: readonly PlacedField[]): Bounds {
-  // Seeded at zero rather than +/-Infinity: an empty course is a degenerate map, not a broken
-  // one, and an infinite bound propagates NaN through the projection.
-  if (fields.length === 0) return { minX: 0, minZ: 0, maxX: 0, maxZ: 0 };
-
-  let minX = Infinity;
-  let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
-  for (const field of fields) {
-    const sweep = (field.fieldSize / 2) * (Math.abs(Math.cos(field.rotation)) + Math.abs(Math.sin(field.rotation)));
-    if (field.offsetX - sweep < minX) minX = field.offsetX - sweep;
-    if (field.offsetZ - sweep < minZ) minZ = field.offsetZ - sweep;
-    if (field.offsetX + sweep > maxX) maxX = field.offsetX + sweep;
-    if (field.offsetZ + sweep > maxZ) maxZ = field.offsetZ + sweep;
-  }
-  return { minX, minZ, maxX, maxZ };
 }
 
 /** Grows a box by `metres` on every side, so markers at the very edge are not clipped. */

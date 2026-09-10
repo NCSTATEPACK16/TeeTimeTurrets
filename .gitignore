@@ -10,6 +10,7 @@ tools/.gate-out/
 tools/.plan-out/
 tools/.plan-png/
 tools/.course-out/
+tools/.terrain-out/
 
 # Blender rollback saves. art/*.blend is tracked; its .blend1 backup is not.
 *.blend1

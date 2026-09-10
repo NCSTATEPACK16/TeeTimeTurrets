@@ -163,3 +163,76 @@ describe("the pin marker's distance", () => {
     expect(derive(separated(0, 0)).pinDistanceText).toBe("0 m");
   });
 });
+
+/**
+ * Stage C. Arena's readout and stroke play's occupy the same HUD, and which one is showing is a
+ * flag rather than a deletion -- UI-SPEC §5's existing rule that an element with nothing behind
+ * it hides rather than showing inert.
+ *
+ * Every text field is derived in **both** modes. A blank field is a rendering decision; a missing
+ * one is a crash, and the crash lands in the render loop where nothing catches it.
+ */
+function arenaSource(overrides: Partial<HudSource> = {}): HudSource {
+  return source({
+    arena: true,
+    match: {
+      teamStrokes: (team: number) => (team === 0 ? 4 : 7),
+      pointsFor: (index: number) => (index === 0 ? 3 : 0),
+    },
+    ...overrides,
+  });
+}
+
+describe("which readout is showing", () => {
+  it("shows the golf fields and not the arena ones in stroke play", () => {
+    const state = derive(source());
+    expect(state.golfVisible).toBe(true);
+    expect(state.arenaVisible).toBe(false);
+  });
+
+  it("shows the arena fields and not the golf ones in a match", () => {
+    const state = derive(arenaSource());
+    expect(state.golfVisible).toBe(false);
+    expect(state.arenaVisible).toBe(true);
+  });
+
+  it("still derives every string in either mode", () => {
+    // The failure this rules out is a derivation that reads `source.match!` and throws for
+    // stroke play, or one that leaves a field `undefined` for the DOM half to write as the
+    // string "undefined".
+    for (const state of [derive(source()), derive(arenaSource())]) {
+      expect(typeof state.strokesText).toBe("string");
+      expect(typeof state.pinDistanceText).toBe("string");
+      expect(typeof state.teamScoreText).toBe("string");
+      expect(typeof state.pointsText).toBe("string");
+    }
+  });
+});
+
+describe("the arena readout", () => {
+  it("names both sides' stroke totals, the player's first", () => {
+    // 4 and 7, and they differ: a format string that read the same team twice, or that swapped
+    // them, is invisible against a tied scoreboard.
+    expect(derive(arenaSource()).teamScoreText).toBe("US 4 — THEM 7");
+  });
+
+  it("reports the player's own kills, not the roster's", () => {
+    expect(derive(arenaSource()).pointsText).toBe("KILLS 3");
+  });
+
+  it("renders zeroes rather than blanks at the start of a match", () => {
+    const state = derive(
+      arenaSource({ match: { teamStrokes: () => 0, pointsFor: () => 0 } }),
+    );
+    expect(state.teamScoreText).toBe("US 0 — THEM 0");
+    expect(state.pointsText).toBe("KILLS 0");
+  });
+
+  it("survives a source that claims arena without a scoreboard", () => {
+    // Not a state the game reaches -- `Sim` always has a `Match` -- but the derivation runs every
+    // frame and a throw here is a black screen rather than a wrong number.
+    const state = derive(source({ arena: true }));
+    expect(state.arenaVisible).toBe(true);
+    expect(state.teamScoreText).toBe("US 0 — THEM 0");
+  });
+});

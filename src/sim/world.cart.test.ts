@@ -153,13 +153,13 @@ describe("cart in the world", () => {
     const balls = (pool as unknown as { balls: PooledBall[] }).balls;
     expect(balls.length).toBeGreaterThan(0);
     for (const b of balls) b.state = "flying";
-    expect(pool.acquire()).toBeNull();
+    expect(pool.acquire(0)).toBeNull();
 
     const next: HoleSpec = { ...fixedHoleSpec(), seed: 555, tee: { x: 30, z: 15 } };
     sim.loadHole(next);
 
     // Every ball must be back to idle -- acquire() must succeed again immediately.
-    expect(pool.acquire()).not.toBeNull();
+    expect(pool.acquire(0)).not.toBeNull();
 
     // The hardcoded bucket must follow the new hole's tee, not stay at the old hole's.
     const buckets = (sim as unknown as { buckets: Bucket[] }).buckets;
@@ -174,7 +174,7 @@ describe("cart in the world", () => {
     const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
     const balls = (pool as unknown as { balls: PooledBall[] }).balls;
     for (const b of balls) b.state = "flying";
-    expect(pool.acquire()).toBeNull();
+    expect(pool.acquire(0)).toBeNull();
 
     const next: HoleSpec = { ...fixedHoleSpec(), seed: 777, tee: { x: -10, z: 40 } };
     sim.loadHole(next);
@@ -524,9 +524,15 @@ describe("bot carts", () => {
   });
 
   /** `resolveShot` is private and, since carts became rigs, reachable by any of them. Calling it
-   *  directly is the point: it is the seam where a bot could write the player's counters. */
+   *  directly is the point: it is the seam where a bot could write the player's counters.
+   *
+   *  It takes the rig rather than the cart as of Stage C -- the rig is what knows the index a
+   *  fired ball is attributed to -- so the cart is looked up here rather than at every caller. */
   function resolveShotFor(s: Sim, cart: Cart): void {
-    (s as unknown as { resolveShot: (c: Cart) => void }).resolveShot(cart);
+    const rigs = (s as unknown as { rigs: { cart: Cart }[] }).rigs;
+    const rig = rigs.find((r) => r.cart === cart);
+    expect(rig).toBeDefined();
+    (s as unknown as { resolveShot: (r: unknown) => void }).resolveShot(rig);
   }
 
   it("a bot's shot never launches the player's course ball or counts a player stroke", async () => {
@@ -566,7 +572,13 @@ describe("bot carts", () => {
     expect(bot.ammo).toBe(ammoBefore - 1);
     const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
     const balls = (pool as unknown as { balls: PooledBall[] }).balls;
-    expect(balls.some((b) => b.state !== "idle")).toBe(true);
+    const flying = balls.filter((b) => b.state !== "idle");
+    expect(flying).toHaveLength(1);
+    // And the ball it spawned belongs to the bot, not to the player. `sim.bots[0]` is rig 1;
+    // the whole of arena's scoring rests on that number being right at the point of the shot,
+    // and 0 -- the value every ball carried before Stage C -- is the wrong answer that looks
+    // like a plausible default.
+    expect(flying[0]!.firedBy).toBe(1);
   });
 
   it("returns every bot to its spawn on reset", async () => {
@@ -1003,5 +1015,65 @@ describe("driving a crossing", () => {
 
   it("leaves a dry hole with no crossing to drive", async () => {
     expect(deriveCrossings(fixedHoleSpec())).toHaveLength(0);
+  });
+});
+
+/**
+ * Stage C's attribution, at the seam `Sim` actually owns. `combat.ts` no longer touches
+ * `Sim.stats` at all -- it reports who fired and this class decides -- so this is the layer the
+ * rule lives on and the layer worth asserting it at.
+ */
+describe("whose accuracy a hit belongs to", () => {
+  function creditFrom(sim: Sim, shooter: number): void {
+    const ctx = (sim as unknown as { combatContext: { onBallHit: (s: number) => void } })
+      .combatContext;
+    ctx.onBallHit(shooter);
+  }
+
+  it("counts a hit from the player's own ball", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    creditFrom(sim, 0);
+    expect(sim.stats.directHits).toBe(1);
+  });
+
+  it("does not count a bot's hit toward the player's accuracy", async () => {
+    // This is a behaviour change in stroke play, not only in arena, and it is the fix for
+    // `docs/TEST-AND-SPEC-PITFALLS.md` §4: `combat.ts` had no way to tell whose ball it was, so
+    // every hit anywhere on the course inflated the number the results screen reports.
+    const sim = await Sim.create(fixedHoleSpec());
+    creditFrom(sim, 1);
+    expect(sim.stats.directHits).toBe(0);
+  });
+});
+
+describe("spawn protection", () => {
+  it("is granted by a respawn and by nothing else", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    // Alive and freshly created: no shield. The control that keeps the assertion below from
+    // passing against protection being handed out at construction.
+    expect(sim.cart.protectedFor).toBe(0);
+
+    sim.cart.health.hp = 0;
+    sim.cart.dead = true;
+    sim.cart.respawnTimer = RESPAWN_DELAY_S;
+    for (let i = 0; i < seconds(RESPAWN_DELAY_S) + 1; i++) sim.step();
+
+    expect(sim.cart.dead).toBe(false);
+    expect(sim.cart.protectedFor).toBeGreaterThan(0);
+  });
+
+  it("is not handed out again by a reset", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    sim.cart.protectedFor = 3;
+    sim.reset();
+    expect(sim.cart.protectedFor).toBe(0);
+  });
+
+  it("ends on the shot rather than on the timer", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    // Far longer than this test runs, so the timer cannot be what ends it.
+    sim.cart.protectedFor = 999;
+    expect(sim.cart.fire(1)).toBe(true);
+    expect(sim.cart.protectedFor).toBe(0);
   });
 });

@@ -37,12 +37,97 @@ export interface LayoutHole {
   readonly control: readonly Vec2[];
 }
 
-/** Where one hole's local frame sits in the course frame. Matches `PlacedField` in mapCamera.ts. */
-export interface HolePlacement {
-  readonly index: number;
+/**
+ * Anything with a place in the course frame: an offset for its own origin and a rotation about
+ * it. A `HolePlacement` is one; a `PlacedField` is one with a size attached.
+ */
+export interface CourseFrame {
   readonly offsetX: number;
   readonly offsetZ: number;
+  /** Rotation of the local frame within the course frame, radians. */
   readonly rotation: number;
+}
+
+/** Where one hole's local frame sits in the course frame. */
+export interface HolePlacement extends CourseFrame {
+  readonly index: number;
+}
+
+/** A hole's square field, placed in the course frame. */
+export interface PlacedField extends CourseFrame {
+  /** Metres along a side. The field is square and centred on the hole's own origin. */
+  readonly fieldSize: number;
+}
+
+/** An axis-aligned box in course-frame metres. */
+export interface Bounds {
+  readonly minX: number;
+  readonly minZ: number;
+  readonly maxX: number;
+  readonly maxZ: number;
+}
+
+/**
+ * A point in a hole's local frame, expressed in the course frame.
+ *
+ * This lives here rather than beside the map that first needed it because the contiguous terrain
+ * needs the same transform, and `src/sim/**` cannot import `src/ui/**`. A second copy in the sim
+ * is the failure this project has already had once with a duplicated constant: the map and the
+ * ground would agree until one of them was edited.
+ */
+export function toCourseFrame(
+  frame: CourseFrame,
+  localX: number,
+  localZ: number,
+  out: { x: number; z: number },
+): void {
+  const cos = Math.cos(frame.rotation);
+  const sin = Math.sin(frame.rotation);
+  // Rotate about the field's own centre, then translate: the offset is where the centre lands,
+  // so rotating after translating would swing the hole around the course origin instead.
+  out.x = frame.offsetX + localX * cos - localZ * sin;
+  out.z = frame.offsetZ + localX * sin + localZ * cos;
+}
+
+/** The inverse: a course-frame point read in the hole's own local frame. */
+export function toHoleFrame(
+  frame: CourseFrame,
+  courseX: number,
+  courseZ: number,
+  out: { x: number; z: number },
+): void {
+  const dx = courseX - frame.offsetX;
+  const dz = courseZ - frame.offsetZ;
+  const cos = Math.cos(frame.rotation);
+  const sin = Math.sin(frame.rotation);
+  out.x = dx * cos + dz * sin;
+  out.z = -dx * sin + dz * cos;
+}
+
+/**
+ * The axis-aligned box a set of placed fields occupies, including the sweep of any rotation.
+ *
+ * A square of side s turned by t needs s * (|cos t| + |sin t|) to contain it -- at 45 degrees that
+ * is s * sqrt(2). Using the unrotated side would clip the corners of every angled hole.
+ */
+export function boundsOf(fields: readonly PlacedField[]): Bounds {
+  // Seeded at zero rather than +/-Infinity: an empty course is a degenerate map, not a broken
+  // one, and an infinite bound propagates NaN through the projection.
+  if (fields.length === 0) return { minX: 0, minZ: 0, maxX: 0, maxZ: 0 };
+
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const field of fields) {
+    const sweep =
+      (field.fieldSize / 2) * (Math.abs(Math.cos(field.rotation)) + Math.abs(Math.sin(field.rotation)));
+    if (field.offsetX - sweep < minX) minX = field.offsetX - sweep;
+    if (field.offsetZ - sweep < minZ) minZ = field.offsetZ - sweep;
+    if (field.offsetX + sweep > maxX) maxX = field.offsetX + sweep;
+    if (field.offsetZ + sweep > maxZ) maxZ = field.offsetZ + sweep;
+  }
+  return { minX, minZ, maxX, maxZ };
 }
 
 export interface CourseLayout {

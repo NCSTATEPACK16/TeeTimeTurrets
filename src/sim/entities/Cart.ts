@@ -228,6 +228,19 @@ export class Cart {
   /** Seconds until respawn. Meaningful only while `dead`. */
   respawnTimer: number;
   /**
+   * Seconds of spawn protection left. While above zero a ball does the cart no damage and earns
+   * its shooter no credit -- `combat.ts`'s `ballHitsCart` guards on it exactly as it guards on
+   * `dead`.
+   *
+   * Granted by `Sim.stepRespawn` and by nothing else: protection is a property of *respawning*,
+   * not of being alive, so starting a fresh hole does not hand out shields. `revive()` clears it,
+   * which is what keeps `Sim.reset` from leaving one behind.
+   *
+   * **Firing gives it up**, in `fire()` below. Without that the strongest opening move in the
+   * mode is to sit on a tee and shoot out from behind it.
+   */
+  protectedFor: number;
+  /**
    * Strokes taken this match: one per ball hit, one per water entry. The match score.
    *
    * A real counter rather than `health.max - health.hp`, because a respawn refills the bar and
@@ -269,6 +282,7 @@ export class Cart {
     this.health = createHealth(options.maxHealth ?? STARTING_HP);
     this.dead = false;
     this.respawnTimer = 0;
+    this.protectedFor = 0;
     this.strokesTaken = 0;
     this.wasInWater = false;
     this.lastSafePosition = { x: start.x, y: start.y, z: start.z };
@@ -320,6 +334,9 @@ export class Cart {
     this.health.hp = this.health.max;
     this.dead = false;
     this.respawnTimer = 0;
+    // Cleared, not granted. `Sim.stepRespawn` grants protection after calling this; `Sim.reset`
+    // calls it too, and a fresh hole must not start behind a shield left over from a death.
+    this.protectedFor = 0;
     this.speed = 0;
     this.recoil.x = 0;
     this.recoil.z = 0;
@@ -356,6 +373,10 @@ export class Cart {
   fire(charge01: number): boolean {
     if (!this.canFire) return false;
 
+    // Shooting gives up spawn protection. One line, and it is the whole rule that stops the
+    // best opening move being to camp a tee behind the shield.
+    this.protectedFor = 0;
+
     const stats = CLUB_STATS[this.club];
     const charge = clamp01(charge01);
     const launchSpeed = stats.minSpeed + (stats.maxSpeed - stats.minSpeed) * charge;
@@ -380,6 +401,7 @@ export class Cart {
 
   step(intent: CartIntent, dt: number, surface: SurfaceTuning): void {
     if (this.reload > 0) this.reload = Math.max(0, this.reload - dt);
+    if (this.protectedFor > 0) this.protectedFor = Math.max(0, this.protectedFor - dt);
 
     this.turretOffset += intent.aimDelta;
 

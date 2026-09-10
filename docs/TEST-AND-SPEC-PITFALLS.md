@@ -12,7 +12,7 @@ this file holds the ways we have violated them while believing we had not.
 
 ## 1. The recurring one: a test that passes for a reason unrelated to its name
 
-Seven instances in the table, and the turret session added four more that are described in that
+Nine instances in the table, and the turret session added four more that are described in that
 spec's own header rather than here. This is the defect class this repo produces, and it produces it
 faster than review catches it. In each case the suite was green, the name described the
 right behavior, and the assertion was measuring something else entirely.
@@ -26,6 +26,14 @@ right behavior, and the assertion was measuring something else entirely.
 | 5 | smoke: `results overlay names an outcome` | The overlay writes a headline | `index.html` shipped `<h1 id="results-headline">DRAW</h1>`. `headline.length > 0` is true from **static markup, before any JS runs**. It would pass with the entire feature deleted. |
 | 6 | smoke: `results overlay is hidden while the match runs` | The overlay starts hidden | `#match-results` carries `hidden` in markup. True at boot with the feature absent. |
 | 7 | `refuses an empty instance list` | `mergeGraphInstances([])` throws a deliberate error | `expect(...).toThrow(/instance/i)` — satisfied by `TypeError: mergeGraphInstances is not a function`. It went **green against a function that had not been written yet**, in the same run that showed its six siblings red. The word it matched was in the name of the missing function. Fixed by matching the message tightly (`/at least one instance/`). |
+| 8 | `blends two holes together rather than stacking them` | Overlapping ground averages instead of summing | `blended` between `min(own)` and `max(own)` — which a **sum** also satisfies whenever one height is negative and the other positive, which is most points on a field whose noise is centred on zero. It passed against `return sumHeight`. Fixed by asserting the mean exactly: both influences are 1, so the answer is arithmetic, not a range. |
+| 9 | `hangs a skirt on every tile` | Each ground tile drops an apron below its rim | `box.min.y <= lowestSurfaceVertex` — satisfied by **equality**, so a tile with no skirt at all passed. Fixed by counting the vertices that hang exactly `SKIRT_M` below the ground at their own (x, z) and requiring at least one. |
+
+**8 and 9 were found by mutating the finished module, not by a red run** — both were written after
+the code they cover, which is the case the red-first rule cannot reach. A comparison operator
+chosen one notch looser than the claim (`toBeLessThanOrEqual` for "hangs below", a range for "is
+the average") is the same failure as instance 7's loose regex: an assertion wide enough to admit
+the bug it was named for. Ask of every assertion what else would satisfy it.
 
 Number 7 is the cheapest one here to reproduce and the most useful to have seen. It cost nothing —
 the test was red-first, as the rule says, and it was still wrong; what caught it was **reading** the
