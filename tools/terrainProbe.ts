@@ -19,6 +19,9 @@
  * to catch precisely that: carts that never touch the ground, or never move, cost nothing to
  * simulate and would report a beautiful number.
  *
+ * The 2 m answer it gave is recorded in `docs/DECISIONS.md`; re-run it after any change to the
+ * assembly, because the sampling cost is the part that moves.
+ *
  * DOM-free and Three-free like the other tools, which is what lets it import the real sim.
  *
  * Usage:  npm run probe:terrain [-- --steps=600 --carts=24 --only=<label>]
@@ -26,13 +29,14 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { generateCourse } from "../src/sim/course";
 import type { HoleSpec } from "../src/sim/course";
-import { solveCourseLayout } from "../src/sim/courseLayout";
-import type { HolePlacement, LayoutHole } from "../src/sim/courseLayout";
+import { solveCourseLayout, toCourseFrame } from "../src/sim/courseLayout";
+import type { Bounds, LayoutHole, PlacedField } from "../src/sim/courseLayout";
+import { createCourseTerrain } from "../src/sim/courseTerrain";
+import type { PlacedHole } from "../src/sim/courseTerrain";
+import { mulberry32 } from "../src/sim/rng";
 import { createTerrain } from "../src/sim/terrain";
 import type { Terrain } from "../src/sim/terrain";
 import { CART_COLLIDER, CART_TUNING } from "../src/sim/entities/Cart";
-import { boundsOf, toCourseFrame } from "../src/ui/mapCamera";
-import type { Bounds, PlacedField } from "../src/ui/mapCamera";
 import {
   CART_AUTOSTEP_HEIGHT,
   CART_AUTOSTEP_MIN_WIDTH,
@@ -121,28 +125,14 @@ function rssMB(): number {
   return process.memoryUsage().rss / (1024 * 1024);
 }
 
-/** A hole's local frame, read out of a course-frame point. The inverse of `toCourseFrame`. */
-function toHoleFrame(
-  placement: HolePlacement,
-  courseX: number,
-  courseZ: number,
-  out: { x: number; z: number },
-): void {
-  const dx = courseX - placement.offsetX;
-  const dz = courseZ - placement.offsetZ;
-  const cos = Math.cos(placement.rotation);
-  const sin = Math.sin(placement.rotation);
-  out.x = dx * cos + dz * sin;
-  out.z = -dx * sin + dz * cos;
-}
-
 /**
- * The course scenario: eighteen generated holes, placed, sampled through their own terrain.
+ * The course scenario: eighteen generated holes, placed, assembled by `createCourseTerrain`.
  *
- * The sampler is deliberately *not* Stage B's blend -- that module does not exist yet and the
- * measurement is meant to come first. Each cell takes the height of the hole whose field centre
- * is nearest, which costs one `heightAt` call per cell exactly as a blended assembly's inner loop
- * would, and produces ground with real corridors carved in it for the carts to climb.
+ * The first run of this probe predated that module and stood in for it with a nearest-hole
+ * sampler, because the measurement was meant to decide the cell size before anything was built on
+ * it. It samples the real assembly now, which costs more per cell -- a point can be inside two or
+ * three holes' influence and each one is a spline query -- so the build numbers below are the
+ * honest ones and the earlier sampling times are not comparable.
  */
 function courseScenario(cellM: number, holes: readonly HoleSpec[], terrains: readonly Terrain[]): Scenario {
   const layoutHoles: LayoutHole[] = holes.map((spec) => ({
@@ -152,32 +142,14 @@ function courseScenario(cellM: number, holes: readonly HoleSpec[], terrains: rea
     control: spec.control,
   }));
   const layout = solveCourseLayout(layoutHoles);
-  const fields: PlacedField[] = layout.placements.map((p) => ({
-    fieldSize: holes[p.index]!.fieldSize,
-    offsetX: p.offsetX,
-    offsetZ: p.offsetZ,
-    rotation: p.rotation,
+  const placed: PlacedHole[] = layout.placements.map((placement) => ({
+    placement,
+    spec: holes[placement.index]!,
+    terrain: terrains[placement.index]!,
   }));
-  const bounds = boundsOf(fields);
-
-  const local = { x: 0, z: 0 };
-  const height = (x: number, z: number): number => {
-    let best = 0;
-    let bestDist = Infinity;
-    for (let i = 0; i < layout.placements.length; i++) {
-      const p = layout.placements[i]!;
-      const dx = x - p.offsetX;
-      const dz = z - p.offsetZ;
-      const dist = dx * dx + dz * dz;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = i;
-      }
-    }
-    const placement = layout.placements[best]!;
-    toHoleFrame(placement, x, z, local);
-    return terrains[placement.index]!.heightAt(local.x, local.z);
-  };
+  const assembled = createCourseTerrain(placed, { cellM, rough: mulberry32(COURSE_SEED) });
+  const bounds = assembled.bounds;
+  const height = (x: number, z: number): number => assembled.heightAt(x, z);
 
   // One cart per hole, on the tee, pointed at the cup: the traversal the mode is actually about.
   const tee = { x: 0, z: 0 };

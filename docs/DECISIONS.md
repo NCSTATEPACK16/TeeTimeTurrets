@@ -360,19 +360,20 @@ ever moves onto this world, the cell size moves back or the ball trips.
 
 **Measured 9 Sep 2026, and the reasoned numbers above were never checked before that.**
 `tools/terrainProbe.ts` (`npm run probe:terrain`) builds the real thing — the eighteen
-generated holes placed by `courseLayout.ts`, sampled through their own `heightAt`, as one
-Rapier heightfield — and drives 24 KCC carts across it for 600 ticks. The field bounding box
-is **976 × 1533 m**, not the square 1,300 m the paragraph above assumed, so 2 m cells are
-**374k** cells and ~748k triangles rather than 422k and 845k. Cost at 2 m: heights sampled in
-**302 ms**, collider built in **0.8 ms**, **1.39 ms mean** per tick (p95 1.68, max 3.15) for
-`world.step()` plus 24 character-controller moves, **82 MB** resident. The budgets it is
-judged against are a quarter of a 16.67 ms frame as a mean and half as a p95, since the frame
-holds a render too.
+generated holes placed by `courseLayout.ts` and assembled by `createCourseTerrain` — as one
+Rapier heightfield, and drives 24 KCC carts across it for 600 ticks. The course is
+**1056 × 1613 m** including its rough margin, not the square 1,300 m the paragraph above
+assumed, so 2 m cells are **426k** cells and ~852k triangles rather than 422k and 845k. Cost
+at 2 m: heights sampled in **951 ms**, collider built in **4 ms**, **1.19 ms mean** per tick
+(p95 1.52, max 2.67) for `world.step()` plus 24 character-controller moves, **1.6 MB** of
+heights and no measurable resident growth. The budgets it is judged against are a quarter of a
+16.67 ms frame as a mean and half as a p95, since the frame holds a render too.
 
-**So the 4 m fallback is not needed, and neither is tiled streaming.** The probe sweeps
-1/2/4/8 m to prove it is measuring cell size at all — 1.90 / 1.39 / 0.74 / 0.60 ms mean and
-1142 / 302 / 76 / 22 ms to sample — and even **1 m clears every budget** (1.90 ms mean,
-136 MB). 2 m is kept because it is what the mode needs, not because finer was unaffordable.
+**So the 4 m fallback is not needed, and neither is tiled streaming.** The probe sweeps cell
+sizes to prove it is measuring cell size at all — 1/2/4 m give 2.36 / 1.19 / 0.83 ms mean and
+3909 / 951 / 250 ms to sample. **1 m is the one that fails**, and on the build rather than the
+step: four seconds of sampling is a loading screen, and it buys ground detail no cart can feel.
+That is the fallback the reasoning above expected to need at 2 m, landing one step finer.
 Two guards decide whether a run is evidence at all: carts must be grounded ≥ 90% of ticks and
 must travel ≥ 40% of free speed. They are not decoration — the first run of the probe reported
 a cheerful 0.81 ms on a control whose carts had been fanned off the edge of the field and were
