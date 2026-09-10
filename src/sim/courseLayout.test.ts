@@ -245,3 +245,89 @@ describe("toHoleFrame", () => {
     expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeCloseTo(Math.hypot(100 - 130, 60 - 20), 9);
   });
 });
+
+/** Course-frame bearing of a hole's tee-to-cup line, radians. */
+function bearing(layout: CourseLayout, holes: readonly LayoutHole[], index: number): number {
+  const h = holes[index]!;
+  const tee = place(layout, index, h.tee);
+  const cup = place(layout, index, h.cup);
+  return Math.atan2(cup.z - tee.z, cup.x - tee.x);
+}
+
+/** Course-frame midpoint of a hole's tee-to-cup line. */
+function midpoint(
+  layout: CourseLayout,
+  holes: readonly LayoutHole[],
+  index: number,
+): { x: number; z: number } {
+  const h = holes[index]!;
+  const tee = place(layout, index, h.tee);
+  const cup = place(layout, index, h.cup);
+  return { x: (tee.x + cup.x) / 2, z: (tee.z + cup.z) / 2 };
+}
+
+/** Smallest angle between two bearings, 0..PI. */
+function angleBetween(a: number, b: number): number {
+  let d = Math.abs(a - b) % (Math.PI * 2);
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  return d;
+}
+
+/**
+ * The routing reads as a real course rather than a ring of holes, which is a shape claim and so
+ * needs a measurable stand-in. This is it: a real routing sends holes **out and back beside each
+ * other** -- Pinehurst No. 2's 1 and 18, its 12/13/14 -- so somewhere in each nine there are
+ * pairs of holes pointing opposite ways with only a tree belt between them.
+ *
+ * Both halves of the condition carry weight, and the circular layout is exactly why. On a circle
+ * two holes a third of the way apart *are* near-anti-parallel -- they are on opposite sides of
+ * the ring -- and they are also two radii apart, which is 600 m of other holes. Anti-parallel
+ * alone would pass against the shape this test exists to reject.
+ */
+describe("holes run out and back beside each other", () => {
+  /** How far from a straight reversal a pair may be and still count as a returning leg. */
+  const OPPOSED_TOLERANCE = (30 * Math.PI) / 180;
+  /** Close enough to share a lobe. Wider than CORRIDOR_CLEARANCE_M, which is the floor, not this. */
+  const NEIGHBOUR_M = 150;
+
+  function pairedLegs(
+    layout: CourseLayout,
+    holes: readonly LayoutHole[],
+    from: number,
+    to: number,
+  ): number {
+    let count = 0;
+    for (let i = from; i < to; i++) {
+      for (let j = i + 1; j < to; j++) {
+        const offBy = Math.PI - angleBetween(bearing(layout, holes, i), bearing(layout, holes, j));
+        if (offBy > OPPOSED_TOLERANCE) continue;
+        if (dist(midpoint(layout, holes, i), midpoint(layout, holes, j)) > NEIGHBOUR_M) continue;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  it("pairs holes into returning legs on the front nine", () => {
+    const holes = eighteen();
+    expect(pairedLegs(solveCourseLayout(holes), holes, 0, 9)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("pairs holes into returning legs on the back nine", () => {
+    const holes = eighteen();
+    expect(pairedLegs(solveCourseLayout(holes), holes, 9, 18)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does the same on the course the game actually generates", () => {
+    const course = generateCourse(COURSE_SEED, 18);
+    const holes: LayoutHole[] = course.holes.map((h) => ({
+      index: h.index,
+      tee: h.tee,
+      cup: h.cup,
+      control: h.control,
+    }));
+    const layout = solveCourseLayout(holes);
+    expect(pairedLegs(layout, holes, 0, 9)).toBeGreaterThanOrEqual(2);
+    expect(pairedLegs(layout, holes, 9, 18)).toBeGreaterThanOrEqual(2);
+  });
+});

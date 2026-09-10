@@ -243,6 +243,156 @@ function placeNine(
   return out;
 }
 
+/**
+ * How many lobes each nine's loop is folded into.
+ *
+ * Three over nine holes is three holes a lobe, which is what makes the routing read as a golf
+ * course rather than a ring: a hole goes out along one side of a lobe and the next comes back
+ * along the other, so their corridors run anti-parallel with a tree belt between them. Pinehurst
+ * No. 2's 1 and 18 are that shape, and so are its 12, 13 and 14.
+ *
+ * A circle is this with zero lobes, and it was the shape before: nine holes at even angular steps,
+ * every corridor pointing 40 degrees off its neighbour and no two ever running together.
+ */
+export const COURSE_LOBES = 3;
+
+/**
+ * How deep the lobes cut, as a fraction of the loop's mean radius.
+ *
+ * The radius runs `base * (1 +- COURSE_LOBE_DEPTH)`, so at 0.5 the far end of a lobe is three
+ * times the radius of its neck. Deeper makes the out and back legs more nearly parallel and
+ * closer together; past about 0.6 the necks pinch tightly enough that `inspectLayout` starts
+ * reporting conflicts between lobes, which is the constraint that bounds this number rather than
+ * a matter of taste.
+ */
+export const COURSE_LOBE_DEPTH = 0.5;
+
+/** Holes to a lobe: out, across the end, back. Nine holes make three lobes exactly. */
+const HOLES_PER_LOBE = 3;
+
+/**
+ * How far a lobe's return leg runs from the way out.
+ *
+ * Well clear of `CORRIDOR_CLEARANCE_M`, the floor a conflict is reported at, and inside the 150 m
+ * the shape test calls neighbouring -- a pair further apart than that is two holes that happen to
+ * point opposite ways rather than a lobe.
+ */
+const LOBE_WIDTH_M = 110;
+
+function chordOf(hole: LayoutHole): number {
+  return Math.hypot(hole.cup.x - hole.tee.x, hole.cup.z - hole.tee.z);
+}
+
+/**
+ * Lays one nine out as lobes that leave the clubhouse and come back to it.
+ *
+ * **Constructed leg by leg rather than fitted to a curve, and the first attempt at this is why.**
+ * A lobed polar curve looked like the right shape on paper, but a nine has to fit roughly two
+ * kilometres of holes around it, which makes the mean radius about 300 m -- the same order as a
+ * par 5. Every chord then cut straight across a lobe instead of running along one, and the
+ * routing came out as a wandering polygon whose ninth hole finished 269 m from the clubhouse.
+ * The lobes have to be longer than they are wide, and that is a statement about legs, not radii.
+ *
+ * Each lobe is three holes: **out** along the lobe's bearing, **across** its far end, and
+ * **back** aimed at the clubhouse. The out and back legs are what the whole exercise is for --
+ * they run anti-parallel, separated by however long the crossing hole was, which is the tree belt
+ * between them. Augusta's 11-12-13 is exactly this figure, and so is Pinehurst's 12-13-14.
+ *
+ * Aiming every back leg at the clubhouse is what keeps the nine returning: the ninth hole points
+ * home by construction rather than by the loop happening to close, which is the property the
+ * circular version had to solve a bisection for.
+ */
+function placeNineAsLobes(
+  holes: readonly LayoutHole[],
+  hub: Vec2,
+  outward: number,
+  direction: number,
+): HolePlacement[] {
+  // Shape first, closure second, and deliberately not the same knob. An earlier attempt solved the
+  // crossing leg for closure, which left the gap between a lobe's out and back legs to be whatever
+  // closure did not need -- the two fought over one degree of freedom and the routing came back
+  // with nine corridors inside 1.6 m of each other. Now the legs are laid to a fixed separation and
+  // a single scalar, the fan between lobes, is scanned until the ninth cup lands on the clubhouse.
+  let best: HolePlacement[] = [];
+  let bestMiss = Infinity;
+  for (let step = 0; step <= FAN_STEPS; step++) {
+    const fan = FAN_MIN + ((FAN_MAX - FAN_MIN) * step) / FAN_STEPS;
+    const tried = layNine(holes, hub, outward, direction, fan);
+    const miss = Math.hypot(tried.end.x - hub.x, tried.end.z - hub.z);
+    if (miss < bestMiss) {
+      bestMiss = miss;
+      best = tried.placements;
+    }
+  }
+  return best;
+}
+
+/** Narrowest and widest angle between neighbouring lobes the closure scan will consider. */
+const FAN_MIN = (25 * Math.PI) / 180;
+const FAN_MAX = (150 * Math.PI) / 180;
+const FAN_STEPS = 400;
+
+/**
+ * One nine at a given fan, by the shape rules alone.
+ *
+ * Each lobe is out along its bearing, across its end, and back **anti-parallel to the out leg** --
+ * not merely "homeward", which is what lets the pair sit a fixed distance apart. The crossing leg
+ * is angled just far enough off the lobe bearing that its lateral component is `LOBE_WIDTH_M`, so
+ * the return runs that far to one side of the way out. That gap is the tree belt between them, and
+ * it is the whole reason the routing reads as a golf course rather than a spider.
+ */
+function layNine(
+  holes: readonly LayoutHole[],
+  hub: Vec2,
+  outward: number,
+  direction: number,
+  fan: number,
+): { placements: HolePlacement[]; end: Vec2 } {
+  const placements: HolePlacement[] = [];
+  const lobes = Math.ceil(holes.length / HOLES_PER_LOBE);
+  let cursor: Vec2 = { x: hub.x, z: hub.z };
+  let end: Vec2 = { x: hub.x, z: hub.z };
+
+  for (let i = 0; i < holes.length; i++) {
+    const hole = holes[i]!;
+    const leg = i % HOLES_PER_LOBE;
+    const lobe = Math.floor(i / HOLES_PER_LOBE);
+    const beta = outward + direction * fan * (lobe - (lobes - 1) / 2);
+    const length = chordOf(hole);
+
+    let bearing: number;
+    if (leg === 0) {
+      bearing = beta;
+    } else if (leg === 1) {
+      // Angled off the lobe bearing so this leg shifts the walk sideways by LOBE_WIDTH_M. A short
+      // crossing hole cannot reach that far, so the angle saturates at a right angle and its pair
+      // ends up closer together than asked -- narrower, never crossed.
+      const reach = length + TRANSITION_M;
+      bearing = beta + direction * Math.asin(Math.min(1, LOBE_WIDTH_M / reach));
+    } else {
+      bearing = beta + Math.PI;
+    }
+
+    const own = Math.atan2(hole.cup.z - hole.tee.z, hole.cup.x - hole.tee.x);
+    const rotation = bearing - own;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    placements.push({
+      index: hole.index,
+      offsetX: cursor.x - (hole.tee.x * cos - hole.tee.z * sin),
+      offsetZ: cursor.z - (hole.tee.x * sin + hole.tee.z * cos),
+      rotation,
+    });
+
+    end = { x: cursor.x + Math.cos(bearing) * length, z: cursor.z + Math.sin(bearing) * length };
+    cursor = {
+      x: cursor.x + Math.cos(bearing) * (length + TRANSITION_M),
+      z: cursor.z + Math.sin(bearing) * (length + TRANSITION_M),
+    };
+  }
+  return { placements, end };
+}
+
 /** Lays the holes out as two returning nines through a clubhouse at the origin. */
 export function solveCourseLayout(holes: readonly LayoutHole[]): CourseLayout {
   const clubhouse: Vec2 = { x: 0, z: 0 };
@@ -255,22 +405,17 @@ export function solveCourseLayout(holes: readonly LayoutHole[]): CourseLayout {
   const placements: HolePlacement[] = [];
 
   if (front.length > 0) {
-    const radius = loopRadius(chordsOf(front));
-    // Centre directly -Z of the clubhouse so the loop passes through it, and wind one way.
-    placements.push(
-      ...placeNine(front, { x: clubhouse.x, z: clubhouse.z - radius }, radius, Math.PI / 2, 1),
-    );
+    // The loop leaves the clubhouse heading +Z, which puts its centre -Z and its body south.
+    placements.push(...placeNineAsLobes(front, clubhouse, Math.PI / 2, 1));
   }
   if (back.length > 0) {
-    const radius = loopRadius(chordsOf(back));
-    // The mirror image, +Z of the clubhouse and winding the other way, so the two nines occupy
+    // The mirror image, north of the clubhouse and winding the other way, so the two nines occupy
     // opposite sides and meet only where the clubhouse is. Offset along X by the clubhouse gap
     // so the 10th tee sits beside the 1st rather than on it.
     placements.push(
-      ...placeNine(
+      ...placeNineAsLobes(
         back,
-        { x: clubhouse.x + CLUBHOUSE_GAP_M, z: clubhouse.z + radius },
-        radius,
+        { x: clubhouse.x + CLUBHOUSE_GAP_M, z: clubhouse.z },
         -Math.PI / 2,
         -1,
       ),
