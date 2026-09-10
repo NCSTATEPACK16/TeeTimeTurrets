@@ -18,6 +18,9 @@ import { CUP_RADIUS, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { SURFACES, SurfaceId, createSurfaceTuning, createSurfaces } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
+import { coursePlayfield, holePlayfield } from "./playfield";
+import type { Playfield } from "./playfield";
+import type { CourseTerrain } from "./courseTerrain";
 import { BOT_CHANNEL, computeBotIntent } from "./bot";
 import type { BotTarget } from "./bot";
 import { hashChannel, mulberry32 } from "./rng";
@@ -273,7 +276,12 @@ export class Sim {
   private pinCollider: RAPIER.Collider | null = null;
   /** The hole this sim is playing. Swapped wholesale by `loadHole`. */
   terrain: Terrain;
-  surfaces: Surfaces;
+  /**
+   * The ground under everything: one hole in stroke play, the whole course in arena. Every
+   * height, material and boundary question goes through here rather than through `terrain`,
+   * which is what lets `loadCourse` swap the world without `Sim` knowing which mode it is in.
+   */
+  private playfield: Playfield;
   /** State from the previous fixed step, kept for render interpolation. */
   previous: BallTransform;
   /** State from the most recent fixed step. */
@@ -380,7 +388,7 @@ export class Sim {
     tire: TireType = TireType.Street,
   ) {
     this.terrain = terrain;
-    this.surfaces = surfaces;
+    this.playfield = holePlayfield(terrain, surfaces);
     this.matchDurationS = matchDurationS;
     this.matchTimeRemaining = matchDurationS;
     // 2 x par: the hole's par is the strokes it is worth, and the health bar is that budget
@@ -392,6 +400,11 @@ export class Sim {
     this.current = restTransform(terrain);
     this.previousCart = restCartTransform(terrain);
     this.currentCart = restCartTransform(terrain);
+  }
+
+  /** The materials under everything, from whichever ground is loaded. */
+  get surfaces(): Surfaces {
+    return this.playfield.surfaces;
   }
 
   static async create(hole: HoleSpec, options: SimOptions = {}): Promise<Sim> {
@@ -487,13 +500,15 @@ export class Sim {
    * `loadHole` has to redo exactly this and nothing else about the world.
    */
   private buildGround(): void {
-    const spec = this.terrain.spec;
-    const groundDesc = RAPIER.ColliderDesc.heightfield(
-      spec.cells,
-      spec.cells,
-      this.terrain.buildHeightfield(),
-      { x: spec.fieldSize, y: 1, z: spec.fieldSize },
-    )
+    const field = this.playfield.buildHeightfield();
+    const groundDesc = RAPIER.ColliderDesc.heightfield(field.rows, field.cols, field.heights, {
+      x: field.extentX,
+      y: 1,
+      z: field.extentZ,
+    })
+      // A hole is centred on its own origin and this is (0, 0); the course is a box that is not
+      // centred on anything, so the collider goes where its middle is.
+      .setTranslation(field.centreX, 0, field.centreZ)
       .setFriction(0.8)
       .setRestitution(0.15);
     this.groundCollider = this.world.createCollider(groundDesc);
@@ -672,7 +687,7 @@ export class Sim {
     this.world.removeCollider(this.groundCollider, false);
     this.removePin();
     this.terrain = createTerrain(spec);
-    this.surfaces = createSurfaces(spec, this.terrain);
+    this.playfield = holePlayfield(this.terrain, createSurfaces(spec, this.terrain));
     this.buildGround();
     // Stood back up here and nowhere else: a felled pin is down for the hole it was felled on.
     this.buildPin();
@@ -693,6 +708,31 @@ export class Sim {
     // A new hole can bring a different par, and the health bar is sized from it.
     for (const rig of this.rigs) rig.cart.setMaxHealth(2 * this.terrain.spec.par);
     this.reset();
+  }
+
+  /**
+   * Stand the sim on the whole course instead of one hole: arena's ground, in one collider.
+   *
+   * Only the ground changes. The ball, the carts, the pin and the targets are all still the ones
+   * `loadHole` left, and every one of them is stroke play's furniture -- arena has no played ball,
+   * no pin and no par, and `src/sim/match.ts` is where that gets sorted out (Stage C). What this
+   * does is make the world drivable end to end, which is the thing Stage B is for.
+   *
+   * The carts are re-teed onto ground that exists: a hole's tee is at its own local origin-ish
+   * coordinates, and in the course frame those land wherever hole 1 happens to sit, which is by
+   * the clubhouse. Spawning across the eighteen tees is Stage C's `spawn.ts`.
+   */
+  loadCourse(course: CourseTerrain, surfaces: Surfaces): void {
+    this.world.removeCollider(this.groundCollider, false);
+    this.playfield = coursePlayfield(course, surfaces);
+    this.buildGround();
+
+    for (const rig of this.rigs) {
+      const p = rig.cart.position;
+      p.y = this.playfield.heightAt(p.x, p.z) + CART_COLLIDER.groundOffset;
+      rig.fallSpeed = 0;
+      rig.body.setTranslation(p, true);
+    }
   }
 
   /**
@@ -907,10 +947,14 @@ export class Sim {
     this.checkPinRun(rig);
 
     const p = rig.cart.position;
-    const half = this.terrain.spec.fieldSize / 2 - CART_COLLIDER.radius;
-    p.x = Math.min(half, Math.max(-half, p.x + corrected.x));
+    // Held inside the ground's own box, whatever built it: a hole's field edge and the course's
+    // perimeter are the same fact -- past here there are no heights, so there is nothing to
+    // stand on.
+    const bounds = this.playfield.bounds;
+    const inset = CART_COLLIDER.radius;
+    p.x = Math.min(bounds.maxX - inset, Math.max(bounds.minX + inset, p.x + corrected.x));
     p.y += corrected.y;
-    p.z = Math.min(half, Math.max(-half, p.z + corrected.z));
+    p.z = Math.min(bounds.maxZ - inset, Math.max(bounds.minZ + inset, p.z + corrected.z));
 
     if (this.controller.computedGrounded()) rig.fallSpeed = 0;
     rig.body.setNextKinematicTranslation(p);
@@ -1187,13 +1231,24 @@ export class Sim {
   /** Ball is within one radius of the terrain surface, i.e. not mid-bounce. */
   private isGrounded(): boolean {
     const p = this.current.position;
-    return p.y - this.terrain.heightAt(p.x, p.z) < BALL_RADIUS * 2;
+    return p.y - this.playfield.heightAt(p.x, p.z) < BALL_RADIUS * 2;
   }
 
+  /**
+   * Off the ground entirely. A hole's field edge and the course's perimeter are the same rule
+   * read off `Playfield.bounds`, which is why this no longer mentions a field: arena has no
+   * field edges to be past.
+   */
   private isPastFieldEdge(): boolean {
     const p = this.current.position;
-    const half = this.terrain.spec.fieldSize / 2;
-    return Math.abs(p.x) > half || Math.abs(p.z) > half || p.y < OUT_OF_BOUNDS_Y;
+    const bounds = this.playfield.bounds;
+    return (
+      p.x < bounds.minX ||
+      p.x > bounds.maxX ||
+      p.z < bounds.minZ ||
+      p.z > bounds.maxZ ||
+      p.y < OUT_OF_BOUNDS_Y
+    );
   }
 
   private syncCurrent(): void {
