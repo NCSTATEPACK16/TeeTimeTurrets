@@ -3,6 +3,8 @@ import {
   CLUBHOUSE_GAP_M,
   CORRIDOR_CLEARANCE_M,
   TRANSITION_M,
+  TRANSITION_MIN_M,
+  TRANSITION_MAX_M,
   inspectLayout,
   loopRadius,
   solveCourseLayout,
@@ -57,6 +59,13 @@ function place(layout: CourseLayout, index: number, local: { x: number; z: numbe
 function dist(a: { x: number; z: number }, b: { x: number; z: number }): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
+
+describe("transition slack bounds", () => {
+  it("brackets the shipped target", () => {
+    expect(TRANSITION_MIN_M).toBeLessThan(TRANSITION_M);
+    expect(TRANSITION_MAX_M).toBeGreaterThan(TRANSITION_M);
+  });
+});
 
 describe("loopRadius", () => {
   it("returns the radius whose chords subtend exactly a full turn", () => {

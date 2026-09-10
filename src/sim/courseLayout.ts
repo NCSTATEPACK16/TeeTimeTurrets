@@ -139,6 +139,13 @@ export interface CourseLayout {
  *  with its corners at the cups. */
 export const TRANSITION_M = 30;
 
+/** Floor and ceiling on a green-to-tee walk once relaxation is allowed to stretch or compress
+ *  it. RESEARCH-ROUTING.md §Q3: a fixed 30 m walk left the loop with no slack to absorb the
+ *  residual displacement a lobed shape leaves behind (see `placeNineAsLobes` below). Outside
+ *  this range a transition is a defect, not a variation. */
+export const TRANSITION_MIN_M = 15;
+export const TRANSITION_MAX_M = 100;
+
 /** Metres between the 1st tee and the 10th, so the two nines leave from opposite sides of the
  *  clubhouse rather than from the same square metre. */
 export const CLUBHOUSE_GAP_M = 90;
@@ -279,7 +286,7 @@ const HOLES_PER_LOBE = 3;
  */
 const LOBE_WIDTH_M = 110;
 
-function chordOf(hole: LayoutHole): number {
+export function chordOf(hole: LayoutHole): number {
   return Math.hypot(hole.cup.x - hole.tee.x, hole.cup.z - hole.tee.z);
 }
 
@@ -426,7 +433,7 @@ export function solveCourseLayout(holes: readonly LayoutHole[]): CourseLayout {
 }
 
 /** A hole's corridor centreline, in course-frame metres. */
-function placedControl(hole: LayoutHole, placement: HolePlacement): Vec2[] {
+export function placedControl(hole: LayoutHole, placement: HolePlacement): Vec2[] {
   const cos = Math.cos(placement.rotation);
   const sin = Math.sin(placement.rotation);
   return hole.control.map((p) => ({
@@ -452,7 +459,7 @@ function pointToSegment(p: Vec2, a: Vec2, b: Vec2): number {
  * cross. The location is wanted because a convergence at the clubhouse is the design and a
  * convergence anywhere else is a defect.
  */
-function polylineClearance(a: readonly Vec2[], b: readonly Vec2[]): { distance: number; at: Vec2 } {
+export function polylineClearance(a: readonly Vec2[], b: readonly Vec2[]): { distance: number; at: Vec2 } {
   let best = Infinity;
   let at: Vec2 = a[0] ?? { x: 0, z: 0 };
   for (const p of a) {
