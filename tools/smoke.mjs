@@ -395,8 +395,18 @@ console.log("=== MATCH RESULTS ===");
 check("results overlay is hidden while the match runs", (await read()).resultsHidden === true);
 
 // Run the clock out rather than waiting three minutes for it.
+//
+// Written on `sim.match.remaining`, the clock itself, and not on `sim.matchTimeRemaining`, which
+// this line used until `938d00b` moved the countdown into `match.ts` and left a **getter with no
+// setter** behind. `page.evaluate` runs sloppy-mode, where assigning to one is a silent no-op:
+// the clock kept its full 180 s, the match never ended, and the four checks below went red while
+// nothing was wrong with the overlay. TypeScript cannot catch it -- this is a string in a browser.
+//
+// Still one tick short of zero rather than `match.finish()`, because the check below is named for
+// the clock running out and `finish()` is the buzzer that skips it. This way `Match.tick` is what
+// ends the match, which is the path a real match takes.
 await page.evaluate(() => {
-  window.__teetimeturrets.sim.matchTimeRemaining = 1 / 60;
+  window.__teetimeturrets.sim.match.remaining = 1 / 60;
 });
 await new Promise((r) => setTimeout(r, 400));
 const ended = await page.evaluate(() => {
