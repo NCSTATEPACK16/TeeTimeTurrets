@@ -24,6 +24,13 @@ import {
   type LayoutHole,
 } from "./courseLayout";
 
+/** `Vec2`'s x/z are readonly (mapGeometry.ts) -- a point this module actually moves during
+ *  relaxation needs a mutable version of the same shape. */
+interface Particle {
+  x: number;
+  z: number;
+}
+
 const ITERATIONS = 200;
 /** Fraction of the remaining distance to the clubhouse the last cup closes per iteration. Low
  *  enough that the rigid-length and slack constraints (which run first each iteration) get to
@@ -33,7 +40,7 @@ const ATTRACTOR_RATE = 0.08;
 /** Moves `a`/`b` apart or together until `|b - a| === targetLen`, weighting the move by which
  *  endpoint is pinned. A pinned endpoint (weight 0) never moves; if neither is pinned each moves
  *  half the correction. */
-function satisfyDistance(a: Vec2, b: Vec2, pinnedA: boolean, pinnedB: boolean, targetLen: number): void {
+function satisfyDistance(a: Particle, b: Particle, pinnedA: boolean, pinnedB: boolean, targetLen: number): void {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   const len = Math.hypot(dx, dz);
@@ -52,7 +59,7 @@ function satisfyDistance(a: Vec2, b: Vec2, pinnedA: boolean, pinnedB: boolean, t
 /** Only pulls `a`/`b` toward each other (or pushes apart) when their distance is outside
  *  [min, max] -- inside the range this applies no force at all, which is what makes it slack
  *  rather than a spring toward a fixed rest length. */
-function satisfySlack(a: Vec2, b: Vec2, min: number, max: number): void {
+function satisfySlack(a: Particle, b: Particle, min: number, max: number): void {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   const len = Math.hypot(dx, dz);
@@ -79,7 +86,15 @@ function placementFromParticles(hole: LayoutHole, tee: Vec2, cup: Vec2): HolePla
  *  change a hole's own length, so this needs no rigid-length re-check of its own). Reuses
  *  `placedControl`/`polylineClearance` -- the same functions `inspectLayout` grades against --
  *  so the solver and its own test suite agree on what a conflict is. */
-function applyCorridorRepulsion(holes: readonly LayoutHole[], tee: Vec2[], cup: Vec2[], clubhouse: Vec2): void {
+function applyCorridorRepulsion(holes: readonly LayoutHole[], tee: Particle[], cup: Particle[], clubhouse: Vec2): void {
+  // A Gauss-Seidel push only ever approaches its target asymptotically, never reaches it exactly.
+  // Aiming 1 m past CORRIDOR_CLEARANCE_M means a partially-converged result still lands strictly
+  // clear of the threshold `inspectLayout` grades against, instead of asymptoting to within a
+  // hair of it (and occasionally landing a float's width under, which reads as a conflict).
+  // Computed per call rather than at module scope: `CORRIDOR_CLEARANCE_M` comes from courseLayout.ts,
+  // which imports this module in turn, and a module-top-level read of it can run before
+  // courseLayout.ts has finished initialising its own exports.
+  const clearanceTargetM = CORRIDOR_CLEARANCE_M + 1;
   const placements = holes.map((h, i) => placementFromParticles(h, tee[i]!, cup[i]!));
   const centrelines = holes.map((h, i) => placedControl(h, placements[i]!));
 
@@ -87,10 +102,10 @@ function applyCorridorRepulsion(holes: readonly LayoutHole[], tee: Vec2[], cup: 
     for (let j = i + 1; j < holes.length; j++) {
       if (j - i === 1) continue;
       const { distance, at } = polylineClearance(centrelines[i]!, centrelines[j]!);
-      if (distance === 0 || distance >= CORRIDOR_CLEARANCE_M) continue;
+      if (distance === 0 || distance >= clearanceTargetM) continue;
       if (Math.hypot(at.x - clubhouse.x, at.z - clubhouse.z) <= CLUBHOUSE_APRON_M) continue;
 
-      const push = (CORRIDOR_CLEARANCE_M - distance) / 2;
+      const push = (clearanceTargetM - distance) / 2;
       const midA = { x: (tee[i]!.x + cup[i]!.x) / 2, z: (tee[i]!.z + cup[i]!.z) / 2 };
       const midB = { x: (tee[j]!.x + cup[j]!.x) / 2, z: (tee[j]!.z + cup[j]!.z) / 2 };
       const sep = Math.hypot(midB.x - midA.x, midB.z - midA.z) || 1;
@@ -113,12 +128,13 @@ export function relaxNine(
   initial: readonly HolePlacement[],
   hub: Vec2,
   clubhouse: Vec2,
+  expectedSign: number,
 ): HolePlacement[] {
   if (holes.length === 0) return [];
 
   const byIndex = new Map(initial.map((p) => [p.index, p]));
-  const tee: Vec2[] = [];
-  const cup: Vec2[] = [];
+  const tee: Particle[] = [];
+  const cup: Particle[] = [];
   for (const hole of holes) {
     const placement = byIndex.get(hole.index)!;
     const t = { x: 0, z: 0 };
@@ -131,6 +147,24 @@ export function relaxNine(
 
   const lengths = holes.map(chordOf);
   const lastCup = cup[cup.length - 1]!;
+
+  // A hard barrier at the clubhouse line for every interior hole (not the first, which is
+  // pinned, and not the last, whose cup is the attractor's own target and is expected to
+  // approach clubhouse.z). Mirrors *both* of a hole's particles across the clubhouse line when
+  // its cup lands on the
+  // wrong side -- not the cup alone. A reflection is an isometry, so it preserves |cup - tee|
+  // exactly; moving the cup by itself would silently break the rigid-length constraint that was
+  // just satisfied, and the next iteration's length correction would drag it straight back
+  // across, undoing the barrier before it ever reached the caller.
+  const holdSide = (): void => {
+    for (let i = 1; i < holes.length - 1; i++) {
+      const z = cup[i]!.z - clubhouse.z;
+      if (z !== 0 && Math.sign(z) !== expectedSign) {
+        cup[i]!.z = clubhouse.z * 2 - cup[i]!.z;
+        tee[i]!.z = clubhouse.z * 2 - tee[i]!.z;
+      }
+    }
+  };
 
   for (let iter = 0; iter < ITERATIONS; iter++) {
     // Re-pin every iteration rather than once: repulsion below moves every particle, including
@@ -152,6 +186,7 @@ export function relaxNine(
       satisfySlack(cup[i]!, tee[i + 1]!, TRANSITION_MIN_M, TRANSITION_MAX_M);
     }
     applyCorridorRepulsion(holes, tee, cup, clubhouse);
+    holdSide();
   }
 
   // Repulsion above runs last each iteration, so its final push is never re-checked against the
@@ -166,8 +201,94 @@ export function relaxNine(
     for (let i = 0; i + 1 < holes.length; i++) {
       satisfySlack(cup[i]!, tee[i + 1]!, TRANSITION_MIN_M, TRANSITION_MAX_M);
     }
+    holdSide();
   }
   tee[0] = { x: hub.x, z: hub.z };
+
+  return holes.map((hole, i) => placementFromParticles(hole, tee[i]!, cup[i]!));
+}
+
+/**
+ * A cross-nine cleanup pass over an already-relaxed (or already-fallen-back) 18-hole course.
+ * `relaxNine` runs once per nine and never sees the other nine's corridors, so a front-nine hole
+ * and a back-nine hole -- both pulled toward the same clubhouse point by their own attractors --
+ * can converge into each other. `applyCorridorRepulsion` is generic over array position rather
+ * than "nine": passed all 18 holes in index order, `j - i === 1` still means "consecutive hole",
+ * so it needs no change to run globally instead of per-nine.
+ */
+export function polishCourse(
+  holes: readonly LayoutHole[],
+  placements: readonly HolePlacement[],
+  frontHub: Vec2,
+  backHub: Vec2,
+  clubhouse: Vec2,
+  frontSign: number,
+  backSign: number,
+): HolePlacement[] {
+  if (holes.length === 0) return placements.slice();
+
+  const byIndex = new Map(placements.map((p) => [p.index, p]));
+  const tee: Particle[] = [];
+  const cup: Particle[] = [];
+  for (const hole of holes) {
+    const placement = byIndex.get(hole.index)!;
+    const t = { x: 0, z: 0 };
+    const c = { x: 0, z: 0 };
+    toCourseFrame(placement, hole.tee.x, hole.tee.z, t);
+    toCourseFrame(placement, hole.cup.x, hole.cup.z, c);
+    tee.push(t);
+    cup.push(c);
+  }
+
+  const lengths = holes.map(chordOf);
+  // Both nines' first tees are pinned throughout -- this pass only nudges holes apart and settles
+  // the resulting slack, it never re-decides where a nine starts. Position 0 is always the front
+  // nine's first hole; the back nine's first hole is wherever hole index 9 landed in this array
+  // (normally also position 9, since callers pass holes in index order).
+  const frontPinIndex = 0;
+  const backPinIndex = holes.findIndex((h) => h.index === 9);
+  const pinned = (i: number): boolean => i === frontPinIndex || i === backPinIndex;
+
+  // Same barrier as `relaxNine`, and for the same reason: a cross-nine repulsion push resolves a
+  // clearance conflict by moving a hole away from whatever it collided with, which is blind to
+  // which side of the clubhouse that leaves it on. `frontSign`/`backSign` come from the caller
+  // rather than being inferred from the incoming layout -- for real, irregular hole lengths a
+  // nine's own interior holes do not reliably lean toward the side its `outward` bearing intends.
+  // Mirrors both of a hole's particles (see `relaxNine`'s `holdSide` for why not the cup alone).
+  const mirror = (i: number): void => {
+    cup[i]!.z = clubhouse.z * 2 - cup[i]!.z;
+    tee[i]!.z = clubhouse.z * 2 - tee[i]!.z;
+  };
+  const holdSides = (): void => {
+    for (let i = frontPinIndex + 1; backPinIndex > 0 && i < backPinIndex - 1; i++) {
+      const z = cup[i]!.z - clubhouse.z;
+      if (z !== 0 && Math.sign(z) !== frontSign) mirror(i);
+    }
+    for (let i = backPinIndex + 1; backPinIndex >= 0 && i < holes.length - 1; i++) {
+      const z = cup[i]!.z - clubhouse.z;
+      if (z !== 0 && Math.sign(z) !== backSign) mirror(i);
+    }
+  };
+
+  for (let iter = 0; iter < 20; iter++) {
+    if (frontPinIndex >= 0) tee[frontPinIndex] = { x: frontHub.x, z: frontHub.z };
+    if (backPinIndex >= 0) tee[backPinIndex] = { x: backHub.x, z: backHub.z };
+
+    applyCorridorRepulsion(holes, tee, cup, clubhouse);
+
+    for (let i = 0; i < holes.length; i++) {
+      satisfyDistance(tee[i]!, cup[i]!, pinned(i), false, lengths[i]!);
+    }
+    for (let i = 0; i + 1 < 9 && i + 1 < holes.length; i++) {
+      satisfySlack(cup[i]!, tee[i + 1]!, TRANSITION_MIN_M, TRANSITION_MAX_M);
+    }
+    for (let i = 9; i + 1 < 18 && i + 1 < holes.length; i++) {
+      satisfySlack(cup[i]!, tee[i + 1]!, TRANSITION_MIN_M, TRANSITION_MAX_M);
+    }
+    holdSides();
+  }
+  if (frontPinIndex >= 0) tee[frontPinIndex] = { x: frontHub.x, z: frontHub.z };
+  if (backPinIndex >= 0) tee[backPinIndex] = { x: backHub.x, z: backHub.z };
 
   return holes.map((hole, i) => placementFromParticles(hole, tee[i]!, cup[i]!));
 }

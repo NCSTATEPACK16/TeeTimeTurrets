@@ -26,6 +26,7 @@
  */
 
 import type { Vec2 } from "./mapGeometry";
+import { polishCourse, relaxNine } from "./courseRelaxation";
 
 /** The structural slice of a `HoleSpec` a layout needs. Structural so tests need no generator. */
 export interface LayoutHole {
@@ -334,6 +335,47 @@ function placeNineAsLobes(
   return best;
 }
 
+/** The shipped-and-measured construction from before this module had lobes: chords fit exactly
+ *  to a circle through the hub (docs/RESEARCH-ROUTING.md, "What ships today"). Deterministic,
+ *  closes exactly by the bisection in `loopRadius`, zero corridor conflicts on every seed
+ *  measured -- the fallback when relaxation does not land a nine's return within its threshold. */
+function placeNineOnCircle(holes: readonly LayoutHole[], hub: Vec2, direction: number): HolePlacement[] {
+  if (holes.length === 0) return [];
+  const chords = holes.flatMap((h) => [chordOf(h), TRANSITION_M]);
+  const radius = loopRadius(chords);
+  const centre: Vec2 = { x: hub.x, z: hub.z - direction * radius };
+  const startAngle = direction * (Math.PI / 2);
+  return placeNine(holes, centre, radius, startAngle, direction);
+}
+
+/** Relaxation's initial guess, then relaxation itself; falls back to the exact circle
+ *  construction if the result still misses its return threshold. */
+function placeNineWithFallback(
+  holes: readonly LayoutHole[],
+  hub: Vec2,
+  clubhouse: Vec2,
+  outward: number,
+  direction: number,
+  returnLimitM: number,
+): HolePlacement[] {
+  if (holes.length === 0) return [];
+
+  const seeded = placeNineAsLobes(holes, hub, outward, direction);
+  // The nine's intended side of the clubhouse line: `outward` is the bearing this nine leaves on
+  // (+Z for the front nine, -Z for the back), so its sign is the ground truth for which side is
+  // "correct" -- not something to re-derive from the seed, which can itself lean either way for
+  // real, irregular hole lengths.
+  const relaxed = relaxNine(holes, seeded, hub, clubhouse, Math.sign(Math.sin(outward)));
+
+  const lastHole = holes[holes.length - 1]!;
+  const lastPlacement = relaxed[relaxed.length - 1]!;
+  const lastCup: Vec2 = { x: 0, z: 0 };
+  toCourseFrame(lastPlacement, lastHole.cup.x, lastHole.cup.z, lastCup);
+  const miss = Math.hypot(lastCup.x - clubhouse.x, lastCup.z - clubhouse.z);
+
+  return miss <= returnLimitM ? relaxed : placeNineOnCircle(holes, hub, direction);
+}
+
 /** Narrowest and widest angle between neighbouring lobes the closure scan will consider. */
 const FAN_MIN = (25 * Math.PI) / 180;
 const FAN_MAX = (150 * Math.PI) / 180;
@@ -400,36 +442,88 @@ function layNine(
   return { placements, end };
 }
 
+/** Which side of the clubhouse line a hole's cup lands on: +1, -1, or 0 exactly on it. */
+function cupSide(layout: CourseLayout, hole: LayoutHole): number {
+  const placement = layout.placements.find((p) => p.index === hole.index);
+  if (!placement) return 0;
+  const out: Vec2 = { x: 0, z: 0 };
+  toCourseFrame(placement, hole.cup.x, hole.cup.z, out);
+  return Math.sign(out.z - layout.clubhouse.z);
+}
+
+/**
+ * Whether a nine's interior holes (excluding the first and last, which touch the clubhouse apron
+ * by design) all land on the same side of the clubhouse line, and the two nines land on opposite
+ * sides. The corridor-repulsion push in `polishCourse` resolves a clearance conflict by moving a
+ * hole directly away from whatever it collided with -- correct for clearance, blind to which side
+ * of the clubhouse that leaves it on. When it pushes a hole across the line, this catches it.
+ */
+function sidesOpposite(
+  layout: CourseLayout,
+  front: readonly LayoutHole[],
+  back: readonly LayoutHole[],
+): boolean {
+  const sidesOf = (nine: readonly LayoutHole[]): Set<number> =>
+    new Set(nine.slice(1, -1).map((h) => cupSide(layout, h)));
+  const frontSides = sidesOf(front);
+  const backSides = sidesOf(back);
+  if (frontSides.size > 1 || backSides.size > 1) return false;
+  const [f] = frontSides;
+  const [b] = backSides;
+  if (f === undefined || b === undefined) return true;
+  return f !== b;
+}
+
 /** Lays the holes out as two returning nines through a clubhouse at the origin. */
 export function solveCourseLayout(holes: readonly LayoutHole[]): CourseLayout {
   const clubhouse: Vec2 = { x: 0, z: 0 };
   const front = holes.slice(0, 9);
   const back = holes.slice(9, 18);
+  const backHub: Vec2 = { x: clubhouse.x + CLUBHOUSE_GAP_M, z: clubhouse.z };
 
-  const chordsOf = (nine: readonly LayoutHole[]): number[] =>
-    nine.flatMap((h) => [Math.hypot(h.cup.x - h.tee.x, h.cup.z - h.tee.z), TRANSITION_M]);
-
-  const placements: HolePlacement[] = [];
-
-  if (front.length > 0) {
+  const perNine: HolePlacement[] = [
     // The loop leaves the clubhouse heading +Z, which puts its centre -Z and its body south.
-    placements.push(...placeNineAsLobes(front, clubhouse, Math.PI / 2, 1));
-  }
-  if (back.length > 0) {
+    ...placeNineWithFallback(front, clubhouse, clubhouse, Math.PI / 2, 1, TRANSITION_M + 1),
     // The mirror image, north of the clubhouse and winding the other way, so the two nines occupy
     // opposite sides and meet only where the clubhouse is. Offset along X by the clubhouse gap
     // so the 10th tee sits beside the 1st rather than on it.
-    placements.push(
-      ...placeNineAsLobes(
-        back,
-        { x: clubhouse.x + CLUBHOUSE_GAP_M, z: clubhouse.z },
-        -Math.PI / 2,
-        -1,
-      ),
-    );
+    ...placeNineWithFallback(
+      back,
+      backHub,
+      clubhouse,
+      -Math.PI / 2,
+      -1,
+      CLUBHOUSE_GAP_M + TRANSITION_M + 1,
+    ),
+  ];
+
+  // relaxNine optimises each nine's corridors against itself; a conflict between a front-nine
+  // hole and a back-nine hole (both nines' attractors pull toward the same clubhouse point) is
+  // invisible to it, since it never sees the other nine's placements. One further pass, across
+  // the whole course, catches that before falling back.
+  const placements: HolePlacement[] =
+    front.length > 0 && back.length > 0
+      ? polishCourse(holes, perNine, clubhouse, backHub, clubhouse, 1, -1)
+      : perNine;
+  const relaxedLayout: CourseLayout = { placements, clubhouse };
+
+  // If the polish pass still leaves a conflict, or resolved one by pushing a hole across the
+  // clubhouse line, fall the whole course back to the circle construction, which is measured
+  // conflict-free and correctly sided on every seed tested (docs/RESEARCH-ROUTING.md, "What ships
+  // today").
+  const needsFallback =
+    front.length > 0 &&
+    back.length > 0 &&
+    (inspectLayout(holes, relaxedLayout).conflicts.length > 0 ||
+      !sidesOpposite(relaxedLayout, front, back));
+  if (needsFallback) {
+    return {
+      placements: [...placeNineOnCircle(front, clubhouse, 1), ...placeNineOnCircle(back, backHub, -1)],
+      clubhouse,
+    };
   }
 
-  return { placements, clubhouse };
+  return relaxedLayout;
 }
 
 /** A hole's corridor centreline, in course-frame metres. */
