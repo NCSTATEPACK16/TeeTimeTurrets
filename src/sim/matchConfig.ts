@@ -94,3 +94,10 @@ export const SPAWN_TRIES = 8;
  * `points`, and a sentinel of 0 would credit the human for every drowning on the course.
  */
 export const NO_KILLER = -1;
+
+/**
+ * The `hashChannel` channel the respawn-tee stream is drawn on, alongside `bot.ts`'s
+ * `BOT_CHANNEL` (3). A channel of its own so that changing how often carts die does not shift
+ * every bot's decisions with it -- the same reason each bot already has one.
+ */
+export const SPAWN_CHANNEL = 4;

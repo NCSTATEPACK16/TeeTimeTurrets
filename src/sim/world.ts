@@ -24,7 +24,15 @@ import type { CourseTerrain } from "./courseTerrain";
 import { BOT_CHANNEL, computeBotIntent } from "./bot";
 import type { BotTarget } from "./bot";
 import { Match } from "./match";
-import { MATCH_DURATION_S, NO_KILLER, SPAWN_PROTECTION_S } from "./matchConfig";
+import {
+  ARENA_MAX_HEALTH,
+  MATCH_DURATION_S,
+  NO_KILLER,
+  SPAWN_CHANNEL,
+  SPAWN_PROTECTION_S,
+} from "./matchConfig";
+import { createSpawnSet, openingSpawn, respawnPoint } from "./spawn";
+import type { SpawnHole, SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
 
 export type { Vec3 } from "./course";
@@ -133,6 +141,12 @@ const REST_HOLD_TICKS = 12;
 
 /** Past this the ball has left the heightfield and is in free fall over nothing. */
 const OUT_OF_BOUNDS_Y = -20;
+
+/**
+ * Where arena parks the played ball. Two orders of magnitude below `OUT_OF_BOUNDS_Y` so no
+ * height, cup or field-edge check can reach it, and matching `BallPool`'s own parked depth.
+ */
+const PARKED_BALL_Y = -1000;
 
 /** The club a stroke uses when the caller does not name one. The cart carries its own equipped club. */
 const DEFAULT_CLUB = ClubType.Driver;
@@ -403,6 +417,22 @@ export class Sim {
   get matchOver(): boolean {
     return this.match.over;
   }
+  /**
+   * True once `loadCourse` has run. Arena has no played ball, no pin, no par and no targets, and
+   * this is the one flag that says so; nothing switches it back, because a mode is chosen when a
+   * match is built rather than during one.
+   */
+  arena = false;
+  /** The eighteen tees, in the course frame. Empty in stroke play. */
+  private spawnSet: SpawnPoint[] = [];
+  /**
+   * The stream respawn tees are drawn from. Seeded from the course rather than the clock, per
+   * the `AGENTS.md` no-`Math.random`-in-the-sim rule, and re-seeded by `reset()` so "play again"
+   * is a genuine rerun.
+   */
+  private spawnRandom: () => number = mulberry32(0);
+  /** See `Sim.carts`. Grown once and reused, per the no-allocation-in-the-tick rule. */
+  private readonly cartsScratch: Cart[] = [];
 
   private constructor(
     terrain: Terrain,
@@ -753,28 +783,98 @@ export class Sim {
   }
 
   /**
-   * Stand the sim on the whole course instead of one hole: arena's ground, in one collider.
+   * Switch to arena: stand on the whole course, and take stroke play's furniture out of it.
    *
-   * Only the ground changes. The ball, the carts, the pin and the targets are all still the ones
-   * `loadHole` left, and every one of them is stroke play's furniture -- arena has no played ball,
-   * no pin and no par, and `src/sim/match.ts` is where that gets sorted out (Stage C). What this
-   * does is make the world drivable end to end, which is the thing Stage B is for.
+   * This is the mode change, and it is the only one. `Sim.arena` is true afterwards and stays
+   * true; nothing switches back, because a mode is chosen when a match is built.
    *
-   * The carts are re-teed onto ground that exists: a hole's tee is at its own local origin-ish
-   * coordinates, and in the course frame those land wherever hole 1 happens to sit, which is by
-   * the clubhouse. Spawning across the eighteen tees is Stage C's `spawn.ts`.
+   * **Every removal below is named on purpose.** `docs/TEST-AND-SPEC-PITFALLS.md` §4 records what
+   * happens when a spec says a thing "becomes dormant" and nobody names the registration it has
+   * to leave: `Sim.ball` stayed a registered combat actor, and driving over your own tee became
+   * lethal at a par-3 health bar. So, in order --
+   *
+   * 1. the playfield and its collider swap to the course;
+   * 2. the pin goes, and its handle leaves `CombatRegistry` with it (`removePin`);
+   * 3. every target is disposed and unregistered, leaving `targetPartCount` at zero;
+   * 4. every pooled ball is released and the course ball is parked far below the world, where
+   *    no height, cup or water check can reach it;
+   * 5. every cart is sized to `ARENA_MAX_HEALTH`, **once**, and nothing re-sizes it again;
+   * 6. the spawn set is built and every cart is dealt its own hole's tee, facing its cup;
+   * 7. the scoreboard learns the roster it is scoring.
    */
-  loadCourse(course: CourseTerrain, surfaces: Surfaces): void {
+  loadCourse(course: CourseTerrain, surfaces: Surfaces, holes: readonly SpawnHole[]): void {
+    this.spawnRandom = mulberry32(hashChannel(this.terrain.spec.seed, SPAWN_CHANNEL));
     this.world.removeCollider(this.groundCollider, false);
     this.playfield = coursePlayfield(course, surfaces);
     this.buildGround();
+    this.arena = true;
 
-    for (const rig of this.rigs) {
-      const p = rig.cart.position;
-      p.y = this.playfield.heightAt(p.x, p.z) + CART_COLLIDER.groundOffset;
-      rig.fallSpeed = 0;
-      rig.body.setTranslation(p, true);
+    this.removePin();
+    this.clearTargets();
+    this.ballPool.releaseAll();
+    this.syncCurrentPool();
+    this.previousPoolTransforms.set(this.currentPoolTransforms);
+    this.parkCourseBall();
+
+    for (const rig of this.rigs) rig.cart.setMaxHealth(ARENA_MAX_HEALTH);
+
+    this.spawnSet = createSpawnSet(holes, (x, z) => this.playfield.heightAt(x, z));
+    this.match.setRoster(this.rigs.length);
+    for (const rig of this.rigs) this.placeRig(rig, openingSpawn(this.spawnSet, rig.index));
+    this.syncCurrentCart();
+    this.previousCart = this.currentCart;
+    this.previousBotCarts = this.currentBotCarts.slice();
+  }
+
+  /**
+   * Takes every target out of the world and out of the registry. Split from `buildTargets`, which
+   * did both halves in one loop, because arena needs the removal without the rebuild that
+   * followed it.
+   */
+  private clearTargets(): void {
+    for (const target of this.targets) {
+      this.registry.unregisterTarget(target);
+      target.dispose();
     }
+    this.targets.length = 0;
+    this.targetPartCount = 0;
+    this.currentTargetTransforms = new Float32Array(0);
+    this.previousTargetTransforms = new Float32Array(0);
+  }
+
+  /**
+   * Puts the played ball where nothing can find it. Arena has no played ball, and the cheapest
+   * honest way to say that is to move it somewhere no check reaches rather than to add an
+   * `if (arena)` to `isGrounded`, `isInCup`, the water rule and the field-edge rule separately.
+   *
+   * `OUT_OF_BOUNDS_Y` is -20, so this is well past every floor in the file, and the body is
+   * disabled so it does not integrate under gravity forever the way a parked dynamic body does
+   * (the same reason `BallPool.release` disables its bodies).
+   */
+  private parkCourseBall(): void {
+    this.ball.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.ball.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.ball.setTranslation({ x: 0, y: PARKED_BALL_Y, z: 0 }, true);
+    this.ball.setEnabled(false);
+    this.syncCurrent();
+    this.previous = this.current;
+  }
+
+  /** One cart onto one spawn point: position, facing, momentum and the body, in that order. */
+  private placeRig(rig: CartRig, spawn: SpawnPoint): void {
+    const cart = rig.cart;
+    cart.position.x = spawn.x;
+    cart.position.y = spawn.y + CART_COLLIDER.groundOffset;
+    cart.position.z = spawn.z;
+    cart.heading = spawn.heading;
+    cart.turretOffset = 0;
+    // The drop point after a hazard is where it now stands, not wherever it drowned.
+    cart.lastSafePosition.x = cart.position.x;
+    cart.lastSafePosition.y = cart.position.y;
+    cart.lastSafePosition.z = cart.position.z;
+    cart.wasInWater = false;
+    rig.fallSpeed = 0;
+    rig.body.setTranslation(cart.position, true);
   }
 
   /**
@@ -833,6 +933,11 @@ export class Sim {
     for (const target of this.targets) target.step();
     this.syncCurrentTargets();
     this.syncCurrentPool();
+
+    // Everything below is the played ball's, and arena has none -- `loadCourse` parked it below
+    // the world. One guard here rather than an `if (arena)` inside `isGrounded`, `isInCup`, the
+    // water rule and the field-edge rule separately, each of which would then have two meanings.
+    if (this.arena) return;
 
     // The heightfield has no walls, so a ball past its edge free-falls forever and never
     // satisfies isResting() -- the player would be locked out of swinging with only a
@@ -953,6 +1058,16 @@ export class Sim {
     rig.cart.respawnTimer -= FIXED_DT;
     if (rig.cart.respawnTimer > 0) return;
 
+    if (this.arena) {
+      // A random tee, avoiding whoever is alive and standing on one. The cart's own body is
+      // still lying where it died, which is why `rig.index` is passed: counting it would make
+      // the tee it died nearest to permanently unavailable to it.
+      this.placeRig(rig, respawnPoint(this.spawnSet, this.spawnRandom, this.carts, rig.index));
+      rig.cart.revive();
+      rig.cart.protectedFor = SPAWN_PROTECTION_S;
+      return;
+    }
+
     const spawn = this.spawnFor(rig);
     rig.cart.position.x = spawn.x;
     rig.cart.position.y = spawn.y;
@@ -963,6 +1078,19 @@ export class Sim {
     rig.cart.protectedFor = SPAWN_PROTECTION_S;
     rig.fallSpeed = 0;
     rig.body.setTranslation(spawn, true);
+  }
+
+  /**
+   * Every cart in rig order, for the spawn module's clearance check. Rebuilt lazily and cached:
+   * `respawnPoint` wants an indexable list and the rigs array is the only thing that has one, but
+   * a `map` per respawn would allocate inside a tick.
+   */
+  private get carts(): readonly Cart[] {
+    if (this.cartsScratch.length !== this.rigs.length) {
+      this.cartsScratch.length = 0;
+      for (const rig of this.rigs) this.cartsScratch.push(rig.cart);
+    }
+    return this.cartsScratch;
   }
 
   /** Rig 0 spawns behind the tee; a bot spawns past the cup, one offset per bot index. */
@@ -1208,12 +1336,18 @@ export class Sim {
     this.lastShotWasStrike = false;
     this.match.reset();
 
+    if (this.arena) {
+      // A rerun, not a continuation: the same tees in the same order, and a spawn stream back at
+      // its start, so "play again" replays the match rather than resuming its randomness.
+      this.spawnRandom = mulberry32(hashChannel(this.terrain.spec.seed, SPAWN_CHANNEL));
+    }
+
     for (const rig of this.rigs) {
-      const spawn = this.spawnFor(rig);
+      const spawn = this.arena ? openingSpawn(this.spawnSet, rig.index) : this.spawnFor(rig);
       rig.cart.position.x = spawn.x;
-      rig.cart.position.y = spawn.y;
+      rig.cart.position.y = this.arena ? spawn.y + CART_COLLIDER.groundOffset : spawn.y;
       rig.cart.position.z = spawn.z;
-      rig.cart.heading = 0;
+      rig.cart.heading = this.arena ? (spawn as SpawnPoint).heading : 0;
       rig.cart.turretOffset = 0;
       // Health, death, momentum and the match score all clear here: a new hole starts alive, at
       // full HP, standing still, on nothing. Ammo deliberately survives -- it is a round-spanning
@@ -1222,7 +1356,7 @@ export class Sim {
       rig.cart.clearStrokes();
       rig.cart.wasInWater = false;
       rig.fallSpeed = 0;
-      rig.body.setTranslation(spawn, true);
+      rig.body.setTranslation(rig.cart.position, true);
       if (rig.random !== null) {
         rig.random = mulberry32(
           hashChannel(this.terrain.spec.seed, this.terrain.spec.index, BOT_CHANNEL, this.rigs.indexOf(rig) - 1),
