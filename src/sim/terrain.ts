@@ -1,4 +1,5 @@
 import { createNoise2D } from "simplex-noise";
+import type { NoiseFunction2D } from "simplex-noise";
 import { DECK_FREEBOARD, causewayInfluence, deriveCrossings } from "./crossing";
 import { inverseSmoothstep01, smoothstep01 } from "./curves";
 import type { HoleSpec, Vec3 } from "./course";
@@ -118,6 +119,48 @@ const A_MESO = G_MESO / (F_MESO * NOISE_MAX_GRADIENT);
 const A_MACRO = G_MACRO / (F_MACRO * NOISE_MAX_GRADIENT);
 
 /**
+ * The three octaves, each taking what the slope budget leaves.
+ *
+ * Extracted so `courseTerrain.ts` can lay the same surface between the holes as a hole lays
+ * inside its own field. A second copy of these amplitudes would be a second answer to "what does
+ * rough look like", and the join between them would be visible as a seam the day one was tuned.
+ *
+ * Micro is never masked -- it is the surface ripple, and 0.03 fits under even the green's 0.06.
+ *
+ * smoothstep01, not a raw clamp, on the scale terms: a clamp is C0 but not C1, and a mask whose
+ * derivative steps produces a slope discontinuity in H. smoothstep01 has zero derivative at both
+ * ends, so H stays C1.
+ */
+function octaveHeight(
+  noise2D: NoiseFunction2D,
+  worldX: number,
+  worldZ: number,
+  budget: number,
+): number {
+  let remaining = budget - G_MICRO;
+  const mesoScale = smoothstep01(remaining / G_MESO);
+  remaining -= mesoScale * G_MESO;
+  const macroScale = smoothstep01(remaining / G_MACRO);
+  return (
+    A_MICRO * noise2D(worldX * F_MICRO, worldZ * F_MICRO) +
+    A_MESO * noise2D(worldX * F_MESO, worldZ * F_MESO) * mesoScale +
+    A_MACRO * noise2D(worldX * F_MACRO, worldZ * F_MACRO) * macroScale
+  );
+}
+
+/**
+ * Unbudgeted rough, as its own field: the ground a point gets when no corridor is near enough to
+ * carve it. `createCourseTerrain` lays this between the eighteen holes.
+ *
+ * At `GRAD_ROUGH` neither mask bites -- the budget covers all three octaves -- so this is the
+ * same surface a hole's own terrain produces far from its corridor, seeded independently.
+ */
+export function createRoughNoise(random: () => number): (x: number, z: number) => number {
+  const noise2D = createNoise2D(random);
+  return (x: number, z: number): number => octaveHeight(noise2D, x, z, GRAD_ROUGH);
+}
+
+/**
  * Corridor half-width at a spline parameter, interpolated between the per-control-point widths.
  *
  * `spec.corridor` has one entry per control point and `t` runs 0..1 across the whole spline, so
@@ -231,12 +274,8 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
   }
 
   /**
-   * Each octave takes what the budget leaves. Micro is never masked -- it is the surface
-   * ripple, and 0.03 fits under even the green's 0.06.
-   *
-   * smoothstep01, not a raw clamp, on the scale terms: a clamp is C0 but not C1, and a mask
-   * whose derivative steps produces a slope discontinuity in H. smoothstep01 has zero
-   * derivative at both ends, so H stays C1.
+   * This hole's noise, at the budget its corridor allows here. The octaves themselves are
+   * `octaveHeight` above, shared with the course-scale rough.
    *
    * The budget is the design target, not the guarantee -- it assumes all three octaves peak at
    * the same coordinate, and smoothstep01(t) > t for t > 0.5 lets the transition band sit
@@ -248,15 +287,7 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
     corridorDistance: number,
     t: number,
   ): number {
-    let remaining = budgetAt(worldX, worldZ, corridorDistance, t) - G_MICRO;
-    const mesoScale = smoothstep01(remaining / G_MESO);
-    remaining -= mesoScale * G_MESO;
-    const macroScale = smoothstep01(remaining / G_MACRO);
-    return (
-      A_MICRO * noise2D(worldX * F_MICRO, worldZ * F_MICRO) +
-      A_MESO * noise2D(worldX * F_MESO, worldZ * F_MESO) * mesoScale +
-      A_MACRO * noise2D(worldX * F_MACRO, worldZ * F_MACRO) * macroScale
-    );
+    return octaveHeight(noise2D, worldX, worldZ, budgetAt(worldX, worldZ, corridorDistance, t));
   }
 
   // Pad heights are sampled from the base noise once at construction so heightAt can flatten
