@@ -89,6 +89,15 @@
       "z": 1.100000023841858
     }
   },
+  "hole-ground": {
+    "vertices": 25921,
+    "triangles": 51200,
+    "bbox": {
+      "x": 160,
+      "y": 8.990966320037877,
+      "z": 160
+    }
+  },
   "tee_marker": {
     "vertices": 64,
     "triangles": 36,

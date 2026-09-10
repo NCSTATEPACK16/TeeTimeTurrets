@@ -3,7 +3,7 @@
  *
  * `courseTerrain.ts` blends eighteen holes' heights into one surface; this blends their materials
  * over exactly the same weights, so ground that drives like fairway is ground that looks like
- * fairway. Both read `blendWeight`, which is why they cannot drift.
+ * fairway. Both get them from `CourseTerrain.weightsInto`, which is why they cannot drift.
  *
  * **Continuous things blend; discrete things do not.** `tuningAt` is what a rolling ball and a
  * driving cart read, and it is blended -- a seam in it would be a seam a player feels as the cart
@@ -17,7 +17,7 @@
  *
  * DOM-free and allocation-free per query, as `surfaces.ts` is and for the same reasons.
  */
-import { blendWeight, type CourseTerrain } from "./courseTerrain";
+import type { CourseTerrain } from "./courseTerrain";
 import { toHoleFrame } from "./courseLayout";
 import { SURFACES, SurfaceId, createSurfaceTuning, createSurfaceWeights } from "./surfaces";
 import type { MutableSurfaceTuning, SurfaceWeights, Surfaces } from "./surfaces";
@@ -39,37 +39,30 @@ export function createCourseSurfaces(
   const holeTuning = createSurfaceTuning();
   const holeWeights = createSurfaceWeights();
 
-  /** The hole that owns this point, or -1 where the course rough does. */
-  function dominantHole(x: number, z: number): number {
-    let best = -1;
-    let bestInfluence = 0;
-    for (let i = 0; i < terrain.holes.length; i++) {
-      const influence = terrain.influenceAt(i, x, z);
-      if (influence > bestInfluence) {
-        bestInfluence = influence;
-        best = i;
-      }
-    }
-    return best;
+  const weights = new Float32Array(terrain.holes.length);
+
+  /** This point in one hole's own frame. */
+  function localTo(index: number, x: number, z: number): void {
+    toHoleFrame(terrain.holes[index]!.placement, x, z, local);
   }
 
   function surfaceAt(x: number, z: number): SurfaceId {
-    const index = dominantHole(x, z);
-    if (index < 0) return SurfaceId.Rough;
-    toHoleFrame(terrain.holes[index]!.placement, x, z, local);
-    return surfaces[index]!.surfaceAt(local.x, local.z);
+    const owner = terrain.weightsInto(x, z, weights);
+    if (owner < 0) return SurfaceId.Rough;
+    localTo(owner, x, z);
+    return surfaces[owner]!.surfaceAt(local.x, local.z);
   }
 
   function tuningAt(x: number, z: number, out: MutableSurfaceTuning): void {
+    const owner = terrain.weightsInto(x, z, weights);
     let sumWeight = 0;
     let rolling = 0;
     let bounceScale = 0;
     let cartSpeedScale = 0;
-    for (let i = 0; i < terrain.holes.length; i++) {
-      const influence = terrain.influenceAt(i, x, z);
-      if (influence <= 0) continue;
-      const weight = blendWeight(influence);
-      toHoleFrame(terrain.holes[i]!.placement, x, z, local);
+    for (let i = 0; i < weights.length; i++) {
+      const weight = weights[i]!;
+      if (weight <= 0) continue;
+      localTo(i, x, z);
       surfaces[i]!.tuningAt(local.x, local.z, holeTuning);
       sumWeight += weight;
       rolling += weight * holeTuning.rolling;
@@ -77,50 +70,29 @@ export function createCourseSurfaces(
       cartSpeedScale += weight * holeTuning.cartSpeedScale;
     }
 
-    if (sumWeight <= 0) {
+    if (owner < 0) {
       out.rolling = ROUGH.rolling;
       out.bounceScale = ROUGH.bounceScale;
       out.cartSpeedScale = ROUGH.cartSpeedScale;
       out.isHazard = false;
       return;
     }
-    if (sumWeight >= 1) {
-      out.rolling = rolling / sumWeight;
-      out.bounceScale = bounceScale / sumWeight;
-      out.cartSpeedScale = cartSpeedScale / sumWeight;
-    } else {
-      // No test distinguishes this branch from the one above, and that is a fact about
-      // `surfaces.ts` rather than dead code here: a hole's own `tuningAt` outside its corridor
-      // blend band already returns the rough table exactly, so mixing in rough and normalising
-      // give the same answer everywhere a partial weight can occur today. It is written the way
-      // the heights are written because the reason is the same, and because a hole that ever
-      // returned something other than rough out there would make the difference real.
-      const rest = 1 - sumWeight;
-      out.rolling = rolling + ROUGH.rolling * rest;
-      out.bounceScale = bounceScale + ROUGH.bounceScale * rest;
-      out.cartSpeedScale = cartSpeedScale + ROUGH.cartSpeedScale * rest;
-    }
+    // What the holes did not claim is rough, which at a sum of 1 contributes nothing. The
+    // weights arrive normalised, so this term can never be negative.
+    const rest = 1 - sumWeight;
+    out.rolling = rolling + ROUGH.rolling * rest;
+    out.bounceScale = bounceScale + ROUGH.bounceScale * rest;
+    out.cartSpeedScale = cartSpeedScale + ROUGH.cartSpeedScale * rest;
+
     // Not blended: a stroke-and-distance hazard is a fact about a point, not a proportion of one.
     // It answers to whichever hole owns the ground, exactly as `surfaceAt` does.
-    out.isHazard = surfaceAt(x, z) === SurfaceId.Water;
+    localTo(owner, x, z);
+    out.isHazard = surfaces[owner]!.surfaceAt(local.x, local.z) === SurfaceId.Water;
   }
 
   function weightsAt(x: number, z: number, out: SurfaceWeights): void {
-    let sumWeight = 0;
-    let green = 0;
-    let corridor = 0;
-    for (let i = 0; i < terrain.holes.length; i++) {
-      const influence = terrain.influenceAt(i, x, z);
-      if (influence <= 0) continue;
-      const weight = blendWeight(influence);
-      toHoleFrame(terrain.holes[i]!.placement, x, z, local);
-      surfaces[i]!.weightsAt(local.x, local.z, holeWeights);
-      sumWeight += weight;
-      green += weight * holeWeights.green;
-      corridor += weight * holeWeights.corridor;
-    }
-
-    if (sumWeight <= 0) {
+    const owner = terrain.weightsInto(x, z, weights);
+    if (owner < 0) {
       // 1 is "off the green" and "in full rough" -- the far end of both falloffs, which is what
       // ground no hole reaches is.
       out.green = 1;
@@ -130,18 +102,29 @@ export function createCourseSurfaces(
       out.bridge = 0;
       return;
     }
-    if (sumWeight >= 1) {
-      out.green = green / sumWeight;
-      out.corridor = corridor / sumWeight;
-    } else {
-      const rest = 1 - sumWeight;
-      out.green = green + rest;
-      out.corridor = corridor + rest;
-    }
 
-    const index = dominantHole(x, z);
-    toHoleFrame(terrain.holes[index]!.placement, x, z, local);
-    surfaces[index]!.weightsAt(local.x, local.z, holeWeights);
+    let sumWeight = 0;
+    let green = 0;
+    let corridor = 0;
+    for (let i = 0; i < weights.length; i++) {
+      const weight = weights[i]!;
+      if (weight <= 0) continue;
+      localTo(i, x, z);
+      surfaces[i]!.weightsAt(local.x, local.z, holeWeights);
+      sumWeight += weight;
+      green += weight * holeWeights.green;
+      corridor += weight * holeWeights.corridor;
+    }
+    const rest = 1 - sumWeight;
+    out.green = green + rest;
+    out.corridor = corridor + rest;
+
+    // Hard-edged, from the hole that owns the point: a bunker lip is abrupt and a plank deck
+    // against open water is the most abrupt boundary on the course. `holeWeights` already holds
+    // the owner's answer when the owner is the last hole in the loop, so it is re-read rather
+    // than assumed.
+    localTo(owner, x, z);
+    surfaces[owner]!.weightsAt(local.x, local.z, holeWeights);
     out.sand = holeWeights.sand;
     out.water = holeWeights.water;
     out.bridge = holeWeights.bridge;

@@ -9,6 +9,10 @@ import { TargetRig } from "../../src/entities/TargetRig";
 import { ClubType } from "../../src/physics/Ballistics";
 import { PARTS_PER_TARGET, TARGET_PART_SHAPES } from "../../src/sim/entities/Target";
 import { TRANSFORM_STRIDE } from "../../src/sim/world";
+import { fixedHoleSpec } from "../../src/sim/course";
+import { createTerrain } from "../../src/sim/terrain";
+import { createSurfaces } from "../../src/sim/surfaces";
+import { createGround } from "../../src/render/ground";
 
 /**
  * One subject, one fixed rig. No Sim, no terrain, no input, no randomness -- AGENTS.md's Scene
@@ -47,6 +51,7 @@ const SUBJECTS: Record<string, () => GateSubject> = {
   target: () => targetSubject(),
   flagstick: () => flagstickSubject(false),
   "flagstick-felled": () => flagstickSubject(true),
+  "hole-ground": () => holeGroundSubject(),
   ...Object.fromEntries(PROP_NAMES.map((name) => [name, () => propSubject(name)])),
 };
 
@@ -138,6 +143,23 @@ const GATE_PENNANT_SECONDS = 0.35;
 function propSubject(name: PropName): GateSubject {
   const merged = mergeGraph(graphFor(name));
   return { object: merged.mesh, dispose: () => merged.dispose() };
+}
+
+/**
+ * The ground a hole ships, seeded from `fixedHoleSpec()`.
+ *
+ * The harness note above says "no terrain", and this is the exception that keeps the rule: the
+ * fixed spec is a *constant* -- the same tee, cup, corridor and hazards on every run, which is
+ * what it exists for -- so the subject is as deterministic as a prop. It earns its place because
+ * the ground is the one piece of shipped geometry with a hand-written shader in it, and until
+ * this subject existed nothing anywhere could tell whether a change to that shader had moved a
+ * single pixel.
+ */
+function holeGroundSubject(): GateSubject {
+  const spec = fixedHoleSpec();
+  const terrain = createTerrain(spec);
+  const ground = createGround(terrain, createSurfaces(spec, terrain));
+  return { object: ground.mesh, dispose: () => ground.dispose() };
 }
 
 function countGeometry(root: THREE.Object3D): { vertices: number; triangles: number } {
