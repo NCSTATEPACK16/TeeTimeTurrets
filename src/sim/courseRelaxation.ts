@@ -22,7 +22,7 @@ import {
   toCourseFrame,
   type HolePlacement,
   type LayoutHole,
-} from "./courseLayout";
+} from "./courseGeometry";
 
 /** `Vec2`'s x/z are readonly (mapGeometry.ts) -- a point this module actually moves during
  *  relaxation needs a mutable version of the same shape. */
