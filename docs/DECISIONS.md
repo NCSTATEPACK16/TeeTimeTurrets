@@ -483,3 +483,101 @@ be ten minutes of baking. `courseGround.ts` tiles instead: every tile gets an 8 
 construction and a 2 m one on approach, a few rows per frame. 2 m is the physics cell, so what
 you see resolves what you can drive on. Re-measure with `npm run probe:terrain` before assuming
 any of this is still true.
+
+## Hole ownership near the apron: a defined tie-break, not a blend fix
+
+Decided 12 Sep 2026, closing the silence the entry above leaves around the discrete channel — it
+explains the continuous weight vector and says nothing about how ownership is decided when two
+holes' weights agree. Against
+`docs/superpowers/specs/2026-09-12-hole-ownership-near-the-apron-design.md`, itself built on
+grilling recorded in `.scratch/cup-ownership-near-the-apron/prd.md`.
+
+**Influence saturates at 1, and two corridors can both hit it.** `weightsInto` picks an owner by
+taking the corridor with the greatest `influenceLocal`, but influence is clamped to 1 at the edge
+of a hole's own blend band. Where two corridors overlap deep enough that both report exactly 1,
+the strictly-greater comparison never fires and the loop falls through to iteration order — the
+owner becomes whichever hole happens to come first, not whichever corridor the point actually
+sits inside. Three of eighteen cups, all inside the clubhouse apron where the returning nines
+converge, read a neighbour's material this way: hole 9 `fairway`, hole 18 `rough`, hole 17
+`water`. Nothing about the blend is wrong — the continuous weight vector, the cubing, and the
+normalisation above 1 are all behaving as designed. This is a comparison with an undefined case,
+not a bad blend.
+
+**The rule: ties go to the hole the point is most centred in.** Centredness is distance to the
+hole's spline divided by that corridor's half-width at the nearest point — the same quantity the
+influence smoothstep is already built from, so no new geometry enters the comparison. The rule is
+general, not a cup special case: it decides any tie between two influences, cup or otherwise.
+
+**"A point does not belong to a field" is about height, and does not conflict.** The entry above
+records that assembled heights discard which hole a point belongs to, because nine overlapping
+fields have no single answer for "which field is this." That argument is about the continuous
+channel — `heightAt` calls `weightsInto` and discards the index it returns. Ownership is a
+different question, asked by the material lookup, the hazard channel's sand/water/bridge
+selection, and the renderer's mow-stripe direction — all of which need one answer, and none of
+which touch height.
+
+**What was rejected.** Raw metric distance to the spline, unscaled by half-width, hands contested
+ground to whichever corridor happens to be wider, which has nothing to do with which hole a
+player is standing on. A cup-specific special case is indistinguishable from a coincidence — it
+would fix the three known cups and leave the same defect live at a tee, a bunker or a landing
+area anywhere else in the apron. An explicit apron precedence order was rejected for the same
+reason: a fixed ranking of holes has no justification beyond fitting the three cups observed
+today. Changing the continuous weights would move geometry and require re-deriving the grade
+invariant, for a discrete-channel problem the weights don't cause. Splitting mow-stripe direction
+from material ownership would leave the stripes pointing at a neighbouring hole in exactly the
+spot the material was just fixed. Teaching the course assembly about the clubhouse was rejected
+because the tie-break is geometry-local and needs nothing the assembly does not already have —
+the apron radius stays a layout-side concept.
+
+**The evidence, settled by measurement rather than argument.** `courseWorld.test.ts` asserts,
+through the same `buildCourseWorld` call the game and the gate both use, that every one of the
+eighteen cups reports `SurfaceId.Green`; the assertion is unchanged, only the `it.fails` marker
+that held it open came off. The gate's course subject went from three holes to eighteen, so the
+one automated picture of assembled ground finally contains a returning nine and the apron this
+bug lived in — a fresh baseline, reviewed and approved, not a diff against the old one. That
+widened subject buys geometry coverage of the apron; it does not itself prove ownership is
+right — a render check is never evidence about simulation, and the eighteen-cup assertion is
+what carries that weight. The extension's cost was measured twice: the design's own run put it at
+1.16× wall time (25.5 s → 29.5 s), the figure the "keep it in the build under roughly 2×" rule
+was agreed against; a later, independent run on this machine measured 28.673 s, a ratio of 1.12×
+against the same 25.5 s baseline. Both are well inside the budget. The bake loop was checked and
+left alone: running the eighteen-hole subject with its tiling bound (5000 in `gateScene.ts`)
+raised eightfold to 40,000 produced identical geometry — 251,328 vertices, 490,056 triangles,
+matching the run at the unraised 5000 bound exactly — so the bake converges well inside the
+existing bound, and the bound stays as it is. `npm run
+probe:terrain` stayed an unchanged control throughout, confirming the change stayed inside the
+discrete channel.
+
+**The tie-break also reaches hazards, and it shrinks them.** `influenceLocal` can saturate not
+only from a hole's corridor but from its water polygon or its bunker ellipse — see the loops
+over `spec.water` and `spec.bunkers` after the corridor weight is computed. But `lastCentredness`
+is written once, near the top of the function, always as distance to the spline over the
+corridor half-width, before either hazard loop runs. So when a point deep inside a pond ties
+with a neighbouring hole whose corridor the point sits nearer the middle of, the comparison is
+between the pond hole's corridor-centredness and the neighbour's — not between the pond and
+anything — and the pond can lose.
+
+**Measured directly, the real code both ways, seed 2026, 2 m grid (the physics cell) over the
+full course bounds, counting cells where `world.surfaces.surfaceAt(x, z) === SurfaceId.Water`.**
+Before the tie-break: 9,993 cells, 39,972 m², reported as water. After: 7,787 cells, 31,148 m².
+The difference is 2,206 cells, 8,824 m² — a 22% reduction in the course's reported water.
+
+**The consequence isn't cosmetic.** `courseSurfaces.ts`'s `weightsAt` takes `out.water` (and
+sand and bridge) from the owning hole alone — after blending green and corridor across every
+hole with nonzero weight, it re-reads the single owner's own `weightsAt` for the hazard channel,
+so the renderer paints the lost ground dry. `world.ts`'s `checkCartWater` gates cart drowning on
+that same `this.surfaces.surfaceAt(p.x, p.z) === SurfaceId.Water` call, so a cart driving onto
+the lost ground neither drowns, nor pays the stroke, nor gets returned to dry land — and arena
+drives this course for up to three minutes a match. `world.course.test.ts`'s water test finds its
+point by scanning the whole course for *any* cell that still reports water (`wetPoint`), so it
+self-adapts to a shrinking pond and cannot see this.
+
+**This was accepted deliberately, not overlooked.** The consequence above was found in review,
+measured against the real code, and put to the repository owner, who chose to accept it and
+record it here rather than change the rule. The pre-tie-break state was not correct either:
+before this change, a tie between two saturated influences fell to whichever hole's index came
+first in the loop, which was deciding those same ponds too, just silently and by an accident of
+iteration order rather than by a rule. A hazard-aware tie-break — one that hands a tied point to
+whichever hole's own placed hazard it falls inside — is the obvious alternative and remains open
+to whoever wants to build and test it; it was not rejected on its merits. Recorded here so the
+next person who finds a pond driving like fairway finds the reason, not a surprise.

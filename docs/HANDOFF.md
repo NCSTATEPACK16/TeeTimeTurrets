@@ -69,15 +69,15 @@ exist yet:
   general lesson: a clean `search_symbols` miss is not proof a module does not exist — check
   `git status`/`ls` for the exact path you are about to `Write` before trusting a search result.
 
-**A real, pre-existing bug surfaced by `courseWorld.test.ts`, not by this session's changes.**
-Three of eighteen cups read a neighbouring hole's surface material rather than their own — hole 9
-`fairway`, hole 18 `rough`, hole 17 `water` — all inside `CLUBHOUSE_APRON_M` where the returning
-nines crowd. `courseSurfaces.surfaceAt` is not at fault; it asks the owning hole correctly. The
-bug is ownership, in `courseTerrain.weightsInto`. Recorded as `it.fails`, not skipped and not
-loosened — see the test's own comment for why. **Next session should either fix
-`weightsInto`'s ownership near the apron or explicitly decide three misdrawn cups are acceptable
-and change the test's framing**, but should not touch this without reading Stage B's assembly
-first (`docs/DECISIONS.md` § "Assembling the course: influence, not a mosaic").
+**A real, pre-existing bug surfaced by `courseWorld.test.ts`, not by this session's changes, has
+since been fixed.** Three of eighteen cups read a neighbouring hole's surface material rather
+than their own — hole 9 `fairway`, hole 18 `rough`, hole 17 `water` — all inside
+`CLUBHOUSE_APRON_M` where the returning nines crowd. `courseSurfaces.surfaceAt` was not at fault;
+it asked the owning hole correctly. The bug was ownership, in `courseTerrain.weightsInto`:
+influence saturates at 1, so two converging corridors both reported exactly 1 and the argmax fell
+through to hole order. Fixed by a defined tie-break — the hole the point is most centred in — and
+recorded in `docs/DECISIONS.md` § "Hole ownership near the apron: a defined tie-break, not a
+blend fix".
 
 ---
 
@@ -89,9 +89,8 @@ course-wide from a seeded PRNG (**never `Math.random()` in `src/sim/**`**), re-r
 weighted near flags and valid anywhere drivable. Plus the striped food cart as a prop that spawns
 pickups around itself. `Sim.pickups` already exists as a readonly getter and the map already
 draws whatever it returns. `CourseTerrain.weightsInto` is how to ask which hole a candidate point
-belongs to — the same method the cup-ownership bug above lives in, so whoever picks this up
-should read that loose end first rather than build pickup placement on top of a known-wrong
-ownership answer near the clubhouse.
+belongs to — the ownership bug above (fixed) was sequenced ahead of this work for exactly that
+reason, so placement can now ask `weightsInto` without carrying a caveat near the clubhouse.
 
 ### Stage E — Blender landmarks
 
@@ -110,12 +109,14 @@ to emit 18 sign-sized images. Record the new class in `ASSET_PIPELINE.md`.
 
 ## The tests worth reading before you write another one
 
-**`courseWorld.test.ts`'s `it.fails` is the pattern to copy for a known bug, not a workaround.**
-Three of eighteen cups are wrong (above); the test asserts the **correct** behaviour and is
-expected to fail until `weightsInto` is fixed. `it.skip` would have hidden a cup under water;
-asserting the wrong values would have locked them in. When the bug is fixed, delete `.fails`
-rather than the test — it inverts to a plain red the moment that happens, which is the signal
-the fix landed.
+**`courseWorld.test.ts`'s `it.fails` was the pattern to copy for a known bug, not a workaround —
+still true of the pattern even though this instance is closed.** Three of eighteen cups were
+wrong (above); the test asserted the **correct** behaviour and was marked expected-to-fail until
+`weightsInto` was fixed. `it.skip` would have hidden a cup under water; asserting the wrong values
+would have locked them in. The bug is fixed, the assertion is unchanged, and the `.fails` marker
+is gone — it inverted to a plain red the moment the fix landed, which was the signal the fix was
+real. Reach for the same pattern the next time a defect needs to stay visible in the suite rather
+than silently skipped.
 
 **Two smoke checks this session added could only pass because the real code ran, not because of
 a placeholder.** `#hud-team-score`/`#hud-points` ship empty and hidden in `index.html`
@@ -125,19 +126,17 @@ score after ARENA" check can only pass if `deriveHudState`/`drawHud` actually ra
 built fresh in `enter()`, like `ResultsScreen` — so there was nothing to ship empty in the first
 place and nothing a placeholder could satisfy.
 
-**The gate's `course-ground` subject still does not exercise routing or relaxation** — carried
-from the Stage B handoff, unchanged this session. `GATE_COURSE_HOLES` is 3, which falls back to
-`placeNineOnCircle` rather than the relaxed layout the real 18-hole course uses. The subject is a
-true, green geometry baseline; it just isn't evidence about the routing. `courseLayout.test.ts`
-alone covers that. Still a trade against legibility, not an oversight — see the subject's own
-comment.
+**The gate's `course-ground` subject now exercises routing and relaxation** — carried from the
+Stage B handoff as a gap, closed since. `GATE_COURSE_HOLES` is 18, which goes through the same
+relaxation solver and routing the real course uses, including the returning nines and the
+clubhouse apron, instead of the `placeNineOnCircle` fallback a smaller hole count took. The
+subject is still a render check, not proof of routing correctness — that stays
+`courseLayout.test.ts`'s job — but it is no longer a picture of a course shape nobody plays.
 
 ---
 
 ## Loose ends this session added
 
-- **`courseTerrain.weightsInto`'s cup-ownership bug**, above. Pre-existing, first visible via
-  `courseWorld.test.ts`'s `it.fails`.
 - **Six carts in arena (`ARENA_BOTS = 5` plus the player) is untested at the frame-time scale
   `docs/HANDOFF.md` used to measure stroke play at.** `smoke` boots it and runs a match to
   completion but does not profile it. Draw calls: `docs/HANDOFF.md`'s carried-forward note below

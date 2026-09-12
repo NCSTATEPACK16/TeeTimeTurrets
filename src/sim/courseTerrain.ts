@@ -164,6 +164,16 @@ export function createCourseTerrain(
   const weightScratch = new Float32Array(holes.length);
 
   /**
+   * How centred in its own corridor the last `influenceLocal` call's point was: distance to the
+   * spline as a fraction of the corridor half-width there. Written on every call before any early
+   * return, and read by `weightsInto` immediately afterwards.
+   *
+   * A variable rather than a return value because `influenceLocal` returns early from three places
+   * once influence saturates, and the fixed tick bans allocating a pair to return instead.
+   */
+  let lastCentredness = Number.POSITIVE_INFINITY;
+
+  /**
    * How much a hole owns a point given in its own local frame.
    *
    * 1 out to the edge of the corridor's own blend band -- where `Terrain.heightAt` has stopped
@@ -173,6 +183,7 @@ export function createCourseTerrain(
     const { spec, terrain } = context.hole;
     terrain.spline.nearestInto(localX, localZ, nearestScratch);
     const half = halfWidthAt(spec.corridor, nearestScratch.t);
+    lastCentredness = half > 0 ? nearestScratch.distance / half : Number.POSITIVE_INFINITY;
     let weight =
       1 - smoothstep01((nearestScratch.distance - half - BLEND_WIDTH) / COURSE_BLEND_M);
     if (weight >= 1) return 1;
@@ -208,6 +219,7 @@ export function createCourseTerrain(
     let sum = 0;
     let best = -1;
     let bestInfluence = 0;
+    let bestCentredness = Number.POSITIVE_INFINITY;
     for (let i = 0; i < contexts.length; i++) {
       const context = contexts[i]!;
       out[i] = 0;
@@ -215,8 +227,17 @@ export function createCourseTerrain(
       toHoleFrame(context.hole.placement, x, z, localScratch);
       const influence = influenceLocal(context, localScratch.x, localScratch.z);
       if (influence <= 0) continue;
-      if (influence > bestInfluence) {
+      const centredness = lastCentredness;
+      // Influence saturates at 1 inside a corridor, so two converging holes both report exactly 1
+      // and `>` alone hands the point to whichever came first in hole order -- which is why three
+      // cups inside the clubhouse apron read a neighbour's material. Ties go to the hole the point
+      // is most centred in: distance to the spline as a fraction of that corridor's half-width.
+      if (
+        influence > bestInfluence ||
+        (influence === bestInfluence && centredness < bestCentredness)
+      ) {
         bestInfluence = influence;
+        bestCentredness = centredness;
         best = i;
       }
       const weight = blendWeight(influence);

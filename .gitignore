@@ -14,3 +14,6 @@ tools/.terrain-out/
 
 # Blender rollback saves. art/*.blend is tracked; its .blend1 backup is not.
 *.blend1
+
+# Subagent-driven-development scratch (ledgers, briefs, review packages).
+.superpowers/

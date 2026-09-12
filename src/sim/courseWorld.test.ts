@@ -34,19 +34,7 @@ describe("buildCourseWorld", () => {
    * is the cheapest thing that catches it: a cup is the middle of a green by construction, so any
    * disagreement between the material lookup and the placement shows up here first.
    */
-  /**
-   * `it.fails` and not `it.skip`: this assertion is **correct** and the course is wrong. Three of
-   * eighteen cups are owned by a neighbouring hole rather than their own, so they read that
-   * neighbour's material -- hole 9 `fairway`, hole 18 `rough`, and hole 17 `water`. All three are
-   * inside `CLUBHOUSE_APRON_M`, where the returning nines crowd; all three read `green` correctly
-   * on their own hole's `Surfaces`, so the defect is ownership in `courseTerrain.weightsInto`, not
-   * the surface blend (`courseSurfaces.surfaceAt` already asks only the owning hole).
-   *
-   * Recorded this way so the bug is visible in the suite and so this inverts to a plain red the
-   * moment it is fixed -- at which point delete the `.fails` rather than the test. Skipping it
-   * would have hidden a cup under water; asserting the broken values would have locked them in.
-   */
-  it.fails("puts green under every cup, so materials and placement agree", () => {
+  it("puts green under every cup, so materials and placement agree", () => {
     for (let i = 0; i < 18; i++) {
       const cup = cupOf(i);
       expect(world.surfaces.surfaceAt(cup.x, cup.z), `hole ${i + 1}`).toBe(SurfaceId.Green);
