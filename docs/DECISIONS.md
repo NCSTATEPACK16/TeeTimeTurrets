@@ -572,11 +572,12 @@ drives this course for up to three minutes a match. `world.course.test.ts`'s wat
 point by scanning the whole course for *any* cell that still reports water (`wetPoint`), so it
 self-adapts to a shrinking pond and cannot see this.
 
-**This was accepted deliberately, not overlooked.** Carving out hazards is exactly the
-cup-specific special case "What was rejected" above already argues against, and it buys nothing
-— the same undefined tie reappears one level down, between two hazard polygons instead of two
-corridors. The pre-tie-break state was not correct either: before this change, a tie between two
-saturated influences fell to whichever hole's index came first in the loop, which was deciding
-those same ponds too, just silently and by an accident of iteration order rather than by a rule.
-Recorded here so the next person who finds a pond driving like fairway finds the reason, not a
-surprise.
+**This was accepted deliberately, not overlooked.** The consequence above was found in review,
+measured against the real code, and put to the repository owner, who chose to accept it and
+record it here rather than change the rule. The pre-tie-break state was not correct either:
+before this change, a tie between two saturated influences fell to whichever hole's index came
+first in the loop, which was deciding those same ponds too, just silently and by an accident of
+iteration order rather than by a rule. A hazard-aware tie-break — one that hands a tied point to
+whichever hole's own placed hazard it falls inside — is the obvious alternative and remains open
+to whoever wants to build and test it; it was not rejected on its merits. Recorded here so the
+next person who finds a pond driving like fairway finds the reason, not a surprise.
