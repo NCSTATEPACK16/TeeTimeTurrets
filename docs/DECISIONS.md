@@ -539,10 +539,11 @@ widened subject buys geometry coverage of the apron; it does not itself prove ow
 right — a render check is never evidence about simulation, and the eighteen-cup assertion is
 what carries that weight. The extension's cost was measured twice: the design's own run put it at
 1.16× wall time (25.5 s → 29.5 s), the figure the "keep it in the build under roughly 2×" rule
-was agreed against; a later, independent run on this machine measured 1.12× against the same
-25.5 s baseline. Both are well inside the budget. The bake loop was checked and left alone:
-running eighteen holes with its tiling bound (5000 in `gateScene.ts`) raised eightfold produced
-identical geometry — 251,328 vertices, 490,056 triangles, matching the unwidened run exactly — so
-the bake converges well inside the existing bound, and the bound stays as it is. `npm run
+was agreed against; a later, independent run on this machine measured 28.673 s, a ratio of 1.12×
+against the same 25.5 s baseline. Both are well inside the budget. The bake loop was checked and
+left alone: running the eighteen-hole subject with its tiling bound (5000 in `gateScene.ts`)
+raised eightfold to 40,000 produced identical geometry — 251,328 vertices, 490,056 triangles,
+matching the run at the unraised 5000 bound exactly — so the bake converges well inside the
+existing bound, and the bound stays as it is. `npm run
 probe:terrain` stayed an unchanged control throughout, confirming the change stayed inside the
 discrete channel.
