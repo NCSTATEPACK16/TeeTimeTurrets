@@ -8,7 +8,10 @@ import { ClubType } from "../physics/Ballistics";
 import type { Terrain } from "../sim/terrain";
 import type { Surfaces } from "../sim/surfaces";
 import type { BallTransform, CartTransform } from "../sim/world";
+import type { CourseTerrain } from "../sim/courseTerrain";
 import { BIOMES } from "./biomes";
+import { createCourseGround } from "./courseGround";
+import type { CourseGround } from "./courseGround";
 import { createGround } from "./ground";
 import type { Ground } from "./ground";
 import { createProps } from "./props";
@@ -50,6 +53,22 @@ const CHASE_MIN_GROUND_CLEARANCE = 1.5;
  * standing idle with a driver.
  */
 const BOT_DEFAULT_CLUB = ClubType.Driver;
+
+/**
+ * The course, for arena. Passing it is the render-side mode switch, and it is deliberately the
+ * same shape of decision as `Sim.loadCourse`: one object, present or absent, rather than a boolean
+ * flag plus the four things the flag would then need.
+ *
+ * What it turns *off* matters as much as what it turns on. The single-hole ground, the trees, the
+ * flagstick and the props are all built from one `Terrain` around one cup, so in arena they would
+ * draw a stray hole's turf and a second pin somewhere inside the course. Arena has no played ball
+ * and no pin -- `Sim.loadCourse` removes both on the sim side -- and this is the render side of
+ * the same statement.
+ */
+export interface ArenaSource {
+  readonly course: CourseTerrain;
+  readonly surfaces: Surfaces;
+}
 
 /**
  * Everything the renderer needs for one frame. Passed as one object the caller reuses rather
@@ -101,10 +120,18 @@ export class RenderScene {
   private readonly botCarts: GolfClub[] = [];
   private readonly targets: TargetRig;
   private readonly pooledBalls: BallSwarm;
-  private readonly ground: Ground;
-  private readonly trees: Trees;
-  private readonly flagstick: Flagstick;
-  private readonly props: Props;
+  /** All four are null in arena -- see `ArenaSource` for why the hole's furniture has to go. */
+  private readonly ground: Ground | null;
+  private readonly trees: Trees | null;
+  private readonly flagstick: Flagstick | null;
+  private readonly props: Props | null;
+  private readonly courseGround: CourseGround | null;
+  /**
+   * Ground height under the chase camera. The course's in arena, the hole's otherwise: a camera
+   * that probed the single hole's heightfield while flying over hole 14 would read the height of
+   * whatever sits at those coordinates on hole 1 and clamp the eye to it.
+   */
+  private readonly groundHeightAt: (x: number, z: number) => number;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
   private readonly chaseLookScratch = new THREE.Vector3();
@@ -124,9 +151,19 @@ export class RenderScene {
     surfaces: Surfaces,
     targetCount: number,
     botCount: number,
+    arena?: ArenaSource,
   ) {
     this.terrain = terrain;
-    const fieldSize = terrain.spec.fieldSize;
+    // The draw distance the fog and far plane are cut to. One hole is its own field; the course is
+    // the diagonal of its bounds, so the far plane still reaches the horizon from any tee.
+    const fieldSize = arena
+      ? Math.hypot(
+          arena.course.bounds.maxX - arena.course.bounds.minX,
+          arena.course.bounds.maxZ - arena.course.bounds.minZ,
+        )
+      : terrain.spec.fieldSize;
+    // Arena crosses all three biomes, so no single sky is right. The hole the Sim was built on
+    // supplies it -- a deliberate approximation, not a claim that the course has one biome.
     const palette = BIOMES[terrain.spec.biome];
 
     this.renderer = renderer;
@@ -152,21 +189,34 @@ export class RenderScene {
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
-    this.ground = createGround(terrain, surfaces);
-    this.scene.add(this.ground.mesh);
+    if (arena) {
+      this.courseGround = createCourseGround(arena.course, arena.surfaces);
+      this.scene.add(this.courseGround.group);
+      this.ground = null;
+      this.trees = null;
+      this.flagstick = null;
+      this.props = null;
+      this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
+    } else {
+      this.courseGround = null;
+      this.ground = createGround(terrain, surfaces);
+      this.scene.add(this.ground.mesh);
 
-    this.trees = createTrees(terrain, surfaces);
-    if (this.trees.mesh !== null) this.scene.add(this.trees.mesh);
+      this.trees = createTrees(terrain, surfaces);
+      if (this.trees.mesh !== null) this.scene.add(this.trees.mesh);
 
-    // Placed from `terrain.cupPosition` and never from a copy of it: `CUP_RADIUS` and that
-    // position are canonical for where the hole is, and the pin reads them.
-    this.flagstick = new Flagstick();
-    placeFlagstick(this.flagstick, terrain);
-    this.scene.add(this.flagstick);
+      // Placed from `terrain.cupPosition` and never from a copy of it: `CUP_RADIUS` and that
+      // position are canonical for where the hole is, and the pin reads them.
+      this.flagstick = new Flagstick();
+      placeFlagstick(this.flagstick, terrain);
+      this.scene.add(this.flagstick);
 
-    // Derived from the hole, not seeded: see `props.ts`. Added here *and* to `backdrop.ts`.
-    this.props = createProps(terrain, surfaces);
-    for (const object of this.props.objects) this.scene.add(object);
+      // Derived from the hole, not seeded: see `props.ts`. Added here *and* to `backdrop.ts`.
+      this.props = createProps(terrain, surfaces);
+      for (const object of this.props.objects) this.scene.add(object);
+
+      this.groundHeightAt = (x, z) => terrain.heightAt(x, z);
+    }
 
     const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
     const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
@@ -218,10 +268,19 @@ export class RenderScene {
     }
     this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
-    this.flagstick.update(view.elapsedSeconds);
-    this.flagstick.setFelled(!view.pinStanding);
+    if (this.flagstick) {
+      this.flagstick.update(view.elapsedSeconds);
+      this.flagstick.setFelled(!view.pinStanding);
+    }
 
     this.frameChase(view);
+
+    // After `frameChase`, so the tiles refine toward where the camera now is rather than where it
+    // was last frame. `update` is internally budgeted to BUILD_BUDGET_MS, so this cannot blow the
+    // frame however far the cart has driven.
+    if (this.courseGround) {
+      this.courseGround.update(this.camera.position.x, this.camera.position.z);
+    }
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -238,10 +297,11 @@ export class RenderScene {
     for (const bot of this.botCarts) bot.dispose();
     this.targets.dispose();
     this.pooledBalls.dispose();
-    this.ground.dispose();
-    this.trees.dispose();
-    this.flagstick.dispose();
-    this.props.dispose();
+    this.ground?.dispose();
+    this.trees?.dispose();
+    this.flagstick?.dispose();
+    this.props?.dispose();
+    this.courseGround?.dispose();
     this.scene.clear();
   }
 
@@ -335,7 +395,7 @@ export class RenderScene {
 
     // Keep the eye above the terrain it is flying over, or a chase camera reversing into a
     // hillside ends up underground looking at the inside of the heightfield.
-    const groundAtEye = this.terrain.heightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
+    const groundAtEye = this.groundHeightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
     this.chaseEyeScratch.y = Math.max(this.chaseEyeScratch.y, groundAtEye + CHASE_MIN_GROUND_CLEARANCE);
 
     this.camera.position.lerp(this.chaseEyeScratch, CHASE_POSITION_LERP);
