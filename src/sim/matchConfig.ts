@@ -36,6 +36,18 @@ export const MAX_PLAYERS = 24;
 export const TEAM_COUNT = 2;
 
 /**
+ * Bots in an arena match, over and above the human.
+ *
+ * Five rather than the one a hole spawns, because arena's scoring needs sides to be meaningful:
+ * `teamOf` alternates, so six carts is three against three and the team-strokes total is a real
+ * aggregate rather than one player's deaths under another name. Well inside `MAX_PLAYERS`.
+ *
+ * The ceiling is draw calls, not the sim: `docs/HANDOFF.md` measures 78 per cart, so six carts is
+ * ~470 before any ground. That is the number to revisit first if arena runs slow.
+ */
+export const ARENA_BOTS = 5;
+
+/**
  * Which side a player is on.
  *
  * Alternating rather than splitting the roster in half so that **any** count gives sides that

@@ -101,21 +101,111 @@ const title = await page.evaluate(() => {
   };
 });
 check("boots to the title screen", title.screen === "title", title.screen);
+// Stage C5 adds ARENA, second under PLAY (src/ui/screens/TitleScreen.ts) -- image 10's four
+// actions plus the whole mode arena is.
 check(
-  "shows the four actions from image 10",
-  JSON.stringify(title.labels) === JSON.stringify(["PLAY", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
+  "shows the five actions from image 10 plus arena",
+  JSON.stringify(title.labels) === JSON.stringify(["PLAY", "ARENA", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
   title.labels.join(" / "),
 );
 // ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead. A button that looks
-// alive and does nothing is the failure this asserts against. PLAY and CLUBHOUSE are built;
-// MULTIPLAYER and SETTINGS are not, and must read as "not yet" rather than silently do nothing.
+// alive and does nothing is the failure this asserts against. PLAY, ARENA and CLUBHOUSE are
+// built; MULTIPLAYER and SETTINGS are not, and must read as "not yet" rather than silently do
+// nothing.
 check(
   "built screens are live and unbuilt ones are disabled, not absent",
-  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, true]),
+  JSON.stringify(title.disabled) === JSON.stringify([false, false, false, true, true]),
   JSON.stringify(title.disabled),
 );
 check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
 check("shows a version string", typeof title.version === "string" && title.version.length > 0, title.version);
+
+console.log("=== ARENA ===");
+// Eighteen holes routed and blended into one heightfield, built for the first time here --
+// docs/HANDOFF.md measures that at "about a second", so this is the one boot path in the whole
+// file that earns a generous timeout.
+await page.evaluate(() => {
+  [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "ARENA").click();
+});
+await page.waitForFunction(() => window.__teetimeturrets.screen === "arena", { timeout: 30000 });
+await new Promise((r) => setTimeout(r, 600));
+const arena = await page.evaluate(() => ({
+  screen: window.__teetimeturrets.screen,
+  teamScoreHidden: document.getElementById("hud-team-score").hidden,
+  teamScoreText: document.getElementById("hud-team-score").textContent,
+  pointsHidden: document.getElementById("hud-points").hidden,
+  strokesHidden: document.getElementById("hud-strokes").hidden,
+}));
+check("ARENA starts the arena screen", arena.screen === "arena", arena.screen);
+// index.html ships #hud-team-score empty and hidden (same reasoning as #match-results' blank
+// markup above): a check for non-empty text can only pass because deriveHudState/drawHud
+// actually ran with source.arena === true, not because a placeholder was already sitting there.
+check(
+  "arena HUD shows a non-empty team score",
+  arena.teamScoreHidden === false && arena.teamScoreText.length > 0,
+  `hidden=${arena.teamScoreHidden} text="${arena.teamScoreText}"`,
+);
+check("arena HUD shows the kills readout too", arena.pointsHidden === false, `hidden=${arena.pointsHidden}`);
+check("arena HUD hides the golf stroke counter", arena.strokesHidden === true, `hidden=${arena.strokesHidden}`);
+
+console.log("=== ARENA MATCH OVER (D12) ===");
+// Same trick as the stroke-play ending further down: force the clock's last tick on sim.match
+// itself rather than waiting out the real duration. See that section's comment for why this has
+// to be the clock, not the sim.matchOver getter.
+await page.evaluate(() => {
+  window.__teetimeturrets.sim.match.remaining = 1 / 60;
+});
+await page.waitForFunction(() => window.__teetimeturrets.screen === "arenaResults", { timeout: 20000 });
+await new Promise((r) => setTimeout(r, 300));
+const arenaOver = await page.evaluate(() => ({
+  screen: window.__teetimeturrets.screen,
+  headline: document.querySelector(".arena-results__title")?.textContent ?? null,
+  scores: [...document.querySelectorAll(".arena-results__score-value")].map((el) => el.textContent),
+  mvp: document.querySelector(".arena-results__mvp")?.textContent ?? null,
+  rowNames: [...document.querySelectorAll(".arena-results__row-name")].map((el) => el.textContent),
+}));
+check(
+  "the match clock running out routes to the arena results screen, not the golf overlay",
+  arenaOver.screen === "arenaResults",
+  arenaOver.screen,
+);
+// Nothing in index.html ships this markup (MatchResultsScreen builds it fresh in enter(), like
+// ResultsScreen/ClubhouseScreen/TitleScreen do), so a non-empty headline can only be
+// deriveScoreboard's own output, not a placeholder sitting in the page already.
+check("arena results names a winner", (arenaOver.headline ?? "").length > 0, String(arenaOver.headline));
+check(
+  "arena results shows both teams' strokes",
+  arenaOver.scores.length === 2 && arenaOver.scores[0].startsWith("US ") && arenaOver.scores[1].startsWith("THEM "),
+  JSON.stringify(arenaOver.scores),
+);
+check("arena results names an MVP", (arenaOver.mvp ?? "").startsWith("MVP"), String(arenaOver.mvp));
+// ARENA_BOTS (5) plus the player -- one row per rig, and the player's own row is always first
+// (rig 0). A roster-length mismatch here is exactly the `rows.length` vs `playerCount` pitfall
+// `matchScoreboard.test.ts`'s "lists only the roster it was given" guards at the unit level.
+check(
+  "arena results lists the whole roster, player first",
+  arenaOver.rowNames.length === 6 && arenaOver.rowNames[0] === "YOU",
+  JSON.stringify(arenaOver.rowNames),
+);
+
+await page.click(".arena-results__actions .btn--primary"); // PLAY AGAIN
+await page.waitForFunction(() => window.__teetimeturrets.screen === "arena", { timeout: 20000 });
+await new Promise((r) => setTimeout(r, 400));
+const rematch = await page.evaluate(() => ({
+  screen: window.__teetimeturrets.screen,
+  remaining: window.__teetimeturrets.sim.match.remaining,
+  over: window.__teetimeturrets.sim.matchOver,
+}));
+check("PLAY AGAIN returns to the arena screen", rematch.screen === "arena", rematch.screen);
+// Sim.reset() is already arena-aware (re-tees every cart, resets the spawn stream and the match
+// clock); these two are evidence that path actually ran, not just that the screen changed.
+check("PLAY AGAIN resets the match clock", rematch.remaining > 1, `${rematch.remaining}`);
+check("PLAY AGAIN resets the match itself", rematch.over === false, `${rematch.over}`);
+
+// Back to the title so the rest of this run exercises stroke play exactly as it did before arena
+// existed -- startRound below builds its own fresh Sim regardless of what arena left behind.
+await page.evaluate(() => window.__teetimeturrets.screens.show("title"));
+await new Promise((r) => setTimeout(r, 300));
 
 await page.evaluate(() => {
   [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "PLAY").click();

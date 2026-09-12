@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
 import { RenderScene } from "../../render/scene";
-import type { FrameView } from "../../render/scene";
+import type { ArenaSource, FrameView } from "../../render/scene";
 import { CLUB_STATS } from "../../physics/Ballistics";
 import type { ClubType } from "../../physics/Ballistics";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "../../sim/world";
@@ -39,8 +39,29 @@ export interface RoundScreenOptions {
   readonly round: Round;
   readonly hudRoot: HTMLElement;
   readonly nameplateRoot: HTMLElement;
-  /** Called once the hole is over, with the strokes taken. Drives the transition to Results. */
-  readonly onHoleComplete: (strokes: number) => void;
+  /**
+   * Called once the hole is over, with the strokes taken. Drives the transition to Results.
+   * Absent in arena, which has no holing out to report -- see `arena` below.
+   */
+  readonly onHoleComplete?: (strokes: number) => void;
+  /**
+   * Called once the arena match clock runs out. Drives the transition to `MatchResultsScreen`.
+   * Absent for a hole, which ends by `onHoleComplete` instead -- the two callbacks are each
+   * other's counterpart, one per ending a `Sim` can have.
+   */
+  readonly onMatchOver?: () => void;
+  /**
+   * Present for arena, absent for a hole. One optional field rather than a second screen class:
+   * the sim, the scene, the input, the HUD, the nameplates and the match-results overlay are the
+   * same objects with the same lifetime either way, and a parallel class would have been five
+   * hundred lines of copy that could drift.
+   *
+   * It mirrors `Sim.loadCourse`, which is the mode switch on the sim side and is likewise one call
+   * rather than a mode enum threaded through the file. What it turns off here is the pin marker
+   * and the `M` map: the first points at a cup arena does not have, and the second is built from
+   * one hole's geometry.
+   */
+  readonly arena?: ArenaSource;
 }
 
 export class RoundScreen implements Screen {
@@ -55,6 +76,8 @@ export class RoundScreen implements Screen {
   private matchResultsWereVisible = false;
   private view: FrameView | null = null;
   private reported = false;
+  /** Guards `onMatchOver` the same way `reported` guards `onHoleComplete`: called once. */
+  private matchOverReported = false;
   /** Where the ball was when the current shot left the muzzle, or null between shots. */
   private driveOrigin: { x: number; z: number } | null = null;
   private lastShotCount = 0;
@@ -79,9 +102,16 @@ export class RoundScreen implements Screen {
   }
 
   enter(): void {
-    const { renderer, sim, hudRoot, nameplateRoot } = this.options;
+    const { renderer, sim, hudRoot, nameplateRoot, arena } = this.options;
 
-    this.render = new RenderScene(renderer, sim.terrain, sim.surfaces, sim.targets.length, sim.bots.length);
+    this.render = new RenderScene(
+      renderer,
+      sim.terrain,
+      sim.surfaces,
+      sim.targets.length,
+      sim.bots.length,
+      arena,
+    );
     this.nameplates = new Nameplates(
       nameplateRoot,
       sim.bots.map((_, i) => `BOT ${i + 1}`),
@@ -89,10 +119,17 @@ export class RoundScreen implements Screen {
       sim.bots.map(() => "enemy" as PlateTeam),
     );
     this.lastSeenAtMs.length = 0;
-    // Shares #nameplates: both are world-anchored chips over the same scene, and H17 follows H13's
-    // projection (UI-SPEC §2). Stacking order is the container's, not theirs.
-    this.pinMarker = new PinMarker(nameplateRoot);
-    this.courseMap = new CourseMap(nameplateRoot, () => [buildMapHole(sim)]);
+    // Neither is built in arena. The pin marker points at `terrain.cupPosition`, and arena's cup
+    // belongs to whichever hole the Sim happened to be created on -- a marker aimed at a pin that
+    // `Sim.loadCourse` has already removed. The map is built from one hole's corridor and contours.
+    // Both are Stage C5 work in their course-wide form; drawing the hole's version over the course
+    // would be worse than drawing nothing.
+    if (!arena) {
+      // Shares #nameplates: both are world-anchored chips over the same scene, and H17 follows
+      // H13's projection (UI-SPEC §2). Stacking order is the container's, not theirs.
+      this.pinMarker = new PinMarker(nameplateRoot);
+      this.courseMap = new CourseMap(nameplateRoot, () => [buildMapHole(sim)]);
+    }
     // UI-only, so it is a listener here rather than a PlayerIntent: UI-SPEC section 1 has src/ui
     // reading sim state and never mutating it, and opening a map is not something the sim needs
     // to know. On window because a pointer-locked player has no focused element to hit.
@@ -143,9 +180,19 @@ export class RoundScreen implements Screen {
 
     // The rest of the counters the sim writes itself. `Session` reads `sim.stats` when the hole
     // is scored, which is why nothing here has to copy or forward them.
-    if (!this.reported && sim.holedOut) {
+    // `onHoleComplete` is absent in arena. `sim.holedOut` cannot go true there either -- the played
+    // ball is parked below the world by `loadCourse` -- so this is belt and braces, and the belt is
+    // the one that reads as intent.
+    const onHoleComplete = this.options.onHoleComplete;
+    if (onHoleComplete && !this.reported && sim.holedOut) {
       this.reported = true;
-      this.options.onHoleComplete(sim.strokes);
+      onHoleComplete(sim.strokes);
+    }
+
+    const onMatchOver = this.options.onMatchOver;
+    if (onMatchOver && !this.matchOverReported && sim.matchOver) {
+      this.matchOverReported = true;
+      onMatchOver();
     }
   }
 
@@ -216,7 +263,13 @@ export class RoundScreen implements Screen {
     this.drawPinMarker();
     this.drawCourseMap();
     drawHud(this.hud, sim);
-    if (this.matchResults) {
+    // Arena's ending is `MatchResultsScreen`, reached via `onMatchOver` above -- not this overlay,
+    // whose numbers (`Cart.strokesTaken`, `Sim.matchOutcome()`) are stroke play's cart-combat mode
+    // and would be the wrong scoreboard entirely (see `MatchResultsScreen.ts`'s header). Skipped
+    // outright in arena rather than left to run behind the transition: `sim.matchOver` is the same
+    // flag either way, so without this guard the overlay would still un-hide for the one frame
+    // between the clock reaching zero and the screen swap.
+    if (this.matchResults && !this.options.arena) {
       drawMatchResults(this.matchResults, sim);
       // Pointer-locked players (mouse aim) cannot see or reach the button -- the canvas has
       // captured and hidden the cursor -- so release the lock on the tick the overlay first

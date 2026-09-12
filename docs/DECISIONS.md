@@ -386,6 +386,62 @@ open items — mode-scoping and the pickup trio — are untouched by the map and
 work, so there was no technical reason to wait. Recorded here so a reader of `ROADMAP.md`
 does not find shipped Phase 4 work with no explanation.
 
+## Arena's scoreboard: two strokes that must never touch, and a flat health number
+
+Decided 9 Sep 2026 in the session that built `src/sim/match.ts` (against
+`docs/superpowers/specs/2026-09-09-arena-match-and-scoring-design.md`, cited below as D1–D13);
+`MatchResultsScreen` (D12) landed 12 Sep 2026, closing out Stage C5.
+
+**"Stroke" means two different things in this codebase, and they must never touch (D1).**
+`Cart.strokesTaken` counts ball hits absorbed, one per hit — the score of the timed cart-combat
+sub-mode stroke play itself already runs (shipped 3 September). Arena's stroke is a **death**,
+counted on `Match` and incremented once per kill regardless of how many hits it took to cause
+it — at `ARENA_MAX_HEALTH` (8), that is a factor-of-eight difference for the same cart. Nothing
+derives one from the other. The failure this guards against is a scoreboard that folds them
+together and looks plausible at every value it displays, which is why `src/sim/match.ts`'s
+header states it first, and why `MatchResultsScreen` reads only `Sim.match` — never
+`Cart.strokesTaken` or `Sim.matchOutcome()`. Those stay stroke play's own combat-timer ending
+(`src/ui/matchResults.ts`, untouched); reusing them for arena would have shown hits-absorbed as
+though it were the team score, and `RoundScreen` now skips drawing that overlay outright
+whenever `arena` is set so the two endings can never both be on screen.
+
+**A kill is attributed, an environmental death is not, and a team kill scores no point (D5).**
+Ball kill by an enemy: killer +1 point, victim's team +1 stroke. Team-mate kill: no point, but
+the team still loses the life — that is the punishment. Ram kills (`cartsShunt`) score
+identically, attributed to the other cart; both carts dying in one contact scores both, each
+blaming the other. Any death with no other cart involved (drowning) is `NO_KILLER`: +1 stroke,
+no point, and the sentinel is negative so it can never be mistaken for a real roster index.
+
+**Arena health is a flat number, chosen here rather than left open (D9).** `docs/HANDOFF.md`
+carried "cart health is `2 × par` and `loadHole` re-sizes it" unanswered for several sessions —
+arena has no par, so it cannot inherit the rule. `ARENA_MAX_HEALTH = 8`: inside the 6–10 band
+`2 × par` produces across the par mix, so the combat feel already tuned for stroke play carries
+over, and flat because the thing that varied it does not exist in this mode. Set once, by
+`loadCourse`, and never resized afterwards — the actual defect the open question pointed at was
+never the number, it was `setMaxHealth` refilling the bar as a side effect of a mode event.
+
+**`MatchResultsScreen` is a real `Screen`, not the existing overlay (D12).** The easy path when
+the match clock runs out in arena would have been the overlay already sitting in `RoundScreen`
+for stroke play's ending — same `sim.matchOver` flag, same "time's up" moment, no new screen to
+write. It was left exactly where it is, unchanged, and arena got its own screen
+(`src/ui/screens/MatchResultsScreen.ts`, registered as `"arenaResults"`) for the reason directly
+above: the two endings do not share a scoreboard. `MatchResultsScreen` is built fresh in
+`enter()` like `ResultsScreen`/`ClubhouseScreen`/`TitleScreen` — not static markup toggled by a
+flag like `#match-results` — so there was no placeholder text to ship empty and no `index.html`
+markup change at all, only new CSS for the layout.
+
+The DOM-free half of this, `src/ui/matchScoreboard.ts`'s `deriveScoreboard(match): ScoreboardState`
+— headline, both teams' strokes, the MVP, and one row per player — is **not** new. It shipped
+with C1–C4, committed at `8170e52`, before `MatchResultsScreen` existed to call it. Worth stating
+because it was nearly lost: an early pass of this session's own work wrote a second, narrower
+scoreboard module under the same filename without reading the one already there first, and briefly
+overwrote it. Restored from `git show HEAD:src/ui/matchScoreboard.ts` before anything shipped. The
+lesson is procedural, not architectural — read a file before writing one with the same name and
+purpose, even when a search for it under a different name turned up nothing — and is recorded here
+rather than dropped because the failure mode (destroying an already-correct module while believing
+it did not exist) is exactly what `search_symbols`-first navigation is supposed to prevent, and did
+not, because the search terms were the ones missing, not the module.
+
 ## Assembling the course: influence, not a mosaic
 
 Decided 9 Sep 2026, building Stage B of arena mode. The entry above says the contiguous

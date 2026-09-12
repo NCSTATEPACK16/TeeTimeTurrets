@@ -3,6 +3,8 @@ import {
   CLUBHOUSE_GAP_M,
   CORRIDOR_CLEARANCE_M,
   TRANSITION_M,
+  TRANSITION_MIN_M,
+  TRANSITION_MAX_M,
   inspectLayout,
   loopRadius,
   solveCourseLayout,
@@ -10,6 +12,7 @@ import {
   toHoleFrame,
 } from "./courseLayout";
 import type { CourseLayout, LayoutHole } from "./courseLayout";
+import { RETURNING_BELT_MAX_M, placedControl, polylineClearance } from "./courseGeometry";
 import { generateCourse } from "./course";
 
 /** The seed main.ts ships (main.ts:32). Duplicated rather than imported: main.ts pulls in three
@@ -57,6 +60,13 @@ function place(layout: CourseLayout, index: number, local: { x: number; z: numbe
 function dist(a: { x: number; z: number }, b: { x: number; z: number }): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
+
+describe("transition slack bounds", () => {
+  it("brackets the shipped target", () => {
+    expect(TRANSITION_MIN_M).toBeLessThan(TRANSITION_M);
+    expect(TRANSITION_MAX_M).toBeGreaterThan(TRANSITION_M);
+  });
+});
 
 describe("loopRadius", () => {
   it("returns the radius whose chords subtend exactly a full turn", () => {
@@ -117,11 +127,12 @@ describe("returning nines", () => {
     );
   });
 
-  it("keeps the walk from each green to the next tee short", () => {
+  it("keeps the walk from each green to the next tee within the slack bounds", () => {
     for (const [from, to] of [...pairsWithin(0, 8), ...pairsWithin(9, 17)]) {
       const green = place(layout, from, holes[from]!.cup);
       const tee = place(layout, to, holes[to]!.tee);
-      expect(dist(green, tee)).toBeCloseTo(TRANSITION_M, 3);
+      expect(dist(green, tee)).toBeGreaterThanOrEqual(TRANSITION_MIN_M - 0.5);
+      expect(dist(green, tee)).toBeLessThanOrEqual(TRANSITION_MAX_M + 0.5);
     }
   });
 
@@ -164,7 +175,7 @@ describe("inspectLayout", () => {
   it("reports a clean bill for the layout it is given", () => {
     const holes = eighteen();
     const report = inspectLayout(holes, solveCourseLayout(holes));
-    expect(report.maxTransitionM).toBeCloseTo(TRANSITION_M, 3);
+    expect(report.maxTransitionM).toBeLessThanOrEqual(TRANSITION_MAX_M + 0.5);
     expect(report.frontReturnM).toBeLessThanOrEqual(TRANSITION_M + 1);
     expect(report.conflicts).toEqual([]);
   });
@@ -243,5 +254,101 @@ describe("toHoleFrame", () => {
     toHoleFrame(frame, 100, 60, a);
     toHoleFrame(frame, 130, 20, b);
     expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeCloseTo(Math.hypot(100 - 130, 60 - 20), 9);
+  });
+});
+
+/** Course-frame bearing of a hole's tee-to-cup line, radians. */
+function bearing(layout: CourseLayout, holes: readonly LayoutHole[], index: number): number {
+  const h = holes[index]!;
+  const tee = place(layout, index, h.tee);
+  const cup = place(layout, index, h.cup);
+  return Math.atan2(cup.z - tee.z, cup.x - tee.x);
+}
+
+/** Smallest angle between two bearings, 0..PI. */
+function angleBetween(a: number, b: number): number {
+  let d = Math.abs(a - b) % (Math.PI * 2);
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  return d;
+}
+
+/**
+ * The routing reads as a real course rather than a ring of holes, which is a shape claim and so
+ * needs a measurable stand-in. This is it: a real routing sends holes **out and back beside each
+ * other** -- Pinehurst No. 2's 1 and 18, its 12/13/14 -- so somewhere in each nine there are
+ * pairs of holes pointing opposite ways with only a tree belt between them.
+ *
+ * Both halves of the condition carry weight, and the circular layout is exactly why. On a circle
+ * two holes a third of the way apart *are* near-anti-parallel -- they are on opposite sides of
+ * the ring -- and they are also two radii apart, which is 600 m of other holes. Anti-parallel
+ * alone would pass against the shape this test exists to reject.
+ */
+describe("holes run out and back beside each other", () => {
+  /** How far from a straight reversal a pair may be and still count as a returning leg. */
+  const OPPOSED_TOLERANCE = (30 * Math.PI) / 180;
+
+  /**
+   * "Beside each other" is a fact about the two *corridors*, so it is measured between the
+   * corridors -- `polylineClearance` over `placedControl`, the same pair of functions
+   * `inspectLayout` grades a conflict with, so this test and the solver agree on what adjacency is.
+   *
+   * Distance between hole midpoints was the first attempt and it measures the wrong thing. Two
+   * holes of unequal length that run side by side have their midpoints offset *along* the
+   * fairways, not across them: holes 4 and 6 of the shipped course are exactly anti-parallel with
+   * 116 m between the corridors -- a textbook lobe -- and 268 m between their midpoints, because
+   * one is 298 m long and the other 116 m. A midpoint rule rejects that pair and accepts holes 17
+   * and 18, whose corridors run 8 m apart and are not a returning leg but a near-collision.
+   *
+   * The band is what keeps this a real claim. `CORRIDOR_CLEARANCE_M` as the floor excludes the
+   * near-collision; `RETURNING_BELT_MAX_M` as the ceiling excludes the shape this test exists to
+   * reject -- on a circular layout two holes a third of the way apart *are* near-anti-parallel,
+   * being on opposite sides of the ring, and their corridors are 566-596 m apart, which is most of
+   * a course. Anti-parallel alone would pass against it.
+   */
+  function pairedLegs(
+    layout: CourseLayout,
+    holes: readonly LayoutHole[],
+    from: number,
+    to: number,
+  ): number {
+    let count = 0;
+    for (let i = from; i < to; i++) {
+      for (let j = i + 1; j < to; j++) {
+        const offBy = Math.PI - angleBetween(bearing(layout, holes, i), bearing(layout, holes, j));
+        if (offBy > OPPOSED_TOLERANCE) continue;
+        const pi = layout.placements.find((p) => p.index === holes[i]!.index)!;
+        const pj = layout.placements.find((p) => p.index === holes[j]!.index)!;
+        const { distance } = polylineClearance(
+          placedControl(holes[i]!, pi),
+          placedControl(holes[j]!, pj),
+        );
+        if (distance < CORRIDOR_CLEARANCE_M || distance > RETURNING_BELT_MAX_M) continue;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  it("pairs holes into returning legs on the front nine", () => {
+    const holes = eighteen();
+    expect(pairedLegs(solveCourseLayout(holes), holes, 0, 9)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("pairs holes into returning legs on the back nine", () => {
+    const holes = eighteen();
+    expect(pairedLegs(solveCourseLayout(holes), holes, 9, 18)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does the same on the course the game actually generates", () => {
+    const course = generateCourse(COURSE_SEED, 18);
+    const holes: LayoutHole[] = course.holes.map((h) => ({
+      index: h.index,
+      tee: h.tee,
+      cup: h.cup,
+      control: h.control,
+    }));
+    const layout = solveCourseLayout(holes);
+    expect(pairedLegs(layout, holes, 0, 9)).toBeGreaterThanOrEqual(2);
+    expect(pairedLegs(layout, holes, 9, 18)).toBeGreaterThanOrEqual(2);
   });
 });

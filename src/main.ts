@@ -3,12 +3,16 @@ import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
 import { FIXED_DT, Sim } from "./sim/world";
 import { generateCourse } from "./sim/course";
+import { buildCourseWorld } from "./sim/courseWorld";
+import type { CourseWorld } from "./sim/courseWorld";
+import { ARENA_BOTS } from "./sim/matchConfig";
 import { Session } from "./sim/session";
 import { parseHoleIndex } from "./devHoleParam";
 import { createLoadout, tireTypeFor } from "./sim/loadout";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import { RoundScreen } from "./ui/screens/RoundScreen";
 import { ResultsScreen } from "./ui/screens/ResultsScreen";
+import { MatchResultsScreen } from "./ui/screens/MatchResultsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 
 /**
@@ -32,7 +36,7 @@ import { TitleScreen } from "./ui/screens/TitleScreen";
 const COURSE_SEED = 2026;
 const VERSION = "v0.0.1";
 
-type ScreenName = "title" | "round" | "results" | "clubhouse";
+type ScreenName = "title" | "round" | "arena" | "arenaResults" | "results" | "clubhouse";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
@@ -63,6 +67,12 @@ async function main(): Promise<void> {
   const session = new Session(course.holes.map((h) => h.par), 6000);
   let sim: Sim | null = null;
   let roundScreen: RoundScreen | null = null;
+  /**
+   * Built on the first ARENA press and kept for the page. Routing, eighteen heightfields and the
+   * blended course cost about a second, and rebuilding it per match would pay that on every
+   * rematch to arrive at exactly the same course -- the seed is fixed, so the result cannot differ.
+   */
+  let courseWorld: CourseWorld | null = null;
 
   // Page-scoped for now. Persisting the loadout is BACKLOG #48's job; the clubhouse works either
   // way because it only ever reads and writes it through here.
@@ -81,6 +91,27 @@ async function main(): Promise<void> {
     screens.show("round");
   };
 
+  /**
+   * Arena: eighteen holes as one drivable place, per `DECISIONS.md` "Arena mode, and a course that
+   * is one place".
+   *
+   * The Sim is still created from a single hole spec and then switched, which is `loadCourse`'s
+   * contract -- it needs a built world with rigs in it before it can swap the ground under them.
+   * Hole 1 is that spec and nothing of it survives the switch: the pin, the targets and the played
+   * ball are all removed, and the playfield becomes the course.
+   *
+   * No `session.startHole`. Arena scores points and strokes on `Sim.match`, not on the round card,
+   * and folding a deathmatch into the scorecard is exactly the conflation `DECISIONS.md` warns off.
+   */
+  const startArena = async (): Promise<void> => {
+    const spec = course.holes[0];
+    if (!spec) throw new Error("course has no holes");
+    courseWorld ??= buildCourseWorld(course, COURSE_SEED);
+    sim = await Sim.create(spec, { tire: tireTypeFor(loadout), botCount: ARENA_BOTS });
+    sim.loadCourse(courseWorld.terrain, courseWorld.surfaces, courseWorld.holes);
+    screens.show("arena");
+  };
+
   screens.register("title", () => {
     const backdropHole = course.holes[holeIndex] ?? course.holes[0]!;
     return new TitleScreen({
@@ -90,6 +121,7 @@ async function main(): Promise<void> {
       version: VERSION,
       actions: {
         play: () => void startRound(),
+        arena: () => void startArena(),
         clubhouse: () => screens.show("clubhouse"),
         // Still undefined, so these render visibly disabled rather than absent -- ROADMAP.md
         // asks for exactly that: a button that looks alive and does nothing is worse.
@@ -116,6 +148,48 @@ async function main(): Promise<void> {
       },
     });
     return roundScreen;
+  });
+
+  // Same screen class as `round`, with the course passed in. The differences -- no pin marker, no
+  // hole map, no hole to complete -- all fall out of that one option; see `RoundScreenOptions`.
+  screens.register("arena", () => {
+    const live = sim;
+    const world = courseWorld;
+    if (!live || !world) throw new Error("arena screen entered with no sim or no course");
+    roundScreen = new RoundScreen({
+      renderer,
+      sim: live,
+      round: session.card,
+      hudRoot,
+      nameplateRoot,
+      arena: { course: world.terrain, surfaces: world.surfaces },
+      onMatchOver: () => screens.show("arenaResults"),
+    });
+    return roundScreen;
+  });
+
+  // D12: arena's own ending, not stroke play's cart-combat overlay -- see
+  // `MatchResultsScreen.ts`'s header for why the two cannot share numbers.
+  screens.register("arenaResults", () => {
+    const live = sim;
+    const behind = roundScreen;
+    if (!live) throw new Error("arena results screen entered with no sim");
+    return new MatchResultsScreen({
+      root: screensRoot,
+      match: live.match,
+      // Keeps the finished arena on screen under the scrim, same as `results`' `drawBehind`.
+      drawBehind: behind ? () => behind.drawStill() : undefined,
+      actions: {
+        // The same Sim and the same cached course world -- `Sim.reset()` is already arena-aware
+        // (re-tees every cart at its opening spawn, resets the spawn stream and the match clock)
+        // so a rematch replays rather than rebuilding eighteen holes a second time.
+        playAgain: () => {
+          live.reset();
+          screens.show("arena");
+        },
+        mainMenu: () => screens.show("title"),
+      },
+    });
   });
 
   screens.register("clubhouse", () => {
