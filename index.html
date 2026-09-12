@@ -446,6 +446,48 @@
       .results__actions { display: flex; gap: 11px; }
       .results__actions .btn { flex: 1; }
 
+      /* ---- Arena results (D12) --------------------------------------------------------------
+         The team score, MVP and full roster, over PLAY AGAIN / MAIN MENU. `matchScoreboard.ts`'s
+         `deriveScoreboard` supplies every string and row here; this file only lays them out.
+         `#screens`' own z-index (20) is already above `#hud` (auto) and `#match-results` (10),
+         same as RESULTS and CLUBHOUSE -- see the `#match-results` rule above for why that
+         comparison matters at all. */
+      .arena-results { align-items: center; justify-content: center; padding: 24px; }
+      .arena-results__panel { width: min(460px, 100%); text-align: center; }
+      .arena-results__title { margin: 0 0 18px; font-size: 30px; letter-spacing: 0.14em; }
+      .arena-results__score {
+        display: flex;
+        justify-content: center;
+        gap: 28px;
+        margin-bottom: 10px;
+        font-size: 17px;
+        font-variant-numeric: tabular-nums;
+      }
+      .arena-results__score-value { color: var(--accent); }
+      .arena-results__mvp {
+        margin: 0 0 18px;
+        font-size: 13px;
+        color: var(--ink-dim);
+        letter-spacing: 0.08em;
+      }
+      .arena-results__rows { display: flex; flex-direction: column; gap: 4px; margin-bottom: 22px; }
+      .arena-results__row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 14px;
+        padding: 7px 11px;
+        border-radius: var(--radius-pill);
+        background: var(--panel-raised);
+        font-size: 12px;
+        text-align: left;
+        font-variant-numeric: tabular-nums;
+      }
+      .arena-results__row-name--ally { color: var(--team-ally); }
+      .arena-results__row-name--enemy { color: var(--team-enemy); }
+      .arena-results__row-stat { color: var(--ink-dim); letter-spacing: 0.04em; }
+      .arena-results__actions { display: flex; gap: 11px; margin-top: 8px; }
+      .arena-results__actions .btn { flex: 1; }
+
       /* ---- S3 Clubhouse loadout (image 11) --------------------------------------------------
          Categories left, club stat cards right, coins top-right, BACK/CONFIRM bottom. The middle
          is deliberately empty: that is the turntable, rendered on the shared canvas behind. */
