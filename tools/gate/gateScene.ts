@@ -167,12 +167,12 @@ function holeGroundSubject(): GateSubject {
 }
 
 /**
- * Three holes of the course ground, assembled and tiled exactly as arena assembles it.
+ * The full eighteen-hole course ground, assembled and tiled exactly as arena assembles it.
  *
- * Three rather than eighteen because the gate frames a subject by its bounding sphere, and a
- * 1.6 km course reduces to a smear: at three holes the corridors, the mown stripes and the blend
- * between two biomes are all legible in a 640x360 picture. The seed is the one the committed
- * course plans are drawn from, so the subject is fixed.
+ * All eighteen rather than a subset: at eighteen holes the layout goes through the same
+ * relaxation solver and routing the real course uses, including the returning nine and the
+ * clubhouse apron, instead of the simple circular placement a small hole count falls back to.
+ * The seed is the one the committed course plans are drawn from, so the subject is fixed.
  *
  * `update` is called until every tile has finished its near build, which is what the picture is
  * of -- the far tiles are what the course looks like before you get there, and they are one
@@ -198,7 +198,7 @@ function courseGroundSubject(): GateSubject {
 
 /** The seed docs/course/plans is drawn from, so the gate and the plans show the same course. */
 const GATE_COURSE_SEED = 0x7ee71e5;
-const GATE_COURSE_HOLES = 3;
+const GATE_COURSE_HOLES = 18;
 
 function countGeometry(root: THREE.Object3D): { vertices: number; triangles: number } {
   let vertices = 0;
