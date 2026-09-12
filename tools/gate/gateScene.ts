@@ -15,10 +15,7 @@ import { createSurfaces } from "../../src/sim/surfaces";
 import { createGround } from "../../src/render/ground";
 import { createCourseGround } from "../../src/render/courseGround";
 import { generateCourse } from "../../src/sim/course";
-import { solveCourseLayout } from "../../src/sim/courseLayout";
-import { createCourseTerrain } from "../../src/sim/courseTerrain";
-import { createCourseSurfaces } from "../../src/sim/courseSurfaces";
-import { mulberry32 } from "../../src/sim/rng";
+import { buildCourseWorld } from "../../src/sim/courseWorld";
 
 /**
  * One subject, one fixed rig. No Sim, no terrain, no input, no randomness -- AGENTS.md's Scene
@@ -182,18 +179,11 @@ function holeGroundSubject(): GateSubject {
  * `NEAR_RADIUS_M` away from being the same thing.
  */
 function courseGroundSubject(): GateSubject {
-  const course = generateCourse(GATE_COURSE_SEED, GATE_COURSE_HOLES);
-  const layout = solveCourseLayout(
-    course.holes.map((h) => ({ index: h.index, tee: h.tee, cup: h.cup, control: h.control })),
-  );
-  const holes = layout.placements.map((placement) => {
-    const spec = course.holes[placement.index]!;
-    return { placement, spec, terrain: createTerrain(spec) };
-  });
-  const terrain = createCourseTerrain(holes, { rough: mulberry32(GATE_COURSE_SEED) });
-  const surfaces = createCourseSurfaces(
-    terrain,
-    holes.map((hole) => createSurfaces(hole.spec, hole.terrain)),
+  // `buildCourseWorld` rather than the sequence inline: the game builds its arena with the same
+  // call, so the subject is a picture of the construction the player actually gets.
+  const { terrain, surfaces } = buildCourseWorld(
+    generateCourse(GATE_COURSE_SEED, GATE_COURSE_HOLES),
+    GATE_COURSE_SEED,
   );
   const ground = createCourseGround(terrain, surfaces);
 
