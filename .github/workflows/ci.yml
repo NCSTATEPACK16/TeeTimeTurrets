@@ -1,0 +1,37 @@
+# The tests, on every pull request.
+#
+# Netlify already runs `npm run build` (tsc + vite build + the scene gate) on a deploy preview, so
+# this workflow deliberately does not repeat it. What Netlify never ran is `npm test`, and that gap
+# is why a branch could carry a red test to an open PR with every check showing green.
+#
+# Chrome is skipped: the `postinstall` hook exists for tools/sceneGate.mjs, tools/smoke.mjs,
+# tools/planPng.mjs and tools/readSwatches.mjs, and none of those are a vitest target
+# (vitest.config.ts includes only `src/**/*.test.ts` and `tools/**/*.test.mjs`, and no test file
+# imports puppeteer). Downloading a browser to not use it would cost a minute per run.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Typecheck before tests: `npm run build` leads with `tsc --noEmit`, and a type error should
+      # read as a type error rather than as whichever test happens to import the broken module.
+      - run: npx tsc --noEmit
+
+      - run: npm test
