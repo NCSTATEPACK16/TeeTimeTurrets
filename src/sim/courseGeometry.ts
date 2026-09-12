@@ -76,6 +76,48 @@ export const TRANSITION_MAX_M = 100;
 /** Corridors closer than this are reported as a conflict by `inspectLayout`. */
 export const CORRIDOR_CLEARANCE_M = 35;
 
+/** Holes per lobe: out, across, back. `courseLayout.ts`'s `layNine` lays the legs in this order
+ *  and this module has to agree with it, so the count lives here rather than in either module --
+ *  `courseRelaxation.ts` needs it too and deliberately does not import `courseLayout.ts`. */
+export const HOLES_PER_LOBE = 3;
+
+/**
+ * Widest gap between a lobe's out and back corridors that still reads as one returning leg --
+ * the tree belt between them rather than two unrelated holes.
+ *
+ * Paired with `CORRIDOR_CLEARANCE_M` as the floor, this is a *band*: closer than 35 m the two
+ * fairways are one wide fairway, further than this and the walk between them stops being a belt.
+ * Measured against the shipped course: a real lobe pair (holes 4 and 6, exactly anti-parallel)
+ * sits at 116 m, while the circle construction's anti-parallel holes are 566-596 m apart, which
+ * is the shape the band exists to exclude.
+ */
+export const RETURNING_BELT_MAX_M = 150;
+
+/**
+ * The (out, back) hole-index pairs that make up each nine's returning legs.
+ *
+ * A lobe is three holes and its first and third run anti-parallel (`layNine`), so the pairs are
+ * legs 0 and 2 of each lobe. Derived from `hole.index` rather than array position so it reads the
+ * same whether it is handed one nine or all eighteen -- `polishCourse` gets the whole course and
+ * `relaxNine` gets a single nine, and both need the same answer.
+ */
+export function returningPairs(holes: readonly LayoutHole[]): [number, number][] {
+  const at = new Map(holes.map((h, i) => [h.index, i]));
+  const pairs: [number, number][] = [];
+  for (const hole of holes) {
+    const withinNine = hole.index % 9;
+    if (withinNine % HOLES_PER_LOBE !== 0) continue;
+    const back = at.get(hole.index + 2);
+    const out = at.get(hole.index);
+    // Only when both legs are present and the lobe does not straddle the turn: a lobe starting at
+    // hole 7 would reach hole 9, which is the next nine's first hole and a different loop.
+    if (out === undefined || back === undefined) continue;
+    if (Math.floor((hole.index + 2) / 9) !== Math.floor(hole.index / 9)) continue;
+    pairs.push([out, back]);
+  }
+  return pairs;
+}
+
 /**
  * Corridors are allowed to converge within this distance of the clubhouse, and nowhere else.
  *

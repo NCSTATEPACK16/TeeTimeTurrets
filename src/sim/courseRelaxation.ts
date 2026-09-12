@@ -14,11 +14,13 @@ import type { Vec2 } from "./mapGeometry";
 import {
   CLUBHOUSE_APRON_M,
   CORRIDOR_CLEARANCE_M,
+  RETURNING_BELT_MAX_M,
   TRANSITION_MAX_M,
   TRANSITION_MIN_M,
   chordOf,
   placedControl,
   polylineClearance,
+  returningPairs,
   toCourseFrame,
   type HolePlacement,
   type LayoutHole,
@@ -96,6 +98,59 @@ function placementFromParticles(hole: LayoutHole, tee: Vec2, cup: Vec2): HolePla
   };
 }
 
+/**
+ * Holds each lobe's out and back corridors inside the returning belt: pushes them apart when they
+ * are closer than `CORRIDOR_CLEARANCE_M`, pulls them together when they are further than
+ * `RETURNING_BELT_MAX_M`, and does nothing in between. Slack, not a spring -- the same shape as
+ * `satisfySlack`, measured on corridor clearance instead of endpoint distance.
+ *
+ * `placeNineAsLobes` already seeds the anti-parallel pairs this preserves; what it cannot do is
+ * defend them. The clubhouse attractor drags the last cup home every iteration and the rigid-length
+ * and slack constraints propagate that pull back up the chain, which rotates the interior holes off
+ * their lobe bearings -- measured as the front nine falling from three returning legs in the seed
+ * to two after 200 iterations, with the attractor as the *only* force responsible (disabling
+ * repulsion or the side barrier instead makes it worse, not better: both are holding the shape).
+ * So this is a preserving force, not a creating one.
+ *
+ * Translates each hole's tee and cup together, which cannot change a hole's own length and so
+ * needs no rigid-length re-check of its own -- the same argument `applyCorridorRepulsion` makes.
+ */
+function satisfyReturningBelt(
+  holes: readonly LayoutHole[],
+  pairs: readonly [number, number][],
+  tee: Particle[],
+  cup: Particle[],
+): void {
+  if (pairs.length === 0) return;
+  const placements = holes.map((h, i) => placementFromParticles(h, tee[i]!, cup[i]!));
+  const centrelines = holes.map((h, i) => placedControl(h, placements[i]!));
+
+  for (const [i, j] of pairs) {
+    const { distance } = polylineClearance(centrelines[i]!, centrelines[j]!);
+    // Zero means the corridors cross; there is no separating direction to move along, and the
+    // corridor repulsion below is what is meant to resolve a crossing.
+    if (distance === 0) continue;
+    let move: number;
+    if (distance < CORRIDOR_CLEARANCE_M) move = (CORRIDOR_CLEARANCE_M - distance) / 2;
+    else if (distance > RETURNING_BELT_MAX_M) move = -(distance - RETURNING_BELT_MAX_M) / 2;
+    else continue;
+
+    const midA = { x: (tee[i]!.x + cup[i]!.x) / 2, z: (tee[i]!.z + cup[i]!.z) / 2 };
+    const midB = { x: (tee[j]!.x + cup[j]!.x) / 2, z: (tee[j]!.z + cup[j]!.z) / 2 };
+    const sep = Math.hypot(midB.x - midA.x, midB.z - midA.z) || 1;
+    const dx = (midB.x - midA.x) / sep;
+    const dz = (midB.z - midA.z) / sep;
+    tee[i]!.x -= dx * move;
+    tee[i]!.z -= dz * move;
+    cup[i]!.x -= dx * move;
+    cup[i]!.z -= dz * move;
+    tee[j]!.x += dx * move;
+    tee[j]!.z += dz * move;
+    cup[j]!.x += dx * move;
+    cup[j]!.z += dz * move;
+  }
+}
+
 /** Nudges every non-consecutive, off-apron pair of corridors apart when they run closer than
  *  CORRIDOR_CLEARANCE_M, by translating each hole's tee and cup together (a translation cannot
  *  change a hole's own length, so this needs no rigid-length re-check of its own). Reuses
@@ -161,6 +216,7 @@ export function relaxNine(
   }
 
   const lengths = holes.map(chordOf);
+  const belts = returningPairs(holes);
   const lastCup = cup[cup.length - 1]!;
 
   // A hard barrier at the clubhouse line for every interior hole (not the first, which is
@@ -212,6 +268,10 @@ export function relaxNine(
     for (let i = 0; i + 1 < holes.length; i++) {
       satisfySlack(cup[i]!, tee[i + 1]!, TRANSITION_MIN_M, TRANSITION_MAX_M);
     }
+    // Before repulsion, not after: the belt can pull a pair together, and repulsion is what
+    // guarantees the result still clears every *other* corridor. Running it last would let a
+    // belt pull be the final word on a position no clearance check had seen.
+    satisfyReturningBelt(holes, belts, tee, cup);
     applyCorridorRepulsion(holes, tee, cup, clubhouse);
     holdSide();
   }
@@ -268,6 +328,9 @@ export function polishCourse(
   }
 
   const lengths = holes.map(chordOf);
+  // Handed all eighteen holes, `returningPairs` keys off `hole.index` and so finds both nines'
+  // lobes without this pass needing to know where the turn is.
+  const belts = returningPairs(holes);
   // Both nines' first tees are pinned throughout -- this pass only nudges holes apart and settles
   // the resulting slack, it never re-decides where a nine starts. Position 0 is always the front
   // nine's first hole; the back nine's first hole is wherever hole index 9 landed in this array
@@ -301,6 +364,7 @@ export function polishCourse(
     if (frontPinIndex >= 0) tee[frontPinIndex] = { x: frontHub.x, z: frontHub.z };
     if (backPinIndex >= 0) tee[backPinIndex] = { x: backHub.x, z: backHub.z };
 
+    satisfyReturningBelt(holes, belts, tee, cup);
     applyCorridorRepulsion(holes, tee, cup, clubhouse);
 
     for (let i = 0; i < holes.length; i++) {

@@ -12,6 +12,7 @@ import {
   toHoleFrame,
 } from "./courseLayout";
 import type { CourseLayout, LayoutHole } from "./courseLayout";
+import { RETURNING_BELT_MAX_M, placedControl, polylineClearance } from "./courseGeometry";
 import { generateCourse } from "./course";
 
 /** The seed main.ts ships (main.ts:32). Duplicated rather than imported: main.ts pulls in three
@@ -264,18 +265,6 @@ function bearing(layout: CourseLayout, holes: readonly LayoutHole[], index: numb
   return Math.atan2(cup.z - tee.z, cup.x - tee.x);
 }
 
-/** Course-frame midpoint of a hole's tee-to-cup line. */
-function midpoint(
-  layout: CourseLayout,
-  holes: readonly LayoutHole[],
-  index: number,
-): { x: number; z: number } {
-  const h = holes[index]!;
-  const tee = place(layout, index, h.tee);
-  const cup = place(layout, index, h.cup);
-  return { x: (tee.x + cup.x) / 2, z: (tee.z + cup.z) / 2 };
-}
-
 /** Smallest angle between two bearings, 0..PI. */
 function angleBetween(a: number, b: number): number {
   let d = Math.abs(a - b) % (Math.PI * 2);
@@ -297,9 +286,25 @@ function angleBetween(a: number, b: number): number {
 describe("holes run out and back beside each other", () => {
   /** How far from a straight reversal a pair may be and still count as a returning leg. */
   const OPPOSED_TOLERANCE = (30 * Math.PI) / 180;
-  /** Close enough to share a lobe. Wider than CORRIDOR_CLEARANCE_M, which is the floor, not this. */
-  const NEIGHBOUR_M = 150;
 
+  /**
+   * "Beside each other" is a fact about the two *corridors*, so it is measured between the
+   * corridors -- `polylineClearance` over `placedControl`, the same pair of functions
+   * `inspectLayout` grades a conflict with, so this test and the solver agree on what adjacency is.
+   *
+   * Distance between hole midpoints was the first attempt and it measures the wrong thing. Two
+   * holes of unequal length that run side by side have their midpoints offset *along* the
+   * fairways, not across them: holes 4 and 6 of the shipped course are exactly anti-parallel with
+   * 116 m between the corridors -- a textbook lobe -- and 268 m between their midpoints, because
+   * one is 298 m long and the other 116 m. A midpoint rule rejects that pair and accepts holes 17
+   * and 18, whose corridors run 8 m apart and are not a returning leg but a near-collision.
+   *
+   * The band is what keeps this a real claim. `CORRIDOR_CLEARANCE_M` as the floor excludes the
+   * near-collision; `RETURNING_BELT_MAX_M` as the ceiling excludes the shape this test exists to
+   * reject -- on a circular layout two holes a third of the way apart *are* near-anti-parallel,
+   * being on opposite sides of the ring, and their corridors are 566-596 m apart, which is most of
+   * a course. Anti-parallel alone would pass against it.
+   */
   function pairedLegs(
     layout: CourseLayout,
     holes: readonly LayoutHole[],
@@ -311,7 +316,13 @@ describe("holes run out and back beside each other", () => {
       for (let j = i + 1; j < to; j++) {
         const offBy = Math.PI - angleBetween(bearing(layout, holes, i), bearing(layout, holes, j));
         if (offBy > OPPOSED_TOLERANCE) continue;
-        if (dist(midpoint(layout, holes, i), midpoint(layout, holes, j)) > NEIGHBOUR_M) continue;
+        const pi = layout.placements.find((p) => p.index === holes[i]!.index)!;
+        const pj = layout.placements.find((p) => p.index === holes[j]!.index)!;
+        const { distance } = polylineClearance(
+          placedControl(holes[i]!, pi),
+          placedControl(holes[j]!, pj),
+        );
+        if (distance < CORRIDOR_CLEARANCE_M || distance > RETURNING_BELT_MAX_M) continue;
         count++;
       }
     }
