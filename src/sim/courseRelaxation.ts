@@ -37,6 +37,21 @@ const ITERATIONS = 200;
  *  react to each step rather than being dragged past their own limits by a single big jump. */
 const ATTRACTOR_RATE = 0.08;
 
+/**
+ * How close to the exact clubhouse point the attractor pulls the last cup, in metres.
+ *
+ * Not zero: the clubhouse apron already holds hole 1's tee, hole 9's cup, hole 10's tee and
+ * hole 18's cup by design, and pulling every nine's return to within a few centimetres of the
+ * same point crowds them past what `courseTerrain.ts`'s blend and `courseSurfaces.ts`'s material
+ * lookup were ever exercised against -- discovered as two failures downstream (a corridor
+ * blended steeper than the hole's own terrain, and a cup reading as fairway instead of green)
+ * when the attractor was left pulling all the way to the point. 25 m mirrors the margin the
+ * shipped circle construction already closes to on its own (measured 30.0 m front / 120.0 m
+ * back in docs/RESEARCH-ROUTING.md) and stays clear of the tighter front-nine return threshold
+ * (`TRANSITION_M + 1` = 31 m).
+ */
+const RETURN_MARGIN_M = 25;
+
 /** Moves `a`/`b` apart or together until `|b - a| === targetLen`, weighting the move by which
  *  endpoint is pinned. A pinned endpoint (weight 0) never moves; if neither is pinned each moves
  *  half the correction. */
@@ -176,8 +191,20 @@ export function relaxNine(
     // otherwise its pull on the last cup could leave a transition outside its slack bound with
     // nothing left in the same pass to correct it, and the *returned* placement (the last
     // iteration's result) would carry that overshoot uncorrected.
-    lastCup.x += (clubhouse.x - lastCup.x) * ATTRACTOR_RATE;
-    lastCup.z += (clubhouse.z - lastCup.z) * ATTRACTOR_RATE;
+    //
+    // Targets a point RETURN_MARGIN_M out from the clubhouse, on the line from the clubhouse
+    // through the cup's own current position, rather than the clubhouse point itself -- a ring,
+    // not a point. Once the cup is already inside the ring this pulls it back out to the ring
+    // rather than the rest of the way to zero.
+    {
+      const dx = lastCup.x - clubhouse.x;
+      const dz = lastCup.z - clubhouse.z;
+      const dist = Math.hypot(dx, dz) || 1;
+      const targetX = clubhouse.x + (dx / dist) * RETURN_MARGIN_M;
+      const targetZ = clubhouse.z + (dz / dist) * RETURN_MARGIN_M;
+      lastCup.x += (targetX - lastCup.x) * ATTRACTOR_RATE;
+      lastCup.z += (targetZ - lastCup.z) * ATTRACTOR_RATE;
+    }
 
     for (let i = 0; i < holes.length; i++) {
       satisfyDistance(tee[i]!, cup[i]!, i === 0, false, lengths[i]!);
