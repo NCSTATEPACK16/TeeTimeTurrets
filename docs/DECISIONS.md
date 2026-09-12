@@ -547,3 +547,36 @@ matching the run at the unraised 5000 bound exactly — so the bake converges we
 existing bound, and the bound stays as it is. `npm run
 probe:terrain` stayed an unchanged control throughout, confirming the change stayed inside the
 discrete channel.
+
+**The tie-break also reaches hazards, and it shrinks them.** `influenceLocal` can saturate not
+only from a hole's corridor but from its water polygon or its bunker ellipse — see the loops
+over `spec.water` and `spec.bunkers` after the corridor weight is computed. But `lastCentredness`
+is written once, near the top of the function, always as distance to the spline over the
+corridor half-width, before either hazard loop runs. So when a point deep inside a pond ties
+with a neighbouring hole whose corridor the point sits nearer the middle of, the comparison is
+between the pond hole's corridor-centredness and the neighbour's — not between the pond and
+anything — and the pond can lose.
+
+**Measured directly, the real code both ways, seed 2026, 2 m grid (the physics cell) over the
+full course bounds, counting cells where `world.surfaces.surfaceAt(x, z) === SurfaceId.Water`.**
+Before the tie-break: 9,993 cells, 39,972 m², reported as water. After: 7,787 cells, 31,148 m².
+The difference is 2,206 cells, 8,824 m² — a 22% reduction in the course's reported water.
+
+**The consequence isn't cosmetic.** `courseSurfaces.ts`'s `weightsAt` takes `out.water` (and
+sand and bridge) from the owning hole alone — after blending green and corridor across every
+hole with nonzero weight, it re-reads the single owner's own `weightsAt` for the hazard channel,
+so the renderer paints the lost ground dry. `world.ts`'s `checkCartWater` gates cart drowning on
+that same `this.surfaces.surfaceAt(p.x, p.z) === SurfaceId.Water` call, so a cart driving onto
+the lost ground neither drowns, nor pays the stroke, nor gets returned to dry land — and arena
+drives this course for up to three minutes a match. `world.course.test.ts`'s water test finds its
+point by scanning the whole course for *any* cell that still reports water (`wetPoint`), so it
+self-adapts to a shrinking pond and cannot see this.
+
+**This was accepted deliberately, not overlooked.** Carving out hazards is exactly the
+cup-specific special case "What was rejected" above already argues against, and it buys nothing
+— the same undefined tie reappears one level down, between two hazard polygons instead of two
+corridors. The pre-tie-break state was not correct either: before this change, a tie between two
+saturated influences fell to whichever hole's index came first in the loop, which was deciding
+those same ponds too, just silently and by an accident of iteration order rather than by a rule.
+Recorded here so the next person who finds a pond driving like fairway finds the reason, not a
+surprise.

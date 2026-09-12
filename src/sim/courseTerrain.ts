@@ -168,7 +168,7 @@ export function createCourseTerrain(
    * spline as a fraction of the corridor half-width there. Written on every call before any early
    * return, and read by `weightsInto` immediately afterwards.
    *
-   * A variable rather than a return value because `influenceLocal` returns early from four places
+   * A variable rather than a return value because `influenceLocal` returns early from three places
    * once influence saturates, and the fixed tick bans allocating a pair to return instead.
    */
   let lastCentredness = Number.POSITIVE_INFINITY;
