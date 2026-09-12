@@ -140,6 +140,16 @@ whole course, and a doubled winding left the skirt's own normals cancelling to b
 
 ## Loose ends this session added
 
+- **The scene gate's `course-ground` subject no longer exercises the routing it appears to.**
+  `GATE_COURSE_HOLES` is 3, and at three holes the relaxed layout misses its 31 m return threshold,
+  so `placeNineWithFallback` falls back to `placeNineOnCircle`. Its placements are bit-identical to
+  the pre-relaxation merge-base and its nine-ending cup sits at exactly 30.00 m; the real 18-hole
+  course closes at 25.07 m and does use relaxation. So the subject is a true geometry baseline and
+  a green one, but it says nothing about the relaxation or the returning belt — the routing is
+  covered by `courseLayout.test.ts` alone. Raising the subject to nine holes would close the gap
+  and costs a reviewed re-baseline; the subject's own comment argues for three on legibility
+  grounds, so it is a trade, not an oversight. This is `TEST-AND-SPEC-PITFALLS.md` §1 again: ask
+  what the passing gate actually loads.
 - **`courseGround` is not in the scene yet.** It is built, tested and gated; nothing draws it.
   See Stage C above.
 - **Bridge is still not in the ground splat.** The mask's four channels are green, corridor, sand
@@ -153,9 +163,10 @@ whole course, and a doubled winding left the skirt's own normals cancelling to b
 - **The course rough is flat overall** — every hole's field sits at its own local zero, so there
   is no course-scale macro relief between holes. A low-frequency term added to the rough and to
   every hole's height would fix it and would move every corridor grade, so it is a decision.
-- **`courseLayout` holes are straight chords around a circle**, more polygonal than a real course.
-  Jitter or a non-circular loop is tuning, and now that the terrain exists it can be judged by
-  driving it rather than in an SVG.
+- ~~**`courseLayout` holes are straight chords around a circle**, more polygonal than a real
+  course.~~ Superseded: the shipped routing is three out-across-back lobes per nine, relaxed to
+  close and held in shape by `satisfyReturningBelt`. Holes are still straight chords *within* a
+  lobe, so the jitter question stands; the ring it described is gone.
 - **Hole 9's corridor crosses hole 1's near the clubhouse.** Inside the apron, so the clearance
   rule forgives it by design. Worth a look now that you can drive it.
 - **Teams are hardcoded `enemy`** in `RoundScreen`. Real sides arrive with `src/sim/match.ts`.
