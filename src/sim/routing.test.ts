@@ -139,7 +139,7 @@ describe("the centreline follows the brief that asked for it", () => {
    * `par` is never authored: `generateHole` derives it from the length of the spline the layout
    * actually produced, and `intendedPar` picks only the field size. Nothing checks the result
    * against the brief's `parTarget` -- it matched on all eighteen holes purely because
-   * `CORRIDOR_BAND` happens to map each band onto the right par. Reshaping the centreline moves
+   * `DRAFT_BAND` happens to map each band onto the right par. Reshaping the centreline moves
    * spline lengths, so this is the check that catches a routing change quietly turning a par 4
    * into a par 5.
    */

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COURSE_BRIEFS, COVER_CORRIDOR, briefForHole } from "./briefs";
 import type { HoleBrief } from "./briefs";
 import {
-  CORRIDOR_BAND,
+  DRAFT_BAND,
   EDGE_MARGIN,
   FIELD_FOR_PAR,
   biomeForIndex,
@@ -149,7 +149,7 @@ describe("the course bible as data", () => {
     // first writing. Assert the arithmetic produced numbers before trusting what it says.
     expect(COURSE_BRIEFS.every((b) => Number.isFinite(longestFor(b)))).toBe(true);
 
-    const tooTight = COURSE_BRIEFS.filter((b) => longestFor(b) < CORRIDOR_BAND[b.parTarget]!.min)
+    const tooTight = COURSE_BRIEFS.filter((b) => longestFor(b) < DRAFT_BAND[b.parTarget]!.min)
       .map((b) => `hole ${b.number} (par ${b.parTarget}, ${b.cover})`);
 
     expect(tooTight).toEqual([]);
