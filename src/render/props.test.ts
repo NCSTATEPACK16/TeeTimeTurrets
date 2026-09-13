@@ -8,6 +8,7 @@ import type { HoleSpec } from "../sim/course";
 import { createSpline } from "../sim/spline";
 import { createSurfaceWeights, createSurfaces } from "../sim/surfaces";
 import { createTerrain } from "../sim/terrain";
+import { toMetres } from "../sim/units";
 import { DECK_HALF_WIDTH, deriveCrossings } from "../sim/crossing";
 import {
   BOARDWALK_SECTION_M,
@@ -147,7 +148,12 @@ describe("derived placement", () => {
     for (const post of posts) {
       const nearest = spline.nearest(post.x, post.z);
       const back = spline.length * (1 - nearest.t);
-      const closest = Math.min(...[137, 91, 46].map((d) => Math.abs(back - d)));
+      // 150/100/50 are the real-world fact a golf course carries, restated here rather than read
+      // back off `MARKER_DISTANCES_M` -- a test that reads the constant from the module under test
+      // agrees with any typo in it. 4 m is not slop: a post is offset laterally to the corridor
+      // edge, so on a curved centreline its nearest point on the spline sits a few metres along the
+      // arc from where it was actually placed, and that shift scales with curvature times offset.
+      const closest = Math.min(...[150, 100, 50].map((yd) => Math.abs(back - toMetres(yd))));
       expect(closest, `post at ${back.toFixed(1)} m back`).toBeLessThan(4);
     }
   });

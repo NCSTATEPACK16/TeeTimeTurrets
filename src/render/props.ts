@@ -9,6 +9,7 @@ import { createSpline } from "../sim/spline";
 import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
 import type { Terrain } from "../sim/terrain";
+import { toMetres } from "../sim/units";
 
 /**
  * The course props, placed.
@@ -47,10 +48,11 @@ const TEE_FURNITURE_BACK = 4.5;
 const TEE_FURNITURE_SIDE = 3.0;
 
 /**
- * Yardage markers, in metres back from the cup along the centreline: the 150, 100 and 50 yard posts
- * a real course carries. A hole shorter than one of them simply does not get it.
+ * Yardage markers: the 150, 100 and 50 yard posts a real course carries, converted to the metres
+ * the placement maths works in. A hole shorter than one of them simply does not get it.
  */
-const MARKER_DISTANCES_M = [137, 91, 46] as const;
+const MARKER_YARDS = [150, 100, 50] as const;
+const MARKER_DISTANCES_M = MARKER_YARDS.map(toMetres);
 /** Below this much hole left, a post would be standing on the green. */
 const MARKER_MIN_CLEARANCE_M = 18;
 
