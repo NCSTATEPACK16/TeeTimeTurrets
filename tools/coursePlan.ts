@@ -93,7 +93,10 @@ function main(): void {
   const scale = PLOT_PX / (maxX - minX);
   const height = Math.round((maxZ - minZ) * scale);
   const px = (x: number): number => (x - minX) * scale;
-  const py = (z: number): number => (z - minZ) * scale;
+  // North up, east right -- the orientation a plat is drawn in, because comparing this drawing
+  // against one is the only job it has. SVG's y grows downward, so +z (north) has to be flipped
+  // here; mapping it straight through drew the course upside down against its own source.
+  const py = (z: number): number => (maxZ - z) * scale;
 
   const parts: string[] = [`<rect width="${PLOT_PX}" height="${height}" fill="#12301c"/>`];
 
