@@ -174,13 +174,48 @@ describe("the authored layout", () => {
     expect(crossings).toBeGreaterThan(0);
   });
 
-  it("keeps every green-to-tee walk inside TRANSITION_MAX_M", () => {
-    // `courseGeometry.ts` says of this bound: "Outside this range a transition is a defect, not a
-    // variation." The solver kept walks short by construction; authored offsets guarantee nothing,
-    // and a hole traced 300 m from the previous green is a course you cannot walk.
-    const report = inspectLayout(holes, layout);
-    expect(report.maxTransitionM).toBeLessThan(TRANSITION_MAX_M);
-    expect(report.maxTransitionM).toBeGreaterThan(0);
+  it("walks every transition except the two the course rides", () => {
+    /**
+     * `courseGeometry.ts` says of `TRANSITION_MAX_M`: "Outside this range a transition is a defect,
+     * not a variation." That is true of a transition you *walk*, and this course has two you do not.
+     * The owner's description of how it is played: after hole 7 you ride back past hole 4's green to
+     * reach hole 8 — the path from that green forks, right to 8 and left to 5 — and the ride from
+     * hole 16 to hole 17 crosses a public road.
+     *
+     * So the bound is asserted where it applies and the exceptions are named rather than waived.
+     * Asserting the blanket bound instead would be asserting something false about this course;
+     * dropping it would stop catching a hole traced 300 m from the previous green. The cart paths
+     * are still bounded, because past a few hundred metres they stop being one course.
+     */
+    const CART_PATHS = new Map([
+      ["7->8", "rides back past hole 4's green, where the path forks to 5 and 8"],
+      ["16->17", "crosses a public road"],
+    ]);
+    const CART_PATH_MAX_M = 400;
+
+    let walked = 0;
+    let ridden = 0;
+    for (const [from, to] of [...Array(8).keys()].flatMap(
+      (k) => [[k, k + 1], [k + 9, k + 10]] as [number, number][],
+    )) {
+      const d = dist(cupOf(from), teeOf(to));
+      const key = `${from + 1}->${to + 1}`;
+      const why = CART_PATHS.get(key);
+      if (why === undefined) {
+        expect(d, `${key} is walked (${why ?? "no cart path recorded"})`).toBeLessThan(TRANSITION_MAX_M);
+        walked += 1;
+      } else {
+        // Still bounded, and still required to be long enough that calling it a ride is honest --
+        // a "cart path" that turned out to be 40 m would mean the exception is no longer needed.
+        expect(d, `${key} cart path: ${why}`).toBeGreaterThan(TRANSITION_MAX_M);
+        expect(d, `${key} cart path: ${why}`).toBeLessThan(CART_PATH_MAX_M);
+        ridden += 1;
+      }
+    }
+    // Guard the guard: the counts pin how many exceptions exist, so a third long transition
+    // appearing fails here instead of quietly joining the list.
+    expect(walked).toBe(14);
+    expect(ridden).toBe(2);
   });
 
   it("never leaves a cup inside another hole's water polygon", () => {
