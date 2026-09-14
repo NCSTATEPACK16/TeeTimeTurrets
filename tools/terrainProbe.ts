@@ -27,9 +27,10 @@
  * Usage:  npm run probe:terrain [-- --steps=600 --carts=24 --only=<label>]
  */
 import RAPIER from "@dimforge/rapier3d-compat";
-import { generateCourse } from "../src/sim/course";
+import { authoredCourse } from "../src/sim/authoredCourse";
+import { authoredCourseLayout } from "../src/sim/authoredLayout";
 import type { HoleSpec } from "../src/sim/course";
-import { solveCourseLayout, toCourseFrame } from "../src/sim/courseLayout";
+import { toCourseFrame } from "../src/sim/courseLayout";
 import type { Bounds, LayoutHole, PlacedField } from "../src/sim/courseLayout";
 import { createCourseTerrain } from "../src/sim/courseTerrain";
 import type { PlacedHole } from "../src/sim/courseTerrain";
@@ -141,7 +142,7 @@ function courseScenario(cellM: number, holes: readonly HoleSpec[], terrains: rea
     cup: spec.cup,
     control: spec.control,
   }));
-  const layout = solveCourseLayout(layoutHoles);
+  const layout = authoredCourseLayout();
   const placed: PlacedHole[] = layout.placements.map((placement) => ({
     placement,
     spec: holes[placement.index]!,
@@ -376,7 +377,7 @@ async function main(): Promise<void> {
   const steps = parseArg("steps", 600);
   const only = parseString("only", "");
 
-  const course = generateCourse(COURSE_SEED, HOLE_COUNT);
+  const course = authoredCourse(COURSE_SEED);
   const terrains = course.holes.map((spec) => createTerrain(spec));
 
   // The cell sizes to try. The default pair is the decision in front of Stage B; passing a

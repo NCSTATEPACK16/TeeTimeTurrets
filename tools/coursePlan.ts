@@ -15,8 +15,9 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { generateCourse } from "../src/sim/course";
-import { CLUBHOUSE_APRON_M, inspectLayout, solveCourseLayout } from "../src/sim/courseLayout";
+import { authoredCourse } from "../src/sim/authoredCourse";
+import { authoredCourseLayout } from "../src/sim/authoredLayout";
+import { CLUBHOUSE_APRON_M, inspectLayout } from "../src/sim/courseLayout";
 import type { CourseLayout, LayoutHole } from "../src/sim/courseLayout";
 
 const PLOT_PX = 1000;
@@ -59,14 +60,15 @@ function main(): void {
   const seed = parseArg("seed", 2026);
   const out = parseString("out", "docs/course/plans/course.svg");
 
-  const course = generateCourse(seed, 18);
+  const course = authoredCourse(seed);
   const holes: LayoutHole[] = course.holes.map((h) => ({
     index: h.index,
     tee: h.tee,
     cup: h.cup,
     control: h.control,
   }));
-  const layout = solveCourseLayout(holes);
+  // The shipped routing, not the solver's: this drawing is the thing reviewed against the plat.
+  const layout = authoredCourseLayout();
   const report = inspectLayout(holes, layout);
 
   let minX = Infinity;

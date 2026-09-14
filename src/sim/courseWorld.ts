@@ -1,5 +1,6 @@
 import type { Course } from "./course";
-import { solveCourseLayout } from "./courseLayout";
+import { AUTHORED_HOLES } from "./authoredCourse";
+import { authoredCourseLayout } from "./authoredLayout";
 import { createCourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
 import type { CourseTerrain, PlacedHole } from "./courseTerrain";
@@ -39,9 +40,30 @@ export interface CourseWorld {
  * both depend on.
  */
 export function buildCourseWorld(course: Course, seed: number): CourseWorld {
-  const layout = solveCourseLayout(
-    course.holes.map((h) => ({ index: h.index, tee: h.tee, cup: h.cup, control: h.control })),
-  );
+  const layout = authoredCourseLayout();
+
+  /**
+   * The authored offsets were fitted to the authored holes' own lengths, so handing this a course
+   * whose holes are a different shape places real corridors at coordinates chosen for different
+   * ones -- fairways crossing, with nothing thrown. That is the silent failure this whole module
+   * exists to prevent, so it is checked rather than documented. A caller that genuinely wants a
+   * generated course wants `solveCourseLayout` in `courseLayout.ts`, which is still there.
+   */
+  if (course.holes.length !== AUTHORED_HOLES.length) {
+    throw new Error(
+      `buildCourseWorld needs the ${AUTHORED_HOLES.length} authored holes, got ${course.holes.length}`,
+    );
+  }
+  for (const [index, hole] of course.holes.entries()) {
+    const authored = AUTHORED_HOLES[index]!;
+    if (hole.cup.x !== authored.cup.x || hole.tee.x !== authored.tee.x) {
+      throw new Error(
+        `buildCourseWorld: hole ${index + 1} is not the authored hole ` +
+        `(tee-to-cup ${(hole.cup.x - hole.tee.x).toFixed(1)} m, authored ${(authored.cup.x - authored.tee.x).toFixed(1)} m)`,
+      );
+    }
+  }
+
   const holes: PlacedHole[] = layout.placements.map((placement) => {
     const spec = course.holes[placement.index]!;
     return { placement, spec, terrain: createTerrain(spec) };

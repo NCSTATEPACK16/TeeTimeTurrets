@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
 import { FIXED_DT, Sim } from "./sim/world";
-import { generateCourse } from "./sim/course";
+import { authoredCourse } from "./sim/authoredCourse";
 import { buildCourseWorld } from "./sim/courseWorld";
 import type { CourseWorld } from "./sim/courseWorld";
 import { ARENA_BOTS } from "./sim/matchConfig";
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  const course = generateCourse(COURSE_SEED, 18);
+  const course = authoredCourse(COURSE_SEED);
   const holeIndex = parseHoleIndex(window.location.search, course.holes.length);
 
   const screens = new ScreenManager<ScreenName>();
