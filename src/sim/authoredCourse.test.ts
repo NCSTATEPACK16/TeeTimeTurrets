@@ -81,6 +81,35 @@ describe("the authored card", () => {
     expect(a.holes.map((h) => h.bunkers)).not.toEqual(c.holes.map((h) => h.bunkers));
   });
 
+  it("gives every brief the dog-leg its own control points actually have", () => {
+    /**
+     * The cross-check that was missing, and its absence is how `briefs.ts` came to describe
+     * eighteen holes this course does not have.
+     *
+     * A brief says a hole bends left; the control points say it bends right; nothing compared them,
+     * so both were "correct" in isolation for as long as anybody looked. The two are written in
+     * different files by different hands and neither is derived from the other, which is exactly
+     * the pairing `TEST-AND-SPEC-PITFALLS.md` says to assert rather than assume.
+     *
+     * `+z` on a middle control point is left of the line of play (`authoredCourse.ts`), so the sign
+     * of the apex offset is the dog-leg direction and its magnitude over the half-length is the
+     * severity the brief should be carrying.
+     */
+    for (const hole of AUTHORED_HOLES) {
+      const brief = briefForHole(hole.index + 1);
+      const apex = hole.control[1]!.z;
+      const expected = apex === 0 ? "none" : apex > 0 ? "left" : "right";
+      expect(brief.dogleg.dir, `hole ${hole.index + 1} bend`).toBe(expected);
+
+      // Severity is authored as four times the apex offset taken as a fraction of the half-length,
+      // which spreads the eighteen traced bends across 0.24..0.80 rather than compressing them into
+      // the bottom fifth of the range. Checked to two decimals: the point is that a hand-edit to one
+      // side is caught, not that the mapping is exact to floating point.
+      const severity = (Math.abs(apex) / hole.cup.x) * 4;
+      expect(brief.dogleg.severity, `hole ${hole.index + 1} severity`).toBeCloseTo(severity, 2);
+    }
+  });
+
   it("never leaves a cup inside a water polygon", () => {
     /**
      * The repository owner's added requirement: "Goal is to make the course playable and we
@@ -92,10 +121,10 @@ describe("the authored card", () => {
      * so asserting through it would be an assertion nothing could ever fail. This asks the
      * geometry directly.
      *
-     * **Scope, stated honestly.** Water polygons live in each hole's own local frame, and there
-     * is no course frame to compare them in until Task 3 authors the placements. So this checks
-     * every cup against *its own* hole's water. The cross-hole check -- the one that would have
-     * caught hole 17 in hole 9's pond -- belongs to Task 3, where the offsets exist.
+     * **Scope, stated honestly.** Water polygons live in each hole's own local frame, so this
+     * checks every cup against *its own* hole's water. The cross-hole half -- the one that would
+     * have caught hole 17 in hole 9's pond -- needs the placements, and lives in
+     * `authoredLayout.test.ts` as "never leaves a cup inside another hole's water polygon".
      */
     const course = authoredCourse(2026);
     let polygonsChecked = 0;
@@ -114,6 +143,10 @@ describe("the authored card", () => {
         // island solid and the green is punched back out of it by classification order. Assert
         // that punch-out rather than skipping the hole, so an island green that stopped having a
         // green under its cup fails here instead of going quiet.
+        //
+        // **No hole reaches this branch today** -- see the islandGreens assertion below. It is kept
+        // rather than deleted because the archetype is still in the vocabulary, and a brief that
+        // adopts it needs this exemption or the point-in-polygon check below fails it wrongly.
         expect(
           pointInEllipse(hole.cup.x, hole.cup.z, hole.green),
           `hole ${hole.index + 1} green under its cup`,
@@ -136,8 +169,16 @@ describe("the authored card", () => {
       holesChecked += 1;
     }
 
-    expect(holesChecked).toBe(17);
-    expect(islandGreens).toBe(1);
+    // All eighteen go through the point-in-polygon check, because the authored course has no island
+    // green: the plat shows water on 4, 12, 13, 15, 16 and 18, and none of them puts the green
+    // inside it. The previous card had one at hole 13, where the real card prints a 322-yard par 4.
+    expect(holesChecked).toBe(18);
+    expect(islandGreens).toBe(0);
     expect(polygonsChecked).toBeGreaterThan(0);
+
+    // The water sits where the plat puts it, asserted against a list written here rather than read
+    // back out of `briefs.ts` -- which is the whole reason this file restates the card too.
+    const wet = course.holes.filter((h) => h.water.length > 0).map((h) => h.index + 1);
+    expect(wet).toEqual([4, 12, 13, 15, 16, 18]);
   });
 });

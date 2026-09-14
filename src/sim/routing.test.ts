@@ -101,36 +101,30 @@ describe("the centreline follows the brief that asked for it", () => {
     }
   });
 
-  it("gives an s-curve two bends that go opposite ways", () => {
-    const sCurves = HOLES.map((spec, i) => ({ spec, brief: briefForHole(i + 1) })).filter(
-      ({ brief }) => brief.dogleg.dir === "s-curve",
-    );
-    expect(sCurves.length).toBeGreaterThan(0);
-
-    for (const { spec, brief } of sCurves) {
-      expect(spec.control.length, `hole ${brief.number} control points`).toBe(4);
-      const [first, second] = bends(spec);
-      expect(Math.sign(first!), `hole ${brief.number} first bend`).not.toBe(0);
-      expect(Math.sign(second!), `hole ${brief.number} second bend`).toBe(-Math.sign(first!));
-    }
-  });
-
   /**
-   * Design rule 1 of `COURSE_PIPELINE.md` §4: no two adjacent holes turn the same way. The
-   * eighteen authored directions already satisfy it, so honouring `dogleg.dir` rather than
-   * flipping a coin makes the rule true by construction for every hole that names a direction.
-   * An s-curve names none, so it takes the one the rule leaves it.
+   * **No brief asks for an s-curve any more, and that is a fact worth asserting rather than a gap
+   * worth leaving quiet.**
+   *
+   * Until 13 September 2026 holes 4 and 18 were double-doglegs, and two tests here checked that the
+   * drafter gave them four control points with the bends going opposite ways. The briefs are now a
+   * tracing of a real routing (`authoredCourse.ts`), every hole of which has a single apex, so
+   * neither test had anything to run against: the first failed loudly and **the second passed
+   * vacuously**, its loop finding nothing and asserting nothing.
+   *
+   * So the s-curve branch of `draftHole` is live code with no brief exercising it. This assertion
+   * is what makes that visible: add an s-curve to any brief and it fails, which is the signal to
+   * restore the two tests that were here. It is not a substitute for them.
    */
-  it("starts an s-curve opposite the hole before it", () => {
-    for (const [i, spec] of HOLES.entries()) {
-      const brief = briefForHole(i + 1);
-      if (brief.dogleg.dir !== "s-curve") continue;
-      const previous = briefForHole(i === 0 ? 18 : i);
-      expect(
-        Math.sign(bends(spec)[0]!),
-        `hole ${brief.number} follows hole ${previous.number} (${previous.dogleg.dir})`,
-      ).toBe(-sideOf(previous.dogleg.dir));
-    }
+  it("has no brief asking for an s-curve, so the drafter's s-curve branch is unexercised", () => {
+    const sCurves = HOLES.map((_, i) => briefForHole(i + 1))
+      .filter((brief) => brief.dogleg.dir === "s-curve")
+      .map((brief) => brief.number);
+    expect(sCurves).toEqual([]);
+
+    // Guard the guard: prove the filter can see a direction at all, so this cannot pass because
+    // `dogleg.dir` arrived undefined on every hole.
+    const named = HOLES.map((_, i) => briefForHole(i + 1)).filter((b) => b.dogleg.dir !== "none");
+    expect(named.length).toBeGreaterThan(0);
   });
 
   /**

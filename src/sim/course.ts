@@ -414,20 +414,26 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
 }
 
 /**
- * The course bible's card: par 36 out, 36 in, 72 around. See docs/COURSE_PIPELINE.md section 4.
+ * The card: par 36 out, 36 in, 72 around.
  *
- * Eighteen entries rather than a nine-hole mix cycled twice, which is what this was. Both nines
- * sum to 36 either way, so the difference is not the total -- it is that a player walking the
- * back nine should not be replaying the front nine's rhythm hole for hole. The back opens on a
- * par 5 at 11 where the front opens on a par 5 at 4, and its short holes fall at 13 and 16
- * rather than at 2 and 6.
+ * **These are the real scorecard's pars, in the real scorecard's order.** They were a designed
+ * rhythm until 13 September 2026, when the eighteen holes became a tracing of an actual routing
+ * (`authoredCourse.ts`); a designed mix and a traced course disagreeing hole for hole is how
+ * `briefs.ts` came to describe eighteen holes the course does not have -- a par-5 "three-shot hole"
+ * at 4 where the card prints a 180-yard par 3, an island-green par 3 at 13 where it prints a
+ * 322-yard par 4. The card wins, because the card is the thing that is true.
+ *
+ * The rhythm survives the change on its own terms: the nines still do not replay each other. The
+ * front opens on a par 5 and the back opens on a par 3; the front's short holes fall at 4 and 6,
+ * the back's at 10 and 17, so the back nine's only par 3 after the turn is its second-to-last hole.
  *
  * Cycled for courses that are not eighteen holes, so a nine-hole round is the front nine and a
- * longer course repeats rather than erroring.
+ * longer course repeats rather than erroring. **A generated course reads this too**, so changing it
+ * changes every seeded course, not only the authored one.
  */
 const PAR_MIX: readonly number[] = [
-  4, 3, 4, 5, 4, 3, 4, 4, 5, // out -- 36
-  4, 5, 4, 3, 4, 4, 3, 4, 5, // in  -- 36
+  5, 4, 4, 3, 4, 3, 4, 5, 4, // out -- 36
+  3, 4, 4, 4, 5, 4, 4, 3, 5, // in  -- 36
 ];
 
 export function parForIndex(index: number): number {

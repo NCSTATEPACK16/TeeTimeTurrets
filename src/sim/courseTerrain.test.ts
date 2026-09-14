@@ -158,8 +158,12 @@ describe("two holes over the same ground", () => {
   it("blends them together rather than stacking them", () => {
     // Two *different* holes laid on top of each other, crossing at right angles: an exaggerated
     // version of the clubhouse apron, where the layout lets corridors converge on purpose.
-    const generated = generateCourse(COURSE_SEED, 2);
-    const holes: PlacedHole[] = generated.holes.map((spec, i) => ({
+    // Holes 3 and 4, because both are straight. A hole whose brief asks for a dog-leg bulges its
+    // centreline away from its own origin, so the origin stops being a point on the corridor and
+    // `influenceAt` there stops being 1 -- which is what happened to holes 1 and 2 when the briefs
+    // were re-authored against the real card and hole 1 became a bending par 5.
+    const generated = generateCourse(COURSE_SEED, 4);
+    const holes: PlacedHole[] = generated.holes.slice(2, 4).map((spec, i) => ({
       spec,
       terrain: createTerrain(spec),
       placement: { index: i, offsetX: 0, offsetZ: 0, rotation: (i * Math.PI) / 2 },
