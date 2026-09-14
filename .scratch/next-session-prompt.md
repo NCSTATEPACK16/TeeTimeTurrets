@@ -22,38 +22,21 @@ asserts the routing *is* the plat's; only eighteen pictures and a human can. If 
 re-fit (method in the ledger; the lever is marker weight against bearing weight) rather than
 hand-edit.
 
-## 1. Re-author the eighteen briefs — owner-ruled, supersedes the old Task 3b
+## 1. ~~Re-author the eighteen briefs~~ — DONE, commit `61732d7`
 
-`briefs.ts` was written against the generator's `PAR_MIX`, so **11 of 18 briefs carry a `parTarget`
-the card contradicts**, taking their `archetype`, hazard schema, `signature` flag and prose with
-them. Hole 13's brief is the island-green par 3 "the shortest hole on the card"; the card makes it a
-322-yard par 4. Hole 4's is a three-shot par 5; the card makes it the 180-yard par 3 the plat plays
-over the pond.
+All eighteen now match the card; `PAR_MIX` moved to the card's order. Water on **4, 12, 13, 15, 16,
+18**. Signature holes **4, 13, 18** (the cape moved 7 → 13). **No island green** — the plat shows
+none and 13 is a 322-yard par 4; the exemption branch stays in the cup-in-water test for any brief
+that adopts the form later.
 
-Re-author all eighteen against the card, and move `PAR_MIX` to the card's mix — same 36/36/72:
-
-```
-5,4,4,3,4,3,4,5,4  /  3,4,4,4,5,4,4,3,5
-```
-
-Water goes on the plat's holes — **4, 13, 15, 16, 18**, with **12** adjacent to the large pond — and
-off **2, 7, 9, 14**. Hole 4 is a `crossing` (played *over* it); hole 16 a lateral with the pond west,
-so `lateral-right` playing south.
-
-**Traps:**
-- The water cannot move alone: hole **7** is `archetype: "cape"` (defined by its inside water) **and
-  `signature: true`**; hole **2** is `forced-carry`. Hole 15's note cross-references hole 2's water;
-  hole 16's note says "the water stops" and 16 *gains* water.
-- `briefs.test.ts` locks `signature` to exactly **{7, 13, 18}** and `parTarget` to `PAR_MIX`.
-- `authoredCourse.test.ts` hardcodes `holesChecked === 17` and `islandGreens === 1`. Both hold **only
-  while 13 is the island** — and an island green on a 322-yard par 4 is not the archetype, so it
-  probably moves.
-- `PAR_MIX` changes every **generated** course too: `course.test.ts`, `routing.test.ts`,
-  `courseLayout.test.ts` all build one.
-- `FIELD_FOR_PAR` and `DRAFT_BAND` are indexed by par, so re-parring changes which band a hole drafts
-  in — `briefs.test.ts`'s "enough room to reach its par band" will bite.
-- Cup-in-water is now asserted **cross-hole**. Placements were fitted against today's water; moving
-  it can only relax that, but re-run and believe the result.
+**⚠️ It cost the generated course, and this is not fixed.** Moving `PAR_MIX` made the lobed
+relaxation fail to close on **six of ten seeds**, so `solveCourseLayout` falls back to the circle
+construction — anti-parallel pairs 475–583 m apart, zero returning legs. The tell is
+`maxTransitionM` of exactly 30 instead of ~100. Cause: a lobe's first and third holes are meant to
+run anti-parallel, and the real card puts par 5s at 1, 8, 14, 18, so a 460-yard leg keeps getting
+paired with a 320-yard one. **Nothing the player drives on comes through that solver**, so it was
+recorded rather than repaired — see the comment on `courseLayout.test.ts`'s "returns a conflict-free
+layout on every generated seed". Fixing it means teaching the lobe construction about unequal legs.
 
 ## 2. The road is a barrier (plan 2, Task 4)
 
