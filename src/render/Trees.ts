@@ -51,7 +51,12 @@ const SCALE_MAX = 1.3;
  * low wide shrub for links, a tall thin reed clump for marsh. They are deliberately crude: this
  * is the flat-shaded low-poly register, and the radial segment counts are low so the facets read.
  */
-function buildTreeGeometry(palette: BiomePalette): THREE.BufferGeometry {
+/**
+ * Exported so `treeline.ts` can grow the same tree rather than a second one that drifts from it.
+ * The horizon band beyond the road is the same species as the wood inside it, or the edge of the
+ * course reads as a change of continent.
+ */
+export function buildTreeGeometry(palette: BiomePalette): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const colours: number[][] = [];
 

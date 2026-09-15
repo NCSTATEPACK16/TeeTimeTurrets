@@ -53,6 +53,8 @@
 
 import type { Vec2 } from "./mapGeometry";
 import type { CourseLayout, HolePlacement } from "./courseLayout";
+import { metresNorthOf } from "./courseBarrier";
+import type { SouthBoundary } from "./courseBarrier";
 
 /**
  * The clubhouse, on the southern boundary and west of centre, with holes 1, 9, 10 and 18 around it.
@@ -74,7 +76,7 @@ export const AUTHORED_CLUBHOUSE: Vec2 = { x: -241.2, z: -477.3 };
  * The plat also shows Files Road on the south-east corner. It is not represented here -- see
  * `docs/DECISIONS.md`.
  */
-export const AUTHORED_SOUTH_BOUNDARY: { readonly a: Vec2; readonly b: Vec2 } = {
+export const AUTHORED_SOUTH_BOUNDARY: SouthBoundary = {
   a: { x: -613.2, z: -405.3 },
   b: { x: 412.8, z: -687.3 },
 };
@@ -82,16 +84,13 @@ export const AUTHORED_SOUTH_BOUNDARY: { readonly a: Vec2; readonly b: Vec2 } = {
 /**
  * Metres north of the southern boundary; negative is on the road side of it.
  *
- * The signed distance to `AUTHORED_SOUTH_BOUNDARY`'s line, positive on the playable side. Lives
- * beside the line rather than with the barrier so that the test asserting the course is north of
- * the road and the clamp keeping the cart there cannot disagree about which side is which.
+ * The signed distance to `AUTHORED_SOUTH_BOUNDARY`'s line, positive on the playable side. The
+ * arithmetic itself lives in `courseBarrier.ts` and this only binds it to the course's own traced
+ * line, so the test asserting the course is north of the road and the clamp keeping the cart there
+ * cannot disagree about which side is which.
  */
 export function metresNorthOfBoundary(x: number, z: number): number {
-  const { a, b } = AUTHORED_SOUTH_BOUNDARY;
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  // Normal (-dz, dx) points +z for a line running east and south, which is the playable side.
-  return ((x - a.x) * -dz + (z - a.z) * dx) / Math.hypot(dx, dz);
+  return metresNorthOf(AUTHORED_SOUTH_BOUNDARY, x, z);
 }
 
 /**

@@ -108,7 +108,7 @@ async function main(): Promise<void> {
     if (!spec) throw new Error("course has no holes");
     courseWorld ??= buildCourseWorld(course, COURSE_SEED);
     sim = await Sim.create(spec, { tire: tireTypeFor(loadout), botCount: ARENA_BOTS });
-    sim.loadCourse(courseWorld.terrain, courseWorld.surfaces, courseWorld.holes);
+    sim.loadCourse(courseWorld.terrain, courseWorld.surfaces, courseWorld.holes, courseWorld.southBoundary);
     screens.show("arena");
   };
 
@@ -162,7 +162,12 @@ async function main(): Promise<void> {
       round: session.card,
       hudRoot,
       nameplateRoot,
-      arena: { course: world.terrain, surfaces: world.surfaces },
+      arena: {
+        course: world.terrain,
+        surfaces: world.surfaces,
+        southBoundary: world.southBoundary,
+        seed: COURSE_SEED,
+      },
       onMatchOver: () => screens.show("arenaResults"),
     });
     return roundScreen;

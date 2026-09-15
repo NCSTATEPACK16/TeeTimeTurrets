@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { generateCourse } from "./course";
+import { authoredCourse } from "./authoredCourse";
+import { metresNorthOfBoundary } from "./authoredLayout";
+import { buildCourseWorld } from "./courseWorld";
 import { CART_COLLIDER, RESPAWN_DELAY_S } from "./entities/Cart";
 import { createCourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
@@ -366,5 +369,60 @@ describe("arena spawns, health and scoring", () => {
     expect(sim.cart.strokesTaken).toBe(3);
     expect(sim.match.strokesFor(0)).toBe(0);
     expect(sim.match.teamStrokes(0)).toBe(0);
+  });
+});
+
+
+/**
+ * The shipped course, built once. Expensive -- eighteen holes blended into one heightfield -- and
+ * read-only, so the `Sim` on top is the only per-test part. Same reasoning as `buildCourse` above.
+ */
+let cachedAuthored: ReturnType<typeof buildCourseWorld> | null = null;
+function authoredWorld(): ReturnType<typeof buildCourseWorld> {
+  if (cachedAuthored === null) cachedAuthored = buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED);
+  return cachedAuthored;
+}
+
+async function authoredSim(): Promise<{ sim: Sim; world: ReturnType<typeof buildCourseWorld> }> {
+  const world = authoredWorld();
+  const sim = await Sim.create(world.holes[0]!.spec, { botCount: 0 });
+  sim.loadCourse(world.terrain, world.surfaces, world.holes, world.southBoundary);
+  return { sim, world };
+}
+
+describe("County Home Road is a barrier", () => {
+  /**
+   * **The bounds box is not the road, and the plan's test cannot tell them apart.**
+   *
+   * `moveCartBody` has always clamped the cart inside `playfield.bounds`, so the plan's "stops a
+   * cart at the southern boundary" assertion -- `cart.position.z > bounds.minZ` -- passes with no
+   * barrier written at all. It was verified passing before this task started any work.
+   *
+   * The road is a *diagonal*: it runs east and south across the bottom of the plat, so the box's
+   * flat `minZ` sits south of it at the western end by a wide margin. Everything in that wedge is
+   * inside the bounds, on the heightfield, and on the wrong side of a public road.
+   */
+  it("keeps the cart north of the road, which the bounds box does not", async () => {
+    const { sim, world } = await authoredSim();
+
+    // The wedge has to exist, or this test is about nothing: somewhere along the southern edge of
+    // the bounds there is ground inside the box and south of the road.
+    const b = world.terrain.bounds;
+    let wedge = 0;
+    for (let f = 0; f <= 1; f += 0.05) {
+      const x = b.minX + (b.maxX - b.minX) * f;
+      if (metresNorthOfBoundary(x, b.minZ) < 0) wedge += 1;
+    }
+    expect(wedge, "no ground inside the bounds lies south of the road").toBeGreaterThan(0);
+
+    // Point it south and hold the throttle: 40 s at top speed is several hundred metres, which is
+    // past the road from any tee the course spawns on.
+    sim.cart.heading = -Math.PI / 2;
+    play(sim, [{ ticks: 40 * 60, intent: { throttle: 1 } }]);
+
+    expect(
+      metresNorthOfBoundary(sim.cart.position.x, sim.cart.position.z),
+      `cart ended at (${sim.cart.position.x.toFixed(0)}, ${sim.cart.position.z.toFixed(0)})`,
+    ).toBeGreaterThan(0);
   });
 });

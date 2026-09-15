@@ -1,6 +1,7 @@
 import type { Course } from "./course";
 import { AUTHORED_HOLES } from "./authoredCourse";
-import { authoredCourseLayout } from "./authoredLayout";
+import { AUTHORED_SOUTH_BOUNDARY, authoredCourseLayout } from "./authoredLayout";
+import type { SouthBoundary } from "./courseBarrier";
 import { createCourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
 import type { CourseTerrain, PlacedHole } from "./courseTerrain";
@@ -31,6 +32,12 @@ export interface CourseWorld {
    * `Sim.loadCourse` can be handed this array as it stands -- see `spawn.ts`.
    */
   readonly holes: readonly PlacedHole[];
+  /**
+   * The line the cart may not be driven across. Travels with the world rather than being looked up
+   * by `Sim`, so a course built without one -- a generated course, or a test rig -- simply has no
+   * road instead of borrowing this one's.
+   */
+  readonly southBoundary: SouthBoundary;
 }
 
 /**
@@ -76,5 +83,5 @@ export function buildCourseWorld(course: Course, seed: number): CourseWorld {
     // and make that agreement a coincidence rather than a fact.
     holes.map((hole) => createSurfaces(hole.spec, hole.terrain)),
   );
-  return { terrain, surfaces, holes };
+  return { terrain, surfaces, holes, southBoundary: AUTHORED_SOUTH_BOUNDARY };
 }
