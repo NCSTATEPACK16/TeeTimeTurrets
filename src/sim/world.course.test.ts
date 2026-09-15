@@ -415,14 +415,20 @@ describe("County Home Road is a barrier", () => {
     }
     expect(wedge, "no ground inside the bounds lies south of the road").toBeGreaterThan(0);
 
-    // Point it south and hold the throttle: 40 s at top speed is several hundred metres, which is
-    // past the road from any tee the course spawns on.
+    // Point it south and hold the throttle. Measured rather than guessed at: from hole 1's tee the
+    // cart starts 78 m north of the road and is against the barrier -- held at `BARRIER_INSET_M`,
+    // 6 m -- by the eighth second, and stays there. Fifteen seconds is comfortably past that and
+    // still short enough to be honest about what the test needs.
     sim.cart.heading = -Math.PI / 2;
-    play(sim, [{ ticks: 40 * 60, intent: { throttle: 1 } }]);
+    play(sim, [{ ticks: 15 * 60, intent: { throttle: 1 } }]);
 
     expect(
       metresNorthOfBoundary(sim.cart.position.x, sim.cart.position.z),
       `cart ended at (${sim.cart.position.x.toFixed(0)}, ${sim.cart.position.z.toFixed(0)})`,
     ).toBeGreaterThan(0);
-  });
+    // The default 5 s is not enough and the driving is not why: the 900 ticks cost about 0.2 s,
+    // while standing an eighteen-hole heightfield up in Rapier inside `Sim.create` costs 2.7 s
+    // here and around 7 s on CI's slower machine. This is the one test that loads the whole
+    // authored course, so it carries its own timeout rather than raising the suite's.
+  }, 30000);
 });
