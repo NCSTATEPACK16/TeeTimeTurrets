@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
+import { BOT_ENGAGE_RANGE } from "./bot";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
 import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
@@ -596,12 +597,35 @@ describe("bot carts", () => {
     expect(bot.health.hp).toBe(bot.health.max);
   });
 
-  it("stays put while the player is out of its engagement range", async () => {
+  it("closes on the player while out of range, and holds its fire the whole way", async () => {
+    /**
+     * This asserted "stays put" until the authored routing landed. It was the integration half of
+     * `bot.test.ts`'s idle-outside-range rule, and that rule made every bot in an arena match stand
+     * still for the whole match once carts were dealt one to a hole -- the closest two tees on the
+     * course are 74 m apart against a 40 m engagement range.
+     *
+     * What survives the change is the half that still holds: the weapon is a 40 m weapon, so the
+     * bot closes the distance without spending a round doing it.
+     */
     const sim = await Sim.create(fixedHoleSpec());
     const bot = sim.bots[0]!;
     const start = { x: bot.position.x, z: bot.position.z };
+    const startDistance = Math.hypot(start.x - sim.cart.position.x, start.z - sim.cart.position.z);
+    expect(startDistance, "the bot has to start out of range or this proves nothing").toBeGreaterThan(
+      BOT_ENGAGE_RANGE,
+    );
+
     for (let i = 0; i < 300; i++) sim.step();
-    expect(Math.hypot(bot.position.x - start.x, bot.position.z - start.z)).toBeLessThan(1);
+
+    const moved = Math.hypot(bot.position.x - start.x, bot.position.z - start.z);
+    expect(moved, "the bot did not move at all").toBeGreaterThan(1);
+    const endDistance = Math.hypot(
+      bot.position.x - sim.cart.position.x,
+      bot.position.z - sim.cart.position.z,
+    );
+    expect(endDistance, "it moved, but not toward the player").toBeLessThan(startDistance - 1);
+    // Still out of range after five seconds, so every tick above was a held-fire tick.
+    expect(endDistance).toBeGreaterThan(BOT_ENGAGE_RANGE);
     expect(bot.ammo).toBe(STARTING_AMMO);
   });
 
