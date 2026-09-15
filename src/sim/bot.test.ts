@@ -29,10 +29,34 @@ function intentFor(
 }
 
 describe("computeBotIntent", () => {
-  it("idles outside its engagement range rather than pathfinding across the course", () => {
+  it("closes on a target beyond its engagement range instead of idling at it", () => {
+    /**
+     * This used to assert the opposite -- that a bot idles outside `BOT_ENGAGE_RANGE` "rather than
+     * pathfinding across the course" -- and that was right for the arena it was written against,
+     * where a single generated hole put every cart within a few tens of metres of the next.
+     *
+     * The authored eighteen-hole routing broke the premise rather than the rule. Carts are dealt
+     * one to a hole, and the closest two tees on the whole course are **74 m** apart while the
+     * closest pair a six-cart roster actually gets is **75 m** -- both outside the 40 m range. Every
+     * bot in the match sat still for the whole match, and nothing asserted otherwise.
+     *
+     * Closing is still not pathfinding: it is a straight-line drive at the target, with no
+     * navigation, no obstacle avoidance and no memory, exactly as before.
+     */
     const intent = intentFor(botAt(0, 0), { x: BOT_ENGAGE_RANGE + 5, z: 0 });
-    expect(intent.throttle).toBe(0);
-    expect(intent.steer).toBe(0);
+    expect(intent.throttle).toBe(1);
+  });
+
+  it("steers while closing, so the drive is at the target and not merely forward", () => {
+    const far = BOT_ENGAGE_RANGE * 4;
+    expect(intentFor(botAt(0, 0), { x: far, z: far }).steer).toBeGreaterThan(0);
+    expect(intentFor(botAt(0, 0), { x: far, z: -far }).steer).toBeLessThan(0);
+  });
+
+  it("does not aim or shoot at a target it has not closed on", () => {
+    // The weapon stays a 40 m weapon. Closing changed where the bot drives, not what it can hit,
+    // and a bot that shot the moment it had a bearing would snipe across the whole course.
+    const intent = intentFor(botAt(0, 0), { x: BOT_ENGAGE_RANGE + 5, z: 0 });
     expect(intent.aimDelta).toBe(0);
     expect(intent.fire).toBe(false);
   });

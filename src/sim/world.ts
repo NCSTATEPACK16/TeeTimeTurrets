@@ -14,6 +14,8 @@ import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import type { HoleSpec, Vec3 } from "./course";
+import { clampToPlayable } from "./courseBarrier";
+import type { SouthBoundary } from "./courseBarrier";
 import { CUP_RADIUS, createTerrain } from "./terrain";
 import type { Terrain } from "./terrain";
 import { SURFACES, SurfaceId, createSurfaceTuning, createSurfaces } from "./surfaces";
@@ -376,6 +378,8 @@ export class Sim {
   lastShotWasStrike = false;
   /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
   private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  /** Reused by `moveCartBody`'s barrier clamp: no per-tick allocation in the fixed loop. */
+  private readonly clampScratch = { x: 0, z: 0 };
   /**
    * Filled by `computedCollision` rather than allocated per obstacle, per the no-allocation rule.
    * One instance is enough: it is read and discarded inside the loop that fills it.
@@ -423,6 +427,12 @@ export class Sim {
    * match is built rather than during one.
    */
   arena = false;
+  /**
+   * The southern boundary the cart is held north of, or `null` when the loaded course has none.
+   * Set by `loadCourse`; a stroke-play hole and a generated test course both leave it null and get
+   * the bounds box alone.
+   */
+  private southBoundary: SouthBoundary | null = null;
   /** The eighteen tees, in the course frame. Empty in stroke play. */
   private spawnSet: SpawnPoint[] = [];
   /**
@@ -802,7 +812,13 @@ export class Sim {
    * 6. the spawn set is built and every cart is dealt its own hole's tee, facing its cup;
    * 7. the scoreboard learns the roster it is scoring.
    */
-  loadCourse(course: CourseTerrain, surfaces: Surfaces, holes: readonly SpawnHole[]): void {
+  loadCourse(
+    course: CourseTerrain,
+    surfaces: Surfaces,
+    holes: readonly SpawnHole[],
+    southBoundary: SouthBoundary | null = null,
+  ): void {
+    this.southBoundary = southBoundary;
     this.spawnRandom = mulberry32(hashChannel(this.terrain.spec.seed, SPAWN_CHANNEL));
     this.world.removeCollider(this.groundCollider, false);
     this.playfield = coursePlayfield(course, surfaces);
@@ -1120,12 +1136,20 @@ export class Sim {
     const p = rig.cart.position;
     // Held inside the ground's own box, whatever built it: a hole's field edge and the course's
     // perimeter are the same fact -- past here there are no heights, so there is nothing to
-    // stand on.
-    const bounds = this.playfield.bounds;
-    const inset = CART_COLLIDER.radius;
-    p.x = Math.min(bounds.maxX - inset, Math.max(bounds.minX + inset, p.x + corrected.x));
+    // stand on. And, on a course that has one, held north of its southern boundary: the box is
+    // axis-aligned and County Home Road is not, so the box alone leaves a wedge of playable ground
+    // on the road side of it. See `courseBarrier.ts`.
+    clampToPlayable(
+      this.playfield.bounds,
+      this.southBoundary,
+      CART_COLLIDER.radius,
+      p.x + corrected.x,
+      p.z + corrected.z,
+      this.clampScratch,
+    );
+    p.x = this.clampScratch.x;
     p.y += corrected.y;
-    p.z = Math.min(bounds.maxZ - inset, Math.max(bounds.minZ + inset, p.z + corrected.z));
+    p.z = this.clampScratch.z;
 
     if (this.controller.computedGrounded()) rig.fallSpeed = 0;
     rig.body.setNextKinematicTranslation(p);

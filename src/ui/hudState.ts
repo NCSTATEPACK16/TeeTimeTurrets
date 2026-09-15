@@ -1,4 +1,5 @@
 import type { ClubType } from "../physics/Ballistics";
+import { toYards } from "../sim/units";
 
 /**
  * The DOM-free half of the HUD: sim state in, display values out. Split from the writing half so
@@ -61,7 +62,7 @@ export interface HudState {
   healthText: string;
   ammoText: string;
   timerText: string;
-  /** UI-SPEC H17: whole metres from the ball to the cup, e.g. `"84 m"`. */
+  /** UI-SPEC H17: whole yards from the ball to the cup, e.g. `"150 yd"`. */
   pinDistanceText: string;
   /**
    * Whether the golf fields (strokes, pin distance) and the arena ones (team score, kills) are
@@ -115,7 +116,7 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.healthText = `${Math.max(0, Math.round(cart.health.hp))}`;
   out.ammoText = `${Math.max(0, Math.round(cart.ammo))}`;
   out.timerText = formatClock(source.matchTimeRemaining);
-  out.pinDistanceText = `${Math.round(flatDistance(source))} m`;
+  out.pinDistanceText = `${Math.round(toYards(flatDistance(source)))} yd`;
 
   // Visibility is the only thing the mode decides. Both sets of strings are derived in both
   // modes, on purpose: a blank field is a rendering decision and a missing one is a crash, and

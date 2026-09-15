@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { generateCourse } from "./course";
+import { authoredCourse } from "./authoredCourse";
+import { metresNorthOfBoundary } from "./authoredLayout";
+import { buildCourseWorld } from "./courseWorld";
+import { BOT_ENGAGE_RANGE } from "./bot";
 import { CART_COLLIDER, RESPAWN_DELAY_S } from "./entities/Cart";
 import { createCourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
@@ -11,7 +15,7 @@ import type { LayoutHole } from "./courseLayout";
 import { SurfaceId, createSurfaces } from "./surfaces";
 import { createTerrain } from "./terrain";
 import { mulberry32 } from "./rng";
-import { ARENA_MAX_HEALTH } from "./matchConfig";
+import { ARENA_BOTS, ARENA_MAX_HEALTH } from "./matchConfig";
 import { Sim } from "./world";
 
 /**
@@ -367,4 +371,106 @@ describe("arena spawns, health and scoring", () => {
     expect(sim.match.strokesFor(0)).toBe(0);
     expect(sim.match.teamStrokes(0)).toBe(0);
   });
+});
+
+
+/**
+ * The shipped course, built once. Expensive -- eighteen holes blended into one heightfield -- and
+ * read-only, so the `Sim` on top is the only per-test part. Same reasoning as `buildCourse` above.
+ */
+let cachedAuthored: ReturnType<typeof buildCourseWorld> | null = null;
+function authoredWorld(): ReturnType<typeof buildCourseWorld> {
+  if (cachedAuthored === null) cachedAuthored = buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED);
+  return cachedAuthored;
+}
+
+async function authoredSim(): Promise<{ sim: Sim; world: ReturnType<typeof buildCourseWorld> }> {
+  const world = authoredWorld();
+  const sim = await Sim.create(world.holes[0]!.spec, { botCount: 0 });
+  sim.loadCourse(world.terrain, world.surfaces, world.holes, world.southBoundary);
+  return { sim, world };
+}
+
+describe("County Home Road is a barrier", () => {
+  /**
+   * **The bounds box is not the road, and the plan's test cannot tell them apart.**
+   *
+   * `moveCartBody` has always clamped the cart inside `playfield.bounds`, so the plan's "stops a
+   * cart at the southern boundary" assertion -- `cart.position.z > bounds.minZ` -- passes with no
+   * barrier written at all. It was verified passing before this task started any work.
+   *
+   * The road is a *diagonal*: it runs east and south across the bottom of the plat, so the box's
+   * flat `minZ` sits south of it at the western end by a wide margin. Everything in that wedge is
+   * inside the bounds, on the heightfield, and on the wrong side of a public road.
+   */
+  it("keeps the cart north of the road, which the bounds box does not", async () => {
+    const { sim, world } = await authoredSim();
+
+    // The wedge has to exist, or this test is about nothing: somewhere along the southern edge of
+    // the bounds there is ground inside the box and south of the road.
+    const b = world.terrain.bounds;
+    let wedge = 0;
+    for (let f = 0; f <= 1; f += 0.05) {
+      const x = b.minX + (b.maxX - b.minX) * f;
+      if (metresNorthOfBoundary(x, b.minZ) < 0) wedge += 1;
+    }
+    expect(wedge, "no ground inside the bounds lies south of the road").toBeGreaterThan(0);
+
+    // Point it south and hold the throttle. Measured rather than guessed at: from hole 1's tee the
+    // cart starts 78 m north of the road and is against the barrier -- held at `BARRIER_INSET_M`,
+    // 6 m -- by the eighth second, and stays there. Fifteen seconds is comfortably past that and
+    // still short enough to be honest about what the test needs.
+    sim.cart.heading = -Math.PI / 2;
+    play(sim, [{ ticks: 15 * 60, intent: { throttle: 1 } }]);
+
+    expect(
+      metresNorthOfBoundary(sim.cart.position.x, sim.cart.position.z),
+      `cart ended at (${sim.cart.position.x.toFixed(0)}, ${sim.cart.position.z.toFixed(0)})`,
+    ).toBeGreaterThan(0);
+    // The default 5 s is not enough and the driving is not why: the 900 ticks cost about 0.2 s,
+    // while standing an eighteen-hole heightfield up in Rapier inside `Sim.create` costs 2.7 s
+    // here and around 7 s on CI's slower machine. This is the one test that loads the whole
+    // authored course, so it carries its own timeout rather than raising the suite's.
+  }, 30000);
+});
+
+describe("an arena match on the authored course is a match", () => {
+  /**
+   * **The regression this exists to catch shipped, and nothing in the suite noticed.**
+   *
+   * `computeBotIntent` used to return a zero intent beyond `BOT_ENGAGE_RANGE`, on the reasoning
+   * that closing would be pathfinding. That was sound while the arena was one generated hole. The
+   * authored routing deals carts one to a hole across a course roughly 1,590 x 1,290 m: the nearest
+   * pair a six-cart roster gets is 75 m and the closest two tees anywhere are 74 m, both outside the
+   * 40 m range. So every bot stood still from the opening tick, no bot ever reached anyone, and
+   * arena combat did not happen -- while `bot.test.ts` and `world.cart.test.ts` both stayed green,
+   * because both asserted the idling that was the bug.
+   *
+   * Every existing assertion was a unit one against a hand-placed pair of carts. This is the
+   * missing one: the carts the *course* deals, on the course it deals them onto.
+   */
+  it("deals carts far apart and still brings a bot into range of the player", async () => {
+    const world = authoredWorld();
+    const sim = await Sim.create(world.holes[0]!.spec, { botCount: ARENA_BOTS });
+    sim.loadCourse(world.terrain, world.surfaces, world.holes, world.southBoundary);
+
+    const distanceToPlayer = (bot: { position: { x: number; z: number } }): number =>
+      Math.hypot(bot.position.x - sim.cart.position.x, bot.position.z - sim.cart.position.z);
+
+    // The premise: they start well outside engagement range, or the test proves nothing. Measured
+    // rather than assumed, because it is exactly the fact that changed under the old rule.
+    const opening = sim.bots.map(distanceToPlayer);
+    expect(Math.min(...opening), `opening distances ${opening.map((d) => d.toFixed(0))}`).toBeGreaterThan(
+      BOT_ENGAGE_RANGE,
+    );
+
+    // The player holds still. Any closing is the bots' doing.
+    play(sim, [{ ticks: 60 * 60, intent: {} }]);
+
+    const closed = sim.bots.map(distanceToPlayer);
+    expect(
+      Math.min(...closed),
+      `after 60 s the nearest bot is ${Math.min(...closed).toFixed(0)} m away, from ${Math.min(...opening).toFixed(0)} m`,
+    ).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
+  }, 60000);
 });

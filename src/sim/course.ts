@@ -414,20 +414,26 @@ export function validateHole(spec: HoleSpec, terrain: Terrain): HoleRejection | 
 }
 
 /**
- * The course bible's card: par 36 out, 36 in, 72 around. See docs/COURSE_PIPELINE.md section 4.
+ * The card: par 36 out, 36 in, 72 around.
  *
- * Eighteen entries rather than a nine-hole mix cycled twice, which is what this was. Both nines
- * sum to 36 either way, so the difference is not the total -- it is that a player walking the
- * back nine should not be replaying the front nine's rhythm hole for hole. The back opens on a
- * par 5 at 11 where the front opens on a par 5 at 4, and its short holes fall at 13 and 16
- * rather than at 2 and 6.
+ * **These are the real scorecard's pars, in the real scorecard's order.** They were a designed
+ * rhythm until 13 September 2026, when the eighteen holes became a tracing of an actual routing
+ * (`authoredCourse.ts`); a designed mix and a traced course disagreeing hole for hole is how
+ * `briefs.ts` came to describe eighteen holes the course does not have -- a par-5 "three-shot hole"
+ * at 4 where the card prints a 180-yard par 3, an island-green par 3 at 13 where it prints a
+ * 322-yard par 4. The card wins, because the card is the thing that is true.
+ *
+ * The rhythm survives the change on its own terms: the nines still do not replay each other. The
+ * front opens on a par 5 and the back opens on a par 3; the front's short holes fall at 4 and 6,
+ * the back's at 10 and 17, so the back nine's only par 3 after the turn is its second-to-last hole.
  *
  * Cycled for courses that are not eighteen holes, so a nine-hole round is the front nine and a
- * longer course repeats rather than erroring.
+ * longer course repeats rather than erroring. **A generated course reads this too**, so changing it
+ * changes every seeded course, not only the authored one.
  */
 const PAR_MIX: readonly number[] = [
-  4, 3, 4, 5, 4, 3, 4, 4, 5, // out -- 36
-  4, 5, 4, 3, 4, 4, 3, 4, 5, // in  -- 36
+  5, 4, 4, 3, 4, 3, 4, 5, 4, // out -- 36
+  3, 4, 4, 4, 5, 4, 4, 3, 5, // in  -- 36
 ];
 
 export function parForIndex(index: number): number {
@@ -438,22 +444,88 @@ export function parForIndex(index: number): number {
  * Field size scales with the par being aimed at, which is why fieldSize lives on HoleSpec
  * rather than being global. `cells` tracks it to hold the cell near 1.0 m: a coarser cell makes
  * heightfield triangle seams large enough for the 0.15 m ball to trip over.
+ *
+ * **No longer the shipped path.** The course the game loads is authored (`authoredCourse.ts`) and
+ * derives its field per hole with `fieldSizeFor`, from the corridor it actually has to hold. These
+ * three squares could not fit a real card at all: a 220 m par-4 field has a 311 m diagonal against
+ * a 370 m par 4, so the longest holes fitted at no bearing. They survive as the procedural
+ * drafter's squares -- `draftHole` still reads them, and `generateCourse` still builds a course out
+ * of it for tests and for the "generate a second course" property the spec keeps.
  */
 export const FIELD_FOR_PAR: Readonly<Record<number, number>> = { 3: 160, 4: 220, 5: 300 };
 
 /**
- * Corridor length bands, chosen so derivePar returns the par the field was sized for.
+ * The lengths `draftHole` samples inside, matched to `FIELD_FOR_PAR`'s squares.
+ *
+ * These are the numbers `CORRIDOR_BAND` used to hold, and they are *not* real golf lengths -- they
+ * describe a course about two-thirds real length. They stay exactly as they were because they are
+ * one half of a matched pair: a drafted hole has to fit `FIELD_FOR_PAR[par]` at some bearing, and
+ * `derivePar` has to return the par the field was sized for. Widening them without widening the
+ * squares turns every par 3 into a squeezed par 4.
+ *
+ * Separate from `CORRIDOR_BAND` because the two now answer different questions. This one chooses a
+ * length; `CORRIDOR_BAND` checks one. Merging them again would mean either shipping a two-thirds
+ * course or breaking the drafter, which is the pair of failures this split exists to hold apart.
  *
  * Exported so `briefs.test.ts` can check an authored corridor half-width against the run it
  * leaves room for, rather than restating these numbers -- a second copy of a band table is the
  * contradictory-source-of-truth failure AGENTS.md warns about, and it would silently stop
  * checking anything the moment one copy moved.
  */
-export const CORRIDOR_BAND: Readonly<Record<number, { min: number; max: number }>> = {
+export const DRAFT_BAND: Readonly<Record<number, { min: number; max: number }>> = {
   3: { min: 70, max: 125 },
   4: { min: 135, max: 250 },
   5: { min: 265, max: 375 },
 };
+
+/**
+ * Corridor length bands, in metres -- **validation bounds, not a generator's choice.**
+ *
+ * These were the bands a procedural drafter sampled inside, and they were sized for a course about
+ * two-thirds real length: **not one of the eighteen holes on the real card this course is now
+ * traced from was legal under the old numbers** -- every one of them longer than its band's
+ * maximum. The old par-4 *minimum* was 135 m, which is 147.6 yd: shorter than three of the card's
+ * four par 3s, and the bands overlapped a real par 3 with a real par 4 rather than separating them.
+ * Widened to admit a real US card with margin either side, and kept only so that an authored `58`
+ * where `580` was meant fails loudly instead of shipping.
+ *
+ * In yards, for comparison against a scorecard: par 3 is 120-230, par 4 is 260-470, par 5 is
+ * 420-620.
+ *
+ * `authoredCourse` is what makes "fails loudly" true: it measures every authored corridor's arc
+ * length against this band and throws. A bound with no consumer is a comment, not a check.
+ */
+export const CORRIDOR_BAND: Readonly<Record<number, { min: number; max: number }>> = {
+  3: { min: 110, max: 210 },
+  4: { min: 238, max: 430 },
+  5: { min: 384, max: 567 },
+};
+
+/**
+ * The square a hole's terrain is built in, derived from the corridor it actually has to hold.
+ *
+ * Per-hole rather than per-par, because the card's range is 147 to 508 yards and one square that
+ * fits the longest would make every par 3 carry three times the heightfield it needs. `FIELD_FOR_PAR`
+ * could not fit the real card at all: a 220 m par-4 field has a 311 m diagonal against a 370 m
+ * par 4, so the longest holes fitted at no bearing.
+ *
+ * Sized off the largest `|x|` or `|z|` any control point reaches rather than off `max - min`, so
+ * the result holds the corridor whether or not the authored points happen to centre on the origin.
+ * The corridor's widest half-width and a blend band are added on each side: terrain stops carving
+ * at `half + BLEND_WIDTH`, so a field any tighter would clip its own hole.
+ */
+export function fieldSizeFor(control: readonly Vec2[], corridor: readonly number[]): number {
+  let reach = 0;
+  for (const p of control) {
+    const r = Math.max(Math.abs(p.x), Math.abs(p.z));
+    if (r > reach) reach = r;
+  }
+  let widest = 0;
+  for (const half of corridor) {
+    if (half > widest) widest = half;
+  }
+  return Math.ceil(2 * (reach + widest + BLEND_WIDTH));
+}
 
 /**
  * The angle each leg of the routing makes with the tee-to-cup line at `severity` 1.
@@ -598,7 +670,7 @@ export function draftHole(
   const corridor = corridorFor(brief, bendCount + 2);
 
   const fieldSize = FIELD_FOR_PAR[par];
-  const band = CORRIDOR_BAND[par];
+  const band = DRAFT_BAND[par];
   const target = band.min + (band.max - band.min) * random();
 
   const turn = brief.dogleg.severity * DOGLEG_MAX_TURN;
@@ -676,7 +748,7 @@ export function draftHole(
    * that needs the least room and shrink it to fit.
    *
    * This is the one place length gives, and it fires only on a genuine contradiction in the
-   * authored data rather than on an unlucky draw -- `CORRIDOR_BAND[5]` runs to 375 m while a par 5
+   * authored data rather than on an unlucky draw -- `DRAFT_BAND[5]` runs to 375 m while a par 5
    * has at most 342 m of diagonal, so the top of that band describes a hole no 300 m field can
    * hold straight. Shrinking is still the right answer over bending it back: the old generator
    * chose to bend, and a 116 m dog-leg on a severity-0 brief is a worse lie than a hole 9% short

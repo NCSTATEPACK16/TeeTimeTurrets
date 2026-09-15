@@ -31,10 +31,136 @@ tree, because they are regenerable.
 | `driver-mannequin-01.jpg` | `../../ASSET_PIPELINE.md` §8.4b | The rider's second pass — joints, hands, neck. Same spec. **Consumed**; his blue polo was kept against the sheet, deliberately |
 | `swing-sequence-01.jpg` | `../../ASSET_PIPELINE.md` §8.4c | The swing plane and the pivot height. Same spec, and the sheet that drove it. **Consumed** — the plane, the pedestal, the 100° backswing and the pitching housing all came from here |
 | `club-heads-01.jpg` | `../../ASSET_PIPELINE.md` §8.4d | Club-head shapes and hosels. Same spec. **Consumed** — the hosel and heel mounting shipped; the scale grid was not usable |
+| `pickup-items-01.jpg` | `../../ASSET_PIPELINE.md` §8.5a | Stage D's three pickup items → the `pickups` collection and `src/entities/graphs/pickups.json`. Task 7 of the Stage D plan |
+| `pickup-pedestal-01.jpg` | `../../ASSET_PIPELINE.md` §8.5b | The glow cylinder's three states → `src/render/coursePickups.ts`. A **state sheet, not a turnaround** — the cylinder is radially symmetric |
+| `food-cart-01.jpg` | `../../ASSET_PIPELINE.md` §8.5c | The refreshment cart → the `props` collection. Its collider question is still open and the sheet does not depend on it |
+| `clubhouse-exterior-01.jpg` | `../../ASSET_PIPELINE.md` §8.5d | Stage E's clubhouse → a new `exterior` collection and `public/models/clubhouse-exterior.glb`. The only sheet here whose asset ships as a mesh |
+| `tee-sign-01.jpg` | `../../ASSET_PIPELINE.md` §8.5e | Stage E's tee sign **frame**. The board face is a runtime `CanvasTexture` from `HoleSpec`, so the sheet is about the post and mount, not the face |
 
 Note for anyone planning to automate this: **image models are not on Google's free API tier.** Every
 sheet here came from the Gemini / AI Studio web UI by hand, which is free; the API path needs
 billing. See `../../ASSET_PIPELINE.md` §8.4.
+
+---
+
+## The five Stage D / Stage E sheets
+
+All five ran twice, 12 September 2026. **Only the second generation is filed** — per the naming rule
+above, iterations and rejects stay out of the repo, which is why these are `-01` and no `-01` of
+round one exists. The first generation is recorded here anyway, because what it got wrong is what
+the shipped prompt blocks are written against, and because two of its failures were new to this
+folder:
+
+- **`FRONT`, `SIDE` and `REAR` came back as the same elevation.** The food cart's long profile was
+  drawn three times, so its 1.40 m width was documented nowhere. The hot dog did the same.
+  §8.5's blocks now state which axis each view looks along and say outright that if FRONT and SIDE
+  share a silhouette the view set is wrong.
+- **An environment appeared despite an explicit ban.** The tee sign came back standing on a
+  grass/sand/water terrain slab in all four panels, and in TOP-DOWN the slab filled the frame so
+  completely the sign was a thumbnail inside a landscape. The block now bans ground by name
+  — grass, turf, sand, water, soil, slab, plinth — and states that the plan view being mostly empty
+  is *correct*.
+
+Round one also produced the wrong subject entirely on the pedestal sheet (a blue household pail
+where a green range-ball bucket was described), a clubhouse drawn as a tall farmhouse against a
+34 × 9 m brief that is nearly 4:1, and stripes that changed colour between elevation and plan. All
+four are fixed in the filed sheets.
+
+### `pickup-items-01.jpg`
+
+Three pickup items — range-ball bucket, foil-wrapped hot dog, lidded cup — each in four views.
+
+**What it is good for:** the closest style match in the whole folder. Flat cel shading with clean
+outlines, genuinely flat tones, and every silhouette detail that makes an item readable at 60 m
+present — the wire handle, the balls heaped proud of the rim, the foil twist, the mustard zig-zag,
+the straw. The hot dog's REAR is a true end-on view of the sausage in its bun, which is the first
+time any sheet in this folder has drawn two genuinely different elevations of a long object.
+
+#### Known deviations from §8.5a
+
+- **Cross-object scale is still wrong, by roughly a quarter.** The block asked for a 1.00 m scale
+  bar and got one on rows 1 and 3 — but the bucket is drawn filling it at 1.00 m when it is 0.80 m,
+  the cup likewise at 1.00 m when it is 0.90 m, and the hot dog reads about 26% longer than the cup
+  is tall when the two are both 0.90 m. Row 2 has no bar at all. This is the same *per-cell scaling*
+  deviation `prop-silhouettes-01.jpg` recorded, surviving a prompt written specifically against it.
+  **Take proportion within an object; take no dimension between objects.** The real numbers are in
+  the Stage D plan's Task 5 and the modelling brief.
+- **The hot dog's FRONT is still its long profile**, not the end-on view asked for. Only REAR
+  differs. Half the fix took.
+
+### `pickup-pedestal-01.jpg`
+
+The glow cylinder in CHARGED / TAKEN / RECHARGING, side elevation, on one ground line.
+
+**What it is good for:** the sheet's only real job, done. **RECHARGING reads as present and empty at
+the same time** — a faint outline with no item and a thin ground ring — which is the state that
+makes a sixty-second global cooldown learnable rather than arbitrary. The item is now correct: a
+green truncated cone with a wire handle and white balls heaped above the rim, matching
+`pickup-items-01.jpg`. Dimensions annotated and internally consistent: the bucket is drawn at
+roughly a third of the cylinder's height, which is what 0.80 m against 2.6 m should look like.
+
+#### Known deviations from §8.5b
+
+- The glow is closer to a soft gradient than the flat banded colour asked for. Harmless as
+  reference; the renderer's cylinder is a `MeshBasicMaterial` at fixed opacity and does not attempt
+  this.
+
+### `food-cart-01.jpg`
+
+The refreshment cart in four views, with plan dimensions annotated.
+
+**What it is good for:** the view set, which is what round one could not produce. FRONT is narrow at
+1.40 m, SIDE is wide at 2.60 m, REAR is its own narrow view showing the cup rack, and TOP-DOWN is a
+real plan. Stripe colour holds across all four panels. All six named parts appear. The wheels read
+as cart wheels rather than the off-road tyres round one drew.
+
+#### Known deviations from §8.5c
+
+- **A stray second drawing sits inside the REAR cell** — a small duplicate side view crammed at its
+  lower right, unlabelled and at a different scale. Ignore it; it is not a fifth view.
+- **The canopy has a scalloped valance along its lower edge.** Fabric, not faceted geometry. Model
+  the canopy as a flat plate; the scallop is not affordable and is not in the brief.
+
+### `clubhouse-exterior-01.jpg`
+
+The clubhouse in four views at 34 × 20 × 9 m, with dimensions annotated on every panel.
+
+**What it is good for:** **the best TOP-DOWN in this folder.** A true roof plan — hip planes, ridge,
+cupola, chimney, verandah outline and entrance steps — where every previous sheet's plan view
+carried enough residual perspective to be unusable as a footprint. The proportion problem from round
+one is fixed: the front elevation now reads as a long low pavilion at roughly 3:1 rather than a tall
+farmhouse, and the verandah runs the full width, which is what makes the building read as a
+clubhouse from 100 m on the ground.
+
+#### Known deviations from §8.5d
+
+- **Windows have mullions and divided panes**, against a block asking for flat inset rectangles with
+  neither. The upper clerestory is drawn as a ribbon of many small divisions. **Simplify in Blender**
+  — this is the single largest triangle cost on the sheet and the asset has a 2,500 budget.
+- **The building resolved as single-storey with a clerestory band**, not the two storeys the brief
+  described. It is arguably the better answer at 3.8:1 and is kept.
+- Ground lines are shared between FRONT and SIDE but REAR sits on its own. No dimension crosses that
+  boundary.
+
+### `tee-sign-01.jpg`
+
+The tee sign in four views plus a square-on BOARD FACE panel.
+
+**What it is good for:** clean, with the terrain slab that ruined round one gone entirely. The 15°
+board tilt is clearly readable in SIDE, all four parts are named, and the BOARD FACE panel is
+square-on with 0.55 × 0.40 m annotated — which is the only panel that gives the face's true aspect
+ratio for the runtime `CanvasTexture`.
+
+#### Known deviations from §8.5e
+
+- **TOP-DOWN is labelled `ONLY`.** The block reads "shows ONLY the top edge of the signboard", and
+  the model lettered the word. This is the *label a prompt word* failure from `cart-turnaround-01`
+  recurring in a new form — there, it lettered a grid position; here, an emphasis word. The panel
+  itself is correct.
+- **The `BOARD FACE` header is printed twice**, once over the empty upper-right cell and once over
+  the panel it belongs to.
+- FRONT and REAR sit on different ground lines, and REAR draws the board noticeably wider than FRONT
+  does. Proportion within a panel only.
 
 ---
 

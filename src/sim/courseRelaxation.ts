@@ -8,6 +8,13 @@
  *
  * Deterministic by construction: no RNG, and a fixed iteration count rather than a convergence
  * threshold, so floating-point order-of-operations differences cannot change how many passes run.
+ *
+ * **Not on the shipped course's path since 12 September 2026.** The eighteen holes are traced
+ * from a plat map (`authoredCourse.ts`) and placed from authored offsets (`authoredLayout.ts`);
+ * `buildCourseWorld` calls those. This solver and its relaxation stay because generating a
+ * *different* course from a seed is still something this project may want, and because deleting a
+ * working solver to save bytes is not a trade -- but nothing the player drives on comes through
+ * here. See `docs/superpowers/specs/2026-09-12-authored-course-routing-design.md`.
  */
 
 import type { Vec2 } from "./mapGeometry";

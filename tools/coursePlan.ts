@@ -15,8 +15,9 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { generateCourse } from "../src/sim/course";
-import { CLUBHOUSE_APRON_M, inspectLayout, solveCourseLayout } from "../src/sim/courseLayout";
+import { authoredCourse } from "../src/sim/authoredCourse";
+import { authoredCourseLayout } from "../src/sim/authoredLayout";
+import { CLUBHOUSE_APRON_M, inspectLayout } from "../src/sim/courseLayout";
 import type { CourseLayout, LayoutHole } from "../src/sim/courseLayout";
 
 const PLOT_PX = 1000;
@@ -59,14 +60,15 @@ function main(): void {
   const seed = parseArg("seed", 2026);
   const out = parseString("out", "docs/course/plans/course.svg");
 
-  const course = generateCourse(seed, 18);
+  const course = authoredCourse(seed);
   const holes: LayoutHole[] = course.holes.map((h) => ({
     index: h.index,
     tee: h.tee,
     cup: h.cup,
     control: h.control,
   }));
-  const layout = solveCourseLayout(holes);
+  // The shipped routing, not the solver's: this drawing is the thing reviewed against the plat.
+  const layout = authoredCourseLayout();
   const report = inspectLayout(holes, layout);
 
   let minX = Infinity;
@@ -91,7 +93,10 @@ function main(): void {
   const scale = PLOT_PX / (maxX - minX);
   const height = Math.round((maxZ - minZ) * scale);
   const px = (x: number): number => (x - minX) * scale;
-  const py = (z: number): number => (z - minZ) * scale;
+  // North up, east right -- the orientation a plat is drawn in, because comparing this drawing
+  // against one is the only job it has. SVG's y grows downward, so +z (north) has to be flipped
+  // here; mapping it straight through drew the course upside down against its own source.
+  const py = (z: number): number => (maxZ - z) * scale;
 
   const parts: string[] = [`<rect width="${PLOT_PX}" height="${height}" fill="#12301c"/>`];
 

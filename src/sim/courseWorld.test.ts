@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCourseWorld } from "./courseWorld";
-import { generateCourse } from "./course";
+import { authoredCourse } from "./authoredCourse";
 import { toCourseFrame } from "./courseGeometry";
 import { createSpawnSet } from "./spawn";
 import { SurfaceId } from "./surfaces";
@@ -8,7 +8,7 @@ import { SurfaceId } from "./surfaces";
 /** The seed main.ts ships, so this exercises the course the player is actually handed. */
 const COURSE_SEED = 2026;
 
-const world = buildCourseWorld(generateCourse(COURSE_SEED, 18), COURSE_SEED);
+const world = buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED);
 
 /** A placed hole's cup, in the course frame. */
 function cupOf(index: number): { x: number; z: number } {
@@ -68,7 +68,7 @@ describe("buildCourseWorld", () => {
   });
 
   it("is deterministic: the same seed builds the same course", () => {
-    const again = buildCourseWorld(generateCourse(COURSE_SEED, 18), COURSE_SEED);
+    const again = buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED);
     expect(again.holes.map((h) => h.placement)).toEqual(world.holes.map((h) => h.placement));
     const cup = cupOf(7);
     expect(again.terrain.heightAt(cup.x, cup.z)).toBe(world.terrain.heightAt(cup.x, cup.z));

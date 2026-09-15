@@ -736,6 +736,322 @@ Do NOT include: a golf ball, a ground plane, an environment, a sky, a horizon, g
 club, a golfer, a decorative border, or any 3/4 or perspective "hero" view.
 ```
 
+### 8.5 The five sheets run for Stage D and Stage E
+
+> **All five have been run** (12 September 2026) and are filed in `docs/concept/reference/` with
+> their deviations. Each ran **twice**; only the second generation is filed, per that folder's rule
+> that iterations and rejects stay out of the repo. The blocks below are the second-generation ones.
+
+**These blocks are self-contained.** §8.1–§8.4 split the art-style spec, the layout spec and the
+subject across separate pieces the operator assembled by hand, and that turned out to be three
+copy-pastes per sheet through a web UI. Each block here carries style, subject, layout and bans in
+one piece of text. Do not re-split them.
+
+**Two failure modes were new in round one** and every block below is written against them, on top of
+§8.1's three amendments:
+
+1. **`FRONT`, `SIDE` and `REAR` come back as the same elevation.** A long object's profile drawn
+   three times, so its width is documented nowhere. State which axis each view looks along, give the
+   two dimensions, and say outright that if FRONT and SIDE share a silhouette the view set is wrong.
+2. **An environment appears despite an explicit ban.** "Do NOT include ... a ground plane" was not
+   enough; the tee sign came back on a grass-sand-water terrain slab that filled its plan view. Ban
+   ground *by name* — grass, turf, sand, water, soil, slab, plinth — and say that a mostly-empty plan
+   panel is correct.
+
+A third, older one recurred in a new form and is worth knowing rather than fixing: the model
+**letters emphasis words out of the prompt**, exactly as it lettered grid positions in
+`cart-turnaround-01`. `tee-sign-01.jpg`'s plan panel is captioned `ONLY`, from the phrase "shows ONLY
+the top edge". Harmless, and not worth contorting the prompt to avoid.
+
+Output goes to `docs/concept/reference/` at 2048 px / JPEG q88 with a row and a deviation list added
+to that folder's index. The web UI is free; the API path needs billing (§8.4).
+
+#### 8.5a `pickup-items-01.jpg` — the three pickup items
+
+Consumer: the `pickups` collection in `art/clubhouse-and-cart.blend` → `src/entities/graphs/pickups.json`.
+Four slots, sharing no names with the cart's eight, the rider's four or the props' five:
+`pickup_shell` · `pickup_fill` · `pickup_accent` · `pickup_metal`.
+
+```
+Produce an orthographic turnaround reference sheet for 3D modelling. This is a technical
+modelling reference, NOT an illustration and NOT a scene.
+
+ART STYLE: low-poly stylized 3D concept art for a casual arcade golf game — flat-shaded,
+faceted low-polygon geometry throughout. This is not a photograph and not photorealistic.
+Bold clean black outlines on major silhouettes. Saturated flat cartoon colour palette. No
+photographic textures, no realistic lighting gradients, no soft shadows, no depth-of-field
+blur, no lens flare — flat or two-tone cel shading only.
+
+SUBJECT: three separate collectible pickup objects, drawn as three rows on one sheet.
+  Row 1 — a GOLF DRIVING-RANGE BALL BUCKET: a green truncated cone, wider at the rim than at
+  the base, with a thin grey wire carry handle, and white golf balls heaped above the rim.
+  Row 2 — a HOT DOG in a split bun with a zig-zag mustard stripe, one end wrapped in a twist
+  of crumpled silver foil.
+  Row 3 — a TALL LIDDED DRINKS CUP with a domed lid and a yellow straw entering it at an
+  angle, tapering slightly toward the base.
+
+SCALE — THIS IS THE REQUIREMENT MOST LIKELY TO BE GOT WRONG, AND IT WAS GOT WRONG LAST TIME.
+Draw a vertical black scale bar exactly 1.00 m tall at the far left edge of the sheet,
+labelled "1.00 m", and size every object against it. The bucket is 0.80 m tall. The hot dog
+is 0.90 m long. The cup is 0.90 m tall. So the hot dog lying on its side is EXACTLY AS LONG
+as the cup is tall, and both are slightly taller than the bucket. Do NOT scale each object to
+fill its own row.
+
+LAYOUT: one image, plain flat neutral mid-grey background, three rows. Each row is one object
+drawn in four views, left to right. Label the four views with exactly these words and no
+others: FRONT, SIDE, REAR, TOP-DOWN. Do not label a panel by its position on the page.
+
+FRONT AND SIDE MUST NOT LOOK THE SAME. FRONT and REAR look along the object's long axis; SIDE
+looks across it. For the hot dog specifically: FRONT and REAR are the SHORT ROUND ENDS of the
+sausage seen end-on, roughly 0.26 m wide, and only SIDE shows the long 0.90 m profile. If
+three panels in a row share a silhouette, the view set is wrong.
+
+TOP-DOWN means the camera is directly above the object looking straight down at its plan
+footprint. Do not draw the object lying on its side and do not rotate it.
+
+Every view is TRUE ORTHOGRAPHIC PROJECTION — parallel projection, absolutely no perspective,
+no foreshortening, no vanishing points, no camera tilt. Draw one shared horizontal ground line
+across each row.
+
+DO NOT DRAW: any ground, terrain, grass, sand, water, landscape or base slab. No environment,
+no sky, no horizon, no characters, no motion effects, no decorative border, and no 3/4 or
+perspective "hero" view. The background is flat grey and nothing else.
+
+COLOUR: three or four flat tones per object, clearly separable, and IDENTICAL IN ALL FOUR OF
+THAT OBJECT'S VIEWS — a shell colour, a fill or contents colour, one bright accent, and flat
+grey for metal. No gradients.
+```
+
+#### 8.5b `pickup-pedestal-01.jpg` — the glow cylinder's three states
+
+Consumer: `src/render/coursePickups.ts`. **A state sheet, not a turnaround** — the cylinder is
+radially symmetric, so four orthographic views would be three copies of one picture. The cylinder is
+2.6 m tall and 3.0 m across against a 3.0 m *collection radius*, so the visual is deliberately half
+the grab. The `RECHARGING` panel is the sheet's whole reason for existing: a taken pickup keeps its
+cylinder and loses its item, which is what makes a 60-second global cooldown learnable.
+
+```
+Produce a THREE-STATE reference sheet for 3D modelling and VFX. This is a technical
+reference, NOT an illustration and NOT a scene.
+
+ART STYLE: low-poly stylized 3D concept art for a casual arcade golf game — flat-shaded,
+faceted low-polygon geometry, bold clean black outlines on solid forms, saturated flat cartoon
+colour. Not a photograph, not photorealistic. No photographic textures, no soft photographic
+bloom, no depth-of-field blur, no lens flare.
+
+SUBJECT: a collectible pickup pedestal for an arcade golf game — a translucent glowing vertical
+cylinder standing on the ground with an item floating and rotating inside it.
+
+THE ITEM, described exactly, because it came back wrong last time: it is a GOLF DRIVING-RANGE
+BALL BUCKET — a GREEN truncated cone, wider at the rim than at the base, with a thin grey wire
+carry handle arching over it, and WHITE GOLF BALLS heaped above the rim so they are clearly
+visible. It is NOT a blue household pail, NOT a child's sand bucket, and NOT empty. Golf balls
+must be visible in the CHARGED panel.
+
+LAYOUT: one image, plain flat neutral mid-grey background, three panels side by side, all three
+in TRUE ORTHOGRAPHIC SIDE ELEVATION at one single scale, sharing ONE unbroken horizontal ground
+line running across all three. Label the panels with exactly these words and no others:
+CHARGED, TAKEN, RECHARGING. Do not label a panel by its position on the page.
+
+CHARGED: the cylinder glows strongly in warm gold, brightest at the base and fading toward the
+open top. The green ball bucket floats at the cylinder's lower third. A soft ring of light sits
+on the ground at the cylinder's foot.
+
+TAKEN: the instant of collection. The item is gone. The cylinder flares white and its walls
+break upward into a few large flat polygon shards. The ground ring is at its brightest.
+
+RECHARGING: the cylinder is still standing but nearly extinguished — a faint grey-gold outline
+at roughly fifteen percent of CHARGED's brightness, no item inside, only a thin ground ring.
+This state must be clearly VISIBLE and clearly EMPTY at the same time.
+
+SCALE: the cylinder is 2.6 m tall and 3.0 m across in every panel. The floating bucket is
+0.80 m tall — roughly one third of the cylinder's height. Annotate those three dimensions with
+thin black leader lines.
+
+RENDERING: the glow is FLAT BANDED COLOUR, not a soft photographic bloom. Uniform ambient
+lighting, no cast shadows, no reflections, no depth of field.
+
+DO NOT DRAW: any ground, terrain, grass, sand, water or landscape — the ground line is a thin
+black line and nothing more. No environment, no sky, no horizon, no golf cart, no characters,
+no decorative border, and no 3/4 or perspective view.
+```
+
+#### 8.5c `food-cart-01.jpg` — the refreshment cart
+
+Consumer: the `props` collection. 300–450 tri, reusing the five `prop_` slots. Whether it bears a
+collider is still open and the sheet does not depend on it — either route builds from the same
+primitives.
+
+```
+Produce an orthographic turnaround reference sheet for 3D modelling. This is a technical
+modelling reference, NOT an illustration and NOT a scene.
+
+ART STYLE: low-poly stylized 3D concept art for a casual arcade golf game — flat-shaded,
+faceted low-polygon geometry throughout, bold clean black outlines on major silhouettes,
+saturated flat cartoon colour palette. Not a photograph, not photorealistic. No photographic
+textures, no realistic lighting gradients, no soft shadows, no depth-of-field blur.
+
+SUBJECT: a golf-course refreshment cart — a small open four-wheeled beverage cart with a
+flat-topped fabric canopy in bold vertical stripes, a serving counter along one LONG side, a
+chrome cooler box mounted under the counter, a wire rack of cups at one end, and a short timber
+trim rail around the deck. No driver, no characters, nothing on the counter. The wheels are
+small and plain like a golf cart's, not large knobby off-road tyres.
+
+Name every part with a thin black leader line: the STRIPED CANOPY and its four CORNER POSTS,
+the SERVING COUNTER, the COOLER BOX, the CUP RACK, the TIMBER TRIM RAIL, the WHEELS.
+
+LAYOUT: one image, plain flat neutral mid-grey background, a 2x2 grid of four views of the SAME
+object at the SAME scale. Label the four panels with exactly these words and no others: FRONT,
+SIDE, REAR, TOP-DOWN. Do not label a panel by its position on the page.
+
+THE FOUR VIEWS MUST BE FOUR DIFFERENT VIEWS. This is the requirement that failed last time —
+three panels came back as the same side elevation. The cart is 2.60 m long and 1.40 m wide, so:
+  FRONT looks along the long axis at the narrow 1.40 m end. It is a TALL NARROW panel. You see
+    the front face of the canopy, two corner posts, the front bumper and two wheels.
+  REAR looks along the long axis at the opposite narrow 1.40 m end. Also tall and narrow, and
+    it shows the cup rack.
+  SIDE looks across the cart at the wide 2.60 m flank. It is a WIDE panel, and it is the ONLY
+    panel that shows the serving counter and the cooler box in full.
+If FRONT and SIDE have the same proportions, the view set is wrong.
+
+TOP-DOWN means the camera is directly above the cart looking straight down at the canopy and
+the deck outline. Do not draw the cart lying on its side and do not rotate it.
+
+Every view is TRUE ORTHOGRAPHIC PROJECTION — parallel projection, absolutely no perspective, no
+foreshortening, no vanishing points, no camera tilt. Draw a single shared horizontal ground line
+across FRONT, SIDE and REAR so heights can be measured across panels.
+
+ANNOTATE exactly three dimensions and no others: 2.60 m and 1.40 m on TOP-DOWN, and 2.10 m as a
+vertical height on SIDE. Do not put a height dimension on the plan view.
+
+COLOUR: flat two-tone only, and IDENTICAL IN ALL FOUR PANELS. The canopy stripes are one
+saturated colour alternating with off-white — the SAME colour in TOP-DOWN as in the elevations.
+Bodywork is a second flat colour. Metal is a single flat grey. Timber is one flat mid-brown. No
+gradients, no fabric texture, no folds or drape in the canopy — treat it as flat faceted
+geometry.
+
+DO NOT DRAW: any ground, terrain, grass, landscape or base slab. No environment, no sky, no
+horizon, no characters, no decorative border, and no 3/4 or perspective "hero" view.
+```
+
+#### 8.5d `clubhouse-exterior-01.jpg` — the clubhouse
+
+Consumer: a new `exterior` collection → `public/models/clubhouse-exterior.glb`. **The only asset in
+§8.5 that ships as an authored mesh**, and therefore the only one on §6's route — optimise with
+`--compress quantize`, never the default `meshopt`. 1,500–2,500 tri, under 140 KB against a 500 KB
+folder cap. The existing 16 KB `clubhouse.glb` is an *interior* authored as the menu backdrop and
+stays exactly as it is.
+
+```
+Produce an orthographic elevation reference sheet for 3D modelling. This is a technical
+modelling reference, NOT an illustration and NOT a scene.
+
+ART STYLE: low-poly stylized 3D concept art for a casual arcade golf game — flat-shaded,
+faceted low-polygon geometry, large flat planes, bold clean black outlines on major
+silhouettes, saturated flat cartoon colour. Not a photograph, not photorealistic. No
+photographic textures, no realistic lighting gradients, no soft shadows.
+
+SUBJECT: the exterior of a golf clubhouse — a LONG, LOW, WIDE single-mass building with a
+shallow pitched gable roof, a deep covered verandah with square posts running the full length
+of the course-facing side, tall shuttered windows along the ground floor, a low run of windows
+above, a central entrance with a short flight of steps, one chimney, and a simple cupola with a
+weathervane at the ridge. Building only: no landscaping, no flagpole, no carts, no people, no
+signage text anywhere.
+
+PROPORTION — THIS IS WHAT WENT WRONG LAST TIME. The building is 34 m wide, 20 m deep and 9 m
+from ground to roof ridge. In the FRONT view it is therefore NEARLY FOUR TIMES AS WIDE AS IT IS
+TALL — a long low pavilion, a clubhouse, NOT a tall narrow two-storey farmhouse. Draw the FRONT
+panel as a wide horizontal band. The verandah roof line should run almost the entire width. If
+the front elevation looks like a house, it is wrong.
+
+Name every part with a thin black leader line: the PITCHED ROOF, the CUPOLA, the VERANDAH and
+its POSTS, the ENTRANCE STEPS, the GROUND-FLOOR WINDOWS, the UPPER WINDOWS, the CHIMNEY.
+
+LAYOUT: one image, plain flat neutral mid-grey background, a 2x2 grid of four views of the SAME
+building at the SAME scale. Label the four panels with exactly these words and no others:
+FRONT, SIDE, REAR, TOP-DOWN. Do not label a panel by its position on the page.
+
+FRONT and REAR look at the 34 m wide elevations and are WIDE panels. SIDE looks at the 20 m
+deep elevation and is a NARROWER panel — but it is still wider than it is tall. TOP-DOWN means
+the camera is directly above the building looking straight down at the roof plan: ridge lines,
+cupola, chimney and the verandah outline.
+
+Every view is TRUE ORTHOGRAPHIC PROJECTION — parallel projection, absolutely no perspective, no
+foreshortening, no vanishing points, no camera tilt.
+
+THE ONE HARD REQUIREMENT: all four views are the same building at one single scale. Draw a
+single shared horizontal ground line running unbroken across FRONT, SIDE and REAR so heights can
+be measured across panels. Do not scale any panel to fill its own cell.
+
+GEOMETRY BUDGET, which shapes what you draw: roof planes are large flat facets. Windows are
+FLAT INSET RECTANGLES with no mullions, no divided panes and no glazing reflections. Wall
+cladding is flat colour with at most one simple horizontal band — no individual weatherboards,
+no brick courses, and no roof shingles drawn one by one.
+
+DO NOT DRAW: any ground, terrain, grass, landscape or base slab — the ground line is a thin
+black line and nothing more. No environment, no sky, no horizon, no trees, no characters, no
+decorative border, and no 3/4 or perspective "hero" view.
+```
+
+#### 8.5e `tee-sign-01.jpg` — the tee sign frame
+
+Consumer: the `props` collection, 100–150 tri, origin at ground contact. **The sheet is about the
+frame, not the face**: the board face is a runtime `CanvasTexture` drawn from the live `HoleSpec`
+— hole number, `spec.par`, yardage off the spline — so it cannot drift from the course the way a
+committed PNG would. That decision is why there is no texture asset class in §1. Expect the
+placeholder lettering on the sheet to be unusable and to be replaced at runtime.
+
+```
+Produce an orthographic turnaround reference sheet for 3D modelling. This is a technical
+modelling reference, NOT an illustration and NOT a scene.
+
+ART STYLE: low-poly stylized 3D concept art for a casual arcade golf game — flat-shaded,
+faceted low-polygon geometry, bold clean black outlines, saturated flat cartoon colour. Not a
+photograph, not photorealistic. No photographic textures, no realistic lighting gradients, no
+soft shadows, no depth-of-field blur.
+
+SUBJECT: a golf course tee information sign — a single squared timber post set in the ground,
+carrying one rectangular signboard tilted about 15 degrees back from vertical, mounted on two
+short metal brackets, with a small turned finial on top of the post. Low and modest, roughly
+knee to waist height, not a large billboard.
+
+The signboard's front face must be a CLEAN FLAT RECTANGLE. Put only simple placeholder text on
+it — a large numeral, a short word, a short number — as flat two-tone lettering. Do not add a
+map, a hole diagram, a logo, a border pattern or any decoration to the board face.
+
+Name every part with a thin black leader line: the TIMBER POST, the SIGNBOARD, the two METAL
+BRACKETS, the FINIAL.
+
+NO ENVIRONMENT — THIS IS WHAT WENT WRONG LAST TIME. Do not draw ground, grass, turf, sand,
+water, soil, a terrain slab, a base plinth or any landscape whatsoever, in ANY panel. The
+background is flat neutral mid-grey everywhere. The only horizontal element permitted anywhere
+on the sheet is a single thin black reference line, one pixel wide, marking where the post
+meets the ground.
+
+LAYOUT: one image, plain flat neutral mid-grey background, a 2x2 grid of four views of the SAME
+object at the SAME scale, plus a fifth panel to the right of the grid. Label the panels with
+exactly these words and no others: FRONT, SIDE, REAR, TOP-DOWN, BOARD FACE. Do not label a
+panel by its position on the page.
+
+TOP-DOWN means the camera is directly above the sign looking straight down. It shows ONLY the
+top edge of the signboard, the post cap and the finial, drawn small on empty grey background.
+It is mostly empty space, and that is correct — do not fill it with terrain or with anything
+else. Do not draw the sign lying on its side and do not rotate it.
+
+BOARD FACE: the signboard alone, seen square-on in true orthographic front elevation, at the
+same scale as the other four panels, on plain grey.
+
+Every view is TRUE ORTHOGRAPHIC PROJECTION — parallel projection, absolutely no perspective, no
+foreshortening, no vanishing points, no camera tilt. Draw one single shared horizontal black
+reference line across FRONT, SIDE and REAR so heights can be measured across panels.
+
+SCALE: the sign is 1.25 m from the ground to the top of the signboard, and the board itself is
+0.55 m wide by 0.40 m tall.
+
+DO NOT DRAW: an environment, a sky, a horizon, trees, characters, motion effects, a decorative
+border, or any 3/4 or perspective "hero" view.
+```
+
 ---
 
 ## 9. Budgets and the gate

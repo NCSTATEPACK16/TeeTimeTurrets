@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COURSE_BRIEFS, COVER_CORRIDOR, briefForHole } from "./briefs";
 import type { HoleBrief } from "./briefs";
 import {
-  CORRIDOR_BAND,
+  DRAFT_BAND,
   EDGE_MARGIN,
   FIELD_FOR_PAR,
   biomeForIndex,
@@ -57,28 +57,60 @@ describe("the course bible as data", () => {
     expect(mismatched).toEqual([]);
   });
 
-  it("names exactly holes 7, 13 and 18 as signature", () => {
-    // Section 4 design rule 4. Three holes carry the round's memory and absorb the expensive
-    // features so the other fifteen can be honest and cheap. A fourth is a budget problem.
-    expect(COURSE_BRIEFS.filter((b) => b.signature).map((b) => b.number)).toEqual([7, 13, 18]);
+  it("names exactly holes 4, 13 and 18 as signature", () => {
+    // Section 4 design rule 4, and the rule is unchanged: three holes carry the round's memory and
+    // absorb the expensive features so the other fifteen can be honest and cheap. A fourth is a
+    // budget problem.
+    //
+    // *Which* three moved on 13 September 2026, when the holes became a tracing of a real routing.
+    // Hole 7 was the cape -- an archetype defined by the water inside its dogleg -- and the plat
+    // puts no water on hole 7 at all; it is one of five parallel corridors up the eastern boundary,
+    // which is the least memorable hole shape on the course rather than the most. The cape moved to
+    // 13, which really does bend around the large pond, and the vacancy went to 4, the short hole
+    // played over the north-east pond. 18 never moved.
+    expect(COURSE_BRIEFS.filter((b) => b.signature).map((b) => b.number)).toEqual([4, 13, 18]);
   });
 
-  it("gives no two adjacent holes the same dogleg direction", () => {
-    // Section 4 design rule 1, and the reason it exists: the generator flips a coin per hole
-    // (`random() < 0.5 ? -1 : 1` in draftHole), so a run of four same-way doglegs has probability
-    // 1/16 in any given window and is likely to appear at least once across 18 holes.
-    //
-    // `none` is exempt -- most holes are straight, and two straight holes in a row is not the
-    // repetition this rule is about.
-    const clashes: string[] = [];
+  it("never bends three holes in a row the same way", () => {
+    /**
+     * Section 4 design rule 1, loosened from "no two adjacent" to "no three in a row" on 13
+     * September 2026, and the reason the rule exists is the reason it had to loosen.
+     *
+     * It exists because the generator flips a coin per hole (`random() < 0.5 ? -1 : 1` in
+     * `draftHole`), so **a run of four same-way doglegs** has probability 1/16 in any given window
+     * and is likely to appear at least once across 18 holes. That is a statement about runs, not
+     * about pairs -- the pairwise form was simply stricter than the argument for it.
+     *
+     * The stricter form now asserts something false. These briefs describe a real traced routing
+     * (`authoredCourse.ts`), and that routing bends the same way twice running three times over:
+     * 11 and 12 both right, 13 and 14 both left, 15 and 16 both right. A real course is under no
+     * obligation to alternate, and a rule that calls the source material a defect is a rule against
+     * the design rather than for it.
+     *
+     * `none` is exempt -- most holes are straight, and straight holes in a row are not the
+     * repetition this is about.
+     */
+    const runs: string[] = [];
+    for (let i = 2; i < COURSE_BRIEFS.length; i += 1) {
+      const a = COURSE_BRIEFS[i - 2]!;
+      const b = COURSE_BRIEFS[i - 1]!;
+      const c = COURSE_BRIEFS[i]!;
+      if (c.dogleg.dir !== "none" && c.dogleg.dir === b.dogleg.dir && b.dogleg.dir === a.dogleg.dir) {
+        runs.push(`holes ${a.number}, ${b.number} and ${c.number} are all ${c.dogleg.dir}`);
+      }
+    }
+    expect(runs).toEqual([]);
+
+    // Guard the guard: a loosened rule that no longer fires on anything is not a rule. The routing
+    // has adjacent same-way pairs, so the *pairwise* count must be non-zero -- if it ever reaches
+    // zero the stricter form is available again and this one is no longer earning its place.
+    let pairs = 0;
     for (let i = 1; i < COURSE_BRIEFS.length; i += 1) {
       const prev = COURSE_BRIEFS[i - 1]!;
       const here = COURSE_BRIEFS[i]!;
-      if (here.dogleg.dir !== "none" && here.dogleg.dir === prev.dogleg.dir) {
-        clashes.push(`holes ${prev.number} and ${here.number} are both ${here.dogleg.dir}`);
-      }
+      if (here.dogleg.dir !== "none" && here.dogleg.dir === prev.dogleg.dir) pairs += 1;
     }
-    expect(clashes).toEqual([]);
+    expect(pairs).toBeGreaterThan(0);
   });
 
   it("gives a severity of zero exactly to the straight holes", () => {
@@ -111,8 +143,9 @@ describe("the course bible as data", () => {
   });
 
   it("keeps `moderate` on the corridor half-width the game currently ships", () => {
-    // The reviewable property when Tier 2 lands: the eleven moderate holes must come out
-    // byte-identical to today, so a change touching all 18 can be read one hole at a time.
+    // The reviewable property when Tier 2 lands: the moderate holes must come out byte-identical
+    // to today, so a change touching all 18 can be read one hole at a time. (There were eleven of
+    // them until the briefs were re-authored against the real card; the count is not the point.)
     // HALF_WIDTH is 15 in terrain.ts. Deliberately restated as a literal here -- importing it
     // would make this assertion true by construction and it would stop checking anything.
     expect(COVER_CORRIDOR.moderate.start).toBe(15);
@@ -149,7 +182,7 @@ describe("the course bible as data", () => {
     // first writing. Assert the arithmetic produced numbers before trusting what it says.
     expect(COURSE_BRIEFS.every((b) => Number.isFinite(longestFor(b)))).toBe(true);
 
-    const tooTight = COURSE_BRIEFS.filter((b) => longestFor(b) < CORRIDOR_BAND[b.parTarget]!.min)
+    const tooTight = COURSE_BRIEFS.filter((b) => longestFor(b) < DRAFT_BAND[b.parTarget]!.min)
       .map((b) => `hole ${b.number} (par ${b.parTarget}, ${b.cover})`);
 
     expect(tooTight).toEqual([]);
