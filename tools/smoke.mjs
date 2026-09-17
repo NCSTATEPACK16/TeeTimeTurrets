@@ -237,6 +237,13 @@ const read = () =>
         return best;
       })(),
       nameplates: document.querySelectorAll("#nameplates .nameplate").length,
+      // Flat distance to the bot the plates are about. The nameplate rules below are distance
+      // rules, so asserting them without it is asserting a symptom.
+      botDistance: (() => {
+        const bot = sim.bots?.[0];
+        if (!bot) return null;
+        return Math.hypot(bot.position.x - sim.cart.position.x, bot.position.z - sim.cart.position.z);
+      })(),
       // These three can only be produced by the per-frame draw path (Nameplates.setPlate), never
       // by the constructor alone: a plate is built `hidden = true` with no transform and a
       // 100% fill, so a element-count check on its own cannot tell "wired up" from "built and
@@ -397,13 +404,55 @@ check("the ammo card matches the sim", shot.hudAmmo === String(shot.ammo), `${sh
 console.log("=== NAMEPLATES ===");
 // H13's data source is remote cart positions (docs/UI-SPEC.md) -- the player's own cart is never
 // plated -- so with the default single bot there is exactly one plate, not one per cart.
+const atRange = await read();
+check("one nameplate per remote cart", atRange.nameplates === 1, `${atRange.nameplates}`);
+
+// `COARSE_RANGE_M` from src/ui/plateState.ts: past it a plate reports no distance at all.
+const COARSE_RANGE_M = 300;
+
+// **This section used to assert the plated state immediately, and the hole outgrew it.** The bot
+// spawns at the cup, and holes are authored at real White-tee yardages now rather than the
+// generator's two-thirds -- so the bot starts about 460 m away instead of just inside 300 m. Both
+// halves of the distance rule are worth having, so both are checked: blank out here, plated once
+// it has closed.
+check(
+  "the bot starts beyond coarse range, or the two checks below are the same check",
+  atRange.botDistance !== null && atRange.botDistance > COARSE_RANGE_M,
+  `${atRange.botDistance?.toFixed(0)} m`,
+);
+check(
+  "a plate past coarse range is hidden and carries no distance",
+  atRange.firstPlateHidden === true && atRange.firstPlateDistance === "",
+  `hidden=${atRange.firstPlateHidden} distance="${atRange.firstPlateDistance}"`,
+);
+
+// Now let it close. The bot drives at the player at any distance (src/sim/bot.ts) and the player
+// is stationary, so this is the bot's doing and not the harness's.
+//
+// Waited on the plate rather than on a distance, and the difference is not pedantry: at 97 m the
+// bot is inside every distance threshold and still off the side of the frame, its plate parked at
+// x=1257 of a 1280-wide viewport. "Close enough" is not the rule the plate follows -- `onScreen`
+// is -- so the wait asks the question the assertions below ask. Bounded, because a bot that never
+// arrives is exactly the regression this exists to catch, and it must fail rather than hang.
+const onScreen = await page
+  .waitForFunction(() => document.querySelector("#nameplates .nameplate")?.hidden === false, {
+    timeout: 60000,
+    polling: 250,
+  })
+  .then(() => true)
+  .catch(() => false);
+check("the bot closes until it is on screen, rather than idling on its own tee", onScreen);
+
 const plated = await read();
-check("one nameplate per remote cart", plated.nameplates === 1, `${plated.nameplates}`);
 
 // The count above is satisfied by Nameplates' constructor alone and proves nothing about the
 // per-frame path (main.ts's drawNameplates / RenderScene.projectToScreen / Nameplates.setPlate).
 // These three assert on state only that path can produce.
-check("bot's plate is not hidden while the bot is on screen", plated.firstPlateHidden === false, `${plated.firstPlateHidden}`);
+check(
+  "bot's plate is not hidden while the bot is on screen",
+  plated.firstPlateHidden === false,
+  `hidden=${plated.firstPlateHidden} at ${plated.botDistance?.toFixed(0)} m`,
+);
 
 // The browser's CSSOM normalizes the trailing unitless "0" in translate3d(...) to "0px" when it
 // serializes style.transform back out, so the third component's unit is optional here.
@@ -446,8 +495,8 @@ check("exactly one pin marker", plated.pinMarkers === 1, `${plated.pinMarkers}`)
 // A number and a unit, not a placeholder and not an empty string. The distance is derived from the
 // ball and the cup, so at the tee of a 90 m hole it is a two-digit figure rather than 0.
 check(
-  "the pin marker carries a distance in whole metres",
-  /^\d+ m$/.test(plated.pinMarkerDistance ?? ""),
+  "the pin marker carries a distance in whole yards",
+  /^\d+ yd$/.test(plated.pinMarkerDistance ?? ""),
   `${plated.pinMarkerDistance}`,
 );
 check(
