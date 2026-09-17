@@ -386,8 +386,10 @@ describe("generateHole reads the hole's brief", () => {
   });
 
   it("places water on the holes whose briefs ask for it and none on the others", () => {
-    // Hole 2 is a forced carry; hole 1 is a gentle opener with no water at all.
-    expect(generateHole(4242, 1).water.length).toBeGreaterThan(0);
+    // Hole 4 is the forced carry over the north-east pond; hole 1 is the opener along the road,
+    // with no water at all. Both were different holes before the briefs were re-authored against
+    // the real card -- the carry used to be hole 2.
+    expect(generateHole(4242, 3).water.length).toBeGreaterThan(0);
     expect(generateHole(4242, 0).water).toEqual([]);
   });
 
@@ -400,9 +402,11 @@ describe("generateHole reads the hole's brief", () => {
   });
 
   it("leaves no sand on a hole whose brief places no bunkers", () => {
-    // Hole 2's brief has no bunkers -- under the old noise scatter it had sand anyway.
-    expect(briefForHole(2).hazards.bunkers.count).toBe(0);
-    expect(generateHole(4242, 1).bunkers).toEqual([]);
+    // Hole 12's brief has no bunkers -- under the old noise scatter it had sand anyway. Read the
+    // count back first, so this fails loudly if the brief gains one rather than silently passing
+    // on a hole that no longer makes the point.
+    expect(briefForHole(12).hazards.bunkers.count).toBe(0);
+    expect(generateHole(4242, 11).bunkers).toEqual([]);
   });
 
   it("never puts sand in the woods", () => {
@@ -588,7 +592,7 @@ describe("parForIndex", () => {
   it("follows the course bible's card, front and back", () => {
     // docs/COURSE_PIPELINE.md section 4. Written out per hole rather than looped over the same
     // table the implementation reads -- a loop over that would pass by construction.
-    const card = [4, 3, 4, 5, 4, 3, 4, 4, 5, 4, 5, 4, 3, 4, 4, 3, 4, 5];
+    const card = [5, 4, 4, 3, 4, 3, 4, 5, 4, 3, 4, 4, 4, 5, 4, 4, 3, 5];
     for (let index = 0; index < 18; index++) {
       expect(parForIndex(index)).toBe(card[index]);
     }

@@ -12,7 +12,7 @@ this file holds the ways we have violated them while believing we had not.
 
 ## 1. The recurring one: a test that passes for a reason unrelated to its name
 
-Nine instances in the table, and the turret session added four more that are described in that
+Twelve instances in the table, and the turret session added four more that are described in that
 spec's own header rather than here. This is the defect class this repo produces, and it produces it
 faster than review catches it. In each case the suite was green, the name described the
 right behavior, and the assertion was measuring something else entirely.
@@ -28,12 +28,31 @@ right behavior, and the assertion was measuring something else entirely.
 | 7 | `refuses an empty instance list` | `mergeGraphInstances([])` throws a deliberate error | `expect(...).toThrow(/instance/i)` — satisfied by `TypeError: mergeGraphInstances is not a function`. It went **green against a function that had not been written yet**, in the same run that showed its six siblings red. The word it matched was in the name of the missing function. Fixed by matching the message tightly (`/at least one instance/`). |
 | 8 | `blends two holes together rather than stacking them` | Overlapping ground averages instead of summing | `blended` between `min(own)` and `max(own)` — which a **sum** also satisfies whenever one height is negative and the other positive, which is most points on a field whose noise is centred on zero. It passed against `return sumHeight`. Fixed by asserting the mean exactly: both influences are 1, so the answer is arithmetic, not a range. |
 | 9 | `hangs a skirt on every tile` | Each ground tile drops an apron below its rim | `box.min.y <= lowestSurfaceVertex` — satisfied by **equality**, so a tile with no skirt at all passed. Fixed by counting the vertices that hang exactly `SKIRT_M` below the ground at their own (x, z) and requiring at least one. |
+| 10 | `props.test.ts`'s distance-post placement | The posts stand at the 150, 100 and 50 yard marks | `toBeLessThan(4)` — a **4 m** tolerance (`props.test.ts:89` and `:157`) against a change of **0.16–0.44 m**. Routing `MARKER_DISTANCES_M` through `units.ts` moves 150 yd from a stale `137` to `137.16`, 100 yd from `91` to `91.44`, 50 yd from `46` to `45.72`. The tolerance is 9× to 25× the effect. **A plan and a session brief both predicted a red here that could not happen**, and two sessions went looking for why the fix "didn't take". The 4 m is legitimate — it admits the spline's own sampling — and the defect was the stale constant, not the tolerance. But a tolerance that wide cannot be cited as evidence about a sub-metre change. |
+| 11 | `inspectLayout`'s crossing check | No two fairways cross | The exemption for **consecutive** holes — which are meant to meet at their ends — also forgave two consecutive fairways crossing *anywhere at all*. Four pairs crossed on the first fitted routing and one did so at 65% along hole 6, mid-fairway: a tee shot played across live ground. A check scoped one notch wider than its claim. `authoredLayout.test.ts` now asserts the property actually wanted — corridors may cross only at a green-to-tee handover, on any pair — separately, because `inspectLayout` still cannot see it. |
+| 12 | `bot.test.ts`'s "idles outside its engagement range", with `world.cart.test.ts`'s "stays put while the player is out of its engagement range" | A bot does not pathfind across the course | **Both were green while arena combat did not happen at all.** They asserted the behaviour that had become the bug: `computeBotIntent` returned a zero intent beyond 40 m, and the authored routing deals carts one to a hole with the closest two tees on the course 74 m apart, so every bot stood on its own tee for the whole match. Neither test was wrong when written; both were unit assertions against a hand-placed pair of carts, and neither could see the distances the *course* deals. See the note below. |
 
 **8 and 9 were found by mutating the finished module, not by a red run** — both were written after
 the code they cover, which is the case the red-first rule cannot reach. A comparison operator
 chosen one notch looser than the claim (`toBeLessThanOrEqual` for "hangs below", a range for "is
 the average") is the same failure as instance 7's loose regex: an assertion wide enough to admit
 the bug it was named for. Ask of every assertion what else would satisfy it.
+
+**12 is the one that should change how a check is written here, because neither test was wrong.**
+10 and 11 are assertions scoped looser than their claims — the familiar shape. 12 is two correctly
+written unit tests whose *premise* was quietly deleted underneath them. The rule they encoded ("a
+bot does not drive across the course to find you") was sound for an arena that was one generated
+hole; the authored routing made it mean "no bot ever engages", and nothing said so, because every
+assertion about bots placed its own carts by hand. The same shape caught the barrier in the same
+session: the plan's test for it, `cart.position.z > bounds.minZ`, passes with no barrier written at
+all, because `moveCartBody` has clamped to the bounds box since the arena landed.
+
+What prevents it is not a tighter assertion. It is **at least one test per system that takes its
+inputs from the thing that ships rather than from the test's own hand** — the carts the course
+deals, on the course it deals them onto. `world.course.test.ts`'s "deals carts far apart and still
+brings a bot into range of the player" is that test for bots, and it opens by measuring that they
+start outside engagement range, so it cannot pass by accident on a course that clusters them.
+When a premise can change out from under a rule, assert the premise.
 
 Number 7 is the cheapest one here to reproduce and the most useful to have seen. It cost nothing —
 the test was red-first, as the rule says, and it was still wrong; what caught it was **reading** the

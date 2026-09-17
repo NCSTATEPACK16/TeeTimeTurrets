@@ -17,7 +17,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DRIVER_CARRY_M, REFERENCE_CARRY_M } from "../src/sim/carry";
-import { generateCourse } from "../src/sim/course";
+import { authoredCourse } from "../src/sim/authoredCourse";
 import type { HoleSpec } from "../src/sim/course";
 import { BLEND_WIDTH, createTerrain, halfWidthAt } from "../src/sim/terrain";
 import type { Terrain } from "../src/sim/terrain";
@@ -332,12 +332,12 @@ function main(): void {
   // Fixed default so `npm run plan` twice in a row produces a clean `git diff` -- the plans are
   // committed, and a wall-clock or random seed would make every run a spurious change.
   const seed = parseArg("seed", 0x7ee7c0);
-  const holeCount = parseArg("holes", 18);
   const outArg = process.argv.find((a) => a.startsWith("--out="));
   const outDir = outArg === undefined ? join("docs", "course", "plans") : outArg.slice(6);
 
   mkdirSync(outDir, { recursive: true });
-  const course = generateCourse(seed, holeCount);
+  // Always the eighteen authored holes; the seed drives the detail under them, not the routing.
+  const course = authoredCourse(seed);
 
   console.log(`course 0x${(seed >>> 0).toString(16)} -> ${outDir}`);
   let totalPar = 0;

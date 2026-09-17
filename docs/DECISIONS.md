@@ -581,3 +581,121 @@ iteration order rather than by a rule. A hazard-aware tie-break — one that han
 whichever hole's own placed hazard it falls inside — is the obvious alternative and remains open
 to whoever wants to build and test it; it was not rejected on its merits. Recorded here so the
 next person who finds a pond driving like fairway finds the reason, not a surprise.
+
+## County Home Road is a barrier, and the bounds box is never it
+
+`moveCartBody` has clamped the cart inside `playfield.bounds` since the arena landed. That clamp
+is a statement about the *heightfield*: past its edge there are no heights, so there is nothing to
+stand on. It is not a statement about the course's southern boundary, and it cannot be made into
+one, because the bounds are axis-aligned and County Home Road is not.
+
+The road runs east and south across the bottom of the plat. The box's flat `minZ` therefore sits
+south of it by as much as **332 m** at the western end, and lies south of the diagonal across 84%
+of the course's width. Everything in that wedge is inside the bounds, on the heightfield, and on
+the wrong side of a public road. `courseBarrier.ts` adds the line the box cannot express.
+
+**The correction is pushed along the road's own normal, not straight up in `z`.** A z-only push
+lands the cart at the wrong distance from a slanted line and slides it east along the kerb rather
+than off it. `clampNorthOf`'s test uses a 45-degree line for exactly this reason: on it a normal
+push moves x and z by equal amounts, so a z-only implementation is caught by `x` never changing.
+
+**A clamp, not a Rapier collider ring.** A wall on a course this size is four long thin boxes that
+have to be rebuilt whenever the bounds move, and the bounds are already the authority. Clamping the
+*result* of the controller's movement is also what makes a cart driven into the edge slide along it
+instead of stopping dead. Rejected: the collider ring, for the rebuild cost; a teleport-back, which
+reads as a glitch.
+
+**The boundary travels on `CourseWorld`, not on `Sim`.** `loadCourse` takes it as an argument that
+defaults to null, so a generated course or a test rig has no road rather than borrowing this one's.
+A fictional boundary silently applied to a course that does not have it is worse than no boundary.
+
+**Order is not load-bearing here, and that is measured rather than assumed.** Box-then-road
+guarantees the road; road-then-box guarantees the box; they differ only where the road's inset
+locus falls outside the bounds, and on this course it never does — asserted along the whole of
+County Home Road in `courseBarrier.test.ts`, so a later course that *does* make them conflict fails
+instead of quietly picking one. The road is applied last so that if that day comes, the fictional
+boundary is the one that survives.
+
+**The multi-point sweep is asserted at the function, not through the physics.** A wall with a gap
+passes a single-point test, and the driven test can only cross the line in one place per run.
+Steering three carts to three different x values means either three sims or writing
+`sim.cart.position` directly — and `moveCartBody` fights a direct write on the very next tick, so
+that test would measure the fight rather than the barrier. The driven test proves the clamp is wired
+into the cart; the sweep proves it has no gap.
+
+### Files Road is not modelled, and here is the distance that decides it
+
+The plat shows a second boundary road at the south-east corner, at plat pixels (915,1120)→(960,1245).
+It is not represented, and the reason is a measurement rather than a preference: **the nearest
+corridor point of any of the eighteen holes is 244 m from it.** No hole is routed against it the way
+every hole along the southern edge is routed against County Home Road, so a barrier there would be
+a bound with no consumer — which `AGENTS.md` calls a comment rather than a check.
+
+That distance is asserted in `courseBarrier.test.ts` rather than left as prose, and the corner is
+deliberately noted as *reachable* ground: it is on the playable side of County Home Road, simply
+ground nothing is routed near. `SouthBoundary` is one line for the same reason — one subtraction in
+the fixed loop. If a later mode sends carts into that corner, `clampToPlayable` takes a second line
+without a redesign, and that assertion is what will fail first.
+
+### A treeline stands beyond it, and it is scenery only
+
+Without one the course ends at a mown edge with sky behind it, and the barrier stops the cart at a
+line the player cannot see a reason for. Trees are the reason. It has no collider, is never
+replicated, and is never read by `src/sim/**`, which is what puts it on the decorative side of the
+`AGENTS.md` rule. It grows `Trees.ts`'s tree by importing that module's builder rather than
+describing a second one: the wood inside the boundary and the band beyond it must not read as a
+change of continent.
+
+**No gate subject covers it.** The scene gate's subjects are all single objects against a fixed
+camera, and a horizon band is neither. It is asserted in `treeline.test.ts` instead — every tree on
+the road side of the line, the band running past both ends of the road, seeded placement stable per
+seed, and nothing planted at all when `heightAt` returns NaN rather than a wood floating where the
+heightfield stops.
+
+## The half-disc apron was deferred, and the measurement is why
+
+`inspectLayout` forgives corridor pairs that both lie within `CLUBHOUSE_APRON_M` of the clubhouse,
+using a full disc. A half-disc — forgiving only the side the holes are actually on — was specced
+and not built, and the reason it can wait is a count: **all 11 pairs the apron forgives on this
+routing lie north of the clubhouse**, which sits on the southern boundary. A half-disc is therefore
+a no-op on this course, and would be added for its own sake.
+
+It also cannot be added cheaply where it stands: `inspectLayout` is shared with `solveCourseLayout`,
+whose two returning nines genuinely need the full disc on both sides. Narrowing it there to suit a
+course that does not need it narrows it for one that does.
+
+## Bots close on their target, because standing still stopped being a design
+
+`computeBotIntent` used to return a zero intent beyond `BOT_ENGAGE_RANGE` (40 m), documented as
+"idles outside its engagement range rather than pathfinding across the course". That was right for
+the arena it was written against: one generated hole, every cart tens of metres from the next.
+
+The authored routing deals carts one to a hole across roughly 1,590 × 1,290 m. The nearest pair a
+six-cart roster gets is **75 m**, and the closest two tees anywhere on the course are **74 m** —
+both outside the range. **Every bot in every arena match stood on its own tee from the opening tick
+to the end.** No tee pair on the course is within engagement range of another, so respawns could not
+rescue it either. The premise died and the rule outlived it.
+
+So the bot drives at its target at any distance and holds fire until 40 m. Measured with the player
+idle at hole 1's tee: five bots close from 388, 708, 980, 808 and 634 m to the standoff and hold
+there.
+
+**Closing is still not pathfinding**, and the distinction is kept rather than blurred: it is the
+same straight-line drive the bot already did inside the range, with no navigation, no obstacle
+avoidance and no memory. A bot can still be stopped by water or a wood between it and its target.
+That gap is deferred and said so in `bot.ts`, rather than quietly widened into a claim the code
+does not support.
+
+**Two green tests were asserting the bug** — see `TEST-AND-SPEC-PITFALLS.md` §1 instance 12, which
+is the more useful record of this than the fix is.
+
+### Known and not fixed: a bot at the standoff lands nothing
+
+`BOT_STANDOFF` is 12 m and the bot's club is a driver, which is a lofted weapon. Five bots at ~10 m
+for eighty seconds took the player from 8 HP to 8 HP across **10,321 fire ticks**. The shots go over.
+
+This is not a regression from the authored routing — `bot.ts`'s ballistics, `Ballistics.ts` and
+`health.ts` are untouched by that work — and it was invisible before, because no bot ever got close
+enough to demonstrate it. Now that bots arrive, it is the next thing between the arena and a match
+that can be won or lost. Recorded rather than fixed: the fix is a standoff-versus-loft question,
+possibly a club choice for bots, and it wants its own measurement pass.

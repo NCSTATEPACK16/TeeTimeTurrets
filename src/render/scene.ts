@@ -11,6 +11,9 @@ import type { BallTransform, CartTransform } from "../sim/world";
 import type { CourseTerrain } from "../sim/courseTerrain";
 import { BIOMES } from "./biomes";
 import { createCourseGround } from "./courseGround";
+import { createTreeline } from "./treeline";
+import type { Treeline } from "./treeline";
+import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
 import { createGround } from "./ground";
 import type { Ground } from "./ground";
@@ -68,6 +71,18 @@ const BOT_DEFAULT_CLUB = ClubType.Driver;
 export interface ArenaSource {
   readonly course: CourseTerrain;
   readonly surfaces: Surfaces;
+  /**
+   * The course's southern boundary, when it has one. Optional so a generated arena course -- which
+   * has bounds but no road -- simply gets no treeline rather than one drawn against a line it does
+   * not have.
+   */
+  readonly southBoundary?: SouthBoundary;
+  /**
+   * The course seed, so the treeline is placed deterministically the way `Trees.ts`'s wood is --
+   * what makes a scene-gate screenshot of the horizon mean anything. `CourseTerrain` does not carry
+   * its own seed, so it is passed beside it.
+   */
+  readonly seed?: number;
 }
 
 /**
@@ -126,6 +141,8 @@ export class RenderScene {
   private readonly flagstick: Flagstick | null;
   private readonly props: Props | null;
   private readonly courseGround: CourseGround | null;
+  /** The band of trees beyond the road. Arena only, and only on a course with a boundary. */
+  private readonly treeline: Treeline | null;
   /**
    * Ground height under the chase camera. The course's in arena, the hole's otherwise: a camera
    * that probed the single hole's heightfield while flying over hole 14 would read the height of
@@ -192,6 +209,16 @@ export class RenderScene {
     if (arena) {
       this.courseGround = createCourseGround(arena.course, arena.surfaces);
       this.scene.add(this.courseGround.group);
+      this.treeline =
+        arena.southBoundary === undefined
+          ? null
+          : createTreeline(
+              arena.southBoundary,
+              arena.course.bounds,
+              (x, z) => arena.course.heightAt(x, z),
+              arena.seed ?? 0,
+            );
+      if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
       this.ground = null;
       this.trees = null;
       this.flagstick = null;
@@ -199,6 +226,7 @@ export class RenderScene {
       this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
     } else {
       this.courseGround = null;
+      this.treeline = null;
       this.ground = createGround(terrain, surfaces);
       this.scene.add(this.ground.mesh);
 
@@ -299,6 +327,7 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.ground?.dispose();
     this.trees?.dispose();
+    this.treeline?.dispose();
     this.flagstick?.dispose();
     this.props?.dispose();
     this.courseGround?.dispose();

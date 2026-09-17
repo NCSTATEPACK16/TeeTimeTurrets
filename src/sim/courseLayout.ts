@@ -23,6 +23,13 @@
  * sit on (47 ha of field into a 36 ha loop) while the corridors themselves use 7.5 ha of it. The
  * fields are expected to overlap and blend into shared rough. The constraint that matters, and
  * the one `inspectLayout` measures, is that two holes' corridors never run into each other.
+ *
+ * **Not on the shipped course's path since 12 September 2026.** The eighteen holes are traced
+ * from a plat map (`authoredCourse.ts`) and placed from authored offsets (`authoredLayout.ts`);
+ * `buildCourseWorld` calls those. This solver and its relaxation stay because generating a
+ * *different* course from a seed is still something this project may want, and because deleting a
+ * working solver to save bytes is not a trade -- but nothing the player drives on comes through
+ * here. See `docs/superpowers/specs/2026-09-12-authored-course-routing-design.md`.
  */
 
 import type { Vec2 } from "./mapGeometry";

@@ -804,3 +804,61 @@ did nothing or did something you did not intend.
 - **`ellipseEdgeDistance` is an approximation.** Exact for a circle — the case that had to stay
   byte-identical — and under-estimates by at most the axis ratio elsewhere. The exact distance to
   an ellipse needs a quartic solve, which does not belong in `heightAt`.
+
+## 10. The routing became authored, and what that changed downstream
+
+The eighteen holes stopped being *discovered* by a solver and started being *described*. Par,
+White-tee yardage, centreline shape and placement are authored data in `authoredCourse.ts` and
+`authoredLayout.ts`; everything below them is still seeded from `HoleSpec.seed` exactly as before —
+terrain noise, green shaping, bunker and water placement, tree scatter, course rough. The course
+does not stop being reproducible from one number.
+
+Provenance is in `LICENSES.md`: traced from **Caswell Pines Golf Club, North Carolina**, White tees.
+The plat drawing is not in this repository and is not distributed with it.
+
+**The placements are a fit, not a tracing**, and `DECISIONS.md` carries the cost measured. The plat
+has no scale bar and its drawn fairways run about a fifth short of the scorecard they belong to, so
+hole lengths (the card's) and hole positions (the drawing's) are over-determined and cannot both be
+honoured.
+
+### What a caller has to know now
+
+- **`buildCourseWorld` rejects anything but the authored holes.** The authored offsets were fitted
+  to the authored holes' own lengths, so handing it a course whose holes are a different shape
+  places real corridors at coordinates chosen for different ones — fairways crossing, with nothing
+  thrown. It throws instead. A caller that genuinely wants a generated course wants
+  `solveCourseLayout` in `courseLayout.ts`, which is still there and still tested.
+- **That guard has bitten once.** `tools/gate/gateScene.ts` kept feeding it `generateCourse(...)`
+  after the guard landed, so the `course-ground` subject threw, the gate harness never reached
+  `ready`, and `npm run gate` died on a bare 20-second Puppeteer timeout with no subject named. If
+  a tool that builds a course starts timing out rather than failing, check this first.
+- **One seed, three tools.** `src/main.ts`, `tools/coursePlan.ts` and `tools/holePlan.ts` all use
+  **2026**, and `gateScene.ts` now does too. It only chooses the rough; the holes are authored.
+- **The envelope is bigger than the generated one was.** Placed fields span about 1,590 × 1,290 m,
+  which the terrain probe reports as a 793 × 646 grid at 2 m cells. The gate's `course-ground`
+  baseline moved with it — bbox.x 976 m to 1,587 m — and `probe:terrain` needed no new control,
+  because its control is `hole@1m`, measured live each run.
+- **`inspectLayout` cannot see consecutive corridors crossing.** Its exemption for consecutive holes
+  is scoped wider than its claim, so `authoredLayout.test.ts` asserts the real property separately.
+  See `TEST-AND-SPEC-PITFALLS.md` §1 instance 11.
+
+### The generated solver regressed, and it is recorded rather than repaired
+
+Moving `PAR_MIX` to the real card's order made the lobed relaxation fail to close on **six of ten
+seeds**, so `solveCourseLayout` falls back to the circle construction: anti-parallel pairs 475–583 m
+apart and zero returning legs. The tell is a `maxTransitionM` of exactly 30 instead of ~100.
+
+The cause is structural. A lobe's first and third holes are meant to run anti-parallel, and the real
+card puts par 5s at 1, 8, 14 and 18 — so a 460-yard leg keeps getting paired with a 320-yard one.
+Fixing it means teaching the lobe construction about unequal legs.
+
+**Nothing the player drives on comes through that solver**, because the shipped course is authored,
+so it was recorded rather than repaired — on `courseLayout.test.ts`'s "returns a conflict-free layout
+on every generated seed". Anyone who wants generated courses back wants this first.
+
+### The southern boundary is part of the course now
+
+`AUTHORED_SOUTH_BOUNDARY` in `authoredLayout.ts` is the traced line; `courseBarrier.ts` owns the
+arithmetic and the clamp; `CourseWorld.southBoundary` carries it to `Sim.loadCourse`. A course built
+without one gets no road rather than borrowing this one's. Full reasoning, including why Files Road
+is not modelled and why the treeline is render-only, is in `DECISIONS.md`.

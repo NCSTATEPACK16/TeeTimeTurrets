@@ -12,7 +12,20 @@ import type { Cart } from "./entities/Cart";
  * everything it needs to decide is already on the cart it is driving.
  */
 
-/** Metres. Outside this the bot idles rather than pathfinding across the course. */
+/**
+ * Metres. Outside this the bot drives at its target but does not aim or shoot.
+ *
+ * It used to idle out here instead, on the reasoning that closing would be pathfinding across the
+ * course. That held while the arena was one generated hole and every cart was tens of metres from
+ * the next. The authored eighteen-hole routing deals carts one to a hole: the closest two tees on
+ * the whole course are 74 m apart, so under the old rule every bot in every match stood still from
+ * the opening tick and arena combat did not happen at all.
+ *
+ * Closing is not pathfinding. It is the same straight-line drive the bot already did inside this
+ * range -- no navigation, no obstacle avoidance, no memory -- so a bot can still be stopped by
+ * water or a wood between it and its target. That is a real gap and it is deferred, not solved
+ * here; what is fixed is that the bot now tries.
+ */
 export const BOT_ENGAGE_RANGE = 40;
 /** Metres. Inside this the bot stops closing -- a cart nose-to-nose cannot bring its barrel to bear. */
 export const BOT_STANDOFF = 12;
@@ -74,15 +87,19 @@ export function computeBotIntent(
   const dx = target.x - bot.position.x;
   const dz = target.z - bot.position.z;
   const distance = Math.hypot(dx, dz);
-  if (target.dead || distance > BOT_ENGAGE_RANGE || distance < 1e-6) return;
+  if (target.dead || distance < 1e-6) return;
 
   const bearing = Math.atan2(dz, dx);
 
-  // Drive: turn the chassis toward the target and close to the standoff, then hold station.
+  // Drive: turn the chassis toward the target and close to the standoff, then hold station. This
+  // runs at any distance -- see `BOT_ENGAGE_RANGE` for why it no longer stops at it.
   const headingError = wrapAngle(bearing - bot.heading);
   out.steer = clampSigned(headingError / BOT_STEER_FULL);
   out.throttle = distance > BOT_STANDOFF ? 1 : 0;
   out.brake = distance < BOT_STANDOFF * 0.5;
+
+  // The weapon is still a 40 m weapon: a bot that has not closed drives, and does nothing else.
+  if (distance > BOT_ENGAGE_RANGE) return;
 
   // Aim: ease the turret toward the bearing at a bounded rate.
   const aimError = wrapAngle(bearing - bot.turretYaw);

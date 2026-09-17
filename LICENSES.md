@@ -75,6 +75,34 @@ index are in `docs/concept/README.md`.
 The CC-BY-SA line above applies to assets a human actually authored. If one is ever added,
 record its author and license in that index, because that one genuinely does fall under it.
 
+## A note on the course routing
+
+**The eighteen holes in `src/sim/authoredCourse.ts` are traced from a real course: Caswell Pines
+Golf Club, North Carolina, from its White tees.** This is recorded rather than left implicit,
+because the alternative — shipping a real club's routing under another name and saying nothing — is
+a thing done by drift rather than by decision.
+
+**What was taken** is the routing skeleton: hole order, par, White-tee yardages, roughly where each
+hole sits and which way it plays, which holes touch water, and the clubhouse's position on the
+southern boundary. These are facts about a layout. They are the kind of thing a scorecard prints
+and a spectator can pace out, and they are weakly protected at best.
+
+**What was not taken, and is not in this repository:** the plat drawing the routing was read off.
+That drawing is a third-party work, it is not committed, it is not distributed with this project,
+and it must not be added — the same rule, for the same reason, that keeps `concept-originals-fullres/`
+out of the tree. Nor are the subdivision's housing lots, its roads, its cul-de-sacs, or its practice
+range, none of which are golf and none of which were traced.
+
+**What is first-party** is everything under the routing: terrain noise, greens, bunkers, water
+shapes, trees and the rough are all generated from a seed by this project's own code, exactly as
+they were before the routing was authored. The hole *shapes* are fitted approximations — the source
+plat has no scale bar, so lengths come from the scorecard and only each hole's bend was read off the
+drawing. No geometry was copied.
+
+Terms: no licence is claimed over the routing facts, and none is granted. If Caswell Pines objects,
+the remedy is to perturb the routing — the card and the returning-nines structure are what make the
+course play like a real one, and neither requires *that* course.
+
 ## Shipped 3D assets
 
 One mesh file ships, and it is decorative under `docs/ASSET_PIPELINE.md` §1: nothing collides

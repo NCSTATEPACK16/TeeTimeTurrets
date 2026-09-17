@@ -1,6 +1,10 @@
 /**
- * H17, the pin marker: a small chip over the flagstick, labelled with metres from the ball to the
- * cup. UI-SPEC §2.
+ * H17, the pin marker: a small chip over the flagstick, labelled with whole yards from the ball to
+ * the cup. UI-SPEC §2.
+ *
+ * **Yards, not metres.** Lengths are authored and displayed in yards and the simulation is metric
+ * throughout -- `src/sim/units.ts` holds the one conversion. A golfer reads a pin in yards, so this
+ * is the boundary where it converts back.
  *
  * It exists because the flagstick is modelled at true scale. A real pin is a shade over 2.1 m, and
  * from a tee 90 m away that is a few pixels of white against a treeline -- correct, and useless. The
@@ -9,7 +13,7 @@
  *
  * **Clamped to the screen edge rather than hidden when the pin is off camera**, which is the one way
  * it differs from H13's nameplates. A plate for a cart you cannot see is noise; an arrow-less
- * pointer at the edge of frame saying `84 m` is how you find the hole again after a wild drive.
+ * pointer at the edge of frame saying `84 yd` is how you find the hole again after a wild drive.
  *
  * DOM only. The world->screen projection belongs to `src/render/scene.ts`, which owns the camera;
  * nothing here sees three.

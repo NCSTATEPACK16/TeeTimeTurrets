@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHudStateScratch, deriveHudState } from "./hudState";
 import { ClubType } from "../physics/Ballistics";
+import { YARD_M } from "../sim/units";
 import type { HudSource, HudState } from "./hudState";
 
 /** deriveHudState writes into a caller-owned scratch object rather than allocating (see its
@@ -140,27 +141,32 @@ describe("the rest of the readout", () => {
  * club choice mean something, and it is the reading a real yardage gives you.
  */
 describe("the pin marker's distance", () => {
-  it("reports whole metres from the ball to the cup", () => {
-    expect(derive(separated(30, 40)).pinDistanceText).toBe("50 m");
-    expect(derive(separated(3, 4)).pinDistanceText).toBe("5 m");
+  it("reports whole yards from the ball to the cup", () => {
+    expect(derive(separated(30, 40)).pinDistanceText).toBe("55 yd");
+    expect(derive(separated(3, 4)).pinDistanceText).toBe("5 yd");
   });
 
   it("rounds rather than truncating", () => {
-    expect(derive(separated(7.6, 0)).pinDistanceText).toBe("8 m");
-    expect(derive(separated(7.4, 0)).pinDistanceText).toBe("7 m");
+    // Positions are stored in metres (the ball and cup are sim state), so these are chosen as
+    // whole-plus-a-fraction yardages -- 8.6 and 8.4 -- expressed in the metres that produces,
+    // rather than as metre values: converting 7.6 m and 7.4 m (the pre-conversion fixture) both
+    // land on 8 yd, which would silently stop this test from being able to tell "rounds" from
+    // "truncates" at all.
+    expect(derive(separated(8.6 * YARD_M, 0)).pinDistanceText).toBe("9 yd");
+    expect(derive(separated(8.4 * YARD_M, 0)).pinDistanceText).toBe("8 yd");
   });
 
   it("measures flat, so a downhill green does not read as further away", () => {
     // The same argument `RoundScreen.trackLongestDrive` already makes about a drive: counting the
     // drop off a tee shelf as extra length would flatter downhill holes. A yardage to the pin is a
     // distance along the ground.
-    expect(derive(separated(30, 40, 20)).pinDistanceText).toBe("50 m");
-    expect(derive(separated(30, 40, -20)).pinDistanceText).toBe("50 m");
+    expect(derive(separated(30, 40, 20)).pinDistanceText).toBe("55 yd");
+    expect(derive(separated(30, 40, -20)).pinDistanceText).toBe("55 yd");
   });
 
   it("reads zero when the ball is in the cup rather than going blank", () => {
     // The frame the ball drops is the frame the marker would otherwise show something stale.
-    expect(derive(separated(0, 0)).pinDistanceText).toBe("0 m");
+    expect(derive(separated(0, 0)).pinDistanceText).toBe("0 yd");
   });
 });
 

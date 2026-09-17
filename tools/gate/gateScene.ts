@@ -14,7 +14,7 @@ import { createTerrain } from "../../src/sim/terrain";
 import { createSurfaces } from "../../src/sim/surfaces";
 import { createGround } from "../../src/render/ground";
 import { createCourseGround } from "../../src/render/courseGround";
-import { generateCourse } from "../../src/sim/course";
+import { authoredCourse } from "../../src/sim/authoredCourse";
 import { buildCourseWorld } from "../../src/sim/courseWorld";
 
 /**
@@ -182,7 +182,7 @@ function courseGroundSubject(): GateSubject {
   // `buildCourseWorld` rather than the sequence inline: the game builds its arena with the same
   // call, so the subject is a picture of the construction the player actually gets.
   const { terrain, surfaces } = buildCourseWorld(
-    generateCourse(GATE_COURSE_SEED, GATE_COURSE_HOLES),
+    authoredCourse(GATE_COURSE_SEED),
     GATE_COURSE_SEED,
   );
   const ground = createCourseGround(terrain, surfaces);
@@ -196,9 +196,16 @@ function courseGroundSubject(): GateSubject {
   return { object: ground.group, dispose: () => ground.dispose() };
 }
 
-/** The seed docs/course/plans is drawn from, so the gate and the plans show the same course. */
-const GATE_COURSE_SEED = 0x7ee71e5;
-const GATE_COURSE_HOLES = 18;
+/**
+ * The seed `docs/course/plans` and `src/main.ts` are both drawn from, so the gate, the plans and
+ * the course the player is handed are one course.
+ *
+ * It used to be `0x7ee71e5` against a *generated* course, and that stopped being a course at all
+ * the moment `buildCourseWorld` began insisting on the authored holes: the subject threw, the gate
+ * harness never reached `ready`, and the run died on a 20-second Puppeteer timeout with no name
+ * attached to it. The seed only chooses the rough here -- the eighteen holes are authored.
+ */
+const GATE_COURSE_SEED = 2026;
 
 function countGeometry(root: THREE.Object3D): { vertices: number; triangles: number } {
   let vertices = 0;

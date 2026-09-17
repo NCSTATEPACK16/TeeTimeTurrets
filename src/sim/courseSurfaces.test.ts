@@ -54,32 +54,50 @@ describe("classification", () => {
     // is still a green: the classification belongs to whichever hole holds the ground most, and
     // "the first hole with any influence here" is a different rule that agrees with it right up
     // until two holes overlap.
+    //
+    // The pair is *searched for* rather than named. Holes 1 and 2 were hardcoded until the briefs
+    // were re-authored against the real card, at which point they stopped overlapping the way this
+    // needs and the test went red for a reason that had nothing to do with classification. Which
+    // two holes happen to cross is an accident of the card; that the rule holds when they do is
+    // the property.
     const generated = generateCourse(COURSE_SEED, 18);
-    const green = generated.holes[0]!;
-    const neighbour = generated.holes[1]!;
-    const holes: PlacedHole[] = [
-      { placement: { index: 1, offsetX: 0, offsetZ: 0, rotation: Math.PI / 2 }, spec: neighbour, terrain: createTerrain(neighbour) },
-      { placement: { index: 0, offsetX: 0, offsetZ: 0, rotation: 0 }, spec: green, terrain: createTerrain(green) },
-    ];
-    const terrain = createCourseTerrain(holes, { rough: mulberry32(7) });
-    const perHole = holes.map((h) => createSurfaces(h.spec, h.terrain));
-    const course = createCourseSurfaces(terrain, perHole);
 
-    // Somewhere on the green where the neighbour reaches but holds less.
     let tested = 0;
-    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
-      const x = green.cup.x + Math.cos(angle) * green.green.radiusX * 0.5;
-      const z = green.cup.z + Math.sin(angle) * green.green.radiusZ * 0.5;
-      const mine = terrain.influenceAt(1, x, z);
-      const theirs = terrain.influenceAt(0, x, z);
-      if (mine <= theirs || theirs <= 0) continue;
-      if (perHole[1]!.surfaceAt(x, z) !== SurfaceId.Green) continue;
-      if (perHole[0]!.surfaceAt(x, z) === SurfaceId.Green) continue;
-      tested++;
-      expect(course.surfaceAt(x, z)).toBe(SurfaceId.Green);
+    let usedPair = "";
+    outer: for (let g = 0; g < 8; g++) {
+      for (let n = 0; n < 8; n++) {
+        if (g === n) continue;
+        const green = generated.holes[g]!;
+        const neighbour = generated.holes[n]!;
+        const holes: PlacedHole[] = [
+          { placement: { index: 1, offsetX: 0, offsetZ: 0, rotation: Math.PI / 2 }, spec: neighbour, terrain: createTerrain(neighbour) },
+          { placement: { index: 0, offsetX: 0, offsetZ: 0, rotation: 0 }, spec: green, terrain: createTerrain(green) },
+        ];
+        const terrain = createCourseTerrain(holes, { rough: mulberry32(7) });
+        const perHole = holes.map((h) => createSurfaces(h.spec, h.terrain));
+        const course = createCourseSurfaces(terrain, perHole);
+
+        // Somewhere on the green where the neighbour reaches but holds less.
+        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
+          const x = green.cup.x + Math.cos(angle) * green.green.radiusX * 0.5;
+          const z = green.cup.z + Math.sin(angle) * green.green.radiusZ * 0.5;
+          const mine = terrain.influenceAt(1, x, z);
+          const theirs = terrain.influenceAt(0, x, z);
+          if (mine <= theirs || theirs <= 0) continue;
+          if (perHole[1]!.surfaceAt(x, z) !== SurfaceId.Green) continue;
+          if (perHole[0]!.surfaceAt(x, z) === SurfaceId.Green) continue;
+          tested++;
+          usedPair = `green hole ${g + 1} under hole ${n + 1}`;
+          expect(course.surfaceAt(x, z), usedPair).toBe(SurfaceId.Green);
+        }
+        if (tested > 0) break outer;
+      }
     }
-    expect(tested).toBeGreaterThan(0);
+    // Guard the guard: no overlapping pair means nothing was classified and the loop asserted
+    // nothing at all.
+    expect(tested, "no two holes overlapped, so the rule was never exercised").toBeGreaterThan(0);
   });
+
 
   it("is rough wherever no hole reaches", () => {
     const { hole, course, terrain } = fixture();
@@ -190,17 +208,37 @@ describe("weights", () => {
 });
 
 describe("water", () => {
-  it("is still water out where the corridor has let go of the ground", () => {
+  it("keeps a pond wet through the placement transform", () => {
+    /**
+     * Ground the hole shaped and the course must not un-shape: a point that is water in the hole's
+     * own frame is still water once the hole is placed and turned.
+     *
+     * **Sampled inside the polygon, not on it.** This walked the pond's own vertices until 13
+     * September 2026, and a vertex sits exactly *on* the water boundary, where point-in-polygon is
+     * a floating-point coin flip -- only one vertex of the pond classified as water at all, and the
+     * course-frame round trip was enough to flip it back. The test passed by luck for as long as
+     * that one vertex happened to land inside on both sides of the transform, and the re-authored
+     * briefs moved the pond enough to spend the luck. Pulling each sample toward the centroid tests
+     * the property the name claims instead of the behaviour of the boundary.
+     */
     const { hole, surfaces, course } = fixture((s) => s.water.length > 0);
-    // The pond's own vertices, which is ground the hole shaped and the course must not un-shape.
     const poly = hole.spec.water[0]!;
+    const cx = poly.points.reduce((a, q) => a + q.x, 0) / poly.points.length;
+    const cz = poly.points.reduce((a, q) => a + q.z, 0) / poly.points.length;
+    const inward = (q: { x: number; z: number }, t: number) => ({
+      x: q.x + (cx - q.x) * t,
+      z: q.z + (cz - q.z) * t,
+    });
+
     let found = 0;
-    for (const point of poly.points) {
-      if (surfaces.surfaceAt(point.x, point.z) !== SurfaceId.Water) continue;
+    for (const sample of [{ x: cx, z: cz }, ...poly.points.map((q) => inward(q, 0.25))]) {
+      if (surfaces.surfaceAt(sample.x, sample.z) !== SurfaceId.Water) continue;
       found++;
-      const p = courseOf(hole.placement, point.x, point.z);
+      const p = courseOf(hole.placement, sample.x, sample.z);
       expect(course.surfaceAt(p.x, p.z)).toBe(SurfaceId.Water);
     }
-    expect(found).toBeGreaterThan(0);
+    // Guard the guard: a pond none of whose interior reads as water is a placement bug of its own,
+    // and would make every assertion above vacuous.
+    expect(found, "no interior point of the pond classified as water").toBeGreaterThan(0);
   });
 });
