@@ -21,6 +21,8 @@ import { createProps } from "./props";
 import type { Props } from "./props";
 import { createTrees } from "./Trees";
 import type { Trees } from "./Trees";
+import { createCourseTrees } from "./courseTrees";
+import type { CourseTrees } from "./courseTrees";
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
@@ -143,6 +145,8 @@ export class RenderScene {
   private readonly courseGround: CourseGround | null;
   /** The band of trees beyond the road. Arena only, and only on a course with a boundary. */
   private readonly treeline: Treeline | null;
+  /** The rough's scattered wood across every hole. Arena's answer to the single-hole `trees`. */
+  private readonly courseTrees: CourseTrees | null;
   /**
    * Ground height under the chase camera. The course's in arena, the hole's otherwise: a camera
    * that probed the single hole's heightfield while flying over hole 14 would read the height of
@@ -219,6 +223,8 @@ export class RenderScene {
               arena.seed ?? 0,
             );
       if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
+      this.courseTrees = createCourseTrees(arena.course, arena.surfaces, arena.seed ?? 0);
+      this.scene.add(this.courseTrees.group);
       this.ground = null;
       this.trees = null;
       this.flagstick = null;
@@ -227,6 +233,7 @@ export class RenderScene {
     } else {
       this.courseGround = null;
       this.treeline = null;
+      this.courseTrees = null;
       this.ground = createGround(terrain, surfaces);
       this.scene.add(this.ground.mesh);
 
@@ -328,6 +335,7 @@ export class RenderScene {
     this.ground?.dispose();
     this.trees?.dispose();
     this.treeline?.dispose();
+    this.courseTrees?.dispose();
     this.flagstick?.dispose();
     this.props?.dispose();
     this.courseGround?.dispose();
