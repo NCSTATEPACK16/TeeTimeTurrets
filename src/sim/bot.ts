@@ -1,5 +1,6 @@
 import { applyAimSpread } from "../physics/Ballistics";
 import type { PlayerIntent } from "../input/InputSource";
+import { CART_TUNING } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 
 /**
@@ -60,6 +61,12 @@ export const BOT_STEER_FULL = 0.6;
 /** Charge fraction at which the bot lets go of the trigger. */
 export const BOT_CHARGE_RELEASE = 0.8;
 /**
+ * Metres per second below which the bot, once it has arrived at the standoff, stops braking and
+ * simply holds station. Without a floor a bot fights its own brake forever; with one it coasts the
+ * last sliver to rest and sits in the firing band.
+ */
+export const BOT_HOLD_SPEED = 1;
+/**
  * Channel index for a bot's RNG, alongside terrain (0), surfaces (1) and course layout (2).
  * `hashChannel(seed, index, BOT_CHANNEL, botIndex)` gives each bot its own independent stream,
  * so bot behaviour is reproducible per seed and no bot's draws shift another's.
@@ -113,12 +120,25 @@ export function computeBotIntent(
 
   const bearing = Math.atan2(dz, dx);
 
-  // Drive: turn the chassis toward the target and close to the standoff, then hold station. This
+  // Drive: turn the chassis toward the target and *arrive* at the standoff, then hold station. This
   // runs at any distance -- see `BOT_ENGAGE_RANGE` for why it no longer stops at it.
+  //
+  // Arrival, not a hard cutoff: the bot closes at full throttle only while it still has room to
+  // brake to rest by the standoff, and brakes once it does not. The trigger is the cart's own
+  // stopping distance (v^2 / 2a at the shared brake rate), so the behaviour holds at any top speed
+  // -- a cart tuned to drive twice as fast begins braking twice as far out and still settles in the
+  // firing band, instead of charging clean through the standoff and never holding still to shoot.
   const headingError = wrapAngle(bearing - bot.heading);
   out.steer = clampSigned(headingError / BOT_STEER_FULL);
-  out.throttle = distance > BOT_STANDOFF ? 1 : 0;
-  out.brake = distance < BOT_STANDOFF * 0.5;
+  const gap = distance - BOT_STANDOFF;
+  const stoppingDistance = (bot.speed * bot.speed) / (2 * CART_TUNING.brakeDecel);
+  if (gap > 0) {
+    if (stoppingDistance >= gap) out.brake = true; // no longer enough room -- shed speed now
+    else out.throttle = 1; // room to keep closing
+  } else {
+    // Inside the standoff: hold station, braking hardest deep in and whenever still rolling.
+    out.brake = distance < BOT_STANDOFF * 0.5 || bot.speed > BOT_HOLD_SPEED;
+  }
 
   // Beyond the tracking range the bot only drives -- no aim, no fire. Closing changed where the
   // bot goes (see `BOT_ENGAGE_RANGE`), not what it can hit.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
-import { Cart } from "./entities/Cart";
+import { Cart, CART_TUNING } from "./entities/Cart";
 import { mulberry32 } from "./rng";
 import {
   BOT_CHARGE_RELEASE,
@@ -79,6 +79,25 @@ describe("computeBotIntent", () => {
   it("brakes once it is well inside the standoff, rather than idling on momentum alone", () => {
     expect(intentFor(botAt(0, 0), { x: BOT_STANDOFF * 0.4, z: 0 }).brake).toBe(true);
     expect(intentFor(botAt(0, 0), { x: BOT_STANDOFF * 0.9, z: 0 }).brake).toBe(false);
+  });
+
+  it("brakes on approach when it is going too fast to stop by the standoff", () => {
+    // Arrival, not a hard cutoff at the standoff: a cart still far out but carrying enough speed
+    // that it could not stop in time must brake now, or it charges through the firing band. Same
+    // target distance, two speeds -- crawling it keeps closing, at speed it sheds it. This is what
+    // keeps the bot lethal after the cart top speed was doubled.
+    const gap = 8;
+    const distance = BOT_STANDOFF + gap;
+
+    const crawling = botAt(0, 0);
+    crawling.speed = 1; // stopping distance ~0.03 m << the 8 m gap
+    expect(intentFor(crawling, { x: distance, z: 0 }).throttle).toBe(1);
+    expect(intentFor(crawling, { x: distance, z: 0 }).brake).toBe(false);
+
+    const fast = botAt(0, 0);
+    fast.speed = CART_TUNING.topSpeed; // stopping distance >> the gap
+    expect(intentFor(fast, { x: distance, z: 0 }).throttle).toBe(0);
+    expect(intentFor(fast, { x: distance, z: 0 }).brake).toBe(true);
   });
 
   it("steers toward the target and the sign follows which side it is on", () => {

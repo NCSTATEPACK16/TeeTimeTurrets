@@ -144,11 +144,13 @@ export const TURRET_GEOMETRY = {
 
 /** Starting values for playtesting, not measured constants -- tune by feel. */
 export const CART_TUNING = {
-  /** Forward top speed on a surface with no penalty, m/s (~31 mph: arcade, not a real cart). */
-  topSpeed: 14,
+  /** Forward top speed on a surface with no penalty, m/s (~63 mph: arcade, not a real cart). */
+  topSpeed: 28,
   /** Reverse is deliberately slow enough that turning around beats backing up. */
-  reverseTopSpeed: 5,
-  accel: 9,
+  reverseTopSpeed: 10,
+  /** Raised alongside the doubled top speed so reaching the higher cap still feels immediate
+   *  (~2 s to top instead of a sluggish ~3 s). */
+  accel: 14,
   brakeDecel: 18,
   coastDecel: 3.5,
   /** Radians per second of chassis yaw at full grip and full steering authority. */

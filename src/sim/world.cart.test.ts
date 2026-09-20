@@ -5,7 +5,7 @@ import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { BOT_ENGAGE_RANGE, BOT_FIRE_RANGE } from "./bot";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
-import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
+import { CART_COLLIDER, RESPAWN_DELAY_S } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import { POOL_SIZE } from "./entities/BallPool";
 import type { BallPool, PooledBall } from "./entities/BallPool";
@@ -615,18 +615,37 @@ describe("bot carts", () => {
       BOT_ENGAGE_RANGE,
     );
 
-    for (let i = 0; i < 300; i++) sim.step();
+    // Step until the bot has closed into firing range, checking on every tick along the way that it
+    // has not spent a round while still out of range. The invariant is "no ammo burned closing a
+    // 40 m weapon", not "still out of range after N ticks": the cart top speed was doubled, so the
+    // bot now covers the 74 m tee gap in a few seconds instead of crawling, and a fixed-time
+    // assertion that it is *still* far away no longer holds. This asserts the behaviour that
+    // survives the speed change, not the timing that did not.
+    let reachedRange = false;
+    let prevAmmo = bot.ammo;
+    for (let i = 0; i < 900; i++) {
+      sim.step();
+      const distance = Math.hypot(
+        bot.position.x - sim.cart.position.x,
+        bot.position.z - sim.cart.position.z,
+      );
+      if (distance <= BOT_FIRE_RANGE) {
+        reachedRange = true;
+        break;
+      }
+      // Ammo may *rise* (the bot can roll over an ammo bucket on its way across the course), but it
+      // must never fall while out of range: a drop is a round spent, and closing is a drive, not a
+      // barrage. Track tick-to-tick rather than against STARTING_AMMO so a pickup does not read as a
+      // failure.
+      expect(bot.ammo, "spent a round while still out of firing range").toBeGreaterThanOrEqual(
+        prevAmmo,
+      );
+      prevAmmo = bot.ammo;
+    }
 
     const moved = Math.hypot(bot.position.x - start.x, bot.position.z - start.z);
     expect(moved, "the bot did not move at all").toBeGreaterThan(1);
-    const endDistance = Math.hypot(
-      bot.position.x - sim.cart.position.x,
-      bot.position.z - sim.cart.position.z,
-    );
-    expect(endDistance, "it moved, but not toward the player").toBeLessThan(startDistance - 1);
-    // Still out of range after five seconds, so every tick above was a held-fire tick.
-    expect(endDistance).toBeGreaterThan(BOT_ENGAGE_RANGE);
-    expect(bot.ammo).toBe(STARTING_AMMO);
+    expect(reachedRange, "it never closed into firing range, so nothing was tested").toBe(true);
   });
 
   it("closes on the player and spends ammo once the player is in range", async () => {
