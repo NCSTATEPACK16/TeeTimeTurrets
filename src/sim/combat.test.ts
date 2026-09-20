@@ -50,6 +50,8 @@ describe("combat contact resolution", () => {
   let kills: { victim: number; killer: number }[];
   /** Every `onBallHit` shooter, in order. */
   let hits: number[];
+  /** Every `onBallHit` impact position, in order -- where a hit marker would float. */
+  let hitPositions: { x: number; y: number; z: number }[];
   let pinStrikes: number;
 
   beforeAll(async () => {
@@ -63,8 +65,9 @@ describe("combat contact resolution", () => {
       // `Sim.creditHit` is what decides whose accuracy a hit belongs to; here the raw shooter is
       // recorded and `stats.directHits` is credited unconditionally, so the existing tests that
       // assert on `directHits` keep asserting what they always did.
-      onBallHit: (shooter: number) => {
+      onBallHit: (shooter: number, x: number, y: number, z: number) => {
         hits.push(shooter);
+        hitPositions.push({ x, y, z });
         stats.directHits += 1;
       },
       onCartKilled: (c: Cart, victim: number, killer: number) => {
@@ -92,6 +95,7 @@ describe("combat contact resolution", () => {
     killed = [];
     kills = [];
     hits = [];
+    hitPositions = [];
     pinStrikes = 0;
 
     target = new Target(world, { x: 10, y: 0, z: 0 });
@@ -141,6 +145,15 @@ describe("combat contact resolution", () => {
 
     expect(stats.directHits).toBe(1);
     expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
+  });
+
+  it("reports where the ball was at impact, so a hit marker can float there", () => {
+    processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
+
+    // `makeBall` builds the ball at (0, 5, 0) and no world step moves it before the scripted
+    // contact, so the impact position is the ball's own position.
+    const p = ball.body.translation();
+    expect(hitPositions).toEqual([{ x: p.x, y: p.y, z: p.z }]);
   });
 
   describe("who fired it", () => {

@@ -87,6 +87,20 @@ function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: numb
   p.z = z;
 }
 
+/** What a hit marker is marking: a player ball connecting, or a cart the player killed. */
+export type HitEventKind = "hit" | "kill";
+/** A world-space combat event for the render layer to float a hit marker over. Attributed to the
+ *  player only -- bot-on-bot hits are not marked, or the arena would be a blizzard of numbers. */
+export interface HitEvent {
+  kind: HitEventKind;
+  x: number;
+  y: number;
+  z: number;
+}
+/** Most player-attributed events one tick can hold. A dropped overflow event is a missing marker,
+ *  never a wrong number, so a fixed pool is safe. */
+const HIT_EVENT_CAPACITY = 16;
+
 /**
  * Rapier's linear damping is the ball's *air* drag only (F = -k*v, applied in flight and on
  * the ground alike). Ground roll-out is governed by ANGULAR_DAMPING instead -- see below.
@@ -412,6 +426,20 @@ export class Sim {
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly botTarget = { x: 0, z: 0, dead: false };
+  /**
+   * Player-attributed combat events for the current tick, for the render layer's hit markers. A
+   * fixed pool written in place (no per-tick allocation); `hitEventCount` says how many are live and
+   * `hitEventEpoch` ticks up once per step so a consumer spawns each marker exactly once however
+   * many frames it renders between steps.
+   */
+  private readonly hitEventPool: HitEvent[] = Array.from({ length: HIT_EVENT_CAPACITY }, () => ({
+    kind: "hit" as HitEventKind,
+    x: 0,
+    y: 0,
+    z: 0,
+  }));
+  hitEventCount = 0;
+  hitEventEpoch = 0;
   /** Two, not one: the cart and the ball are at different positions within the same tick. */
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   private readonly ballTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
@@ -551,7 +579,7 @@ export class Sim {
     sim.combatContext = {
       registry: sim.registry,
       stats: sim.stats,
-      onBallHit: (shooter) => sim.creditHit(shooter),
+      onBallHit: (shooter, x, y, z) => sim.creditHit(shooter, x, y, z),
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
       onPinStruck: () => sim.fellPin(),
     };
@@ -771,6 +799,24 @@ export class Sim {
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
     this.match.scoreKill(killer, victim);
+    // A kill the player made floats a marker over the cart that went down. Only the player's, for
+    // the same reason `creditHit` credits only rig 0 -- the markers are the player's feedback.
+    if (killer === 0) this.recordHitEvent("kill", cart.position.x, cart.position.y, cart.position.z);
+  }
+
+  /** The player-attributed combat events from the last stepped tick, for the hit-marker layer. */
+  get hitEvents(): readonly HitEvent[] {
+    return this.hitEventPool;
+  }
+
+  /** Writes one event into the pool in place, dropping it if the tick's pool is already full. */
+  private recordHitEvent(kind: HitEventKind, x: number, y: number, z: number): void {
+    if (this.hitEventCount >= this.hitEventPool.length) return;
+    const e = this.hitEventPool[this.hitEventCount++]!;
+    e.kind = kind;
+    e.x = x;
+    e.y = y;
+    e.z = z;
   }
 
   /**
@@ -781,8 +827,10 @@ export class Sim {
    * with no way to tell whose ball it was, which is the latent defect
    * `docs/TEST-AND-SPEC-PITFALLS.md` §4 recorded: a bot's hit inflated the player's accuracy.
    */
-  private creditHit(shooter: number): void {
-    if (shooter === 0) this.stats.directHits += 1;
+  private creditHit(shooter: number, x: number, y: number, z: number): void {
+    if (shooter !== 0) return;
+    this.stats.directHits += 1;
+    this.recordHitEvent("hit", x, y, z);
   }
 
   /**
@@ -974,6 +1022,11 @@ export class Sim {
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
     this.syncCurrent();
+    // Fresh set of hit-marker events for this tick. The epoch bump lets a consumer spawn each
+    // marker once even when it renders several frames between steps; the early returns above skip
+    // it, so a frozen (match-over) scene stops producing events.
+    this.hitEventCount = 0;
+    this.hitEventEpoch++;
     processContacts(this.eventQueue, this.combatContext);
     for (const target of this.targets) target.step();
     this.syncCurrentTargets();

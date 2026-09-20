@@ -71,6 +71,48 @@ describe("arena combat is winnable", () => {
     expect(player.strokesTaken).toBeGreaterThan(0);
   });
 
+  it("advances the hit-event epoch each step and resets the buffer", async () => {
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    let last = sim.hitEventEpoch;
+    for (let i = 0; i < 10; i++) {
+      sim.step(neutralIntent());
+      expect(sim.hitEventEpoch).toBe(last + 1); // exactly one bump per live step
+      last = sim.hitEventEpoch;
+      expect(sim.hitEventCount).toBe(0); // nothing hit anything, so the buffer is empty
+    }
+  });
+
+  it("does not attribute a bot's hits on the player to the player's hit markers", async () => {
+    // The buffer is the *player's* combat feedback: a bot pounding the player must leave it empty,
+    // the same rule that keeps a bot's hit off the player's accuracy. This reuses the reliable
+    // engagement above (a bot standing off the player and firing); the positive side -- a player
+    // ball recording an event with its impact position -- is asserted in `combat.test.ts`.
+    const sim = await Sim.create(fixedHoleSpec(), { botCount: 1 });
+    for (let i = 0; i < seconds(1); i++) sim.step(neutralIntent());
+
+    const player = sim.cart;
+    const bot = sim.bots[0]!;
+    const rigs = (sim as unknown as { rigs: RigLike[] }).rigs;
+    const botRig = rigs.find((r) => r.cart === bot)!;
+    const bx = player.position.x + BOT_STANDOFF + 1;
+    const by = sim.terrain.heightAt(bx, player.position.z) + CART_COLLIDER.groundOffset;
+    bot.position.x = bx;
+    bot.position.y = by;
+    bot.position.z = player.position.z;
+    bot.heading = Math.PI;
+    botRig.body.setTranslation({ x: bx, y: by, z: player.position.z }, true);
+
+    // Player never fires; the bot does all the shooting.
+    let playerEvents = 0;
+    for (let i = 0; i < seconds(15); i++) {
+      sim.step(neutralIntent());
+      playerEvents += sim.hitEventCount;
+    }
+
+    expect(player.strokesTaken, "the bot never landed a hit, so the test proves nothing").toBeGreaterThan(0);
+    expect(playerEvents).toBe(0); // none of the bot's hits are the player's markers
+  });
+
   it("the putter's shot comes back to cart height around the standoff distance", async () => {
     // Guards the club-and-standoff pairing directly: a driver's shot is still 5 m up here, so a
     // regression that re-armed bots with a lofted club fails this even without a live bot.
