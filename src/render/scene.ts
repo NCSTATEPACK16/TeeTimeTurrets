@@ -23,6 +23,8 @@ import { createTrees } from "./Trees";
 import type { Trees } from "./Trees";
 import { createCourseTrees } from "./courseTrees";
 import type { CourseTrees } from "./courseTrees";
+import { createCourseProps } from "./courseProps";
+import type { CourseProps } from "./courseProps";
 import { loadDecor } from "./decor";
 import type { Decor } from "./decor";
 
@@ -163,6 +165,9 @@ export class RenderScene {
   private readonly treeline: Treeline | null;
   /** The rough's scattered wood across every hole. Arena's answer to the single-hole `trees`. */
   private readonly courseTrees: CourseTrees | null;
+  /** Tee markers, signs, posts and a flagstick at every hole. Arena's answer to the single-hole
+   *  `props` and `flagstick`, both null here. */
+  private readonly courseProps: CourseProps | null;
   /**
    * The clubhouse landmark, arena only. Loaded asynchronously through the one GLB door and never
    * awaited (decoration must not block first paint), so it is `null` until -- and if -- it arrives.
@@ -249,6 +254,8 @@ export class RenderScene {
       if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
       this.courseTrees = createCourseTrees(arena.course, arena.surfaces, arena.seed ?? 0);
       this.scene.add(this.courseTrees.group);
+      this.courseProps = createCourseProps(arena.course);
+      this.scene.add(this.courseProps.group);
       // The clubhouse landmark, placed where the authored layout says it stands and stood on the
       // course heightfield so it does not float or sink. Fired off, never awaited (decoration must
       // not block first paint) and guarded against a teardown that beats it, exactly as the
@@ -277,6 +284,7 @@ export class RenderScene {
       this.courseGround = null;
       this.treeline = null;
       this.courseTrees = null;
+      this.courseProps = null;
       this.ground = createGround(terrain, surfaces);
       this.scene.add(this.ground.mesh);
 
@@ -350,6 +358,8 @@ export class RenderScene {
       this.flagstick.update(view.elapsedSeconds);
       this.flagstick.setFelled(!view.pinStanding);
     }
+    // Arena's eighteen decorative pins, waved by the same absolute-time clock as the single one.
+    this.courseProps?.update(view.elapsedSeconds);
 
     this.frameChase(view);
 
@@ -382,6 +392,7 @@ export class RenderScene {
     this.trees?.dispose();
     this.treeline?.dispose();
     this.courseTrees?.dispose();
+    this.courseProps?.dispose();
     this.flagstick?.dispose();
     this.props?.dispose();
     this.courseGround?.dispose();
