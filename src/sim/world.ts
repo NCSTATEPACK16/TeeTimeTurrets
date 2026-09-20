@@ -538,7 +538,11 @@ export class Sim {
     sim.registry.registerCourseBall(courseBallCollider.handle, sim.ball);
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
-      const bot = new Cart({ maxHealth: 2 * hole.par });
+      // Bots fire the putter, not the default driver. A fired ball launches at its club's loft
+      // from a ~2.4 m muzzle, so a lofted club sails clean over a cart at any range a bot would
+      // stand off at -- the driver only returns to cart height near 63 m. The putter is flat (3
+      // deg), so its shot lands on the target at the ~7 m `BOT_STANDOFF`. See `bot.ts`.
+      const bot = new Cart({ maxHealth: 2 * hole.par, club: ClubType.Putter });
       sim.bots.push(bot);
       sim.addCartRig(
         bot,
