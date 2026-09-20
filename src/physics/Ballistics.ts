@@ -39,7 +39,7 @@ export interface ClubStats {
  * Starting values for playtesting, not measured constants -- tune by feel.
  */
 export const CLUB_STATS: Record<ClubType, ClubStats> = {
-  [ClubType.Putter]: { loftDeg: 3, minSpeed: 2, maxSpeed: 9, chargeSeconds: 0.5, reloadSeconds: 0.4, spreadDeg: 1 },
+  [ClubType.Putter]: { loftDeg: 1.5, minSpeed: 2, maxSpeed: 9, chargeSeconds: 0.35, reloadSeconds: 0.32, spreadDeg: 1 },
   [ClubType.Iron]: { loftDeg: 22, minSpeed: 8, maxSpeed: 24, chargeSeconds: 0.9, reloadSeconds: 1.1, spreadDeg: 3 },
   [ClubType.Driver]: { loftDeg: 13, minSpeed: 14, maxSpeed: 40, chargeSeconds: 1.4, reloadSeconds: 2.2, spreadDeg: 5 },
 };

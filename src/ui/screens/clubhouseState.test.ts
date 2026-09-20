@@ -148,7 +148,7 @@ describe("club stat cards", () => {
   it("shows a faster reload as a FULLER bar, not a longer wait", () => {
     const cards = clubStatCards();
     const reload = (c: ClubType): number => cards.find((x) => x.club === c)!.bars[2]!.value;
-    // The putter reloads in 0.4s and the driver in 2.2s; a bar the player reads as "better"
+    // The putter reloads far quicker than the driver's 2.2s; a bar the player reads as "better"
     // must be longer for the putter, or the card says the opposite of what it means.
     expect(CLUB_STATS[ClubType.Putter].reloadSeconds).toBeLessThan(
       CLUB_STATS[ClubType.Driver].reloadSeconds,
@@ -165,7 +165,7 @@ describe("club stat cards", () => {
     }
     // The two that DO come straight off the table keep their real units.
     expect(clubStatCards()[0]!.bars[0]!.detail).toBe("9 m/s");
-    expect(clubStatCards()[0]!.bars[2]!.detail).toBe("0.4 s");
+    expect(clubStatCards()[0]!.bars[2]!.detail).toBe("0.3 s");
   });
 
   it("derives range from the ballistics rather than from a range field", () => {

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ClubType } from "../physics/Ballistics";
+import { ClubType, CLUB_STATS } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { neutralIntent } from "../input/InputSource";
-import { BOT_STANDOFF } from "./bot";
+import { BOT_CHARGE_RELEASE, BOT_STANDOFF } from "./bot";
 import { fixedHoleSpec } from "./course";
 import { CART_COLLIDER } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
@@ -118,11 +118,13 @@ describe("arena combat is winnable", () => {
     // regression that re-armed bots with a lofted club fails this even without a live bot.
     const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
 
-    // Fire the putter over the bonnet at roughly the bot's release charge (putter charges in 0.5 s;
-    // 0.4 s of hold is ~0.8, which is `BOT_CHARGE_RELEASE`).
+    // Fire the putter over the bonnet at the bot's release charge. Derive the hold from the club's
+    // own charge time so this tracks a putter re-tune instead of silently drifting to full charge:
+    // holding `chargeSeconds * BOT_CHARGE_RELEASE` reaches exactly the fraction the bot lets go at.
+    const holdSeconds = CLUB_STATS[ClubType.Putter].chargeSeconds * BOT_CHARGE_RELEASE;
     const script: ScriptedStep[] = [
       { ticks: 2, intent: { selectClub: ClubType.Putter } },
-      { ticks: seconds(0.4), intent: { fire: true } },
+      { ticks: seconds(holdSeconds), intent: { fire: true } },
       { ticks: 2, intent: {} },
     ];
     const src = new ScriptedInputSource(script);
