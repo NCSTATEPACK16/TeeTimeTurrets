@@ -27,8 +27,30 @@ import type { Cart } from "./entities/Cart";
  * here; what is fixed is that the bot now tries.
  */
 export const BOT_ENGAGE_RANGE = 40;
-/** Metres. Inside this the bot stops closing -- a cart nose-to-nose cannot bring its barrel to bear. */
-export const BOT_STANDOFF = 12;
+/**
+ * Metres. Inside this the bot stops closing and holds station.
+ *
+ * This is not a comfort distance -- it is the range at which the bot's shot actually lands on a
+ * cart. Bots fire the **putter** (see `world.ts`), and a fired ball leaves the muzzle (~2.4 m up)
+ * at the club's own loft, so where it comes back down to cart height is fixed by club and charge,
+ * not by aim. Measured against the real Rapier world (`_botspike`, since removed): a putter fired
+ * at `BOT_CHARGE_RELEASE` passes through cart height (0.2-1.3 m above ground) at **6.4-7.6 m** and
+ * lands at 7.8 m. Standing off at 7 m puts the target in that band.
+ *
+ * A lofted club is why the old value was wrong. The bot used to fire the driver from 12 m; a
+ * driver (13 deg) does not come back to cart height until ~63 m, so every shot sailed clean over
+ * the target -- five bots at ~10 m for eighty seconds left the player's health untouched across
+ * 10,321 fire ticks. The fix is the club-and-standoff pairing, measured, not a bigger number.
+ */
+export const BOT_STANDOFF = 7;
+/**
+ * Metres. The bot pulls the trigger only inside this -- just past the putter's ~7.8 m reach, with
+ * room for a target closing onto the shot. Aiming still begins at `BOT_ENGAGE_RANGE`, so the
+ * turret is already lined up by the time the target is in range; but firing while still closing
+ * from 40 m would empty the bot's 30-ball magazine into the dirt short of the target. Every
+ * trigger pull inside this range is a shot that can connect.
+ */
+export const BOT_FIRE_RANGE = 9;
 /** Radians per second of turret slew. Bounded so the bot's aim is not instant and omniscient. */
 export const BOT_AIM_RATE = 1.2;
 /** Radians. Inside this bearing error the bot considers itself on target and starts charging. */
@@ -98,15 +120,20 @@ export function computeBotIntent(
   out.throttle = distance > BOT_STANDOFF ? 1 : 0;
   out.brake = distance < BOT_STANDOFF * 0.5;
 
-  // The weapon is still a 40 m weapon: a bot that has not closed drives, and does nothing else.
+  // Beyond the tracking range the bot only drives -- no aim, no fire. Closing changed where the
+  // bot goes (see `BOT_ENGAGE_RANGE`), not what it can hit.
   if (distance > BOT_ENGAGE_RANGE) return;
 
-  // Aim: ease the turret toward the bearing at a bounded rate.
+  // Aim: ease the turret toward the bearing at a bounded rate. Done from the full tracking range
+  // so the turret is lined up before the target is close enough to shoot.
   const aimError = wrapAngle(bearing - bot.turretYaw);
   const maxSlew = BOT_AIM_RATE * dt;
   out.aimDelta = Math.min(maxSlew, Math.max(-maxSlew, aimError));
 
-  const wantsToFire = Math.abs(aimError) < BOT_FIRE_TOLERANCE && bot.ammo > 0;
+  // Fire only within the putter's actual reach, on top of being aimed and having ammo -- see
+  // `BOT_FIRE_RANGE` for why a bot that shot the moment it had a bearing would just waste its magazine.
+  const wantsToFire =
+    distance <= BOT_FIRE_RANGE && Math.abs(aimError) < BOT_FIRE_TOLERANCE && bot.ammo > 0;
   out.fire = wantsToFire && bot.charge < BOT_CHARGE_RELEASE;
 
   // On the release tick, offset the turret inside the club's own accuracy cone. This is the

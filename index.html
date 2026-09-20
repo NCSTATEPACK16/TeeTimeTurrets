@@ -74,6 +74,54 @@
       #hud-status { min-height: 1.2em; color: var(--status); margin-top: 5px; }
       #hud-timer { font-variant-numeric: tabular-nums; }
       #hud-help { margin-top: 8px; opacity: 0.7; font-size: 11px; }
+
+      /* Event banner (UI-SPEC H12): a screen-anchored headline that flashes on a match event and
+         fades out. Opacity is written every frame by drawBanner; the [hidden] rule covers the
+         no-banner case so a faded-to-zero element is not left catching pointer events. */
+      #event-banner[hidden] { display: none; }
+      #event-banner {
+        position: fixed;
+        left: 50%;
+        top: 18%;
+        transform: translateX(-50%);
+        pointer-events: none;
+        text-align: center;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+        will-change: opacity;
+      }
+      #banner-headline {
+        font: 800 40px system-ui, sans-serif;
+        letter-spacing: 0.08em;
+        color: var(--danger);
+      }
+      #banner-consequence {
+        margin-top: 6px;
+        font: 700 18px system-ui, sans-serif;
+        letter-spacing: var(--track-letter);
+        color: var(--status);
+      }
+
+      /* Hit markers (UI-SPEC H11): one-shot callouts at a hit's projected screen point. Each node
+         positions itself with left/top and animates transform + opacity, then removes itself on
+         animationend. The container never scrolls. */
+      #hit-markers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      .hit-marker {
+        position: absolute;
+        font: 800 22px system-ui, sans-serif;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+        /* Anchor the text on the point rather than hanging off its top-left corner. */
+        translate: -50% -50%;
+        animation: hit-marker-rise 1s ease-out forwards;
+      }
+      .hit-marker--hit { color: #fff; }
+      .hit-marker--kill { color: var(--danger); font-size: 26px; }
+      @keyframes hit-marker-rise {
+        0% { transform: translateY(6px) scale(0.9); opacity: 0; }
+        18% { transform: translateY(0) scale(1); opacity: 1; }
+        100% { transform: translateY(-34px) scale(1); opacity: 0; }
+      }
       #power-track {
         margin-top: 6px;
         width: 100%;
@@ -616,6 +664,11 @@
         hold to charge, release to shoot &middot; R reset
       </div>
     </div>
+    <div id="event-banner" hidden>
+      <div id="banner-headline"></div>
+      <div id="banner-consequence"></div>
+    </div>
+    <div id="hit-markers"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

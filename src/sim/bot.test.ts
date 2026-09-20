@@ -6,10 +6,14 @@ import { mulberry32 } from "./rng";
 import {
   BOT_CHARGE_RELEASE,
   BOT_ENGAGE_RANGE,
+  BOT_FIRE_RANGE,
   BOT_FIRE_TOLERANCE,
   BOT_STANDOFF,
   computeBotIntent,
 } from "./bot";
+
+/** A distance the bot both aims and fires at: within its putter's reach. */
+const INSIDE_FIRE_RANGE = BOT_FIRE_RANGE - 2;
 
 const DT = 1 / 60;
 
@@ -91,35 +95,47 @@ describe("computeBotIntent", () => {
     expect(Math.abs(intent.aimDelta)).toBeLessThanOrEqual(1.2 * DT + 1e-9);
   });
 
-  it("holds fire to charge while roughly aimed, then releases", () => {
+  it("holds fire to charge while roughly aimed and in range, then releases", () => {
     const bot = botAt(0, 0);
-    expect(intentFor(bot, { x: 20, z: 0 }).fire).toBe(true);
+    expect(intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }).fire).toBe(true);
 
     // Cart.step charges while `fire` is held; once charged enough the bot lets go, and the
     // release edge is what actually fires. This is how a stateless function drives a
     // charge-and-release weapon without carrying a timer of its own.
     (bot as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
-    expect(intentFor(bot, { x: 20, z: 0 }).fire).toBe(false);
+    expect(intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }).fire).toBe(false);
+  });
+
+  it("aims but holds fire at a target it is tracking from beyond its weapon's reach", () => {
+    // The bot equips the putter, a short-range club. Between the tracking range and the fire
+    // range it lines the turret up but does not pull the trigger, so it does not empty its
+    // magazine into the dirt while still closing. A target dead ahead so the aim is not the gate.
+    const tracking = (BOT_FIRE_RANGE + BOT_ENGAGE_RANGE) / 2;
+    const intent = intentFor(botAt(0, 0), { x: tracking, z: 0 });
+    expect(intent.fire).toBe(false);
+    // It is genuinely aimed -- the hold is the range gate, not a bad bearing.
+    expect(intent.aimDelta).toBe(0);
   });
 
   it("does not hold fire while badly off-aim", () => {
-    // Target behind the bot: aim error is pi, far outside the fire tolerance.
-    expect(intentFor(botAt(0, 0), { x: -20, z: 0 }).fire).toBe(false);
+    // Target behind the bot: aim error is pi, far outside the fire tolerance. Placed in range so
+    // the bearing is the only thing stopping the shot.
+    expect(intentFor(botAt(0, 0), { x: -INSIDE_FIRE_RANGE, z: 0 }).fire).toBe(false);
     expect(BOT_FIRE_TOLERANCE).toBeLessThan(Math.PI / 4);
   });
 
   it("does not hold fire with no ammo", () => {
     const bot = botAt(0, 0);
     bot.ammo = 0;
-    expect(intentFor(bot, { x: 20, z: 0 }).fire).toBe(false);
+    expect(intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }).fire).toBe(false);
   });
 
   it("nudges the shot inside the club's spread cone on the release tick", () => {
     const bot = botAt(0, 0);
     (bot as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
     // A random that returns 1 puts the spread at the positive edge of the cone.
-    const spread = intentFor(bot, { x: 20, z: 0 }, () => 1).aimDelta;
-    const centred = intentFor(bot, { x: 20, z: 0 }, () => 0.5).aimDelta;
+    const spread = intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }, () => 1).aimDelta;
+    const centred = intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }, () => 0.5).aimDelta;
     expect(spread).toBeGreaterThan(centred);
   });
 
@@ -128,12 +144,12 @@ describe("computeBotIntent", () => {
     const b = botAt(0, 0);
     (a as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
     (b as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
-    expect(intentFor(a, { x: 20, z: 0 }, mulberry32(7)).aimDelta).toBe(
-      intentFor(b, { x: 20, z: 0 }, mulberry32(7)).aimDelta,
+    expect(intentFor(a, { x: INSIDE_FIRE_RANGE, z: 0 }, mulberry32(7)).aimDelta).toBe(
+      intentFor(b, { x: INSIDE_FIRE_RANGE, z: 0 }, mulberry32(7)).aimDelta,
     );
   });
 
   it("never asks to change club", () => {
-    expect(intentFor(botAt(0, 0), { x: 20, z: 0 }).selectClub).toBeNull();
+    expect(intentFor(botAt(0, 0), { x: INSIDE_FIRE_RANGE, z: 0 }).selectClub).toBeNull();
   });
 });

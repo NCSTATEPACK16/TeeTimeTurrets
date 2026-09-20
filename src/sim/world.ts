@@ -63,6 +63,44 @@ export const TRANSFORM_STRIDE = 7;
  *  the world and must not be drawn where it is parked. */
 export const POOL_TRANSFORM_STRIDE = 8;
 
+/** Aim-preview arc granularity: `Sim.previewTrajectory` writes one point every this many ticks. */
+export const PREVIEW_SAMPLE_STRIDE = 4;
+/** Hard cap on the ticks `previewTrajectory` integrates (~6 s at FIXED_DT), so a flat shot that
+ *  never quite lands still terminates the loop. */
+const PREVIEW_MAX_TICKS = 360;
+/** Upper bound on points `previewTrajectory` writes: the tick cap over the stride, plus the muzzle
+ *  point and a final landing point. Sizes `createPreviewBuffer`. */
+export const PREVIEW_MAX_POINTS = Math.ceil(PREVIEW_MAX_TICKS / PREVIEW_SAMPLE_STRIDE) + 2;
+
+/** A reusable buffer of `Vec3`s for `previewTrajectory` to fill, so the arc allocates nothing per
+ *  frame. A caller holds one and passes it in every frame. */
+export function createPreviewBuffer(): Vec3[] {
+  const buffer: Vec3[] = [];
+  for (let i = 0; i < PREVIEW_MAX_POINTS; i++) buffer.push({ x: 0, y: 0, z: 0 });
+  return buffer;
+}
+
+function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
+  const p = out[i]!;
+  p.x = x;
+  p.y = y;
+  p.z = z;
+}
+
+/** What a hit marker is marking: a player ball connecting, or a cart the player killed. */
+export type HitEventKind = "hit" | "kill";
+/** A world-space combat event for the render layer to float a hit marker over. Attributed to the
+ *  player only -- bot-on-bot hits are not marked, or the arena would be a blizzard of numbers. */
+export interface HitEvent {
+  kind: HitEventKind;
+  x: number;
+  y: number;
+  z: number;
+}
+/** Most player-attributed events one tick can hold. A dropped overflow event is a missing marker,
+ *  never a wrong number, so a fixed pool is safe. */
+const HIT_EVENT_CAPACITY = 16;
+
 /**
  * Rapier's linear damping is the ball's *air* drag only (F = -k*v, applied in flight and on
  * the ground alike). Ground roll-out is governed by ANGULAR_DAMPING instead -- see below.
@@ -386,7 +424,22 @@ export class Sim {
    */
   private readonly cartCollisionScratch = new RAPIER.CharacterCollision();
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly botTarget = { x: 0, z: 0, dead: false };
+  /**
+   * Player-attributed combat events for the current tick, for the render layer's hit markers. A
+   * fixed pool written in place (no per-tick allocation); `hitEventCount` says how many are live and
+   * `hitEventEpoch` ticks up once per step so a consumer spawns each marker exactly once however
+   * many frames it renders between steps.
+   */
+  private readonly hitEventPool: HitEvent[] = Array.from({ length: HIT_EVENT_CAPACITY }, () => ({
+    kind: "hit" as HitEventKind,
+    x: 0,
+    y: 0,
+    z: 0,
+  }));
+  hitEventCount = 0;
+  hitEventEpoch = 0;
   /** Two, not one: the cart and the ball are at different positions within the same tick. */
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   private readonly ballTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
@@ -526,7 +579,7 @@ export class Sim {
     sim.combatContext = {
       registry: sim.registry,
       stats: sim.stats,
-      onBallHit: (shooter) => sim.creditHit(shooter),
+      onBallHit: (shooter, x, y, z) => sim.creditHit(shooter, x, y, z),
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
       onPinStruck: () => sim.fellPin(),
     };
@@ -538,7 +591,11 @@ export class Sim {
     sim.registry.registerCourseBall(courseBallCollider.handle, sim.ball);
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
-      const bot = new Cart({ maxHealth: 2 * hole.par });
+      // Bots fire the putter, not the default driver. A fired ball launches at its club's loft
+      // from a ~2.4 m muzzle, so a lofted club sails clean over a cart at any range a bot would
+      // stand off at -- the driver only returns to cart height near 63 m. The putter is flat (3
+      // deg), so its shot lands on the target at the ~7 m `BOT_STANDOFF`. See `bot.ts`.
+      const bot = new Cart({ maxHealth: 2 * hole.par, club: ClubType.Putter });
       sim.bots.push(bot);
       sim.addCartRig(
         bot,
@@ -742,6 +799,24 @@ export class Sim {
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
     this.match.scoreKill(killer, victim);
+    // A kill the player made floats a marker over the cart that went down. Only the player's, for
+    // the same reason `creditHit` credits only rig 0 -- the markers are the player's feedback.
+    if (killer === 0) this.recordHitEvent("kill", cart.position.x, cart.position.y, cart.position.z);
+  }
+
+  /** The player-attributed combat events from the last stepped tick, for the hit-marker layer. */
+  get hitEvents(): readonly HitEvent[] {
+    return this.hitEventPool;
+  }
+
+  /** Writes one event into the pool in place, dropping it if the tick's pool is already full. */
+  private recordHitEvent(kind: HitEventKind, x: number, y: number, z: number): void {
+    if (this.hitEventCount >= this.hitEventPool.length) return;
+    const e = this.hitEventPool[this.hitEventCount++]!;
+    e.kind = kind;
+    e.x = x;
+    e.y = y;
+    e.z = z;
   }
 
   /**
@@ -752,8 +827,10 @@ export class Sim {
    * with no way to tell whose ball it was, which is the latent defect
    * `docs/TEST-AND-SPEC-PITFALLS.md` §4 recorded: a bot's hit inflated the player's accuracy.
    */
-  private creditHit(shooter: number): void {
-    if (shooter === 0) this.stats.directHits += 1;
+  private creditHit(shooter: number, x: number, y: number, z: number): void {
+    if (shooter !== 0) return;
+    this.stats.directHits += 1;
+    this.recordHitEvent("hit", x, y, z);
   }
 
   /**
@@ -945,6 +1022,11 @@ export class Sim {
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
     this.syncCurrent();
+    // Fresh set of hit-marker events for this tick. The epoch bump lets a consumer spawn each
+    // marker once even when it renders several frames between steps; the early returns above skip
+    // it, so a frozen (match-over) scene stops producing events.
+    this.hitEventCount = 0;
+    this.hitEventEpoch++;
     processContacts(this.eventQueue, this.combatContext);
     for (const target of this.targets) target.step();
     this.syncCurrentTargets();
@@ -1292,6 +1374,72 @@ export class Sim {
    * against a course position -- it just answers where the ammo-round sprite sits. */
   muzzle(out: Vec3): void {
     computeMuzzle(this.cart, out);
+  }
+
+  /**
+   * A read-only forward integration of the shot that firing *now* would make, for the aim-preview
+   * arc (UI-SPEC H10 / image 02). Fills `out` with points from the muzzle to the ball's first
+   * ground contact and returns how many it wrote.
+   *
+   * **It touches no Rapier state and advances nothing** -- `Sim` is byte-identical before and
+   * after. That is the one property that matters: a preview that mutated the world, or advanced the
+   * ball, would resolve the shot twice. It mirrors the ball's own flight integration (gravity plus
+   * `LINEAR_DAMPING` at `FIXED_DT`) rather than reading the live world, so it stays a pure function
+   * of its inputs and runs identically with no ball in play, in a test, or on a server.
+   *
+   * It predicts the carry, not the roll: the arc ends where the ball lands, because that is what a
+   * player aims with, and re-deriving `applySurfaceResistance` for a line only ever looked at would
+   * be a second bounce model to keep in step with the first.
+   *
+   * The equipped club is read from the cart, not passed: its loft sets both the muzzle
+   * (`computeMuzzle`) and the launch elevation, so taking a separate club could preview a shot the
+   * muzzle does not match. Only `charge01` and `yaw` -- the two things a preview varies as the
+   * player charges and aims -- are parameters.
+   *
+   * `out` is a caller-held buffer of at least `PREVIEW_MAX_POINTS` reused `Vec3`s (see
+   * `createPreviewBuffer`); the arc allocates nothing per frame beyond the single launch-velocity
+   * vector.
+   */
+  previewTrajectory(charge01: number, yaw: number, out: Vec3[]): number {
+    computeMuzzle(this.cart, this.previewScratch);
+    let px = this.previewScratch.x;
+    let py = this.previewScratch.y;
+    let pz = this.previewScratch.z;
+
+    const v = computeLaunchVelocity(this.cart.equippedClub, charge01, yaw);
+    let vx = v.x;
+    let vy = v.y;
+    let vz = v.z;
+
+    const damp = 1 / (1 + LINEAR_DAMPING * FIXED_DT);
+    const bounds = this.playfield.bounds;
+    const capacity = Math.min(out.length, PREVIEW_MAX_POINTS);
+
+    let n = 0;
+    writePreviewPoint(out, n++, px, py, pz); // the muzzle itself
+
+    for (let tick = 1; tick <= PREVIEW_MAX_TICKS && n < capacity; tick++) {
+      // Gravity then damping then integrate, the order Rapier applies to the real ball.
+      vy -= GRAVITY * FIXED_DT;
+      vx *= damp;
+      vy *= damp;
+      vz *= damp;
+      px += vx * FIXED_DT;
+      py += vy * FIXED_DT;
+      pz += vz * FIXED_DT;
+
+      const ground = this.playfield.heightAt(px, pz) + BALL_RADIUS;
+      const landed = py <= ground;
+      const outside =
+        px < bounds.minX || px > bounds.maxX || pz < bounds.minZ || pz > bounds.maxZ;
+
+      if (landed || outside || tick % PREVIEW_SAMPLE_STRIDE === 0) {
+        if (landed) py = ground; // the last point rests on the surface, not just under it
+        writePreviewPoint(out, n++, px, py, pz);
+      }
+      if (landed || outside) break;
+    }
+    return n;
   }
 
   /**

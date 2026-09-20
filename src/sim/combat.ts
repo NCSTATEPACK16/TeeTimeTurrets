@@ -139,14 +139,15 @@ export interface CombatContext {
   registry: CombatRegistry;
   stats: Stats;
   /**
-   * A fired ball connected with something, and `shooter` is the rig that fired it.
+   * A fired ball connected with something. `shooter` is the rig that fired it; `x`/`y`/`z` are the
+   * ball's position at impact, which is where a hit marker floats.
    *
    * This replaces `ctx.stats.directHits += 1` written inline here, and the move is the fix for
    * `docs/TEST-AND-SPEC-PITFALLS.md` §4: `Stats` is the **player's**, and crediting it from a
    * module that could not tell whose ball it was meant a bot's hit inflated the player's
    * accuracy. `world.ts` now decides, and it decides by asking whether `shooter` is rig 0.
    */
-  onBallHit: (shooter: number) => void;
+  onBallHit: (shooter: number, x: number, y: number, z: number) => void;
   /**
    * Called once, on the contact that takes a cart from above zero HP to zero.
    *
@@ -218,7 +219,8 @@ function ballHitsTarget(
   impulseScratch.z = v.z * scale;
   hit.target.knockDown(hit.part, impulseScratch);
 
-  ctx.onBallHit(ball.firedBy);
+  const at = ball.body.translation();
+  ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
   // `targetsDown` is deliberately still unattributed: it counts ragdolls down on this hole,
   // which is a fact about the world rather than about whoever knocked one over.
   if (!wasDown) ctx.stats.targetsDown += 1;
@@ -257,7 +259,8 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
   // guarded -- a cart that cannot be shot and cannot be pushed can park inside an enemy.
   if (cart.protectedFor > 0) return;
 
-  ctx.onBallHit(ball.firedBy);
+  const at = ball.body.translation();
+  ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
   cart.strokesTaken += 1;
   if (applyDamage(cart.health, STROKE_DAMAGE)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
 }

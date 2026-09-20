@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
-import { BOT_ENGAGE_RANGE } from "./bot";
+import { BOT_ENGAGE_RANGE, BOT_FIRE_RANGE } from "./bot";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
 import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
@@ -637,15 +637,21 @@ describe("bot carts", () => {
     sim.cart.position.x = bot.position.x - 20;
     sim.cart.position.z = bot.position.z;
     const ammoBefore = bot.ammo;
-    const distanceBefore = 20;
 
-    for (let i = 0; i < 600; i++) sim.step();
+    // The bot fires the putter, a short-range club, so it drives right in. It is effective enough
+    // to kill the player, who then respawns across the hole -- so the final distance measures the
+    // respawn, not the approach. What closing proves is that the bot reached firing range at all,
+    // which is the nearest it got over the run.
+    let nearest = Infinity;
+    for (let i = 0; i < 600; i++) {
+      sim.step();
+      nearest = Math.min(
+        nearest,
+        Math.hypot(bot.position.x - sim.cart.position.x, bot.position.z - sim.cart.position.z),
+      );
+    }
 
-    const distanceAfter = Math.hypot(
-      bot.position.x - sim.cart.position.x,
-      bot.position.z - sim.cart.position.z,
-    );
-    expect(distanceAfter).toBeLessThan(distanceBefore);
+    expect(nearest, "the bot never closed into firing range").toBeLessThanOrEqual(BOT_FIRE_RANGE);
     expect(bot.ammo).toBeLessThan(ammoBefore);
   });
 

@@ -464,13 +464,21 @@ describe("an arena match on the authored course is a match", () => {
       BOT_ENGAGE_RANGE,
     );
 
-    // The player holds still. Any closing is the bots' doing.
-    play(sim, [{ ticks: 60 * 60, intent: {} }]);
+    // The player holds still. Any closing is the bots' doing. A bot that reaches the player now
+    // kills it -- bots fire an effective short-range club -- and the player respawns across the
+    // course, so the *final* distance measures the respawn, not the closing. The nearest a bot got
+    // over the whole minute is what proves one came into range.
+    const source = new ScriptedInputSource([{ ticks: 60 * 60, intent: {} }]);
+    let nearest = Infinity;
+    for (let i = 0; i < 60 * 60; i++) {
+      sim.step(source.sample());
+      source.endTick();
+      for (const bot of sim.bots) nearest = Math.min(nearest, distanceToPlayer(bot));
+    }
 
-    const closed = sim.bots.map(distanceToPlayer);
     expect(
-      Math.min(...closed),
-      `after 60 s the nearest bot is ${Math.min(...closed).toFixed(0)} m away, from ${Math.min(...opening).toFixed(0)} m`,
+      nearest,
+      `over 60 s the nearest a bot got was ${nearest.toFixed(0)} m, from ${Math.min(...opening).toFixed(0)} m`,
     ).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
   }, 60000);
 });

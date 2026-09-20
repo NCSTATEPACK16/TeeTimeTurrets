@@ -11,6 +11,11 @@ import { createHudStateScratch, deriveHudState } from "../hudState";
 import type { Hud } from "../hud";
 import { drawMatchResults, readMatchResults } from "../matchResults";
 import type { MatchResultsDom } from "../matchResults";
+import { drawBanner, readBanner } from "../banner";
+import type { BannerDom } from "../banner";
+import { BannerFeed, createBannerView } from "../bannerFeed";
+import type { BannerSource } from "../bannerFeed";
+import { HitMarkers } from "../hitMarkers";
 import { Nameplates } from "../nameplates";
 import { CourseMap } from "../courseMap";
 import type { MapHole, MapMarker } from "../courseMap";
@@ -74,6 +79,27 @@ export class RoundScreen implements Screen {
   private hud: Hud | null = null;
   private matchResults: MatchResultsDom | null = null;
   private matchResultsWereVisible = false;
+  /** UI-SPEC H12. Optional: if index.html has no #event-banner the round still runs without it. */
+  private banner: BannerDom | null = null;
+  private bannerFeed = new BannerFeed();
+  private readonly bannerView = createBannerView();
+  /** Reused each frame so the banner update allocates nothing in the render loop. */
+  private readonly bannerSourceScratch = {
+    holedOut: false,
+    lastShotInWater: false,
+    lastShotOutOfBounds: false,
+    playerDead: false,
+    playerKills: 0,
+  };
+  /** Wall-clock ms of the last banner update, for a frame-rate-independent fade (same reason
+   *  `lastSeenAtMs` is a wall clock). */
+  private lastBannerMs = 0;
+  /** UI-SPEC H11. Optional like the banner; the round runs without #hit-markers. */
+  private hitMarkers: HitMarkers | null = null;
+  /** The last `Sim.hitEventEpoch` consumed, so each tick's events spawn a marker exactly once
+   *  however many frames render between steps. */
+  private lastHitEpoch = 0;
+  private readonly hitScreenScratch = { x: 0, y: 0 };
   private view: FrameView | null = null;
   private reported = false;
   /** Guards `onMatchOver` the same way `reported` guards `onHoleComplete`: called once. */
@@ -146,6 +172,14 @@ export class RoundScreen implements Screen {
       throw new Error("expected the #hud elements and #match-results in index.html");
     }
     hudRoot.hidden = false;
+    // Optional polish -- a missing #event-banner leaves `banner` null and the round runs without
+    // it, rather than throwing the way the HUD and results overlay do.
+    this.banner = readBanner();
+    this.bannerFeed = new BannerFeed();
+    this.lastBannerMs = performance.now();
+    const hitRoot = document.getElementById("hit-markers");
+    this.hitMarkers = hitRoot ? new HitMarkers(hitRoot) : null;
+    this.lastHitEpoch = sim.hitEventEpoch;
     // The match clock running out and the ball dropping are different endings. This overlay is
     // the former -- combat's "time up" card -- and the Results screen is the latter. Keeping both
     // means adding the golf ending did not quietly delete the combat one.
@@ -260,9 +294,11 @@ export class RoundScreen implements Screen {
 
     this.render.draw(view);
     this.drawNameplates();
+    this.drawHitMarkers(sim);
     this.drawPinMarker();
     this.drawCourseMap();
     drawHud(this.hud, sim);
+    this.updateBanner(sim);
     // Arena's ending is `MatchResultsScreen`, reached via `onMatchOver` above -- not this overlay,
     // whose numbers (`Cart.strokesTaken`, `Sim.matchOutcome()`) are stroke play's cart-combat mode
     // and would be the wrong scoreboard entirely (see `MatchResultsScreen.ts`'s header). Skipped
@@ -302,6 +338,9 @@ export class RoundScreen implements Screen {
     // and ammo cards lit over whatever screen comes next.
     if (this.hud) this.hud.combat.hidden = true;
     if (this.matchResults) this.matchResults.root.hidden = true;
+    if (this.banner) this.banner.root.hidden = true;
+    this.hitMarkers?.dispose();
+    this.hitMarkers = null;
     this.matchResults = null;
     this.input?.dispose();
     this.input = null;
@@ -370,6 +409,46 @@ export class RoundScreen implements Screen {
     map.draw(mapMarkers, 1);
   }
 
+  /**
+   * Feeds public sim events to the banner and writes the current one to the DOM. Runs in both
+   * modes: stroke play flashes water / OOB / hole-out, arena flashes enemy-down / destroyed. The
+   * fade is timed off a wall clock so it looks the same at any frame rate.
+   */
+  private updateBanner(sim: Sim): void {
+    const now = performance.now();
+    const dt = Math.max(0, (now - this.lastBannerMs) / 1000);
+    this.lastBannerMs = now;
+
+    const source: BannerSource = this.bannerSourceScratch;
+    this.bannerSourceScratch.holedOut = sim.holedOut;
+    this.bannerSourceScratch.lastShotInWater = sim.lastShotInWater;
+    this.bannerSourceScratch.lastShotOutOfBounds = sim.lastShotOutOfBounds;
+    this.bannerSourceScratch.playerDead = sim.cart.dead;
+    this.bannerSourceScratch.playerKills = sim.match.pointsFor(0);
+
+    this.bannerFeed.update(source, dt);
+    this.bannerFeed.view(this.bannerView);
+    if (this.banner) drawBanner(this.banner, this.bannerView);
+  }
+
+  /**
+   * Spawns a hit marker for each of the tick's player-attributed combat events, once per tick. The
+   * epoch gate is what makes it once: the sim advances at a fixed step while this renders at the
+   * display rate, so without it a slow tick would spawn the same markers on several frames. Runs
+   * after `render.draw`, so the camera `projectToScreen` reads is this frame's.
+   */
+  private drawHitMarkers(sim: Sim): void {
+    if (!this.hitMarkers || !this.render) return;
+    if (sim.hitEventEpoch === this.lastHitEpoch) return;
+    this.lastHitEpoch = sim.hitEventEpoch;
+    for (let i = 0; i < sim.hitEventCount; i++) {
+      const e = sim.hitEvents[i]!;
+      // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
+      const onScreen = this.render.projectToScreen(e.x, e.y + HIT_MARKER_LIFT, e.z, this.hitScreenScratch);
+      if (onScreen) this.hitMarkers.spawn(e.kind, this.hitScreenScratch.x, this.hitScreenScratch.y);
+    }
+  }
+
   private drawNameplates(): void {
     const { sim } = this.options;
     const view = this.view;
@@ -395,6 +474,9 @@ export class RoundScreen implements Screen {
 
 /** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
 const NAMEPLATE_HEIGHT = 2.6;
+
+/** Metres a hit marker is lifted above the impact point, so it reads over a cart, not at its wheels. */
+const HIT_MARKER_LIFT = 1.5;
 
 /** Reused per frame while the map is open; the render loop is covered by the no-allocation rule. */
 const mapMarkers: MapMarker[] = [];
