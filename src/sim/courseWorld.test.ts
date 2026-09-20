@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCourseWorld } from "./courseWorld";
+import { AUTHORED_CLUBHOUSE } from "./authoredLayout";
 import { authoredCourse } from "./authoredCourse";
 import { toCourseFrame } from "./courseGeometry";
 import { createSpawnSet } from "./spawn";
@@ -65,6 +66,13 @@ describe("buildCourseWorld", () => {
       expect(Number.isFinite(point.y)).toBe(true);
       expect(Number.isFinite(point.heading)).toBe(true);
     }
+  });
+
+  it("carries the authored clubhouse position for the renderer to place its building", () => {
+    // The renderer places the (decorative) clubhouse from this, rather than importing the authored
+    // layout itself, so it has to be the authored landmark and not, say, the origin. A drift here
+    // would drop the building somewhere no hole routes back to.
+    expect(world.clubhouse).toEqual({ x: AUTHORED_CLUBHOUSE.x, z: AUTHORED_CLUBHOUSE.z });
   });
 
   it("is deterministic: the same seed builds the same course", () => {

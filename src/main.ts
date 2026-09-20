@@ -167,6 +167,7 @@ async function main(): Promise<void> {
         surfaces: world.surfaces,
         southBoundary: world.southBoundary,
         seed: COURSE_SEED,
+        clubhouse: world.clubhouse,
       },
       onMatchOver: () => screens.show("arenaResults"),
     });

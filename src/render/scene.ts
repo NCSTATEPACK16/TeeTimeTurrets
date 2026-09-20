@@ -23,6 +23,8 @@ import { createTrees } from "./Trees";
 import type { Trees } from "./Trees";
 import { createCourseTrees } from "./courseTrees";
 import type { CourseTrees } from "./courseTrees";
+import { loadDecor } from "./decor";
+import type { Decor } from "./decor";
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
@@ -60,6 +62,13 @@ const CHASE_MIN_GROUND_CLEARANCE = 1.5;
 const BOT_DEFAULT_CLUB = ClubType.Driver;
 
 /**
+ * The decorative clubhouse mesh, loaded only in arena and only through `decor.ts`. The shipped
+ * `clubhouse.glb` is the showroom's interior reused as an in-world stand-in so the landmark exists
+ * now; the authored exterior GLB (see `docs/asset-tasks/`) swaps in here once it is modelled.
+ */
+const CLUBHOUSE_URL = "models/clubhouse.glb";
+
+/**
  * The course, for arena. Passing it is the render-side mode switch, and it is deliberately the
  * same shape of decision as `Sim.loadCourse`: one object, present or absent, rather than a boolean
  * flag plus the four things the flag would then need.
@@ -85,6 +94,13 @@ export interface ArenaSource {
    * its own seed, so it is passed beside it.
    */
   readonly seed?: number;
+  /**
+   * Where the clubhouse landmark stands, in world metres. Optional so a generated arena course
+   * without one simply gets no building rather than one dropped at the origin. Decorative only:
+   * `Sim` never reads it, and the mesh is loaded through `decor.ts` behind a null check, so a
+   * course still plays if the model is missing.
+   */
+  readonly clubhouse?: { readonly x: number; readonly z: number };
 }
 
 /**
@@ -147,6 +163,14 @@ export class RenderScene {
   private readonly treeline: Treeline | null;
   /** The rough's scattered wood across every hole. Arena's answer to the single-hole `trees`. */
   private readonly courseTrees: CourseTrees | null;
+  /**
+   * The clubhouse landmark, arena only. Loaded asynchronously through the one GLB door and never
+   * awaited (decoration must not block first paint), so it is `null` until -- and if -- it arrives.
+   * `disposed` guards the in-flight load against a teardown that beats it: without it a fast exit
+   * would add a building to a dead scene and leak it.
+   */
+  private clubhouse: Decor | null = null;
+  private disposed = false;
   /**
    * Ground height under the chase camera. The course's in arena, the hole's otherwise: a camera
    * that probed the single hole's heightfield while flying over hole 14 would read the height of
@@ -225,6 +249,25 @@ export class RenderScene {
       if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
       this.courseTrees = createCourseTrees(arena.course, arena.surfaces, arena.seed ?? 0);
       this.scene.add(this.courseTrees.group);
+      // The clubhouse landmark, placed where the authored layout says it stands and stood on the
+      // course heightfield so it does not float or sink. Fired off, never awaited (decoration must
+      // not block first paint) and guarded against a teardown that beats it, exactly as the
+      // showroom loads its backdrop. A stand-in until the authored exterior GLB lands; both arrive
+      // through the same door and both degrade to nothing if the file is missing.
+      if (arena.clubhouse) {
+        const { x, z } = arena.clubhouse;
+        const y = arena.course.heightAt(x, z);
+        void loadDecor(CLUBHOUSE_URL).then((loaded) => {
+          if (!loaded) return;
+          if (this.disposed) {
+            loaded.dispose();
+            return;
+          }
+          loaded.object.position.set(x, y, z);
+          this.clubhouse = loaded;
+          this.scene.add(loaded.object);
+        });
+      }
       this.ground = null;
       this.trees = null;
       this.flagstick = null;
@@ -327,7 +370,10 @@ export class RenderScene {
    * scene, so freeing it here would take the WebGL context down with the first round that ended.
    */
   dispose(): void {
+    this.disposed = true;
     window.removeEventListener("resize", this.resizeListener);
+    this.clubhouse?.dispose();
+    this.clubhouse = null;
     this.cart.dispose();
     for (const bot of this.botCarts) bot.dispose();
     this.targets.dispose();

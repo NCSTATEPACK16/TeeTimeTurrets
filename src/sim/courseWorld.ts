@@ -38,6 +38,12 @@ export interface CourseWorld {
    * road instead of borrowing this one's.
    */
   readonly southBoundary: SouthBoundary;
+  /**
+   * Where the clubhouse landmark stands, in world metres. Carried alongside the course so the
+   * renderer can place its (decorative) building without importing the authored layout directly;
+   * the sim itself never reads it.
+   */
+  readonly clubhouse: { readonly x: number; readonly z: number };
 }
 
 /**
@@ -83,5 +89,5 @@ export function buildCourseWorld(course: Course, seed: number): CourseWorld {
     // and make that agreement a coincidence rather than a fact.
     holes.map((hole) => createSurfaces(hole.spec, hole.terrain)),
   );
-  return { terrain, surfaces, holes, southBoundary: AUTHORED_SOUTH_BOUNDARY };
+  return { terrain, surfaces, holes, southBoundary: AUTHORED_SOUTH_BOUNDARY, clubhouse: layout.clubhouse };
 }
