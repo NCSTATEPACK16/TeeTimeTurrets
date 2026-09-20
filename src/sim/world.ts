@@ -63,6 +63,30 @@ export const TRANSFORM_STRIDE = 7;
  *  the world and must not be drawn where it is parked. */
 export const POOL_TRANSFORM_STRIDE = 8;
 
+/** Aim-preview arc granularity: `Sim.previewTrajectory` writes one point every this many ticks. */
+export const PREVIEW_SAMPLE_STRIDE = 4;
+/** Hard cap on the ticks `previewTrajectory` integrates (~6 s at FIXED_DT), so a flat shot that
+ *  never quite lands still terminates the loop. */
+const PREVIEW_MAX_TICKS = 360;
+/** Upper bound on points `previewTrajectory` writes: the tick cap over the stride, plus the muzzle
+ *  point and a final landing point. Sizes `createPreviewBuffer`. */
+export const PREVIEW_MAX_POINTS = Math.ceil(PREVIEW_MAX_TICKS / PREVIEW_SAMPLE_STRIDE) + 2;
+
+/** A reusable buffer of `Vec3`s for `previewTrajectory` to fill, so the arc allocates nothing per
+ *  frame. A caller holds one and passes it in every frame. */
+export function createPreviewBuffer(): Vec3[] {
+  const buffer: Vec3[] = [];
+  for (let i = 0; i < PREVIEW_MAX_POINTS; i++) buffer.push({ x: 0, y: 0, z: 0 });
+  return buffer;
+}
+
+function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
+  const p = out[i]!;
+  p.x = x;
+  p.y = y;
+  p.z = z;
+}
+
 /**
  * Rapier's linear damping is the ball's *air* drag only (F = -k*v, applied in flight and on
  * the ground alike). Ground roll-out is governed by ANGULAR_DAMPING instead -- see below.
@@ -386,6 +410,7 @@ export class Sim {
    */
   private readonly cartCollisionScratch = new RAPIER.CharacterCollision();
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly botTarget = { x: 0, z: 0, dead: false };
   /** Two, not one: the cart and the ball are at different positions within the same tick. */
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
@@ -1296,6 +1321,72 @@ export class Sim {
    * against a course position -- it just answers where the ammo-round sprite sits. */
   muzzle(out: Vec3): void {
     computeMuzzle(this.cart, out);
+  }
+
+  /**
+   * A read-only forward integration of the shot that firing *now* would make, for the aim-preview
+   * arc (UI-SPEC H10 / image 02). Fills `out` with points from the muzzle to the ball's first
+   * ground contact and returns how many it wrote.
+   *
+   * **It touches no Rapier state and advances nothing** -- `Sim` is byte-identical before and
+   * after. That is the one property that matters: a preview that mutated the world, or advanced the
+   * ball, would resolve the shot twice. It mirrors the ball's own flight integration (gravity plus
+   * `LINEAR_DAMPING` at `FIXED_DT`) rather than reading the live world, so it stays a pure function
+   * of its inputs and runs identically with no ball in play, in a test, or on a server.
+   *
+   * It predicts the carry, not the roll: the arc ends where the ball lands, because that is what a
+   * player aims with, and re-deriving `applySurfaceResistance` for a line only ever looked at would
+   * be a second bounce model to keep in step with the first.
+   *
+   * The equipped club is read from the cart, not passed: its loft sets both the muzzle
+   * (`computeMuzzle`) and the launch elevation, so taking a separate club could preview a shot the
+   * muzzle does not match. Only `charge01` and `yaw` -- the two things a preview varies as the
+   * player charges and aims -- are parameters.
+   *
+   * `out` is a caller-held buffer of at least `PREVIEW_MAX_POINTS` reused `Vec3`s (see
+   * `createPreviewBuffer`); the arc allocates nothing per frame beyond the single launch-velocity
+   * vector.
+   */
+  previewTrajectory(charge01: number, yaw: number, out: Vec3[]): number {
+    computeMuzzle(this.cart, this.previewScratch);
+    let px = this.previewScratch.x;
+    let py = this.previewScratch.y;
+    let pz = this.previewScratch.z;
+
+    const v = computeLaunchVelocity(this.cart.equippedClub, charge01, yaw);
+    let vx = v.x;
+    let vy = v.y;
+    let vz = v.z;
+
+    const damp = 1 / (1 + LINEAR_DAMPING * FIXED_DT);
+    const bounds = this.playfield.bounds;
+    const capacity = Math.min(out.length, PREVIEW_MAX_POINTS);
+
+    let n = 0;
+    writePreviewPoint(out, n++, px, py, pz); // the muzzle itself
+
+    for (let tick = 1; tick <= PREVIEW_MAX_TICKS && n < capacity; tick++) {
+      // Gravity then damping then integrate, the order Rapier applies to the real ball.
+      vy -= GRAVITY * FIXED_DT;
+      vx *= damp;
+      vy *= damp;
+      vz *= damp;
+      px += vx * FIXED_DT;
+      py += vy * FIXED_DT;
+      pz += vz * FIXED_DT;
+
+      const ground = this.playfield.heightAt(px, pz) + BALL_RADIUS;
+      const landed = py <= ground;
+      const outside =
+        px < bounds.minX || px > bounds.maxX || pz < bounds.minZ || pz > bounds.maxZ;
+
+      if (landed || outside || tick % PREVIEW_SAMPLE_STRIDE === 0) {
+        if (landed) py = ground; // the last point rests on the surface, not just under it
+        writePreviewPoint(out, n++, px, py, pz);
+      }
+      if (landed || outside) break;
+    }
+    return n;
   }
 
   /**
