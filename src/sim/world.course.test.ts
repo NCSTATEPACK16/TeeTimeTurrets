@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { generateCourse } from "./course";
@@ -481,4 +482,38 @@ describe("an arena match on the authored course is a match", () => {
       `over 60 s the nearest a bot got was ${nearest.toFixed(0)} m, from ${Math.min(...opening).toFixed(0)} m`,
     ).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
   }, 60000);
+});
+
+describe("fired balls on the course", () => {
+  /**
+   * A pooled ball decides it has landed by comparing its height with the ground under it. The pool
+   * was built with a closure over `sim.terrain` -- the hole the Sim was created on -- and arena
+   * never replaced it, so on the course a ball was judged against hole 1's heightfield read at
+   * course coordinates. Where that ground sits higher than the course, a ball lying on the grass
+   * never lands and can never be picked up as ammo; where it sits lower, a ball "lands" in the air.
+   */
+  it("lands where the course ground is, so it can be picked back up", async () => {
+    const { sim, world } = await authoredSim();
+    interface PoolLike {
+      all: readonly { state: string; body: { translation(): { x: number; y: number; z: number } } }[];
+    }
+    const pool = (sim as unknown as { ballPool: PoolLike }).ballPool;
+
+    // One full-charge putter shot along the fairway, then hands off until it has come to rest.
+    play(sim, [
+      { ticks: 1, intent: { selectClub: ClubType.Putter } },
+      { ticks: 30, intent: { fire: true } },
+      { ticks: 1, intent: {} },
+      { ticks: 8 * 60, intent: {} },
+    ]);
+
+    const fired = pool.all.filter((b) => b.state !== "idle");
+    expect(fired.length, "the shot never left the muzzle").toBe(1);
+    const ball = fired[0]!;
+    const at = ball.body.translation();
+    const gap = at.y - world.terrain.heightAt(at.x, at.z);
+    // The premise: the ball is lying on the course's own ground, not caught on anything.
+    expect(Math.abs(gap), `ball rests ${gap.toFixed(2)} m off the course ground`).toBeLessThan(1);
+    expect(ball.state).toBe("landed");
+  }, 30000);
 });

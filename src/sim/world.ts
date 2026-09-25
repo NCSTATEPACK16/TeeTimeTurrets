@@ -570,9 +570,12 @@ export class Sim {
 
     sim.addCartRig(sim.cart, cartSpawnPosition(terrain), null);
 
-    // The closure reads sim.terrain live rather than closing over `terrain`, so it keeps
-    // checking against the correct hole's height field after loadHole() reassigns sim.terrain.
-    sim.ballPool = new BallPool(sim.world, (x, z) => sim.terrain.heightAt(x, z));
+    // The closure reads the playfield live rather than closing over `terrain`, so it keeps
+    // checking against whatever ground is loaded -- the course, after `loadCourse`, not hole 1.
+    sim.ballPool = new BallPool(sim.world, {
+      heightAt: (x, z) => sim.playfield.heightAt(x, z),
+      tuningAt: (x, z, out) => sim.playfield.surfaces.tuningAt(x, z, out),
+    });
     sim.buckets.push(createBucket(tee.x + 10, tee.z));
 
     sim.eventQueue = new RAPIER.EventQueue(true);

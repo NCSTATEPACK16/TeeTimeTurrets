@@ -642,17 +642,21 @@ describe("bot carts", () => {
     // to kill the player, who then respawns across the hole -- so the final distance measures the
     // respawn, not the approach. What closing proves is that the bot reached firing range at all,
     // which is the nearest it got over the run.
+    // The lowest ammo seen, not the final count: a fired ball that lands near the bot is picked back
+    // up, so the net can return to where it started even though the bot emptied rounds into the player.
     let nearest = Infinity;
+    let fewestRounds = ammoBefore;
     for (let i = 0; i < 600; i++) {
       sim.step();
       nearest = Math.min(
         nearest,
         Math.hypot(bot.position.x - sim.cart.position.x, bot.position.z - sim.cart.position.z),
       );
+      fewestRounds = Math.min(fewestRounds, bot.ammo);
     }
 
     expect(nearest, "the bot never closed into firing range").toBeLessThanOrEqual(BOT_FIRE_RANGE);
-    expect(bot.ammo).toBeLessThan(ammoBefore);
+    expect(fewestRounds).toBeLessThan(ammoBefore);
   });
 
   it("holds fire at a dead player instead of camping the respawn", async () => {
