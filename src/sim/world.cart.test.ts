@@ -5,16 +5,22 @@ import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { BOT_ENGAGE_RANGE, BOT_FIRE_RANGE } from "./bot";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
+import { arenaFromHole } from "./arena";
 import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import { POOL_SIZE } from "./entities/BallPool";
 import type { BallPool, PooledBall } from "./entities/BallPool";
-import type { Bucket } from "./entities/Pickup";
+import { ARENA_MAX_HEALTH } from "./matchConfig";
 import { SurfaceId } from "./surfaces";
 import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing";
 import type { Crossing } from "./crossing";
-import { MATCH_DURATION_S, POOL_TRANSFORM_STRIDE, Sim, SwingMode } from "./world";
-import { neutralIntent } from "../input/InputSource";
+import { MATCH_DURATION_S, POOL_TRANSFORM_STRIDE, Sim } from "./world";
+import { neutralIntent } from "./intent";
+
+/** A match on one hole: its own field, the player on the tee, a bot (if any) on the cup. */
+function holeSim(spec: HoleSpec = fixedHoleSpec(), botCount = 1, matchDurationS?: number): Promise<Sim> {
+  return Sim.create(arenaFromHole(spec), { botCount, matchDurationS });
+}
 
 /**
  * Phase 2's gate, run headlessly against the real Rapier world. Everything here is driven
@@ -43,8 +49,7 @@ function play(sim: Sim, script: readonly ScriptedStep[], tail = 0): void {
 /**
  * Full-charge shot with whatever club is equipped, measured as how far the pooled ball it spawns
  * gets from the cart. Sampled every tick rather than read at the end because a pooled ball is
- * released back to the pool once it lands, so its final resting place is not readable -- and it
- * is the pooled ball, not `Sim.ball`, that a shot moves now that cart mode is the only mode.
+ * released back to the pool once it lands, so its final resting place is not readable.
  */
 function fullShotDistance(sim: Sim): number {
   const from = { ...sim.cart.position };
@@ -69,14 +74,14 @@ function fullShotDistance(sim: Sim): number {
 describe("cart in the world", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    sim = await holeSim(fixedHoleSpec(), 0);
   });
 
   it("spawns the cart resting on the terrain rather than inside or above it", () => {
     play(sim, [{ ticks: seconds(1), intent: {} }]);
     const p = sim.cart.position;
-    expect(p.y).toBeGreaterThan(sim.terrain.heightAt(p.x, p.z));
-    expect(p.y - sim.terrain.heightAt(p.x, p.z)).toBeLessThan(2);
+    expect(p.y).toBeGreaterThan(sim.heightAt(p.x, p.z));
+    expect(p.y - sim.heightAt(p.x, p.z)).toBeLessThan(2);
   });
 
   it("drives forward under throttle without falling through the ground", () => {
@@ -87,7 +92,7 @@ describe("cart in the world", () => {
     expect(Math.hypot(p.x - start.x, p.z - start.z)).toBeGreaterThan(5);
     // The tunneling check the AGENTS.md testing invariants ask for, applied to the cart:
     // a body that fell through the heightfield diverges downward instead of tracking it.
-    expect(p.y).toBeGreaterThan(sim.terrain.heightAt(p.x, p.z) - 0.5);
+    expect(p.y).toBeGreaterThan(sim.heightAt(p.x, p.z) - 0.5);
   });
 
   it("steers the chassis while driving", () => {
@@ -98,8 +103,8 @@ describe("cart in the world", () => {
   it("stays on the field when driven at the edge for a long time", () => {
     play(sim, [{ ticks: seconds(30), intent: { throttle: -1 } }]);
     const p = sim.cart.position;
-    expect(Math.abs(p.x)).toBeLessThanOrEqual(sim.terrain.spec.fieldSize / 2);
-    expect(Math.abs(p.z)).toBeLessThanOrEqual(sim.terrain.spec.fieldSize / 2);
+    expect(Math.abs(p.x)).toBeLessThanOrEqual(sim.bounds.maxX);
+    expect(Math.abs(p.z)).toBeLessThanOrEqual(sim.bounds.maxZ);
     expect(Number.isFinite(p.y)).toBe(true);
   });
 
@@ -118,89 +123,35 @@ describe("cart in the world", () => {
     expect(sim.cart.turretYaw).toBeCloseTo(sim.cart.heading, 9);
   });
 
-  it("exposes the terrain and surfaces built from the hole it was created with", () => {
-    expect(sim.terrain.spec.fieldSize).toBe(160);
-    expect(sim.terrain.spec.tee).toEqual({ x: -45, z: 0 });
-    expect(sim.surfaces.surfaceAt(sim.terrain.cupPosition.x, sim.terrain.cupPosition.z)).toBe(
-      SurfaceId.Green,
-    );
+  it("stands on the ground and materials of the arena it was created with", () => {
+    expect(sim.bounds).toEqual({ minX: -80, minZ: -80, maxX: 80, maxZ: 80 });
+    const cup = fixedHoleSpec().cup;
+    expect(sim.surfaces.surfaceAt(cup.x, cup.z)).toBe(SurfaceId.Green);
   });
 
-  it("loadHole swaps the ground collider and re-tees onto the new hole", () => {
-    const next: HoleSpec = { ...fixedHoleSpec(), seed: 999, tee: { x: 20, z: -20 } };
-    sim.loadHole(next);
-
-    expect(sim.terrain.spec.seed).toBe(999);
-    expect(sim.current.position.x).toBeCloseTo(20, 5);
-    expect(sim.current.position.z).toBeCloseTo(-20, 5);
-    expect(sim.strokes).toBe(0);
-
-    // The ball must be standing on the *new* heightfield, not the old one: step it and confirm
-    // it settles rather than falling through to the out-of-bounds floor.
-    for (let i = 0; i < 180; i++) sim.step();
-    expect(sim.current.position.y).toBeGreaterThan(
-      sim.terrain.heightAt(sim.current.position.x, sim.current.position.z) - 0.5,
-    );
+  it("deals the player onto the tee, facing the cup", () => {
+    const { tee, cup } = fixedHoleSpec();
+    expect(sim.cart.position.x).toBeCloseTo(tee.x, 5);
+    expect(sim.cart.position.z).toBeCloseTo(tee.z, 5);
+    expect(sim.cart.heading).toBeCloseTo(Math.atan2(cup.z - tee.z, cup.x - tee.x), 9);
   });
 
-  it("loadHole releases every pooled ball back to idle and repositions the bucket for the new hole", () => {
-    play(sim, [{ ticks: 1, intent: {} }]);
-
-    // Force the whole pool into "flying" -- the exhaustion state that would otherwise leak a
-    // dead pool (or, before this fix, a bucket and stray balls at the old hole's coordinates)
-    // into the new hole. There is no public API for this, so reach into the private fields
-    // directly (still accessible at runtime -- TS privacy is compile-time only).
-    const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
-    const balls = (pool as unknown as { balls: PooledBall[] }).balls;
-    expect(balls.length).toBeGreaterThan(0);
-    for (const b of balls) b.state = "flying";
-    expect(pool.acquire(0)).toBeNull();
-
-    const next: HoleSpec = { ...fixedHoleSpec(), seed: 555, tee: { x: 30, z: 15 } };
-    sim.loadHole(next);
-
-    // Every ball must be back to idle -- acquire() must succeed again immediately.
-    expect(pool.acquire(0)).not.toBeNull();
-
-    // The hardcoded bucket must follow the new hole's tee, not stay at the old hole's.
-    const buckets = (sim as unknown as { buckets: Bucket[] }).buckets;
-    expect(buckets.length).toBeGreaterThan(0);
-    expect(buckets[0].position.x).toBeCloseTo(next.tee.x + 10, 5);
-    expect(buckets[0].position.z).toBeCloseTo(next.tee.z, 5);
-  });
-
-  it("loadHole frees pool slots so a fresh cart-mode shot after it still spawns a ball", () => {
-    play(sim, [{ ticks: 1, intent: {} }]);
-
-    const pool = (sim as unknown as { ballPool: BallPool }).ballPool;
-    const balls = (pool as unknown as { balls: PooledBall[] }).balls;
-    for (const b of balls) b.state = "flying";
-    expect(pool.acquire(0)).toBeNull();
-
-    const next: HoleSpec = { ...fixedHoleSpec(), seed: 777, tee: { x: -10, z: 40 } };
-    sim.loadHole(next);
-
-    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
-
-    expect(sim.lastShotWasStrike).toBe(true);
-  });
 });
 
 describe("striking the ball from the cart", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    sim = await holeSim(fixedHoleSpec(), 0);
   });
 
   it("equips the club the player selects and uses its stats for the shot", async () => {
     play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Putter } }]);
     expect(sim.cart.equippedClub).toBe(ClubType.Putter);
 
-    // Compared against a driver on an identical course rather than against a magic number:
-    // `Sim.launch` used to hardcode DEFAULT_CLUB, so what needs proving is that selection
-    // reaches Ballistics at all, and the two clubs' relative carry is what shows it.
+    // Compared against a driver on an identical course rather than against a magic number: what
+    // needs proving is that selection reaches Ballistics at all, and relative carry shows it.
     const putterDistance = fullShotDistance(sim);
-    const driverSim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const driverSim = await holeSim(fixedHoleSpec(), 0);
     play(driverSim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
     const driverDistance = fullShotDistance(driverSim);
 
@@ -228,49 +179,13 @@ describe("striking the ball from the cart", () => {
     }
     expect(sim.cart.equippedClub).toBe(ClubType.Iron);
     expect(Number.isFinite(sim.cart.position.y)).toBe(true);
-    expect(Number.isFinite(sim.current.position.y)).toBe(true);
-  });
-});
-
-describe("the dormant stroke-play swing", () => {
-  let sim: Sim;
-  beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
-  });
-
-  /**
-   * The only thing keeping `Sim.launch()` and `resolveShot`'s stationary branch honest. Since
-   * cart-only mode no input path reaches either, and `Sim.launch` has exactly one call site in
-   * the tree -- that branch. Without this test they would be proven to compile and nothing more,
-   * while `Sim.mode`'s docstring, UI-SPEC §1 and BACKLOG 20b all promise a *working* reference
-   * for the future true-golf mode. Whoever revives that mode needs to know the path did not rot
-   * in the interim, and a compiling-only reference cannot tell them.
-   *
-   * Reaching into `Sim.mode` is the point rather than a shortcut: it is the only remaining way in.
-   */
-  it("still plays the course ball and counts a stroke when the mode is set back to Stationary", () => {
-    sim.mode = SwingMode.Stationary;
-    play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
-    const from = { ...sim.current.position };
-
-    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
-
-    expect(sim.lastShotWasStrike).toBe(true);
-    expect(sim.strokes).toBe(1);
-
-    // Measured in flight rather than after it settles: a shot that lands in water or out of
-    // bounds is returned to the tee, which would read as "never launched". What is under test
-    // is that `launch()` imparts velocity at all, not where the ball ends up.
-    play(sim, [{ ticks: seconds(0.5), intent: {} }]);
-    const p = sim.current.position;
-    expect(Math.hypot(p.x - from.x, p.z - from.z)).toBeGreaterThan(5);
   });
 });
 
 describe("cart-mode ammo-aware combat shots", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    sim = await holeSim(fixedHoleSpec(), 0);
   });
 
   it("a fire with ammo spawns a pooled ball at the muzzle and it flies", () => {
@@ -308,70 +223,19 @@ describe("cart-mode ammo-aware combat shots", () => {
     expect(sim.cart.ammo).toBe(ammoBefore - 1);
   });
 
-  it("driving over the dormant course ball costs nothing", () => {
-    // The course ball rests at the tee and the cart spawns behind it, so this is the drive every
-    // hole opens with. It is a hazard only if the dormant ball is a combat actor.
-    play(sim, [{ ticks: 1, intent: {} }]);
-    const hpBefore = sim.cart.health.hp;
-    play(sim, [{ ticks: seconds(3), intent: { throttle: 1 } }]);
-
-    expect(sim.cart.strokesTaken).toBe(0);
-    expect(sim.cart.health.hp).toBe(hpBefore);
-    expect(sim.cart.dead).toBe(false);
-    // And it really did drive over the tee, or the assertions above prove nothing.
-    expect(sim.cart.position.x).toBeGreaterThan(sim.terrain.teePosition.x);
-  });
 });
 
-describe("targets, damage and respawn", () => {
+describe("damage and respawn", () => {
   let sim: Sim;
   beforeEach(async () => {
-    sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    sim = await holeSim(fixedHoleSpec(), 0);
   });
 
   /** The private hook combat.ts calls on a kill. Driving HP to zero through a real contact is
    * combat.test.ts's job; what this suite owns is what the *world* does about a death. */
   function kill(s: Sim): void {
-    (s as unknown as { killCart: (cart: Cart) => void }).killCart(s.cart);
+    (s as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(s.cart, 0, -1);
   }
-
-  it("places standing targets on the course", () => {
-    expect(sim.targets.length).toBeGreaterThan(0);
-    for (const target of sim.targets) {
-      expect(target.isDown).toBe(false);
-      const pelvis = target.part("pelvis").body.translation();
-      expect(pelvis.y).toBeGreaterThan(sim.terrain.heightAt(pelvis.x, pelvis.z));
-    }
-  });
-
-  it("a ball fired into a target knocks it down and records the hit", () => {
-    play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Putter } }]);
-
-    // Park the cart short of the nearest target, aimed straight at it, and putt: at this standoff
-    // the putter's flat arc crosses the target plane at body height. Placing the cart directly is
-    // the only way to get a repeatable firing line -- driving there would make the assertion a
-    // test of the terrain rather than of hit detection.
-    //
-    // Ten rather than the six this was written with, because the turret spec raised the muzzle
-    // 0.55 m: the same flat putt now clears a 0.82 m torso until about 6.5 m out. The band that
-    // connects is 6.5 to 14 m and this sits in the middle of it, which is the point -- an
-    // assertion parked on the edge of the band fails on the next ballistics tweak for no reason
-    // anyone can read.
-    const torso = sim.targets[0].part("torso").body.translation();
-    const standoff = 10;
-    sim.cart.heading = 0;
-    sim.cart.turretOffset = 0;
-    sim.cart.position.x = torso.x - standoff;
-    sim.cart.position.z = torso.z;
-    sim.cart.position.y =
-      sim.terrain.heightAt(torso.x - standoff, torso.z) + CART_COLLIDER.groundOffset;
-
-    play(sim, [{ ticks: seconds(1), intent: { fire: true } }, { ticks: seconds(3), intent: {} }]);
-
-    expect(sim.targets[0].isDown).toBe(true);
-    expect(sim.stats.targetsDown).toBe(1);
-    expect(sim.stats.directHits).toBeGreaterThanOrEqual(1);
-  });
 
   it("counts a shot that spawned a ball, and does not count a blank", () => {
     play(sim, [{ ticks: 1, intent: {} }]);
@@ -384,15 +248,13 @@ describe("targets, damage and respawn", () => {
     expect(sim.stats.shotsFired).toBe(1);
   });
 
-  it("a death freezes the cart for the respawn delay without charging its own stroke", () => {
+  it("a death is one stroke, and freezes the cart for the respawn delay", () => {
     play(sim, [{ ticks: seconds(1), intent: { throttle: 1 } }]);
-    const strokesBefore = sim.cart.strokesTaken;
     const ammoBefore = sim.cart.ammo;
 
     kill(sim);
     expect(sim.cart.dead).toBe(true);
-    // The hit that emptied the bar counted its own stroke; the death itself is not a second one.
-    expect(sim.cart.strokesTaken).toBe(strokesBefore);
+    expect(sim.match.strokesFor(0)).toBe(1);
 
     const frozen = { ...sim.cart.position };
     play(sim, [{ ticks: seconds(RESPAWN_DELAY_S - 0.5), intent: { throttle: 1, fire: true } }]);
@@ -403,15 +265,19 @@ describe("targets, damage and respawn", () => {
     expect(sim.cart.ammo).toBe(ammoBefore);
   });
 
-  it("respawns at the tee-adjacent spawn point at full health once the delay elapses", () => {
+  it("respawns on a spawn point at full health once the delay elapses", () => {
     play(sim, [{ ticks: seconds(2), intent: { throttle: 1 } }]);
     kill(sim);
     play(sim, [{ ticks: seconds(RESPAWN_DELAY_S + 0.5), intent: {} }]);
 
     expect(sim.cart.dead).toBe(false);
     expect(sim.cart.health.hp).toBe(sim.cart.health.max);
-    expect(sim.cart.position.x).toBeCloseTo(sim.terrain.teePosition.x - 2.5, 5);
-    expect(sim.cart.position.z).toBeCloseTo(sim.terrain.teePosition.z, 5);
+    // A one-hole arena has two spawn points: the tee and the cup. Standing on one of them, not
+    // wherever it died.
+    const { tee, cup } = fixedHoleSpec();
+    const p = sim.cart.position;
+    const onSpawn = [tee, cup].some((s) => Math.hypot(p.x - s.x, p.z - s.z) < 0.5);
+    expect(onSpawn, `respawned at (${p.x.toFixed(1)}, ${p.z.toFixed(1)})`).toBe(true);
   });
 
   it("only one death per life: a second kill while dead does not restart the respawn timer", () => {
@@ -425,89 +291,57 @@ describe("targets, damage and respawn", () => {
     expect(sim.cart.respawnTimer).toBeCloseTo(timer, 9);
   });
 
-  it("reset() heals a mid-respawn cart and stands every target back up", () => {
+  it("reset() heals a mid-respawn cart and clears the scoreboard", () => {
     play(sim, [{ ticks: 1, intent: {} }]);
-    sim.targets[0].knockDown(sim.targets[0].part("torso"), { x: 40, y: 0, z: 0 });
     kill(sim);
     expect(sim.cart.dead).toBe(true);
+    expect(sim.match.strokesFor(0)).toBe(1);
 
     sim.reset();
 
     expect(sim.cart.dead).toBe(false);
     expect(sim.cart.respawnTimer).toBe(0);
     expect(sim.cart.health.hp).toBe(sim.cart.health.max);
-    expect(sim.targets[0].isDown).toBe(false);
+    expect(sim.match.strokesFor(0)).toBe(0);
   });
 
-  it("keeps round stats across reset() -- a round is a sequence of holes", () => {
+  it("keeps the player's shot stats across reset()", () => {
     play(sim, [{ ticks: 1, intent: {} }]);
     play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
     expect(sim.stats.shotsFired).toBe(1);
 
     sim.reset();
     expect(sim.stats.shotsFired).toBe(1);
-
-    sim.loadHole({ ...fixedHoleSpec(), seed: 4242 });
-    expect(sim.stats.shotsFired).toBe(1);
   });
 
-  it("loadHole rebuilds the targets onto the new hole's terrain", () => {
-    const next: HoleSpec = { ...fixedHoleSpec(), seed: 321, tee: { x: 25, z: -25 } };
-    sim.loadHole(next);
-
-    expect(sim.targets.length).toBeGreaterThan(0);
-    for (const target of sim.targets) {
-      expect(target.isDown).toBe(false);
-      const pelvis = target.part("pelvis").body.translation();
-      expect(pelvis.y).toBeGreaterThan(sim.terrain.heightAt(pelvis.x, pelvis.z));
-    }
-  });
-
-  it("sizes the player's health bar at twice the hole's par", () => {
-    expect(sim.terrain.spec.par).toBe(3);
-    expect(sim.cart.health.max).toBe(6);
-    expect(sim.cart.health.hp).toBe(6);
-  });
-
-  it("resizes the health bar when loadHole brings a different par", () => {
-    sim.loadHole({ ...fixedHoleSpec(), par: 5, seed: 4141 });
-    expect(sim.cart.health.max).toBe(10);
-    expect(sim.cart.health.hp).toBe(10);
-  });
-
-  it("reset clears strokesTaken", () => {
-    sim.cart.strokesTaken = 4;
-    sim.reset();
-    expect(sim.cart.strokesTaken).toBe(0);
-  });
 });
 
 describe("bot carts", () => {
-  it("creates one bot by default, on the terrain and out past the cup", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
+  it("creates one bot by default, on the terrain at the far end of the hole", async () => {
+    const sim = await holeSim();
     expect(sim.bots).toHaveLength(1);
 
     const bot = sim.bots[0]!;
-    const cup = sim.terrain.cupPosition;
-    expect(bot.position.x).toBeCloseTo(cup.x + 2.5, 5);
+    const { cup } = fixedHoleSpec();
+    expect(bot.position.x).toBeCloseTo(cup.x, 5);
     expect(bot.position.z).toBeCloseTo(cup.z, 5);
-    expect(bot.position.y).toBeGreaterThan(sim.terrain.heightAt(bot.position.x, bot.position.z));
+    expect(bot.position.y).toBeGreaterThan(sim.heightAt(bot.position.x, bot.position.z));
   });
 
   it("creates none when the caller asks for none", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await holeSim(fixedHoleSpec(), 0);
     expect(sim.bots).toHaveLength(0);
     expect(sim.currentBotCarts).toHaveLength(0);
   });
 
-  it("gives every bot its own health bar sized to par", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
-    expect(sim.bots[0]!.health.max).toBe(2 * sim.terrain.spec.par);
+  it("gives every bot its own full arena health bar", async () => {
+    const sim = await holeSim();
+    expect(sim.bots[0]!.health.max).toBe(ARENA_MAX_HEALTH);
     expect(sim.bots[0]!.health.hp).toBe(sim.bots[0]!.health.max);
   });
 
   it("publishes a render transform per bot and keeps it in step with the sim", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
+    const sim = await holeSim();
     expect(sim.currentBotCarts).toHaveLength(1);
     expect(sim.previousBotCarts).toHaveLength(1);
     for (let i = 0; i < 30; i++) sim.step();
@@ -516,10 +350,10 @@ describe("bot carts", () => {
   });
 
   it("settles the bot onto the ground rather than leaving it hanging or sunk", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
+    const sim = await holeSim();
     for (let i = 0; i < 120; i++) sim.step();
     const bot = sim.bots[0]!;
-    const ground = sim.terrain.heightAt(bot.position.x, bot.position.z);
+    const ground = sim.heightAt(bot.position.x, bot.position.z);
     expect(bot.position.y - ground).toBeGreaterThan(0);
     expect(bot.position.y - ground).toBeLessThan(2);
   });
@@ -536,35 +370,15 @@ describe("bot carts", () => {
     (s as unknown as { resolveShot: (r: unknown) => void }).resolveShot(rig);
   }
 
-  it("a bot's shot never launches the player's course ball or counts a player stroke", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
-    // The stationary branch is dormant -- no input path reaches it -- so reach in and select it
-    // directly. Its player-only guard is what keeps that reference implementation safe to revive.
-    sim.mode = SwingMode.Stationary;
-    const bot = sim.bots[0]!;
-    const from = { ...sim.current.position };
-
-    expect(bot.fire(1)).toBe(true);
-    resolveShotFor(sim, bot);
-
-    expect(sim.strokes).toBe(0);
-    expect(sim.lastShotWasStrike).toBe(false);
-    // A full-charge launch would carry the course ball tens of metres in half a second; a ball
-    // left alone only settles.
-    for (let i = 0; i < 30; i++) sim.step();
-    const p = sim.current.position;
-    expect(Math.hypot(p.x - from.x, p.z - from.z)).toBeLessThan(2);
-  });
-
   it("a bot's cart-mode shot spawns its own pooled ball without counting a player shot", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
+    const sim = await holeSim();
     const bot = sim.bots[0]!;
     const ammoBefore = bot.ammo;
 
     expect(bot.fire(1)).toBe(true);
     resolveShotFor(sim, bot);
 
-    // `stats` and `lastShotWasStrike` are the player's round-level state, not the world's.
+    // `stats` and `lastShotWasStrike` are the player's state, not the world's.
     expect(sim.stats.shotsFired).toBe(0);
     expect(sim.lastShotWasStrike).toBe(false);
 
@@ -583,17 +397,15 @@ describe("bot carts", () => {
   });
 
   it("returns every bot to its spawn on reset", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
+    const sim = await holeSim();
     const bot = sim.bots[0]!;
     bot.position.x = 0;
     bot.position.z = 0;
-    bot.strokesTaken = 3;
     bot.health.hp = 1;
 
     sim.reset();
 
-    expect(bot.position.x).toBeCloseTo(sim.terrain.cupPosition.x + 2.5, 5);
-    expect(bot.strokesTaken).toBe(0);
+    expect(bot.position.x).toBeCloseTo(fixedHoleSpec().cup.x, 5);
     expect(bot.health.hp).toBe(bot.health.max);
   });
 
@@ -607,7 +419,7 @@ describe("bot carts", () => {
      * What survives the change is the half that still holds: the weapon is a 40 m weapon, so the
      * bot closes the distance without spending a round doing it.
      */
-    const sim = await Sim.create(fixedHoleSpec());
+    const sim = await holeSim();
     const bot = sim.bots[0]!;
     const start = { x: bot.position.x, z: bot.position.z };
     const startDistance = Math.hypot(start.x - sim.cart.position.x, start.z - sim.cart.position.z);
@@ -615,7 +427,8 @@ describe("bot carts", () => {
       BOT_ENGAGE_RANGE,
     );
 
-    for (let i = 0; i < 300; i++) sim.step();
+    // Four seconds: the bot opens on the cup, ~90 m out, and reaches 40 m a little after five.
+    for (let i = 0; i < 240; i++) sim.step();
 
     const moved = Math.hypot(bot.position.x - start.x, bot.position.z - start.z);
     expect(moved, "the bot did not move at all").toBeGreaterThan(1);
@@ -624,13 +437,13 @@ describe("bot carts", () => {
       bot.position.z - sim.cart.position.z,
     );
     expect(endDistance, "it moved, but not toward the player").toBeLessThan(startDistance - 1);
-    // Still out of range after five seconds, so every tick above was a held-fire tick.
+    // Still out of range, so every tick above was a held-fire tick.
     expect(endDistance).toBeGreaterThan(BOT_ENGAGE_RANGE);
     expect(bot.ammo).toBe(STARTING_AMMO);
   });
 
   it("closes on the player and spends ammo once the player is in range", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
+    const sim = await holeSim();
     const bot = sim.bots[0]!;
     // Put the player just inside the bot's engagement range rather than driving there, so the
     // assertion is about the bot rather than about the terrain between the tee and the cup.
@@ -660,11 +473,11 @@ describe("bot carts", () => {
   });
 
   it("holds fire at a dead player instead of camping the respawn", async () => {
-    const sim = await Sim.create(fixedHoleSpec());
+    const sim = await holeSim();
     const bot = sim.bots[0]!;
     sim.cart.position.x = bot.position.x - 15;
     sim.cart.position.z = bot.position.z;
-    (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.cart);
+    (sim as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(sim.cart, 0, -1);
     const ammoBefore = bot.ammo;
 
     // Shorter than RESPAWN_DELAY_S, so the player is dead for the whole window.
@@ -675,7 +488,7 @@ describe("bot carts", () => {
 
   it("plays the same match twice from the same seed", async () => {
     const trace = async (): Promise<number[]> => {
-      const sim = await Sim.create(fixedHoleSpec());
+      const sim = await holeSim();
       sim.cart.position.x = sim.bots[0]!.position.x - 20;
       sim.cart.position.z = sim.bots[0]!.position.z;
       const out: number[] = [];
@@ -707,7 +520,7 @@ describe("bot carts", () => {
   }
 
   it("reseeds the bot's RNG on reset to the same stream a fresh sim would construct", async () => {
-    const replayed = await Sim.create(fixedHoleSpec());
+    const replayed = await holeSim();
     // Draw from the stream directly rather than hoping gameplay reaches a release tick within
     // some fixed number of ticks -- the bot's only random() call site is the charge-threshold
     // release, whose timing depends on aim-lock and charge-up duration and is not something a
@@ -721,7 +534,7 @@ describe("bot carts", () => {
     preReset();
     replayed.reset();
 
-    const fresh = await Sim.create(fixedHoleSpec());
+    const fresh = await holeSim();
 
     const afterReset = [botRandom(replayed, 1)(), botRandom(replayed, 1)(), botRandom(replayed, 1)()];
     const freshDraws = [botRandom(fresh, 1)(), botRandom(fresh, 1)(), botRandom(fresh, 1)()];
@@ -758,12 +571,12 @@ describe("driving into water", () => {
   }
 
   beforeEach(async () => {
-    sim = await Sim.create(pondSpec(), { botCount: 0 });
+    sim = await holeSim(pondSpec(), 0);
   });
 
   /** Find a water cell on this hole -- the pond is placed above but do not assume where. */
   function findWater(s: Sim): { x: number; z: number } {
-    const half = s.terrain.spec.fieldSize / 2 - 4;
+    const half = s.bounds.maxX - 4;
     for (let x = -half; x <= half; x += 2) {
       for (let z = -half; z <= half; z += 2) {
         if (s.surfaces.surfaceAt(x, z) === SurfaceId.Water) return { x, z };
@@ -772,7 +585,7 @@ describe("driving into water", () => {
     throw new Error(`no water cell found scanning [-${half}, ${half}] step 2 on both axes`);
   }
 
-  it("costs exactly one stroke and one point of health on the tick it enters", () => {
+  it("costs exactly one point of health on the tick it enters", () => {
     const water = findWater(sim);
 
     // Settle first, so the cart has a last-safe position recorded on dry land.
@@ -783,18 +596,17 @@ describe("driving into water", () => {
     sim.cart.position.z = water.z;
     sim.step();
 
-    expect(sim.cart.strokesTaken).toBe(1);
     expect(sim.cart.health.hp).toBe(hpBefore - 1);
   });
 
-  it("does not drain a stroke every tick while it sits there", () => {
+  it("does not drain health every tick while it sits there", () => {
     const water = findWater(sim);
     play(sim, [{ ticks: 30, intent: {} }]);
 
     sim.cart.position.x = water.x;
     sim.cart.position.z = water.z;
     sim.step();
-    const afterFirst = sim.cart.strokesTaken;
+    const afterFirst = sim.cart.health.hp;
 
     // Put it straight back in; the edge only re-arms once the cart is out of the water.
     for (let i = 0; i < 10; i++) {
@@ -802,7 +614,7 @@ describe("driving into water", () => {
       sim.cart.position.z = water.z;
       sim.step();
     }
-    expect(sim.cart.strokesTaken).toBe(afterFirst);
+    expect(sim.cart.health.hp).toBe(afterFirst);
   });
 
   it("drops the cart back on the last dry ground it stood on", () => {
@@ -821,22 +633,23 @@ describe("driving into water", () => {
     );
   });
 
-  it("does not fire while the cart is dead and awaiting respawn", () => {
+  it("charges nothing while the cart is dead and awaiting respawn", () => {
     const water = findWater(sim);
     play(sim, [{ ticks: 30, intent: {} }]);
-    (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.cart);
+    (sim as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(sim.cart, 0, -1);
+    const hpBefore = sim.cart.health.hp;
 
     sim.cart.position.x = water.x;
     sim.cart.position.z = water.z;
     sim.step();
 
-    expect(sim.cart.strokesTaken).toBe(0);
+    expect(sim.cart.health.hp).toBe(hpBefore);
   });
 });
 
 describe("the match clock", () => {
   it("counts down from the default duration", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await holeSim(fixedHoleSpec(), 0);
     expect(sim.matchTimeRemaining).toBe(MATCH_DURATION_S);
     expect(sim.matchOver).toBe(false);
     for (let i = 0; i < 60; i++) sim.step();
@@ -844,14 +657,14 @@ describe("the match clock", () => {
   });
 
   it("runs to the end in a handful of ticks when a test shortens it", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0, matchDurationS: 5 / 60 });
+    const sim = await holeSim(fixedHoleSpec(), 0, 5 / 60);
     for (let i = 0; i < 5; i++) sim.step();
     expect(sim.matchTimeRemaining).toBe(0);
     expect(sim.matchOver).toBe(true);
   });
 
   it("freezes the world once the match is over", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    const sim = await holeSim(fixedHoleSpec(), 1, 5 / 60);
     for (let i = 0; i < 5; i++) sim.step();
     const frozen = { ...sim.cart.position };
     const botFrozen = { ...sim.bots[0]!.position };
@@ -866,23 +679,19 @@ describe("the match clock", () => {
   });
 
   it("collapses the render-interpolation pairs on the buzzer tick, not just the live carts", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    const sim = await holeSim(fixedHoleSpec(), 1, 5 / 60);
     for (let i = 0; i < 5; i++) sim.step();
     expect(sim.matchOver).toBe(true);
 
-    // The renderer never reads `sim.cart` -- it lerps `previousCart` -> `currentCart` (and the
-    // ball's `previous` -> `current`) by an alpha that keeps sweeping 0..1 every tick period even
-    // though `step()` is now a no-op. If those pairs are left one tick apart from whenever the
-    // buzzer happened to land, a moving cart or ball visibly oscillates forever after the match
-    // has "ended". Equal components is what a frozen render actually requires.
+    // The renderer never reads `sim.cart` -- it lerps `previousCart` -> `currentCart` by an alpha
+    // that keeps sweeping 0..1 every tick period even though `step()` is now a no-op. If those
+    // pairs are left one tick apart from whenever the buzzer happened to land, a moving cart
+    // visibly oscillates forever after the match has "ended".
     expect(sim.previousCart.position.x).toBe(sim.currentCart.position.x);
     expect(sim.previousCart.position.z).toBe(sim.currentCart.position.z);
     expect(sim.previousCart.heading).toBe(sim.currentCart.heading);
     expect(sim.previousBotCarts[0]!.position.x).toBe(sim.currentBotCarts[0]!.position.x);
     expect(sim.previousBotCarts[0]!.position.z).toBe(sim.currentBotCarts[0]!.position.z);
-    expect(sim.previous.position.x).toBe(sim.current.position.x);
-    expect(sim.previous.position.y).toBe(sim.current.position.y);
-    expect(sim.previous.position.z).toBe(sim.current.position.z);
 
     // And that equality must survive further ticks, not just hold by luck on the buzzer tick
     // itself -- step() is a no-op from here on, so the pairs must stay collapsed indefinitely.
@@ -890,43 +699,6 @@ describe("the match clock", () => {
     intent.throttle = 1;
     for (let i = 0; i < 30; i++) sim.step(intent);
     expect(sim.previousCart.position.x).toBe(sim.currentCart.position.x);
-    expect(sim.previous.position.x).toBe(sim.current.position.x);
-  });
-
-  it("is pending until the clock runs out", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
-    expect(sim.matchOutcome()).toBe("pending");
-    for (let i = 0; i < 5; i++) sim.step();
-    expect(sim.matchOutcome()).toBe("draw");
-  });
-
-  it("gives the win to whoever took fewer strokes", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
-    sim.bots[0]!.strokesTaken = 3;
-    for (let i = 0; i < 5; i++) sim.step();
-    expect(sim.matchOutcome()).toBe("player");
-  });
-
-  it("exposes the best bot score as the single source matchOutcome and the results overlay both read", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
-    sim.bots[0]!.strokesTaken = 3;
-    for (let i = 0; i < 5; i++) sim.step();
-    expect(sim.bestBotStrokes()).toBe(3);
-  });
-
-  it("gives the win to the bot when the player took more", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
-    sim.cart.strokesTaken = 4;
-    for (let i = 0; i < 5; i++) sim.step();
-    expect(sim.matchOutcome()).toBe("bot");
-  });
-
-  it("calls an equal score a draw rather than picking a winner", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
-    sim.cart.strokesTaken = 2;
-    sim.bots[0]!.strokesTaken = 2;
-    for (let i = 0; i < 5; i++) sim.step();
-    expect(sim.matchOutcome()).toBe("draw");
   });
 
   it("keeps the score a cart died on: a death before the closing tick still counts", async () => {
@@ -938,10 +710,9 @@ describe("the match clock", () => {
     // all. Killing after 3 steps instead leaves two real ticks (the 4th and 5th) to run before
     // the clock closes -- the 4th is a genuine, non-early-return tick that processes the death
     // (stepRespawn counts the timer down), and only the 5th ends the match.
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    const sim = await holeSim(fixedHoleSpec(), 1, 5 / 60);
     for (let i = 0; i < 3; i++) sim.step();
-    sim.bots[0]!.strokesTaken = 6;
-    (sim as unknown as { killCart: (cart: Cart) => void }).killCart(sim.bots[0]!);
+    (sim as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(sim.bots[0]!, 1, 0);
 
     sim.step();
     expect(sim.matchOver).toBe(false); // the 4th tick is real, not the early return
@@ -949,12 +720,12 @@ describe("the match clock", () => {
 
     sim.step();
     expect(sim.matchOver).toBe(true);
-    expect(sim.bots[0]!.strokesTaken).toBe(6);
-    expect(sim.matchOutcome()).toBe("player");
+    expect(sim.match.strokesFor(1)).toBe(1);
+    expect(sim.match.winningTeam()).toBe(0);
   });
 
   it("reset re-rolls the clock and clears the result", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { matchDurationS: 5 / 60 });
+    const sim = await holeSim(fixedHoleSpec(), 1, 5 / 60);
     for (let i = 0; i < 5; i++) sim.step();
     expect(sim.matchOver).toBe(true);
 
@@ -962,7 +733,6 @@ describe("the match clock", () => {
 
     expect(sim.matchOver).toBe(false);
     expect(sim.matchTimeRemaining).toBeCloseTo(5 / 60, 9);
-    expect(sim.matchOutcome()).toBe("pending");
   });
 });
 
@@ -997,7 +767,8 @@ describe("driving a crossing", () => {
    * not the throttle curve.
    */
   function driveAlong(sim: Sim, deck: Crossing, samples: number) {
-    let strokes = 0;
+    const hpBefore = sim.cart.health.hp;
+    let lost = 0;
     let lowest = Infinity;
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
@@ -1005,31 +776,31 @@ describe("driving a crossing", () => {
       const z = deck.az + (deck.bz - deck.az) * t;
       sim.cart.position.x = x;
       sim.cart.position.z = z;
-      sim.cart.position.y = sim.terrain.heightAt(x, z) + CART_COLLIDER.groundOffset;
+      sim.cart.position.y = sim.heightAt(x, z) + CART_COLLIDER.groundOffset;
       sim.step();
-      strokes = sim.cart.strokesTaken;
-      lowest = Math.min(lowest, sim.terrain.heightAt(x, z));
+      lost = hpBefore - sim.cart.health.hp;
+      lowest = Math.min(lowest, sim.heightAt(x, z));
     }
-    return { strokes, lowest };
+    return { lost, lowest };
   }
 
-  it("carries a cart over the water without a single stroke", async () => {
-    const sim = await Sim.create(carrySpec(), { botCount: 0 });
+  it("carries a cart over the water without losing any health", async () => {
+    const sim = await holeSim(carrySpec(), 0);
     play(sim, [{ ticks: 30, intent: {} }]);
-    expect(sim.cart.strokesTaken).toBe(0);
+    expect(sim.cart.health.hp).toBe(ARENA_MAX_HEALTH);
 
     const deck = deriveCrossings(carrySpec())[0]!;
     const run = driveAlong(sim, deck, 60);
 
-    expect(run.strokes).toBe(0);
+    expect(run.lost).toBe(0);
     // And it really did go over the pond rather than round it: the deck is above the water line
     // the whole way, on ground the pond would otherwise have excavated 1.5 m below it.
     expect(run.lowest).toBeGreaterThan(carrySpec().waterLevel);
   });
 
-  it("still charges the crossing's own pond a stroke a metre off the shoulder", async () => {
+  it("still charges the crossing's own pond a metre off the shoulder", async () => {
     // The other half, and what stops the first test passing because the pond stopped being water.
-    const sim = await Sim.create(carrySpec(), { botCount: 0 });
+    const sim = await holeSim(carrySpec(), 0);
     play(sim, [{ ticks: 30, intent: {} }]);
 
     const deck = deriveCrossings(carrySpec())[0]!;
@@ -1044,7 +815,7 @@ describe("driving a crossing", () => {
     sim.cart.position.x = x;
     sim.cart.position.z = z;
     sim.step();
-    expect(sim.cart.strokesTaken).toBe(1);
+    expect(sim.cart.health.hp).toBe(ARENA_MAX_HEALTH - 1);
   });
 
   it("leaves a dry hole with no crossing to drive", async () => {
@@ -1065,16 +836,15 @@ describe("whose accuracy a hit belongs to", () => {
   }
 
   it("counts a hit from the player's own ball", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await holeSim(fixedHoleSpec(), 0);
     creditFrom(sim, 0);
     expect(sim.stats.directHits).toBe(1);
   });
 
   it("does not count a bot's hit toward the player's accuracy", async () => {
-    // This is a behaviour change in stroke play, not only in arena, and it is the fix for
-    // `docs/TEST-AND-SPEC-PITFALLS.md` §4: `combat.ts` had no way to tell whose ball it was, so
-    // every hit anywhere on the course inflated the number the results screen reports.
-    const sim = await Sim.create(fixedHoleSpec());
+    // The fix for `docs/TEST-AND-SPEC-PITFALLS.md` §4: `combat.ts` had no way to tell whose ball it
+    // was, so every hit anywhere on the course inflated the number the results screen reports.
+    const sim = await holeSim();
     creditFrom(sim, 1);
     expect(sim.stats.directHits).toBe(0);
   });
@@ -1082,7 +852,7 @@ describe("whose accuracy a hit belongs to", () => {
 
 describe("spawn protection", () => {
   it("is granted by a respawn and by nothing else", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await holeSim(fixedHoleSpec(), 0);
     // Alive and freshly created: no shield. The control that keeps the assertion below from
     // passing against protection being handed out at construction.
     expect(sim.cart.protectedFor).toBe(0);
@@ -1097,14 +867,14 @@ describe("spawn protection", () => {
   });
 
   it("is not handed out again by a reset", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await holeSim(fixedHoleSpec(), 0);
     sim.cart.protectedFor = 3;
     sim.reset();
     expect(sim.cart.protectedFor).toBe(0);
   });
 
   it("ends on the shot rather than on the timer", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await holeSim(fixedHoleSpec(), 0);
     // Far longer than this test runs, so the timer cannot be what ends it.
     sim.cart.protectedFor = 999;
     expect(sim.cart.fire(1)).toBe(true);

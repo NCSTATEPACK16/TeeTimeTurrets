@@ -15,8 +15,8 @@ import type { HoleSpec } from "../../sim/course";
  */
 
 export interface TitleActions {
+  /** Starts an arena match -- the game's one mode. */
   readonly play: () => void;
-  readonly arena?: () => void;
   readonly clubhouse?: () => void;
   readonly multiplayer?: () => void;
   readonly settings?: () => void;
@@ -62,9 +62,6 @@ export class TitleScreen implements Screen {
     };
 
     button("PLAY", actions.play, true);
-    // Second, under PLAY: arena is a whole mode, not a side door. It sits above CLUBHOUSE because
-    // the clubhouse is something you visit between rounds and this is something you play.
-    button("ARENA", actions.arena, false);
     button("CLUBHOUSE", actions.clubhouse, false);
     button("MULTIPLAYER", actions.multiplayer, false);
     button("SETTINGS", actions.settings, false);

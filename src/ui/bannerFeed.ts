@@ -1,6 +1,6 @@
 /**
  * The event banner (UI-SPEC H12, image 08): the full-width headline + consequence that flashes on
- * a match event -- `WATER HAZARD` / `PLUS ONE STROKE`, `ENEMY DOWN`, `DESTROYED`.
+ * a match event -- `WATER HAZARD`, `ENEMY DOWN`, `DESTROYED`.
  *
  * This is the whole rulebook for it, and it is DOM-free so the rules -- which event wins a tick,
  * how long a banner dwells, how it fades -- are asserted in the node suite rather than eyeballed in
@@ -19,13 +19,11 @@
 
 /** The structural slice of `Sim` this needs. Structural so a test needs no Rapier world. */
 export interface BannerSource {
-  readonly holedOut: boolean;
-  readonly lastShotInWater: boolean;
-  readonly lastShotOutOfBounds: boolean;
+  /** The player cart drove into water this tick or is still in it (`Cart.wasInWater`). */
+  readonly playerInWater: boolean;
   /** The player cart is destroyed and respawning. */
   readonly playerDead: boolean;
-  /** The player's kill count (arena `match.pointsFor(0)`); 0 and unchanging in stroke play, so the
-   *  kill banner simply never fires there. */
+  /** The player's kill count, `match.pointsFor(0)`. */
   readonly playerKills: number;
 }
 
@@ -48,11 +46,9 @@ interface BannerDef {
 }
 
 // Ordered low-to-high priority in `update`; the highest-priority edge in a tick wins.
-const OUT_OF_BOUNDS: BannerDef = { headline: "OUT OF BOUNDS", consequence: "BACK TO THE TEE" };
-const WATER_HAZARD: BannerDef = { headline: "WATER HAZARD", consequence: "PLUS ONE STROKE" };
+const WATER_HAZARD: BannerDef = { headline: "WATER HAZARD", consequence: "MINUS ONE HP" };
 const ENEMY_DOWN: BannerDef = { headline: "ENEMY DOWN", consequence: "" };
 const DESTROYED: BannerDef = { headline: "DESTROYED", consequence: "RESPAWNING" };
-const HOLED_OUT: BannerDef = { headline: "HOLED OUT", consequence: "" };
 
 export function createBannerView(): BannerView {
   return { visible: false, headline: "", consequence: "", opacity: 0 };
@@ -64,9 +60,7 @@ export class BannerFeed {
   /** Seconds until the banner is fully gone (dwell + fade). */
   private remaining = 0;
 
-  private prevHoledOut = false;
   private prevWater = false;
-  private prevOob = false;
   private prevDead = false;
   private prevKills = 0;
   private baselined = false;
@@ -79,24 +73,18 @@ export class BannerFeed {
     // First call captures the current flags without firing, so wiring the feed up mid-match does
     // not replay an event that already happened (a non-zero kill count, a cart already dead).
     if (!this.baselined) {
-      this.prevHoledOut = source.holedOut;
-      this.prevWater = source.lastShotInWater;
-      this.prevOob = source.lastShotOutOfBounds;
+      this.prevWater = source.playerInWater;
       this.prevDead = source.playerDead;
       this.prevKills = source.playerKills;
       this.baselined = true;
     }
 
     let fired: BannerDef | null = null;
-    if (source.lastShotOutOfBounds && !this.prevOob) fired = OUT_OF_BOUNDS;
-    if (source.lastShotInWater && !this.prevWater) fired = WATER_HAZARD;
+    if (source.playerInWater && !this.prevWater) fired = WATER_HAZARD;
     if (source.playerKills > this.prevKills) fired = ENEMY_DOWN;
     if (source.playerDead && !this.prevDead) fired = DESTROYED;
-    if (source.holedOut && !this.prevHoledOut) fired = HOLED_OUT;
 
-    this.prevHoledOut = source.holedOut;
-    this.prevWater = source.lastShotInWater;
-    this.prevOob = source.lastShotOutOfBounds;
+    this.prevWater = source.playerInWater;
     this.prevDead = source.playerDead;
     this.prevKills = source.playerKills;
 

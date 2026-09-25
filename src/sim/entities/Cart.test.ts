@@ -8,11 +8,11 @@ import {
   Cart,
   MAX_AMMO,
   STARTING_AMMO,
-  STARTING_HP,
   TURRET_GEOMETRY,
   TireType,
   computeMuzzle,
 } from "./Cart";
+import { ARENA_MAX_HEALTH } from "../matchConfig";
 import type { CartIntent } from "./Cart";
 
 /**
@@ -454,8 +454,8 @@ describe("Cart health, death and shunting", () => {
   });
 
   it("starts alive at full HP", () => {
-    expect(cart.health.hp).toBe(STARTING_HP);
-    expect(cart.health.max).toBe(STARTING_HP);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+    expect(cart.health.max).toBe(ARENA_MAX_HEALTH);
     expect(cart.dead).toBe(false);
     expect(cart.respawnTimer).toBe(0);
   });
@@ -492,7 +492,7 @@ describe("Cart health, death and shunting", () => {
 
     cart.revive();
 
-    expect(cart.health.hp).toBe(STARTING_HP);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
     expect(cart.dead).toBe(false);
     expect(cart.respawnTimer).toBe(0);
     expect(cart.speed).toBe(0);
@@ -501,25 +501,12 @@ describe("Cart health, death and shunting", () => {
   });
 });
 
-describe("stroke bookkeeping", () => {
-  it("sizes health from the maxHealth option and defaults to STARTING_HP", () => {
-    expect(new Cart().health.max).toBe(STARTING_HP);
+describe("health bar sizing", () => {
+  it("sizes health from the maxHealth option and defaults to ARENA_MAX_HEALTH", () => {
+    expect(new Cart().health.max).toBe(ARENA_MAX_HEALTH);
     const sized = new Cart({ maxHealth: 8 });
     expect(sized.health.max).toBe(8);
     expect(sized.health.hp).toBe(8);
-  });
-
-  it("keeps strokesTaken across a respawn but clears it on clearStrokes", () => {
-    const cart = new Cart({ maxHealth: 8 });
-    cart.strokesTaken = 3;
-    cart.health.hp = 0;
-
-    cart.revive();
-    expect(cart.health.hp).toBe(8);
-    expect(cart.strokesTaken).toBe(3);
-
-    cart.clearStrokes();
-    expect(cart.strokesTaken).toBe(0);
   });
 
   it("setMaxHealth resizes and refills", () => {

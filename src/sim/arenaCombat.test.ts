@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
-import { neutralIntent } from "../input/InputSource";
+import { neutralIntent } from "./intent";
 import { BOT_STANDOFF } from "./bot";
 import { fixedHoleSpec } from "./course";
+import { arenaFromHole } from "./arena";
 import { CART_COLLIDER } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import { POOL_SIZE } from "./entities/BallPool";
@@ -30,7 +31,7 @@ interface RigLike {
 
 describe("arena combat is winnable", () => {
   it("a bot lands hits on the player it is standing off from", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 1 });
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 1 });
 
     // Let the player cart settle on the terrain, holding neutral.
     for (let i = 0; i < seconds(1); i++) sim.step(neutralIntent());
@@ -46,7 +47,7 @@ describe("arena combat is winnable", () => {
     const px = player.position.x;
     const pz = player.position.z;
     const bx = px + BOT_STANDOFF + 1;
-    const by = sim.terrain.heightAt(bx, pz) + CART_COLLIDER.groundOffset;
+    const by = sim.heightAt(bx, pz) + CART_COLLIDER.groundOffset;
     bot.position.x = bx;
     bot.position.y = by;
     bot.position.z = pz;
@@ -58,21 +59,25 @@ describe("arena combat is winnable", () => {
 
     // The player never touches a control; the bot does everything on its own. Track the lowest HP
     // seen rather than the final value: a bot this effective drives the player to zero inside the
-    // window, and `revive()` then refills the bar, so the final reading can be full again. What
-    // survives a respawn is `strokesTaken`, which spans the match by design.
+    // window, and `revive()` then refills the bar, so the final reading can be full again.
+    // Shots are counted as ticks the bot's ammo fell, not read off the final count: a bucket or the
+    // bot's own landed balls can refill it mid-run.
     let minHp = player.health.hp;
+    let shots = 0;
+    let lastAmmo = startAmmo;
     for (let i = 0; i < seconds(15); i++) {
       sim.step(neutralIntent());
       minHp = Math.min(minHp, player.health.hp);
+      if (bot.ammo < lastAmmo) shots += 1;
+      lastAmmo = bot.ammo;
     }
 
-    expect(bot.ammo).toBeLessThan(startAmmo); // the bot actually fired
+    expect(shots).toBeGreaterThan(0); // the bot actually fired
     expect(minHp).toBeLessThan(startHp); // and its shots connected
-    expect(player.strokesTaken).toBeGreaterThan(0);
   });
 
   it("advances the hit-event epoch each step and resets the buffer", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
     let last = sim.hitEventEpoch;
     for (let i = 0; i < 10; i++) {
       sim.step(neutralIntent());
@@ -87,7 +92,7 @@ describe("arena combat is winnable", () => {
     // the same rule that keeps a bot's hit off the player's accuracy. This reuses the reliable
     // engagement above (a bot standing off the player and firing); the positive side -- a player
     // ball recording an event with its impact position -- is asserted in `combat.test.ts`.
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 1 });
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 1 });
     for (let i = 0; i < seconds(1); i++) sim.step(neutralIntent());
 
     const player = sim.cart;
@@ -95,7 +100,7 @@ describe("arena combat is winnable", () => {
     const rigs = (sim as unknown as { rigs: RigLike[] }).rigs;
     const botRig = rigs.find((r) => r.cart === bot)!;
     const bx = player.position.x + BOT_STANDOFF + 1;
-    const by = sim.terrain.heightAt(bx, player.position.z) + CART_COLLIDER.groundOffset;
+    const by = sim.heightAt(bx, player.position.z) + CART_COLLIDER.groundOffset;
     bot.position.x = bx;
     bot.position.y = by;
     bot.position.z = player.position.z;
@@ -104,19 +109,21 @@ describe("arena combat is winnable", () => {
 
     // Player never fires; the bot does all the shooting.
     let playerEvents = 0;
+    let minHp = player.health.hp;
     for (let i = 0; i < seconds(15); i++) {
       sim.step(neutralIntent());
       playerEvents += sim.hitEventCount;
+      minHp = Math.min(minHp, player.health.hp);
     }
 
-    expect(player.strokesTaken, "the bot never landed a hit, so the test proves nothing").toBeGreaterThan(0);
+    expect(minHp, "the bot never landed a hit, so the test proves nothing").toBeLessThan(player.health.max);
     expect(playerEvents).toBe(0); // none of the bot's hits are the player's markers
   });
 
   it("the putter's shot comes back to cart height around the standoff distance", async () => {
     // Guards the club-and-standoff pairing directly: a driver's shot is still 5 m up here, so a
     // regression that re-armed bots with a lofted club fails this even without a live bot.
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
 
     // Fire the putter over the bonnet at roughly the bot's release charge (putter charges in 0.5 s;
     // 0.4 s of hold is ~0.8, which is `BOT_CHARGE_RELEASE`).
@@ -143,7 +150,7 @@ describe("arena combat is winnable", () => {
         const y = sim.currentPoolTransforms[flat + 1]!;
         const z = sim.currentPoolTransforms[flat + 2]!;
         const d = Math.hypot(x - from.x, z - from.z);
-        const h = y - sim.terrain.heightAt(x, z);
+        const h = y - sim.heightAt(x, z);
         // Cart-height band, near the standoff: this is a shot that would strike a cart parked there.
         if (h > 0.2 && h < 1.3 && d > BOT_STANDOFF - 1.5 && d < BOT_STANDOFF + 1.5) {
           hitAtStandoff = true;

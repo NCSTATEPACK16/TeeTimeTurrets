@@ -1,5 +1,5 @@
 import { applyAimSpread } from "../physics/Ballistics";
-import type { PlayerIntent } from "../input/InputSource";
+import type { PlayerIntent } from "./intent";
 import type { Cart } from "./entities/Cart";
 
 /**

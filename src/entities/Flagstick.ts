@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { PIN_SHAPE } from "../sim/entities/Pin";
 import { CUP_RADIUS } from "../sim/terrain";
 import type { Terrain } from "../sim/terrain";
 
@@ -13,13 +12,19 @@ import type { Terrain } from "../sim/terrain";
  * (§4.1: six static primitive kinds, static transforms) cannot express the vertex-animated pennant
  * the §2 manifest asks for either way.
  *
- * Every number that the physics also needs comes from `PIN_SHAPE`. Nothing here re-declares the
- * pole's radius or the cup's, because a drawn pole fatter than the collider is exactly the kind of
- * disagreement that ships behind two green tests.
- *
- * Render-facing only: it owns no Rapier body and no authoritative state. `Sim` publishes
- * `pinStanding` and this poses itself to match.
+ * Decoration, and only decoration: the arena has no pin in the simulation, so this owns no Rapier
+ * body and no authoritative state, and nothing collides with it. The cup is drawn at the sim's own
+ * `CUP_RADIUS` so the green reads the way the ground shader paints it.
  */
+
+/**
+ * Pole radius and total height, metres. A real flagstick is a shade over 2.1 m and the cart's canopy
+ * is at 2.05 m, so a true-scale pin reads as a pin from beside the green and is small from the tee.
+ */
+export const PIN_SHAPE = {
+  radius: 0.025,
+  height: 2.1,
+} as const;
 
 /** Radial segments on the pole. Eight is enough for a 5 cm-wide cylinder and puts vertices on the
  *  cardinal axes, so the drawn silhouette is exactly `PIN_SHAPE.radius` wide. */
@@ -202,10 +207,8 @@ export class Flagstick extends THREE.Group {
 /**
  * Puts the drawn pin where the simulation says the hole is.
  *
- * Exported rather than inlined into `RenderScene` for the same reason `placeCart` is: this is one
- * half of an agreement, and the other half is the collider `world.ts` builds from `PIN_SHAPE` at
- * `terrain.cupPosition`. A test that copied this line would agree with its own copy. It is also
- * what lets `backdrop.ts` place the pin identically without a `Sim` in sight.
+ * Exported so `backdrop.ts` and the course dressing place a pin identically, from the hole's own
+ * `terrain.cupPosition` rather than a copy of it.
  */
 export function placeFlagstick(flagstick: Flagstick, terrain: Terrain): void {
   const cup = terrain.cupPosition;

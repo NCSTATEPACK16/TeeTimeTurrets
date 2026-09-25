@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { neutralIntent } from "../input/InputSource";
-import type { PlayerIntent } from "../input/InputSource";
+import { arenaFromCourse } from "./arena";
+import { neutralIntent } from "./intent";
+import type { PlayerIntent } from "./intent";
 import { authoredCourse } from "./authoredCourse";
 import { buildCourseWorld } from "./courseWorld";
 import type { CourseWorld } from "./courseWorld";
@@ -54,27 +55,28 @@ function scriptedIntent(tick: number, out: PlayerIntent): PlayerIntent {
 }
 
 async function playScriptedMatch(world: CourseWorld): Promise<number> {
-  const spec = authoredCourse(COURSE_SEED).holes[0]!;
-  const sim = await Sim.create(spec, { botCount: ARENA_BOTS });
-  sim.loadCourse(world.terrain, world.surfaces, world.holes, world.southBoundary);
-
+  const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
   const print = new Fingerprint();
   const intent = neutralIntent();
   const carts = [sim.cart, ...sim.bots];
-  for (let tick = 0; tick < TICKS; tick++) {
-    sim.step(scriptedIntent(tick, intent));
-    for (const cart of carts) {
-      print.add(cart.position.x);
-      print.add(cart.position.y);
-      print.add(cart.position.z);
-      print.add(cart.heading);
-      print.add(cart.health.hp);
-      print.add(cart.ammo);
+  try {
+    for (let tick = 0; tick < TICKS; tick++) {
+      sim.step(scriptedIntent(tick, intent));
+      for (const cart of carts) {
+        print.add(cart.position.x);
+        print.add(cart.position.y);
+        print.add(cart.position.z);
+        print.add(cart.heading);
+        print.add(cart.health.hp);
+        print.add(cart.ammo);
+      }
     }
-  }
-  for (let i = 0; i < carts.length; i++) {
-    print.add(sim.match.strokesFor(i));
-    print.add(sim.match.pointsFor(i));
+    for (let i = 0; i < carts.length; i++) {
+      print.add(sim.match.strokesFor(i));
+      print.add(sim.match.pointsFor(i));
+    }
+  } finally {
+    sim.dispose();
   }
   return print.value;
 }

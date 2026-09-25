@@ -3,6 +3,7 @@ import type { Vec3 } from "../../physics/Ballistics";
 import { createHealth, setMaxHealth } from "../health";
 import type { Health } from "../health";
 import type { SurfaceTuning } from "../surfaces";
+import { ARENA_MAX_HEALTH } from "../matchConfig";
 
 /**
  * The golf cart as tank chassis: chassis heading, an independently-aimed turret, an equipped
@@ -77,14 +78,8 @@ export const BUCKET_REFILL_AMMO = 30;
 export const MAX_AMMO = 100;
 
 /**
- * Placeholder-but-real starting values, the same status POOL_SIZE had in the ammo spec: tunable
- * by feel once played. At 100 HP the damage table in `sim/combat.ts` makes a full-charge driver
- * hit worth 60, so two clean hits kill and a putter tap does not.
- */
-export const STARTING_HP = 100;
-/**
- * Death is a stroke penalty plus a wait, not a dead end -- long enough to be a real cost, short
- * enough that a hole is never abandoned over it.
+ * Death is a stroke against the team plus a wait -- long enough to be a real cost, short enough
+ * that nobody is sat out of a three-minute match for long.
  */
 export const RESPAWN_DELAY_S = 3;
 
@@ -172,11 +167,7 @@ export interface CartOptions {
   heading?: number;
   /** Turret angle *relative to the chassis*. 0 aims straight over the bonnet. */
   turretOffset?: number;
-  /**
-   * Size of the health bar. Cart-only mode passes `2 * hole.par` -- the hole's par is the
-   * number of strokes it is worth, and health is that budget doubled. Defaults to STARTING_HP
-   * for a cart built without a hole (tests, and the dormant stationary path).
-   */
+  /** Size of the health bar. Defaults to `ARENA_MAX_HEALTH`. */
   maxHealth?: number;
 }
 
@@ -241,14 +232,6 @@ export class Cart {
    */
   protectedFor: number;
   /**
-   * Strokes taken this match: one per ball hit, one per water entry. The match score.
-   *
-   * A real counter rather than `health.max - health.hp`, because a respawn refills the bar and
-   * a derived value would silently reset the score with it. Cart-vs-cart shunting deliberately
-   * does not touch this -- ramming is a shove, not a stroke (spec section 5).
-   */
-  strokesTaken: number;
-  /**
    * True while this cart is standing on a hazard surface. The edge into water is what costs a
    * stroke, not the state -- a cart parked in the shallows must not be drained every tick.
    * Owned here rather than in a parallel array in `world.ts` so it cannot fall out of step with
@@ -279,11 +262,10 @@ export class Cart {
     this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
     this.ammo = STARTING_AMMO;
-    this.health = createHealth(options.maxHealth ?? STARTING_HP);
+    this.health = createHealth(options.maxHealth ?? ARENA_MAX_HEALTH);
     this.dead = false;
     this.respawnTimer = 0;
     this.protectedFor = 0;
-    this.strokesTaken = 0;
     this.wasInWater = false;
     this.lastSafePosition = { x: start.x, y: start.y, z: start.z };
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
@@ -344,17 +326,9 @@ export class Cart {
     this.shuntVelocity.z = 0;
   }
 
-  /**
-   * Resize the health bar for a new hole's par. Refills, so a hole always opens at full HP --
-   * `strokesTaken` is deliberately untouched, since it spans the match rather than the hole.
-   */
+  /** Resize the health bar -- an armour upgrade. Refills, so the change never leaves a half bar. */
   setMaxHealth(max: number): void {
     setMaxHealth(this.health, max);
-  }
-
-  /** Zeroes the match score. Called by `Sim.reset()`, never by a respawn. */
-  clearStrokes(): void {
-    this.strokesTaken = 0;
   }
 
   /** Clamps to MAX_AMMO. Used by bucket refills and landed-ball pickups alike. */

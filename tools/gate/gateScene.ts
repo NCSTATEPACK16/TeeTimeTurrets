@@ -5,10 +5,7 @@ import { GolfClub } from "../../src/entities/GolfClub";
 import { mergeGraph } from "../../src/entities/primitiveGraph";
 import { PROP_NAMES, graphFor } from "../../src/entities/propGraphs";
 import type { PropName } from "../../src/entities/propGraphs";
-import { TargetRig } from "../../src/entities/TargetRig";
 import { ClubType } from "../../src/physics/Ballistics";
-import { PARTS_PER_TARGET, TARGET_PART_SHAPES } from "../../src/sim/entities/Target";
-import { TRANSFORM_STRIDE } from "../../src/sim/world";
 import { fixedHoleSpec } from "../../src/sim/course";
 import { createTerrain } from "../../src/sim/terrain";
 import { createSurfaces } from "../../src/sim/surfaces";
@@ -51,7 +48,6 @@ const SUBJECTS: Record<string, () => GateSubject> = {
   "cart-empty": () => clubSubject(ClubType.Driver, 0, 1, false),
   "cart-followthrough": () => clubSubject(ClubType.Driver, 0, 0.09),
   ball: () => ballSubject(),
-  target: () => targetSubject(),
   flagstick: () => flagstickSubject(false),
   "flagstick-felled": () => flagstickSubject(true),
   "hole-ground": () => holeGroundSubject(),
@@ -76,9 +72,9 @@ function clubSubject(club: ClubType, charge01 = 0, reload01 = 1, rider = true): 
   return { object: cart, dispose: () => cart.dispose() };
 }
 
-/** The same sphere render/scene.ts builds for the course ball: same radius and same segment
- *  counts, imported rather than copied, so a tesselation change there can't drift out from
- *  under what this subject measures. */
+/** The fired ball: the same radius and segment counts `BallSwarm` draws every pooled ball with,
+ *  imported rather than copied, so a tesselation change there can't drift out from under what
+ *  this subject measures. */
 function ballSubject(): GateSubject {
   const geometry = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
@@ -90,25 +86,6 @@ function ballSubject(): GateSubject {
       material.dispose();
     },
   };
-}
-
-/**
- * One target in its rest pose, posed from TARGET_PART_SHAPES' own rest offsets rather than from a
- * live Sim -- the gate must not need Rapier, a terrain or a seed to render a subject.
- */
-function targetSubject(): GateSubject {
-  const rig = new TargetRig(1);
-  const transforms = new Float32Array(PARTS_PER_TARGET * TRANSFORM_STRIDE);
-  for (let i = 0; i < TARGET_PART_SHAPES.length; i++) {
-    const offset = TARGET_PART_SHAPES[i]!.restOffset;
-    const flat = i * TRANSFORM_STRIDE;
-    transforms[flat] = offset.x;
-    transforms[flat + 1] = offset.y;
-    transforms[flat + 2] = offset.z;
-    transforms[flat + 6] = 1; // identity quaternion
-  }
-  rig.setFromTransforms(transforms, PARTS_PER_TARGET);
-  return { object: rig, dispose: () => rig.dispose() };
 }
 
 /**

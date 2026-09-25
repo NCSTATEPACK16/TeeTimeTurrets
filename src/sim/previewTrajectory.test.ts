@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
-import { neutralIntent } from "../input/InputSource";
+import { neutralIntent } from "./intent";
 import { fixedHoleSpec } from "./course";
+import { arenaFromHole } from "./arena";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { POOL_SIZE } from "./entities/BallPool";
 import { POOL_TRANSFORM_STRIDE, Sim, createPreviewBuffer } from "./world";
@@ -29,13 +30,12 @@ function play(sim: Sim, script: readonly ScriptedStep[]): void {
 
 describe("Sim.previewTrajectory", () => {
   it("leaves the sim byte-identical -- it advances nothing", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
     for (let i = 0; i < seconds(0.5); i++) sim.step(neutralIntent());
 
     const before = {
       cart: { ...sim.cart.position },
-      ball: { ...sim.current.position },
-      strokes: sim.strokes,
+      pool: sim.currentPoolTransforms.slice(),
       ammo: sim.cart.ammo,
       turretYaw: sim.cart.turretYaw,
     };
@@ -43,17 +43,16 @@ describe("Sim.previewTrajectory", () => {
     const buf = createPreviewBuffer();
     for (let i = 0; i < 100; i++) sim.previewTrajectory(0.8, sim.cart.turretYaw, buf);
 
-    // `sim.current.position` is the ball's synced transform from the last step; if a preview had
-    // advanced the ball this would move.
+    // The pool buffer is every ball's synced transform from the last step; if a preview had
+    // advanced or spawned a ball this would change.
     expect(sim.cart.position).toEqual(before.cart);
-    expect(sim.current.position).toEqual(before.ball);
-    expect(sim.strokes).toBe(before.strokes);
+    expect(sim.currentPoolTransforms).toEqual(before.pool);
     expect(sim.cart.ammo).toBe(before.ammo);
     expect(sim.cart.turretYaw).toBe(before.turretYaw);
   });
 
   it("writes an arc that rises from the muzzle and descends to the ground", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
     play(sim, [{ ticks: 2, intent: { selectClub: ClubType.Putter } }]);
     for (let i = 0; i < seconds(0.5); i++) sim.step(neutralIntent());
 
@@ -64,14 +63,14 @@ describe("Sim.previewTrajectory", () => {
     // First point is the muzzle, well above ground; the last sits on the surface.
     const first = buf[0]!;
     const last = buf[n - 1]!;
-    expect(first.y - sim.terrain.heightAt(first.x, first.z)).toBeGreaterThan(1);
-    expect(last.y - sim.terrain.heightAt(last.x, last.z)).toBeLessThan(BALL_RADIUS + 0.05);
+    expect(first.y - sim.heightAt(first.x, first.z)).toBeGreaterThan(1);
+    expect(last.y - sim.heightAt(last.x, last.z)).toBeLessThan(BALL_RADIUS + 0.05);
     // It went somewhere down-range.
     expect(Math.hypot(last.x - first.x, last.z - first.z)).toBeGreaterThan(3);
   });
 
   it("predicts where a fired ball actually lands, within tolerance", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
     // Equip the putter and let the cart settle so the muzzle and aim are stable.
     play(sim, [{ ticks: 2, intent: { selectClub: ClubType.Putter } }]);
     for (let i = 0; i < seconds(0.5); i++) sim.step(neutralIntent());
@@ -100,7 +99,7 @@ describe("Sim.previewTrajectory", () => {
         const y = sim.currentPoolTransforms[flat + 1]!;
         const z = sim.currentPoolTransforms[flat + 2]!;
         const travelled = Math.hypot(x - from.x, z - from.z);
-        if (travelled > 2 && y - sim.terrain.heightAt(x, z) < BALL_RADIUS * 1.4) {
+        if (travelled > 2 && y - sim.heightAt(x, z) < BALL_RADIUS * 1.4) {
           landing = { x, z };
         }
         break;

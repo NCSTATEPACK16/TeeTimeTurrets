@@ -1,13 +1,9 @@
 import * as THREE from "three";
-import { BallSwarm, BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../entities/BallSwarm";
-import { Flagstick, placeFlagstick } from "../entities/Flagstick";
+import { BallSwarm } from "../entities/BallSwarm";
 import { GolfClub, placeCart } from "../entities/GolfClub";
-import { TargetRig } from "../entities/TargetRig";
-import { PIN_SHAPE } from "../sim/entities/Pin";
 import { ClubType } from "../physics/Ballistics";
-import type { Terrain } from "../sim/terrain";
 import type { Surfaces } from "../sim/surfaces";
-import type { BallTransform, CartTransform } from "../sim/world";
+import type { CartTransform } from "../sim/world";
 import type { CourseTerrain } from "../sim/courseTerrain";
 import { BIOMES } from "./biomes";
 import { createCourseGround } from "./courseGround";
@@ -15,12 +11,6 @@ import { createTreeline } from "./treeline";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
-import { createGround } from "./ground";
-import type { Ground } from "./ground";
-import { createProps } from "./props";
-import type { Props } from "./props";
-import { createTrees } from "./Trees";
-import type { Trees } from "./Trees";
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
@@ -57,17 +47,7 @@ const CHASE_MIN_GROUND_CLEARANCE = 1.5;
  */
 const BOT_DEFAULT_CLUB = ClubType.Driver;
 
-/**
- * The course, for arena. Passing it is the render-side mode switch, and it is deliberately the
- * same shape of decision as `Sim.loadCourse`: one object, present or absent, rather than a boolean
- * flag plus the four things the flag would then need.
- *
- * What it turns *off* matters as much as what it turns on. The single-hole ground, the trees, the
- * flagstick and the props are all built from one `Terrain` around one cup, so in arena they would
- * draw a stray hole's turf and a second pin somewhere inside the course. Arena has no played ball
- * and no pin -- `Sim.loadCourse` removes both on the sim side -- and this is the render side of
- * the same statement.
- */
+/** The course a match is fought on, as the renderer needs it. */
 export interface ArenaSource {
   readonly course: CourseTerrain;
   readonly surfaces: Surfaces;
@@ -91,7 +71,6 @@ export interface ArenaSource {
  * GameLoop's frame callback is covered by the AGENTS.md no-allocation rule.
  */
 export interface FrameView {
-  ball: BallTransform;
   cart: CartTransform;
   charge01: number;
   /**
@@ -105,49 +84,29 @@ export interface FrameView {
    * fireable -- `Cart.canFire` also gates on the reload timer, so a loaded round can still be
    * mid-reload. */
   turretLoaded: boolean;
-  /** Interpolated target part transforms, laid out exactly as Sim publishes them. */
-  targetTransforms: Float32Array;
-  /** Number of valid transforms in `targetTransforms`. */
-  targetPartCount: number;
   /** Interpolated pooled-ball transforms, laid out exactly as Sim publishes them. */
   poolTransforms: Float32Array;
   /** One entry per bot cart, laid out exactly as `cart` is. */
   botCarts: CartTransform[];
   /**
-   * Seconds since the hole opened, for cosmetic cycles that are not simulated -- today only the
-   * pennant's. Accumulated from the fixed step rather than read off a wall clock, so a pennant
-   * looks the same in a scene-gate render as it does in a round.
+   * Seconds since the match opened, for cosmetic cycles that are not simulated. Accumulated from
+   * the fixed step rather than read off a wall clock, so a scene-gate render is reproducible.
    */
   elapsedSeconds: number;
-  /** `Sim.pinStanding`, straight through. The renderer poses the flagstick to match; it never
-   *  decides whether the pin is up. */
-  pinStanding: boolean;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
 export class RenderScene {
   readonly renderer: THREE.WebGLRenderer;
-  private readonly terrain: Terrain;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
-  private readonly ball: THREE.Mesh;
   private readonly cart: GolfClub;
   private readonly botCarts: GolfClub[] = [];
-  private readonly targets: TargetRig;
   private readonly pooledBalls: BallSwarm;
-  /** All four are null in arena -- see `ArenaSource` for why the hole's furniture has to go. */
-  private readonly ground: Ground | null;
-  private readonly trees: Trees | null;
-  private readonly flagstick: Flagstick | null;
-  private readonly props: Props | null;
-  private readonly courseGround: CourseGround | null;
-  /** The band of trees beyond the road. Arena only, and only on a course with a boundary. */
+  private readonly courseGround: CourseGround;
+  /** The band of trees beyond the road, on a course that has one. */
   private readonly treeline: Treeline | null;
-  /**
-   * Ground height under the chase camera. The course's in arena, the hole's otherwise: a camera
-   * that probed the single hole's heightfield while flying over hole 14 would read the height of
-   * whatever sits at those coordinates on hole 1 and clamp the eye to it.
-   */
+  /** Ground height under the chase camera, so the eye never dips into a hillside. */
   private readonly groundHeightAt: (x: number, z: number) => number;
   private readonly cameraTarget = new THREE.Vector3();
   private readonly chaseEyeScratch = new THREE.Vector3();
@@ -162,36 +121,21 @@ export class RenderScene {
    * a hard browser limit and a guaranteed leak across transitions. `ScreenManager` owns its
    * lifetime; this class only borrows it, and `dispose()` below deliberately does not free it.
    */
-  constructor(
-    renderer: THREE.WebGLRenderer,
-    terrain: Terrain,
-    surfaces: Surfaces,
-    targetCount: number,
-    botCount: number,
-    arena?: ArenaSource,
-  ) {
-    this.terrain = terrain;
-    // The draw distance the fog and far plane are cut to. One hole is its own field; the course is
-    // the diagonal of its bounds, so the far plane still reaches the horizon from any tee.
-    const fieldSize = arena
-      ? Math.hypot(
-          arena.course.bounds.maxX - arena.course.bounds.minX,
-          arena.course.bounds.maxZ - arena.course.bounds.minZ,
-        )
-      : terrain.spec.fieldSize;
-    // Arena crosses all three biomes, so no single sky is right. The hole the Sim was built on
-    // supplies it -- a deliberate approximation, not a claim that the course has one biome.
-    const palette = BIOMES[terrain.spec.biome];
+  constructor(renderer: THREE.WebGLRenderer, arena: ArenaSource, botCount: number) {
+    // The draw distance the fog and far plane are cut to: the diagonal of the course's bounds, so
+    // the far plane still reaches the horizon from any tee.
+    const fieldSize = Math.hypot(
+      arena.course.bounds.maxX - arena.course.bounds.minX,
+      arena.course.bounds.maxZ - arena.course.bounds.minZ,
+    );
+    // The course opens and closes in parkland, and the clubhouse sits in it: that is its sky.
+    const palette = BIOMES.parkland;
 
     this.renderer = renderer;
 
     this.scene = new THREE.Scene();
-    // Sky and fog take the biome's colour and share it, so the horizon dissolves rather than
-    // banding. This is the cheapest half of "eighteen holes look like three places": an overcast
-    // links sky and a hazy marsh sky read as different weather before any geometry loads.
+    // Sky and fog share one colour, so the horizon dissolves rather than banding.
     this.scene.background = new THREE.Color(palette.sky);
-    // Fog and far plane are sized to fieldSize: at the old 25/65 the fog closed in well
-    // inside the playable area and hid most of a full drive's landing zone.
     this.scene.fog = new THREE.Fog(palette.sky, fieldSize * 0.5, fieldSize * 2);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -206,50 +150,19 @@ export class RenderScene {
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
-    if (arena) {
-      this.courseGround = createCourseGround(arena.course, arena.surfaces);
-      this.scene.add(this.courseGround.group);
-      this.treeline =
-        arena.southBoundary === undefined
-          ? null
-          : createTreeline(
-              arena.southBoundary,
-              arena.course.bounds,
-              (x, z) => arena.course.heightAt(x, z),
-              arena.seed ?? 0,
-            );
-      if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
-      this.ground = null;
-      this.trees = null;
-      this.flagstick = null;
-      this.props = null;
-      this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
-    } else {
-      this.courseGround = null;
-      this.treeline = null;
-      this.ground = createGround(terrain, surfaces);
-      this.scene.add(this.ground.mesh);
-
-      this.trees = createTrees(terrain, surfaces);
-      if (this.trees.mesh !== null) this.scene.add(this.trees.mesh);
-
-      // Placed from `terrain.cupPosition` and never from a copy of it: `CUP_RADIUS` and that
-      // position are canonical for where the hole is, and the pin reads them.
-      this.flagstick = new Flagstick();
-      placeFlagstick(this.flagstick, terrain);
-      this.scene.add(this.flagstick);
-
-      // Derived from the hole, not seeded: see `props.ts`. Added here *and* to `backdrop.ts`.
-      this.props = createProps(terrain, surfaces);
-      for (const object of this.props.objects) this.scene.add(object);
-
-      this.groundHeightAt = (x, z) => terrain.heightAt(x, z);
-    }
-
-    const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
-    const ballMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
-    this.ball = new THREE.Mesh(ballGeo, ballMat);
-    this.scene.add(this.ball);
+    this.courseGround = createCourseGround(arena.course, arena.surfaces);
+    this.scene.add(this.courseGround.group);
+    this.treeline =
+      arena.southBoundary === undefined
+        ? null
+        : createTreeline(
+            arena.southBoundary,
+            arena.course.bounds,
+            (x, z) => arena.course.heightAt(x, z),
+            arena.seed ?? 0,
+          );
+    if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
+    this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
     this.cart = new GolfClub();
     this.scene.add(this.cart);
@@ -261,9 +174,6 @@ export class RenderScene {
       this.botCarts.push(bot);
       this.scene.add(bot);
     }
-
-    this.targets = new TargetRig(targetCount);
-    this.scene.add(this.targets);
 
     this.pooledBalls = new BallSwarm();
     this.scene.add(this.pooledBalls);
@@ -277,14 +187,6 @@ export class RenderScene {
   }
 
   draw(view: FrameView): void {
-    this.ball.position.set(view.ball.position.x, view.ball.position.y, view.ball.position.z);
-    this.ball.quaternion.set(
-      view.ball.rotation.x,
-      view.ball.rotation.y,
-      view.ball.rotation.z,
-      view.ball.rotation.w,
-    );
-
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
     for (let i = 0; i < this.botCarts.length; i++) {
       const transform = view.botCarts[i];
@@ -294,21 +196,14 @@ export class RenderScene {
       // bot that looks like it is shooting when it is not.
       this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, 1, false);
     }
-    this.targets.setFromTransforms(view.targetTransforms, view.targetPartCount);
     this.pooledBalls.setFromTransforms(view.poolTransforms);
-    if (this.flagstick) {
-      this.flagstick.update(view.elapsedSeconds);
-      this.flagstick.setFelled(!view.pinStanding);
-    }
 
     this.frameChase(view);
 
     // After `frameChase`, so the tiles refine toward where the camera now is rather than where it
     // was last frame. `update` is internally budgeted to BUILD_BUDGET_MS, so this cannot blow the
     // frame however far the cart has driven.
-    if (this.courseGround) {
-      this.courseGround.update(this.camera.position.x, this.camera.position.z);
-    }
+    this.courseGround.update(this.camera.position.x, this.camera.position.z);
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -323,14 +218,9 @@ export class RenderScene {
     window.removeEventListener("resize", this.resizeListener);
     this.cart.dispose();
     for (const bot of this.botCarts) bot.dispose();
-    this.targets.dispose();
     this.pooledBalls.dispose();
-    this.ground?.dispose();
-    this.trees?.dispose();
     this.treeline?.dispose();
-    this.flagstick?.dispose();
-    this.props?.dispose();
-    this.courseGround?.dispose();
+    this.courseGround.dispose();
     this.scene.clear();
   }
 
@@ -353,42 +243,6 @@ export class RenderScene {
     out.x = (this.projectScratch.x * 0.5 + 0.5) * size.x;
     out.y = (1 - (this.projectScratch.y * 0.5 + 0.5)) * size.y;
     return true;
-  }
-
-  /**
-   * As `projectToScreen`, but **clamped to the viewport edge instead of rejected** when the point is
-   * off camera, and it reports which of the two happened.
-   *
-   * H17 needs this and H13 does not, which is the whole reason it is a second method rather than a
-   * flag on the first. A nameplate for a cart you cannot see is noise and is hidden; the pin marker
-   * is the thing that tells you where the hole went after a wild drive, so it has to stay on screen
-   * pointing at it.
-   *
-   * A point behind the camera projects *mirrored* through the origin, so its NDC sign is inverted
-   * before clamping -- without that, a pin directly behind you clamps to the wrong edge, which is
-   * worse than not showing it at all.
-   *
-   * Writes into `out`: this runs once per frame.
-   */
-  projectPinMarker(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
-    this.projectScratch.set(x, y, z).project(this.camera);
-    const behind = this.projectScratch.z > 1;
-    const ndcX = behind ? -this.projectScratch.x : this.projectScratch.x;
-    const ndcY = behind ? -this.projectScratch.y : this.projectScratch.y;
-    const onScreen = !behind && Math.abs(ndcX) <= 1 && Math.abs(ndcY) <= 1;
-
-    const size = this.renderer.getSize(this.sizeScratch);
-    out.x = (clampNdc(ndcX) * 0.5 + 0.5) * size.x;
-    out.y = (1 - (clampNdc(ndcY) * 0.5 + 0.5)) * size.y;
-    return onScreen;
-  }
-
-  /** Where the marker points: the top of the pin, so the chip sits above the pennant. */
-  pinMarkerAnchor(out: { x: number; y: number; z: number }): void {
-    const cup = this.terrain.cupPosition;
-    out.x = cup.x;
-    out.y = cup.y + PIN_SHAPE.height;
-    out.z = cup.z;
   }
 
   /** Chassis placement lives in `GolfClub.placeCart`; what is left here is the per-frame state. */
@@ -437,9 +291,4 @@ export class RenderScene {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
-}
-
-/** NDC is [-1, 1]; anything outside is off camera and is pinned to the nearest edge. */
-function clampNdc(v: number): number {
-  return Math.min(1, Math.max(-1, v));
 }
