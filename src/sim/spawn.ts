@@ -1,13 +1,14 @@
 import { toCourseFrame } from "./courseLayout";
 import type { CourseFrame } from "./courseLayout";
 import type { Vec2 } from "./mapGeometry";
-import { SPAWN_CLEARANCE_M, SPAWN_TRIES } from "./matchConfig";
+import { SPAWN_CLEARANCE_M, SPAWN_TRIES, TEAM_COUNT, teamOf } from "./matchConfig";
 
 /**
  * Where a cart starts a match, and where it comes back.
  *
- * Arena spawns on the eighteen tees, which is the one set of points on the course that is
- * guaranteed to be flat, drivable, spread out and pointing somewhere. Stage B's `loadCourse`
+ * On the shipped course both teams spawn on pads either side of the clubhouse (`createTeamPads`).
+ * A ground with no clubhouse -- a single-hole or few-hole test arena -- deals carts onto the tees
+ * instead, the one set of points guaranteed to be flat, drivable, spread out and pointing somewhere. Stage B's `loadCourse`
  * re-teed every cart onto "ground that exists and no further", which in the course frame is
  * wherever hole 1 happens to sit -- so a match opened with every cart parked on top of each
  * other by the clubhouse. This is the module that was named as the answer.
@@ -142,4 +143,48 @@ function nearestLive(point: SpawnPoint, occupants: readonly SpawnOccupant[], sel
     if (distance < nearest) nearest = distance;
   }
   return nearest;
+}
+
+/**
+ * Metres east and west of the clubhouse to each team's pad. Team 0 is west, team 1 east, so the
+ * building (about 24 m wide) stands between them with open ground either side of it.
+ */
+export const PAD_OFFSET_M = 25;
+/** Slots per pad: a full squad of four (`ARENA_BOTS` + 1 = 8 carts, two teams). */
+export const PAD_SLOTS = 4;
+/** Metres between slots on a pad, which run north from the clubhouse's own line. */
+export const PAD_SLOT_SPACING_M = 7;
+/** `SpawnPoint.hole` for a pad slot: it belongs to no hole. */
+export const NO_HOLE = -1;
+
+/**
+ * The two team pads beside the clubhouse, `[team][slot]`, each slot at ground height and facing
+ * north onto the course -- away from County Home Road, which runs just south of the building.
+ *
+ * Where carts start a match and where they come back (the user's rule, 2026-09-24), replacing the
+ * eighteen tees. The pads sit on the clubhouse's own east-west line because the road is south and
+ * the course north: east and west is the only axis with room for both teams on the same footing.
+ */
+export function createTeamPads(clubhouse: Vec2, heightAt: (x: number, z: number) => number): SpawnPoint[][] {
+  const pads: SpawnPoint[][] = [];
+  for (let team = 0; team < TEAM_COUNT; team++) {
+    const x = clubhouse.x + (team === 0 ? -PAD_OFFSET_M : PAD_OFFSET_M);
+    const slots: SpawnPoint[] = [];
+    for (let slot = 0; slot < PAD_SLOTS; slot++) {
+      const z = clubhouse.z + slot * PAD_SLOT_SPACING_M;
+      slots.push({ x, y: heightAt(x, z), z, heading: Math.PI / 2, hole: NO_HOLE });
+    }
+    pads.push(slots);
+  }
+  return pads;
+}
+
+/**
+ * Cart `index`'s slot on its own team's pad. Squad-mates take consecutive slots, because `teamOf`
+ * alternates and `index / TEAM_COUNT` is a cart's place within its team. A roster larger than the
+ * pads wraps. Returns a point from `pads`, never a new one.
+ */
+export function padSpawn(pads: readonly (readonly SpawnPoint[])[], index: number): SpawnPoint {
+  const pad = pads[teamOf(index)]!;
+  return pad[Math.floor(index / TEAM_COUNT) % pad.length]!;
 }

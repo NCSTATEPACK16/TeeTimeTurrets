@@ -1,4 +1,6 @@
+import { AUTHORED_CLUBHOUSE } from "./authoredLayout";
 import type { CourseWorld } from "./courseWorld";
+import type { Vec2 } from "./mapGeometry";
 import type { HoleSpec } from "./course";
 import type { SouthBoundary } from "./courseBarrier";
 import { coursePlayfield, holePlayfield } from "./playfield";
@@ -23,6 +25,11 @@ export interface ArenaGround {
   /** The road carts are held north of, or null where there is none. */
   readonly southBoundary: SouthBoundary | null;
   /**
+   * Where the clubhouse stands. With one, both teams spawn and respawn on pads either side of it
+   * (`createTeamPads`); without one -- a single-hole test arena -- carts are dealt onto the tees.
+   */
+  readonly clubhouse: Vec2 | null;
+  /**
    * Root of every seeded stream in the match -- each bot's and the respawn draw. Taken from the
    * ground rather than the clock, per the AGENTS.md no-`Math.random`-in-the-sim rule, so the same
    * ground replays the same match.
@@ -44,6 +51,7 @@ export function arenaFromCourse(world: CourseWorld): ArenaGround {
     playfield: coursePlayfield(world.terrain, world.surfaces),
     holes: world.holes,
     southBoundary: world.southBoundary,
+    clubhouse: AUTHORED_CLUBHOUSE,
     seed: first.spec.seed,
   };
 }
@@ -64,6 +72,7 @@ export function arenaFromHole(spec: HoleSpec): ArenaGround {
       { placement: frame, spec: { index: spec.index, tee: spec.cup, cup: spec.tee } },
     ],
     southBoundary: null,
+    clubhouse: null,
     seed: spec.seed,
   };
 }

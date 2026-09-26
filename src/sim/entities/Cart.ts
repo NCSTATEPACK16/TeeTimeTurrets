@@ -324,6 +324,9 @@ export class Cart {
     this.recoil.z = 0;
     this.shuntVelocity.x = 0;
     this.shuntVelocity.z = 0;
+    // A cart comes back able to fight. Topped up, not reset: dying never costs a cart the ammo it
+    // had gathered above the starting load.
+    this.ammo = Math.max(this.ammo, STARTING_AMMO);
   }
 
   /** Resize the health bar -- an armour upgrade. Refills, so the change never leaves a half bar. */

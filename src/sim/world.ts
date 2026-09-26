@@ -29,7 +29,7 @@ import {
   SPAWN_CHANNEL,
   SPAWN_PROTECTION_S,
 } from "./matchConfig";
-import { createSpawnSet, openingSpawn, respawnPoint } from "./spawn";
+import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
 
@@ -253,6 +253,8 @@ export class Sim {
   private readonly southBoundary: SouthBoundary | null;
   /** One tee per spawn hole, in the course frame. */
   private readonly spawnSet: SpawnPoint[];
+  /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
+  private readonly teamPads: SpawnPoint[][] | null;
   /** Root of the match's seeded streams; see `ArenaGround.seed`. */
   private readonly seed: number;
   /**
@@ -269,6 +271,8 @@ export class Sim {
     this.southBoundary = ground.southBoundary;
     this.seed = ground.seed;
     this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
+    this.teamPads =
+      ground.clubhouse === null ? null : createTeamPads(ground.clubhouse, (x, z) => ground.playfield.heightAt(x, z));
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
@@ -341,7 +345,7 @@ export class Sim {
     }
     // Now that every rig exists. The scoreboard is indexed by rig index.
     sim.match.setRoster(sim.rigs.length);
-    for (const rig of sim.rigs) sim.placeRig(rig, openingSpawn(sim.spawnSet, rig.index));
+    for (const rig of sim.rigs) sim.placeRig(rig, sim.openingPoint(rig.index));
 
     sim.syncCurrentCart();
     sim.previousCart = sim.currentCart;
@@ -597,14 +601,26 @@ export class Sim {
   private stepRespawn(rig: CartRig): void {
     rig.cart.respawnTimer -= FIXED_DT;
     if (rig.cart.respawnTimer > 0) return;
-    // A random tee, avoiding whoever is alive and standing on one. The cart's own body is still
-    // lying where it died, which is why `rig.index` is passed: counting it would make the tee it
-    // died nearest to permanently unavailable to it.
-    this.placeRig(rig, respawnPoint(this.spawnSet, this.spawnRandom, this.carts, rig.index));
+    this.placeRig(rig, this.respawnPointFor(rig.index));
     rig.cart.revive();
     // After `revive`, which clears it: protection is a property of respawning, granted here and
     // nowhere else, so `reset` starting a fresh match does not start it behind a shield.
     rig.cart.protectedFor = SPAWN_PROTECTION_S;
+  }
+
+  /** Where rig `index` starts a match: its team's pad by the clubhouse, or its dealt tee. */
+  private openingPoint(index: number): SpawnPoint {
+    return this.teamPads === null ? openingSpawn(this.spawnSet, index) : padSpawn(this.teamPads, index);
+  }
+
+  /**
+   * Where rig `index` comes back: its own slot on its team's pad. With no clubhouse, a random tee
+   * avoiding whoever is alive and standing on one -- `index` is passed because the cart's own body
+   * is still lying where it died, and counting it would make its nearest tee unavailable to it.
+   */
+  private respawnPointFor(index: number): SpawnPoint {
+    if (this.teamPads !== null) return padSpawn(this.teamPads, index);
+    return respawnPoint(this.spawnSet, this.spawnRandom, this.carts, index);
   }
 
   /**
@@ -793,7 +809,7 @@ export class Sim {
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
 
     for (const rig of this.rigs) {
-      this.placeRig(rig, openingSpawn(this.spawnSet, rig.index));
+      this.placeRig(rig, this.openingPoint(rig.index));
       rig.cart.revive();
       if (rig.random !== null) rig.random = mulberry32(this.botStreamSeed(rig.index - 1));
       rig.targetIndex = NO_TARGET;

@@ -3,16 +3,16 @@ import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { authoredCourse } from "./authoredCourse";
-import { metresNorthOfBoundary } from "./authoredLayout";
+import { AUTHORED_CLUBHOUSE, metresNorthOfBoundary } from "./authoredLayout";
 import { buildCourseWorld } from "./courseWorld";
 import { arenaFromCourse } from "./arena";
 import { BOT_ENGAGE_RANGE } from "./bot";
-import { CART_COLLIDER, RESPAWN_DELAY_S } from "./entities/Cart";
+import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
 import type { CourseTerrain, PlacedHole } from "./courseTerrain";
 import { toCourseFrame } from "./courseLayout";
 import { SurfaceId } from "./surfaces";
 import type { Surfaces } from "./surfaces";
-import { ARENA_BOTS, ARENA_MAX_HEALTH } from "./matchConfig";
+import { ARENA_BOTS, ARENA_MAX_HEALTH, teamOf } from "./matchConfig";
 import { miniCourse } from "./testing/miniCourse";
 import { Sim } from "./world";
 
@@ -272,10 +272,11 @@ describe("County Home Road is a barrier", () => {
     }
     expect(wedge, "no ground inside the bounds lies south of the road").toBeGreaterThan(0);
 
-    // Point it south and hold the throttle. Measured rather than guessed at: from hole 1's tee the
-    // cart starts 78 m north of the road and is against the barrier -- held at `BARRIER_INSET_M`,
-    // 6 m -- by the eighth second, and stays there. Fifteen seconds is comfortably past that and
-    // still short enough to be honest about what the test needs.
+    // Point it south and hold the throttle. The player opens on team 0's pad beside the clubhouse,
+    // a few tens of metres north of the road, so fifteen seconds puts it against the barrier --
+    // held at `BARRIER_INSET_M` -- with most of the run to spare.
+    const openingNorth = metresNorthOfBoundary(sim.cart.position.x, sim.cart.position.z);
+    expect(openingNorth).toBeLessThan(80);
     sim.cart.heading = -Math.PI / 2;
     play(sim, [{ ticks: 15 * 60, intent: { throttle: 1 } }]);
 
@@ -290,51 +291,76 @@ describe("County Home Road is a barrier", () => {
   }, 30000);
 });
 
-describe("an arena match on the authored course is a match", () => {
+describe("both teams spawn at the clubhouse", () => {
   /**
-   * **The regression this exists to catch shipped, and nothing in the suite noticed.**
-   *
-   * `computeBotIntent` used to return a zero intent beyond `BOT_ENGAGE_RANGE`, on the reasoning
-   * that closing would be pathfinding. That was sound while the arena was one generated hole. The
-   * authored routing deals carts one to a hole across a course roughly 1,590 x 1,290 m: the nearest
-   * pair a six-cart roster gets is 75 m and the closest two tees anywhere are 74 m, both outside the
-   * 40 m range. So every bot stood still from the opening tick, no bot ever reached anyone, and
-   * arena combat did not happen -- while `bot.test.ts` and `world.cart.test.ts` both stayed green,
-   * because both asserted the idling that was the bug.
-   *
-   * Every existing assertion was a unit one against a hand-placed pair of carts. This is the
-   * missing one: the carts the *course* deals, on the course it deals them onto.
+   * The authored routing dealt carts one to a tee, up to ~800 m apart on a course about
+   * 1,590 x 1,290 m, and respawned them at random tees: at 14 m/s a cart could spend a third of a
+   * three-minute match driving to the fight. The user's rule (2026-09-24) is that both teams spawn
+   * at the clubhouse, on opposite sides of it.
    */
-  it("deals carts far apart and still brings a bot into range of the player", async () => {
+  it("opens every cart on its own team's side of the clubhouse, on dry ground", async () => {
     const world = authoredWorld();
     const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+    const carts = [sim.cart, ...sim.bots];
 
+    for (let i = 0; i < carts.length; i++) {
+      const p = carts[i]!.position;
+      const side = teamOf(i) === 0 ? -1 : 1;
+      const east = p.x - AUTHORED_CLUBHOUSE.x;
+      expect(east * side, `cart ${i} at ${east.toFixed(0)} m east of the clubhouse`).toBeGreaterThan(15);
+      expect(Math.hypot(p.x - AUTHORED_CLUBHOUSE.x, p.z - AUTHORED_CLUBHOUSE.z)).toBeLessThan(50);
+      expect(world.surfaces.surfaceAt(p.x, p.z)).not.toBe(SurfaceId.Water);
+      expect(metresNorthOfBoundary(p.x, p.z)).toBeGreaterThan(10);
+    }
+  }, 60000);
+
+  it("brings the other team into range of an idle player within twenty seconds", async () => {
+    const world = authoredWorld();
+    const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+    const enemies = sim.bots.filter((_, i) => teamOf(i + 1) !== teamOf(0));
     const distanceToPlayer = (bot: { position: { x: number; z: number } }): number =>
       Math.hypot(bot.position.x - sim.cart.position.x, bot.position.z - sim.cart.position.z);
 
-    // The premise: they start well outside engagement range, or the test proves nothing. Measured
-    // rather than assumed, because it is exactly the fact that changed under the old rule.
-    const opening = sim.bots.map(distanceToPlayer);
+    // The premise: no enemy opens already inside engagement range, or this proves nothing.
+    const opening = enemies.map(distanceToPlayer);
     expect(Math.min(...opening), `opening distances ${opening.map((d) => d.toFixed(0))}`).toBeGreaterThan(
       BOT_ENGAGE_RANGE,
     );
 
-    // The player holds still. Any closing is the bots' doing. A bot that reaches the player now
-    // kills it -- bots fire an effective short-range club -- and the player respawns across the
-    // course, so the *final* distance measures the respawn, not the closing. The nearest a bot got
-    // over the whole minute is what proves one came into range.
-    const source = new ScriptedInputSource([{ ticks: 60 * 60, intent: {} }]);
+    const source = new ScriptedInputSource([{ ticks: 20 * 60, intent: {} }]);
     let nearest = Infinity;
-    for (let i = 0; i < 60 * 60; i++) {
+    for (let i = 0; i < 20 * 60; i++) {
       sim.step(source.sample());
       source.endTick();
-      for (const bot of sim.bots) nearest = Math.min(nearest, distanceToPlayer(bot));
+      for (const bot of enemies) nearest = Math.min(nearest, distanceToPlayer(bot));
     }
+    expect(nearest).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
+  }, 60000);
 
-    expect(
-      nearest,
-      `over 60 s the nearest a bot got was ${nearest.toFixed(0)} m, from ${Math.min(...opening).toFixed(0)} m`,
-    ).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
+  it("brings a dead cart back on its own team's side with a fresh load of ammo", async () => {
+    const world = authoredWorld();
+    const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+    // Rig 3 is on team 1, east of the clubhouse. Drive it far off first, so a respawn that ignored
+    // the pads could not land on them by standing still.
+    const bot = sim.bots[2]!;
+    expect(teamOf(3)).toBe(1);
+    const rigs = (sim as unknown as { rigs: { cart: typeof bot; body: { setTranslation(v: object, w: boolean): void } }[] }).rigs;
+    const far = { x: AUTHORED_CLUBHOUSE.x + 300, z: AUTHORED_CLUBHOUSE.z + 300 };
+    bot.position.x = far.x;
+    bot.position.z = far.z;
+    bot.position.y = sim.heightAt(far.x, far.z) + CART_COLLIDER.groundOffset;
+    rigs[3]!.body.setTranslation({ ...bot.position }, true);
+    bot.ammo = 0;
+    bot.health.hp = 0;
+    bot.dead = true;
+    bot.respawnTimer = RESPAWN_DELAY_S;
+
+    for (let i = 0; i < Math.ceil(RESPAWN_DELAY_S * 60) + 2; i++) sim.step();
+
+    expect(bot.dead).toBe(false);
+    expect(bot.position.x - AUTHORED_CLUBHOUSE.x).toBeGreaterThan(15);
+    expect(Math.hypot(bot.position.x - AUTHORED_CLUBHOUSE.x, bot.position.z - AUTHORED_CLUBHOUSE.z)).toBeLessThan(50);
+    expect(bot.ammo).toBeGreaterThanOrEqual(STARTING_AMMO - 1);
   }, 60000);
 });
 

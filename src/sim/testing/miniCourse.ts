@@ -54,6 +54,8 @@ export function miniCourse(holeCount: number, cellM = 8, seed = 2026): MiniCours
       playfield: coursePlayfield(terrain, surfaces),
       holes,
       southBoundary: null,
+      // A few holes do not reach the clubhouse, so these tests deal carts onto the tees.
+      clubhouse: null,
       seed: specs[0]!.seed,
     },
   };

@@ -499,6 +499,16 @@ describe("Cart health, death and shunting", () => {
     expect(cart.recoil.x).toBe(0);
     expect(cart.shuntVelocity.z).toBe(0);
   });
+
+  it("revive() tops ammo back up to the starting load, and never takes any away", () => {
+    cart.ammo = 0;
+    cart.revive();
+    expect(cart.ammo).toBe(STARTING_AMMO);
+
+    cart.ammo = STARTING_AMMO + 12;
+    cart.revive();
+    expect(cart.ammo).toBe(STARTING_AMMO + 12);
+  });
 });
 
 describe("health bar sizing", () => {
