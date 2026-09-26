@@ -1,6 +1,7 @@
 import { applyAimSpread } from "../physics/Ballistics";
 import type { PlayerIntent } from "./intent";
 import type { Cart } from "./entities/Cart";
+import { teamOf } from "./matchConfig";
 
 /**
  * The AI opponent, as one pure function of exactly the state it needs: its own cart, and where
@@ -76,6 +77,47 @@ export interface BotTarget {
   readonly z: number;
   /** A dead target is not engaged at all: that is what stops a bot camping a respawn point. */
   readonly dead: boolean;
+}
+
+/** `pickTarget`'s answer when there is no living enemy to fight. */
+export const NO_TARGET = -1;
+
+/**
+ * Metres. A bot keeps the enemy it is already fighting unless another is at least this much
+ * closer. Without it two enemies at similar range make the bot flick between them every tick and
+ * fight neither.
+ */
+export const TARGET_SWITCH_MARGIN = 15;
+
+/** What `pickTarget` may know about a cart: where it is and whether it is alive. */
+export interface TargetCandidate {
+  readonly position: { readonly x: number; readonly z: number };
+  readonly dead: boolean;
+}
+
+/**
+ * The rig index `self` should fight: the nearest living enemy (`teamOf`), holding on to `current`
+ * while it is still a living enemy and nothing else is `TARGET_SWITCH_MARGIN` closer.
+ * `NO_TARGET` when every enemy is dead. Allocation-free; it runs per bot per tick.
+ */
+export function pickTarget(self: number, current: number, carts: readonly TargetCandidate[]): number {
+  const me = carts[self]!.position;
+  const myTeam = teamOf(self);
+  let best = NO_TARGET;
+  let bestDistance = Infinity;
+  let currentDistance = Infinity;
+  for (let i = 0; i < carts.length; i++) {
+    const other = carts[i]!;
+    if (i === self || other.dead || teamOf(i) === myTeam) continue;
+    const d = Math.hypot(other.position.x - me.x, other.position.z - me.z);
+    if (i === current) currentDistance = d;
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = i;
+    }
+  }
+  if (currentDistance !== Infinity && bestDistance > currentDistance - TARGET_SWITCH_MARGIN) return current;
+  return best;
 }
 
 /**

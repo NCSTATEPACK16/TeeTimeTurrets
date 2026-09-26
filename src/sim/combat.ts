@@ -1,4 +1,5 @@
 import { applyDamage } from "./health";
+import { teamOf } from "./matchConfig";
 import type { Cart } from "./entities/Cart";
 import type { PooledBall } from "./entities/BallPool";
 
@@ -123,6 +124,9 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
   // valid thing to have hit, so the shot earns nothing either. Ramming is deliberately not
   // guarded -- a cart that cannot be shot and cannot be pushed can park inside an enemy.
   if (cart.protectedFor > 0) return;
+  // Friendly fire is off (docs/DECISIONS.md, 2026-09-26), and a cart's own ball is the same case:
+  // a teammate's shot passes through as if the cart were not there, and earns nothing.
+  if (sameSide(ball.firedBy, victim.index)) return;
 
   const at = ball.body.translation();
   ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
@@ -154,9 +158,12 @@ function cartsShunt(
   if (closing < SHUNT_MIN_SPEED) return;
 
   // A ram can kill, and it takes the same stroke penalty a shot does -- death has one path.
-  const damage = closing * SHUNT_DAMAGE_PER_MPS;
-  if (applyDamage(a.health, damage)) ctx.onCartKilled(a, first.index, second.index);
-  if (applyDamage(b.health, damage)) ctx.onCartKilled(b, second.index, first.index);
+  // Teammates still bounce off each other; they just do not hurt each other.
+  if (!sameSide(first.index, second.index)) {
+    const damage = closing * SHUNT_DAMAGE_PER_MPS;
+    if (applyDamage(a.health, damage)) ctx.onCartKilled(a, first.index, second.index);
+    if (applyDamage(b.health, damage)) ctx.onCartKilled(b, second.index, first.index);
+  }
 
   // Along the line between them, so the pair separates rather than being flung sideways. Two
   // carts exactly co-located (only reachable synthetically) fall back to the closing direction.
@@ -174,4 +181,9 @@ function cartsShunt(
   a.shuntVelocity.z += dz * push;
   b.shuntVelocity.x -= dx * push;
   b.shuntVelocity.z -= dz * push;
+}
+
+/** Whether two rigs are on the same side, a rig counting as on its own. */
+function sameSide(a: number, b: number): boolean {
+  return a === b || (a >= 0 && b >= 0 && teamOf(a) === teamOf(b));
 }

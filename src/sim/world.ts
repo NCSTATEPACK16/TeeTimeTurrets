@@ -19,7 +19,7 @@ import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
-import { BOT_CHANNEL, computeBotIntent } from "./bot";
+import { BOT_CHANNEL, NO_TARGET, computeBotIntent, pickTarget } from "./bot";
 import type { BotTarget } from "./bot";
 import { Match } from "./match";
 import {
@@ -154,6 +154,8 @@ interface CartRig {
   random: (() => number) | null;
   /** Reused per tick so the bot's intent costs no allocation. `null` for the player's rig. */
   readonly intentScratch: PlayerIntent | null;
+  /** The rig this bot is fighting, per `pickTarget`, or `NO_TARGET`. Unused by the player's rig. */
+  targetIndex: number;
 }
 
 export interface SimOptions {
@@ -408,6 +410,7 @@ export class Sim {
       fallSpeed: 0,
       random,
       intentScratch: random === null ? null : neutralIntent(),
+      targetIndex: NO_TARGET,
     });
   }
 
@@ -539,18 +542,21 @@ export class Sim {
     // A dead cart's intent is never read by stepRig, so computing one here would only spend the
     // bot's RNG stream on a throwaway draw and make the draw count depend on death timing.
     if (rig.cart.dead) return IDLE_INTENT;
-    computeBotIntent(rig.cart, this.botTargetScratch(), FIXED_DT, rig.random, rig.intentScratch);
+    rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
+    computeBotIntent(rig.cart, this.botTargetScratch(rig.targetIndex), FIXED_DT, rig.random, rig.intentScratch);
     return rig.intentScratch;
   }
 
   /**
-   * The player, as the only thing a bot engages in this build. Written into one reused object
-   * per the no-allocation rule; a bot never sees the player's `Cart` itself.
+   * The enemy a bot is fighting, written into one reused object per the no-allocation rule; a bot
+   * never sees its target's `Cart` itself. With no living enemy it reads as a dead target, which
+   * the bot idles against.
    */
-  private botTargetScratch(): BotTarget {
-    this.botTarget.x = this.cart.position.x;
-    this.botTarget.z = this.cart.position.z;
-    this.botTarget.dead = this.cart.dead;
+  private botTargetScratch(targetIndex: number): BotTarget {
+    const target = targetIndex === NO_TARGET ? null : this.rigs[targetIndex]!.cart;
+    this.botTarget.x = target?.position.x ?? 0;
+    this.botTarget.z = target?.position.z ?? 0;
+    this.botTarget.dead = target === null || target.dead;
     return this.botTarget;
   }
 
@@ -790,6 +796,7 @@ export class Sim {
       this.placeRig(rig, openingSpawn(this.spawnSet, rig.index));
       rig.cart.revive();
       if (rig.random !== null) rig.random = mulberry32(this.botStreamSeed(rig.index - 1));
+      rig.targetIndex = NO_TARGET;
     }
 
     this.syncCurrentCart();

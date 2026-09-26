@@ -14,6 +14,7 @@ import { BannerFeed, createBannerView } from "../bannerFeed";
 import type { BannerSource } from "../bannerFeed";
 import { HitMarkers } from "../hitMarkers";
 import { Nameplates } from "../nameplates";
+import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
 import { hasLineOfSight } from "../../sim/lineOfSight";
 import type { HeightSampler } from "../../sim/lineOfSight";
@@ -86,8 +87,8 @@ export class MatchScreen implements Screen {
     this.nameplates = new Nameplates(
       nameplateRoot,
       sim.bots.map((_, i) => `BOT ${i + 1}`),
-      // Every bot is an opponent until the bots learn which side they are on.
-      sim.bots.map(() => "enemy" as PlateTeam),
+      // Bot i is rig i + 1; the player is rig 0.
+      sim.bots.map((_, i) => plateTeamOf(i + 1, 0)),
     );
     this.lastSeenAtMs.length = 0;
     this.input = new KeyboardMouseSource(renderer.domElement);
@@ -290,7 +291,9 @@ function placeNameplate(
   // Sight is measured cart to cart at plate height, not from the camera: the chase camera floats
   // behind and above the player, so a ridge the cart is actually hiding behind would read as
   // clear from the camera's vantage. The plate answers "can I see them", not "can the camera".
-  const seen = hasLineOfSight(
+  // An ally's plate shows through terrain regardless, so its sight line is never walked.
+  const team = plateTeamOf(index + 1, 0);
+  const seen = team === "ally" || hasLineOfSight(
     terrain,
     player.position.x,
     player.position.y + NAMEPLATE_HEIGHT,
@@ -308,7 +311,7 @@ function placeNameplate(
     cart.position.x - player.position.x,
     cart.position.z - player.position.z,
   );
-  plateSourceScratch.team = "enemy";
+  plateSourceScratch.team = team;
   plateSourceScratch.healthFraction = health.max > 0 ? health.hp / health.max : 0;
   plateSourceScratch.onScreen = onScreen;
   plateSourceScratch.hasLineOfSight = seen;

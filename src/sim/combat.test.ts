@@ -71,9 +71,10 @@ describe("combat contact resolution", () => {
     };
   }
 
-  /** A pooled ball, shaped as `BallPool` builds them. `firedBy` defaults to rig 0 -- the player --
-   *  because that is what every pre-Stage-C test implicitly assumed. */
-  function makeBall(vx: number, firedBy = 0): { ball: PooledBall; handle: number } {
+  /** A pooled ball, shaped as `BallPool` builds them. `firedBy` defaults to rig 1 -- an enemy of
+   *  the rig-0 cart these tests shoot at. It was 0 until friendly fire went off, and a cart's own
+   *  ball no longer hurts it. */
+  function makeBall(vx: number, firedBy = 1): { ball: PooledBall; handle: number } {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(0.15).setDensity(1130), body);
     body.setLinvel({ x: vx, y: 0, z: 0 }, true);
@@ -159,6 +160,57 @@ describe("combat contact resolution", () => {
     });
   });
 
+  describe("friendly fire is off", () => {
+    it("a teammate's ball does no damage and earns its shooter nothing", () => {
+      // Rig 2 is on rig 0's team (`teamOf` alternates).
+      const fromAlly = makeBall(20, 2);
+      registry.registerBall(fromAlly.handle, fromAlly.ball);
+      processContacts(queueOf([fromAlly.handle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(hits).toEqual([]);
+      expect(kills).toEqual([]);
+    });
+
+    it("a cart's own ball does not hurt it", () => {
+      const own = makeBall(20, 0);
+      registry.registerBall(own.handle, own.ball);
+      processContacts(queueOf([own.handle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(hits).toEqual([]);
+    });
+
+    it("an enemy's ball still does damage", () => {
+      // The control for the two above: without it they pass against a `ballHitsCart` that never
+      // does anything.
+      const fromEnemy = makeBall(20, 3);
+      registry.registerBall(fromEnemy.handle, fromEnemy.ball);
+      processContacts(queueOf([fromEnemy.handle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
+      expect(hits).toEqual([3]);
+    });
+
+    it("teammates who collide take no damage but are still shoved apart", () => {
+      const ally = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
+      const allyBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
+      const allyHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), allyBody).handle;
+      registry.registerCart(allyHandle, ally, 2);
+      cart.heading = 0;
+      cart.speed = 14;
+      ally.speed = 14;
+
+      processContacts(queueOf([cartHandle, allyHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(ally.health.hp).toBe(ARENA_MAX_HEALTH);
+      // Pushed apart along the line between them: the ally is at +x, so the cart goes -x.
+      expect(cart.shuntVelocity.x).toBeLessThan(-1);
+      expect(ally.shuntVelocity.x).toBeGreaterThan(1);
+    });
+  });
+
   describe("spawn protection", () => {
     it("takes no damage and earns the shooter no credit while it holds", () => {
       cart.protectedFor = 3;
@@ -176,7 +228,7 @@ describe("combat contact resolution", () => {
       processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
 
       expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
-      expect(hits).toEqual([0]);
+      expect(hits).toEqual([1]);
     });
 
     it("does not stop a ram", () => {
@@ -303,7 +355,8 @@ describe("combat contact resolution", () => {
         world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
       );
       registry.registerCart(collider.handle, small, 1);
-      const ball = makeBall(20);
+      // From rig 0: the default shooter is rig 1, which would be this cart shooting itself.
+      const ball = makeBall(20, 0);
       registry.registerBall(ball.handle, ball.ball);
 
       processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
