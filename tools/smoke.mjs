@@ -101,131 +101,62 @@ const title = await page.evaluate(() => {
   };
 });
 check("boots to the title screen", title.screen === "title", title.screen);
-// Stage C5 adds ARENA, second under PLAY (src/ui/screens/TitleScreen.ts) -- image 10's four
-// actions plus the whole mode arena is.
+// The game is the arena and nothing else (docs/HANDOFF.md, 2026-09-24): PLAY is the arena, and
+// the image-10 menu keeps its other three actions.
 check(
-  "shows the five actions from image 10 plus arena",
-  JSON.stringify(title.labels) === JSON.stringify(["PLAY", "ARENA", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
+  "shows the four actions from image 10",
+  JSON.stringify(title.labels) === JSON.stringify(["PLAY", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
   title.labels.join(" / "),
 );
-// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead. A button that looks
-// alive and does nothing is the failure this asserts against. PLAY, ARENA and CLUBHOUSE are
-// built; MULTIPLAYER and SETTINGS are not, and must read as "not yet" rather than silently do
-// nothing.
+// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead or absent.
 check(
   "built screens are live and unbuilt ones are disabled, not absent",
-  JSON.stringify(title.disabled) === JSON.stringify([false, false, false, true, true]),
+  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, true]),
   JSON.stringify(title.disabled),
 );
 check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
 check("shows a version string", typeof title.version === "string" && title.version.length > 0, title.version);
 
-console.log("=== ARENA ===");
-// Eighteen holes routed and blended into one heightfield, built for the first time here --
-// docs/HANDOFF.md measures that at "about a second", so this is the one boot path in the whole
-// file that earns a generous timeout.
-await page.evaluate(() => {
-  [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "ARENA").click();
-});
-await page.waitForFunction(() => window.__teetimeturrets.screen === "arena", { timeout: 30000 });
+const clickTitle = (label) =>
+  page.evaluate((l) => {
+    [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === l).click();
+  }, label);
+
+console.log("=== PLAY (the arena) ===");
+// Eighteen holes routed and blended into one heightfield, built for the first time here, so this
+// is the one boot path in the file that earns a generous timeout.
+await clickTitle("PLAY");
+await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 30000 });
 await new Promise((r) => setTimeout(r, 600));
 const arena = await page.evaluate(() => ({
   screen: window.__teetimeturrets.screen,
   teamScoreHidden: document.getElementById("hud-team-score").hidden,
   teamScoreText: document.getElementById("hud-team-score").textContent,
   pointsHidden: document.getElementById("hud-points").hidden,
-  strokesHidden: document.getElementById("hud-strokes").hidden,
 }));
-check("ARENA starts the arena screen", arena.screen === "arena", arena.screen);
-// index.html ships #hud-team-score empty and hidden (same reasoning as #match-results' blank
-// markup above): a check for non-empty text can only pass because deriveHudState/drawHud
-// actually ran with source.arena === true, not because a placeholder was already sitting there.
+check("PLAY starts the match screen", arena.screen === "match", arena.screen);
+// index.html ships #hud-team-score empty and hidden, so non-empty text can only be drawHud's.
 check(
-  "arena HUD shows a non-empty team score",
+  "the HUD shows a non-empty team score",
   arena.teamScoreHidden === false && arena.teamScoreText.length > 0,
   `hidden=${arena.teamScoreHidden} text="${arena.teamScoreText}"`,
 );
-check("arena HUD shows the kills readout too", arena.pointsHidden === false, `hidden=${arena.pointsHidden}`);
-check("arena HUD hides the golf stroke counter", arena.strokesHidden === true, `hidden=${arena.strokesHidden}`);
-
-console.log("=== ARENA MATCH OVER (D12) ===");
-// Same trick as the stroke-play ending further down: force the clock's last tick on sim.match
-// itself rather than waiting out the real duration. See that section's comment for why this has
-// to be the clock, not the sim.matchOver getter.
-await page.evaluate(() => {
-  window.__teetimeturrets.sim.match.remaining = 1 / 60;
-});
-await page.waitForFunction(() => window.__teetimeturrets.screen === "arenaResults", { timeout: 20000 });
-await new Promise((r) => setTimeout(r, 300));
-const arenaOver = await page.evaluate(() => ({
-  screen: window.__teetimeturrets.screen,
-  headline: document.querySelector(".arena-results__title")?.textContent ?? null,
-  scores: [...document.querySelectorAll(".arena-results__score-value")].map((el) => el.textContent),
-  mvp: document.querySelector(".arena-results__mvp")?.textContent ?? null,
-  rowNames: [...document.querySelectorAll(".arena-results__row-name")].map((el) => el.textContent),
-}));
-check(
-  "the match clock running out routes to the arena results screen, not the golf overlay",
-  arenaOver.screen === "arenaResults",
-  arenaOver.screen,
-);
-// Nothing in index.html ships this markup (MatchResultsScreen builds it fresh in enter(), like
-// ResultsScreen/ClubhouseScreen/TitleScreen do), so a non-empty headline can only be
-// deriveScoreboard's own output, not a placeholder sitting in the page already.
-check("arena results names a winner", (arenaOver.headline ?? "").length > 0, String(arenaOver.headline));
-check(
-  "arena results shows both teams' strokes",
-  arenaOver.scores.length === 2 && arenaOver.scores[0].startsWith("US ") && arenaOver.scores[1].startsWith("THEM "),
-  JSON.stringify(arenaOver.scores),
-);
-check("arena results names an MVP", (arenaOver.mvp ?? "").startsWith("MVP"), String(arenaOver.mvp));
-// ARENA_BOTS (5) plus the player -- one row per rig, and the player's own row is always first
-// (rig 0). A roster-length mismatch here is exactly the `rows.length` vs `playerCount` pitfall
-// `matchScoreboard.test.ts`'s "lists only the roster it was given" guards at the unit level.
-check(
-  "arena results lists the whole roster, player first",
-  arenaOver.rowNames.length === 6 && arenaOver.rowNames[0] === "YOU",
-  JSON.stringify(arenaOver.rowNames),
-);
-
-await page.click(".arena-results__actions .btn--primary"); // PLAY AGAIN
-await page.waitForFunction(() => window.__teetimeturrets.screen === "arena", { timeout: 20000 });
-await new Promise((r) => setTimeout(r, 400));
-const rematch = await page.evaluate(() => ({
-  screen: window.__teetimeturrets.screen,
-  remaining: window.__teetimeturrets.sim.match.remaining,
-  over: window.__teetimeturrets.sim.matchOver,
-}));
-check("PLAY AGAIN returns to the arena screen", rematch.screen === "arena", rematch.screen);
-// Sim.reset() is already arena-aware (re-tees every cart, resets the spawn stream and the match
-// clock); these two are evidence that path actually ran, not just that the screen changed.
-check("PLAY AGAIN resets the match clock", rematch.remaining > 1, `${rematch.remaining}`);
-check("PLAY AGAIN resets the match itself", rematch.over === false, `${rematch.over}`);
-
-// Back to the title so the rest of this run exercises stroke play exactly as it did before arena
-// existed -- startRound below builds its own fresh Sim regardless of what arena left behind.
-await page.evaluate(() => window.__teetimeturrets.screens.show("title"));
-await new Promise((r) => setTimeout(r, 300));
-
-await page.evaluate(() => {
-  [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "PLAY").click();
-});
-await page.waitForFunction(() => window.__teetimeturrets.sim !== null, { timeout: 20000 });
-await new Promise((r) => setTimeout(r, 600));
-check("PLAY starts a round", (await page.evaluate(() => window.__teetimeturrets.screen)) === "round");
+check("the HUD shows the kills readout", arena.pointsHidden === false, `hidden=${arena.pointsHidden}`);
 
 const read = () =>
   page.evaluate(() => {
     const { sim } = window.__teetimeturrets;
+    const plates = [...document.querySelectorAll("#nameplates .nameplate")];
+    // The first plate the per-frame path has shown. A plate is built `hidden = true` with no
+    // transform, fill or distance, so everything read off it can only have been written by
+    // Nameplates.setPlate, never by the constructor.
+    const shown = plates.find((p) => p.hidden === false) ?? null;
     return {
-      mode: sim.mode,
       club: sim.cart.equippedClub,
-      strokes: sim.strokes,
       ammo: sim.cart.ammo,
       health: sim.cart.health.hp,
       dead: sim.cart.dead,
-      // The highest-flying active pooled ball. Cart-mode shots are pooled bodies, not Sim.ball,
-      // so this is the only honest way to ask "did a ball leave the muzzle".
+      // The highest-flying active pooled ball: the only honest way to ask "did a ball leave".
       topPooledBallY: (() => {
         const stride = 8;
         let best = null;
@@ -236,53 +167,26 @@ const read = () =>
         }
         return best;
       })(),
-      nameplates: document.querySelectorAll("#nameplates .nameplate").length,
-      // Flat distance to the bot the plates are about. The nameplate rules below are distance
-      // rules, so asserting them without it is asserting a symptom.
-      botDistance: (() => {
-        const bot = sim.bots?.[0];
-        if (!bot) return null;
-        return Math.hypot(bot.position.x - sim.cart.position.x, bot.position.z - sim.cart.position.z);
-      })(),
-      // These three can only be produced by the per-frame draw path (Nameplates.setPlate), never
-      // by the constructor alone: a plate is built `hidden = true` with no transform and a
-      // 100% fill, so a element-count check on its own cannot tell "wired up" from "built and
-      // never touched again".
-      firstPlateHidden: document.querySelector("#nameplates .nameplate")?.hidden ?? null,
-      firstPlateTransform: document.querySelector("#nameplates .nameplate")?.style.transform ?? null,
-      firstPlateFillWidth: document.querySelector("#nameplates .nameplate-fill")?.style.width ?? null,
-      // H13's distance line, same argument again: the constructor leaves it empty, so only the
-      // per-frame path can have put a distance in it.
-      firstPlateDistance: document.querySelector("#nameplates .nameplate-distance")?.textContent ?? null,
-      firstPlateClass: document.querySelector("#nameplates .nameplate")?.className ?? null,
-      // H17. As with the plates above, the transform and the label can only have been written by
-      // the per-frame path (RoundScreen.drawPinMarker -> PinMarker.set): the constructor leaves
-      // both empty, so an element-count check could not tell "wired up" from "built and forgotten".
-      pinMarkers: document.querySelectorAll("#nameplates .pin-marker").length,
-      pinMarkerDistance: document.getElementById("pin-marker-distance")?.textContent ?? null,
-      pinMarkerTransform: document.getElementById("pin-marker")?.style.transform ?? null,
+      bots: sim.bots.length,
+      nameplates: plates.length,
+      shownPlateTransform: shown?.style.transform ?? null,
+      shownPlateFillWidth: shown?.querySelector(".nameplate-fill")?.style.width ?? null,
+      shownPlateDistance: shown?.querySelector(".nameplate-distance")?.textContent ?? null,
+      shownPlateClass: shown?.className ?? null,
       hudCombatHidden: document.getElementById("hud-combat").hidden,
       hudAmmo: document.getElementById("ammo-count").textContent,
       cart: { ...sim.cart.position },
-      ball: { ...sim.current.position },
       heading: sim.cart.heading,
-      turretYaw: sim.cart.turretYaw,
       turretOffset: sim.cart.turretOffset,
       hudClub: document.getElementById("hud-club").textContent,
-      resultsHidden: document.getElementById("match-results").hidden,
       timer: document.getElementById("hud-timer").textContent,
     };
   });
 
-const boot = await read();
-check("starts in cart mode", boot.mode === "cart", boot.mode);
-
-// Nothing below this line, and no unit test, can see a course whose geometry has gone NaN: the
-// sim keeps running, the HUD keeps counting, and the renderer keeps clearing to the sky colour
-// while every vertex it is handed is NaN, so the page looks like a plain blue rectangle. That is
-// what shipped when `WOODS_OFFSET_M` read an uninitialised `WOODS_WEIGHT` across an import cycle
-// (see the constant's comment in src/sim/terrain.ts). Checked against the *bundle*, because the
-// bug only exists in the bundle -- vitest's module order differs and never reproduces it.
+// No unit test can see a course whose geometry has gone NaN in the *bundle*: the sim keeps
+// running and the renderer clears to sky colour. That shipped once, when `WOODS_OFFSET_M` read an
+// uninitialised constant across an import cycle (src/sim/terrain.ts), and only the bundle's
+// module order reproduced it.
 console.log("=== COURSE GEOMETRY IS FINITE ===");
 const geometry = await page.evaluate(() => {
   const { course, render } = window.__teetimeturrets;
@@ -301,334 +205,183 @@ const geometry = await page.evaluate(() => {
       if (!finite(p.x) || !finite(p.z)) bad.push(`hole ${i} anchor`);
     }
   });
-  const position = render.ground.mesh.geometry.getAttribute("position").array;
+  // Every mesh the match scene holds, not one named ground mesh: the course ground is tiled.
+  let meshes = 0;
+  let vertices = 0;
   let nanVertexComponents = 0;
-  for (let i = 0; i < position.length; i++) if (!Number.isFinite(position[i])) nanVertexComponents++;
-  return { bad: bad.slice(0, 6), badCount: bad.length, nanVertexComponents };
+  render.scene.traverse((o) => {
+    const position = o.isMesh ? o.geometry?.getAttribute("position") : null;
+    if (!position) return;
+    meshes++;
+    vertices += position.count;
+    for (let i = 0; i < position.array.length; i++) if (!Number.isFinite(position.array[i])) nanVertexComponents++;
+  });
+  return { bad: bad.slice(0, 6), badCount: bad.length, meshes, vertices, nanVertexComponents };
 });
 check(
   "every hole's placed hazards have finite coordinates",
   geometry.badCount === 0,
   geometry.badCount === 0 ? "18 holes" : `${geometry.badCount}: ${geometry.bad.join(", ")}`,
 );
-check(
-  "the ground mesh has no NaN vertices",
-  geometry.nanVertexComponents === 0,
-  `${geometry.nanVertexComponents} NaN components`,
-);
+// Guard against the check below passing vacuously on an empty scene.
+check("the match scene holds ground geometry", geometry.vertices > 10000, `${geometry.meshes} meshes, ${geometry.vertices} vertices`);
+check("no mesh in the match scene has NaN vertices", geometry.nanVertexComponents === 0, `${geometry.nanVertexComponents} NaN components`);
+
+const boot = await read();
 
 console.log("=== DRIVE (W) ===");
-const before = boot.cart;
 await hold(page, "KeyW", 1600);
 await new Promise((r) => setTimeout(r, 150));
 const driven = await read();
-const moved = Math.hypot(driven.cart.x - before.x, driven.cart.z - before.z);
+const moved = Math.hypot(driven.cart.x - boot.cart.x, driven.cart.z - boot.cart.z);
 check("cart moves under throttle", moved > 3, `${moved.toFixed(1)} m`);
-// `y` arrives as null when the page's value was NaN -- page.evaluate serialises it through JSON.
-// Formatting it unguarded threw a TypeError out of the whole run, which turned the one check that
-// catches a NaN'd height field into a crash with no FAIL line. Report it instead.
-check("cart does not fall through the world", Number.isFinite(driven.cart.y) && driven.cart.y > -20, `y=${Number.isFinite(driven.cart.y) ? driven.cart.y.toFixed(2) : String(driven.cart.y)}`);
+// `y` arrives as null when the page's value was NaN (page.evaluate serialises through JSON).
+check(
+  "cart does not fall through the world",
+  Number.isFinite(driven.cart.y) && driven.cart.y > -20,
+  `y=${Number.isFinite(driven.cart.y) ? driven.cart.y.toFixed(2) : String(driven.cart.y)}`,
+);
 
 console.log("=== STEER (A) ===");
-const headingBefore = driven.heading;
 await hold(page, "KeyA", 700);
 const steered = await read();
-check("steering turns the chassis", Math.abs(steered.heading - headingBefore) > 0.1, `${(steered.heading - headingBefore).toFixed(2)} rad`);
+check("steering turns the chassis", Math.abs(steered.heading - driven.heading) > 0.1, `${(steered.heading - driven.heading).toFixed(2)} rad`);
 
 console.log("=== TURRET (E) ===");
-const headingAtAim = steered.heading;
 await hold(page, "KeyE", 500);
 const aimed = await read();
-check("aiming swings the turret off the chassis", aimed.turretOffset > 0.1, `offset ${aimed.turretOffset.toFixed(2)} rad`);
-check("aiming does not steer the cart", Math.abs(aimed.heading - headingAtAim) < 0.05, `${(aimed.heading - headingAtAim).toFixed(3)} rad`);
+check("aiming swings the turret off the chassis", Math.abs(aimed.turretOffset) > 0.1, `offset ${aimed.turretOffset.toFixed(2)} rad`);
+check("aiming does not steer the cart", Math.abs(aimed.heading - steered.heading) < 0.05, `${(aimed.heading - steered.heading).toFixed(3)} rad`);
 
-console.log("=== CLUB SELECT (1) ===");
+console.log("=== CLUB SELECT (3, then 1) ===");
+// Select away and back, so the putter check cannot pass on a cart that simply spawned with it.
+await page.keyboard.press("Digit3");
+await new Promise((r) => setTimeout(r, 150));
+const driver = await read();
+check("3 selects the driver", driver.club === "driver" && driver.hudClub === "DRIVER", `${driver.club} / ${driver.hudClub}`);
 await page.keyboard.press("Digit1");
 await new Promise((r) => setTimeout(r, 150));
 const putter = await read();
-check("number row selects a club", putter.club === "putter", putter.club);
+check("1 selects the putter", putter.club === "putter", putter.club);
 check("HUD shows the equipped club", putter.hudClub === "PUTTER", putter.hudClub);
 
-console.log("=== FIRE WHILE DRIVING (F) ===");
-// Cart-mode fire is propulsion first: recoil opposes the shot, so firing shoves the cart. It
-// costs no stroke whether or not a ball spawns, because Sim.strokes only moves on death, water
-// and a stationary launch. Both assertions below still hold; only the reason has changed.
-const strokesBefore = putter.strokes;
+console.log("=== FIRE (F) ===");
+// Ammo is refilled by buckets and by landed balls, so a shot is measured as the decrement across
+// the one press, read immediately, not as a final count.
+const ammoBefore = putter.ammo;
 const cartBeforeShot = putter.cart;
-await hold(page, "KeyF", 900);
-await new Promise((r) => setTimeout(r, 400));
-const fired = await read();
-const shoved = Math.hypot(fired.cart.x - cartBeforeShot.x, fired.cart.z - cartBeforeShot.z);
-check("cart-mode fire costs no stroke", fired.strokes === strokesBefore, `strokes ${fired.strokes}`);
-check("firing shoves the cart (recoil propulsion)", shoved > 0.2, `${shoved.toFixed(2)} m`);
-
-console.log("=== RESET AND RELOAD ===");
-await page.keyboard.press("KeyR");
-await new Promise((r) => setTimeout(r, 1200));
-const readyState = await read();
-check("cart is back in cart mode after reset", readyState.mode === "cart", readyState.mode);
-check("cart has ammo to fire", readyState.ammo > 0, `ammo ${readyState.ammo}`);
-check("health is restored by a reset", readyState.health > 0, `hp ${readyState.health}`);
-
-// Swing the turret off-axis and pick the driver before the shot: dead astern the barrel is
-// foreshortened to nothing, and the club-as-barrel is the whole point of the silhouette.
-await page.keyboard.press("Digit3");
-await hold(page, "KeyE", 620);
-await new Promise((r) => setTimeout(r, 250));
-
-mkdirSync(dirname(SHOT), { recursive: true });
-await page.screenshot({ path: SHOT });
-console.log(`  screenshot -> ${SHOT}`);
-
-console.log("=== FIRE FROM THE MUZZLE ===");
-// Cart mode fires pooled balls off an ammo counter, not Sim.ball off the turf, and a cart-mode
-// shot is not a stroke -- Sim.strokes only moves on death, water, and a stationary launch. The
-// assertions here are the mechanic that exists, not the pre-ammo one they replaced.
-const ammoBefore = readyState.ammo;
-const groundBefore = readyState.cart.y;
-await hold(page, "KeyF", 1600);
-await new Promise((r) => setTimeout(r, 120));
+await hold(page, "KeyF", 700);
+await new Promise((r) => setTimeout(r, 60));
 const shot = await read();
 check("firing spends a round of ammo", shot.ammo === ammoBefore - 1, `${ammoBefore} -> ${shot.ammo}`);
 check("a pooled ball is in flight", shot.topPooledBallY !== null, `y=${shot.topPooledBallY}`);
 check(
-  "the ball leaves from above the cart, not from the ground",
-  shot.topPooledBallY !== null && shot.topPooledBallY > groundBefore,
-  `ball y=${shot.topPooledBallY?.toFixed(2)} vs cart y=${groundBefore.toFixed(2)}`,
+  "the ball leaves from above the ground under the cart",
+  shot.topPooledBallY !== null && shot.topPooledBallY > cartBeforeShot.y,
+  `ball y=${shot.topPooledBallY?.toFixed(2)} vs cart y=${cartBeforeShot.y.toFixed(2)}`,
 );
 
 console.log("=== COMBAT HUD ===");
 check("health and ammo are always visible", shot.hudCombatHidden === false);
 check("the ammo card matches the sim", shot.hudAmmo === String(shot.ammo), `${shot.hudAmmo} vs ${shot.ammo}`);
 
+// Swing the turret off-axis and pick the driver for the screenshot: dead astern the barrel is
+// foreshortened to nothing, and the club-as-barrel is the whole point of the silhouette.
+await page.keyboard.press("Digit3");
+await hold(page, "KeyE", 620);
+await new Promise((r) => setTimeout(r, 250));
+mkdirSync(dirname(SHOT), { recursive: true });
+await page.screenshot({ path: SHOT });
+console.log(`  screenshot -> ${SHOT}`);
+
 console.log("=== NAMEPLATES ===");
-// H13's data source is remote cart positions (docs/UI-SPEC.md) -- the player's own cart is never
-// plated -- so with the default single bot there is exactly one plate, not one per cart.
-const atRange = await read();
-check("one nameplate per remote cart", atRange.nameplates === 1, `${atRange.nameplates}`);
+// H13's data source is remote cart positions (docs/UI-SPEC.md): the player's own cart is never
+// plated, so there is one plate per bot.
+check("one nameplate per remote cart", shot.nameplates === shot.bots && shot.bots > 0, `${shot.nameplates} plates, ${shot.bots} bots`);
 
-// `COARSE_RANGE_M` from src/ui/plateState.ts: past it a plate reports no distance at all.
-const COARSE_RANGE_M = 300;
-
-// **This section used to assert the plated state immediately, and the hole outgrew it.** The bot
-// spawns at the cup, and holes are authored at real White-tee yardages now rather than the
-// generator's two-thirds -- so the bot starts about 460 m away instead of just inside 300 m. Both
-// halves of the distance rule are worth having, so both are checked: blank out here, plated once
-// it has closed.
-check(
-  "the bot starts beyond coarse range, or the two checks below are the same check",
-  atRange.botDistance !== null && atRange.botDistance > COARSE_RANGE_M,
-  `${atRange.botDistance?.toFixed(0)} m`,
-);
-check(
-  "a plate past coarse range is hidden and carries no distance",
-  atRange.firstPlateHidden === true && atRange.firstPlateDistance === "",
-  `hidden=${atRange.firstPlateHidden} distance="${atRange.firstPlateDistance}"`,
-);
-
-// Now let it close. The bot drives at the player at any distance (src/sim/bot.ts) and the player
-// is stationary, so this is the bot's doing and not the harness's.
-//
-// Waited on the plate rather than on a distance, and the difference is not pedantry: at 97 m the
-// bot is inside every distance threshold and still off the side of the frame, its plate parked at
-// x=1257 of a 1280-wide viewport. "Close enough" is not the rule the plate follows -- `onScreen`
-// is -- so the wait asks the question the assertions below ask. Bounded, because a bot that never
-// arrives is exactly the regression this exists to catch, and it must fail rather than hang.
+// Wait for the per-frame path to show a plate: that needs a bot on screen and inside coarse
+// range, which only the bots' own driving can bring about. Bounded, because bots that never
+// arrive are exactly the regression this exists to catch.
 const onScreen = await page
-  .waitForFunction(() => document.querySelector("#nameplates .nameplate")?.hidden === false, {
+  .waitForFunction(() => [...document.querySelectorAll("#nameplates .nameplate")].some((p) => p.hidden === false), {
     timeout: 60000,
     polling: 250,
   })
   .then(() => true)
   .catch(() => false);
-check("the bot closes until it is on screen, rather than idling on its own tee", onScreen);
+check("a bot closes until its plate is on screen", onScreen);
 
 const plated = await read();
-
-// The count above is satisfied by Nameplates' constructor alone and proves nothing about the
-// per-frame path (main.ts's drawNameplates / RenderScene.projectToScreen / Nameplates.setPlate).
-// These three assert on state only that path can produce.
+// The browser's CSSOM normalises the trailing unitless "0" in translate3d(...) to "0px".
+const transformMatch = plated.shownPlateTransform?.match(/translate3d\(([-\d.]+)px, ([-\d.]+)px, 0(?:px)?\)/) ?? null;
 check(
-  "bot's plate is not hidden while the bot is on screen",
-  plated.firstPlateHidden === false,
-  `hidden=${plated.firstPlateHidden} at ${plated.botDistance?.toFixed(0)} m`,
-);
-
-// The browser's CSSOM normalizes the trailing unitless "0" in translate3d(...) to "0px" when it
-// serializes style.transform back out, so the third component's unit is optional here.
-const transformMatch = plated.firstPlateTransform?.match(/translate3d\(([-\d.]+)px, ([-\d.]+)px, 0(?:px)?\)/) ?? null;
-const plateX = transformMatch ? Number(transformMatch[1]) : null;
-const plateY = transformMatch ? Number(transformMatch[2]) : null;
-check(
-  "bot's plate transform places it inside the viewport",
+  "a shown plate's transform places it inside the viewport",
   transformMatch !== null &&
-    plateX !== null &&
-    plateY !== null &&
-    plateX >= 0 &&
-    plateX <= canvas.w &&
-    plateY >= 0 &&
-    plateY <= canvas.h,
-  `${plated.firstPlateTransform}`,
+    Number(transformMatch[1]) >= 0 &&
+    Number(transformMatch[1]) <= canvas.w &&
+    Number(transformMatch[2]) >= 0 &&
+    Number(transformMatch[2]) <= canvas.h,
+  `${plated.shownPlateTransform}`,
 );
+check("a shown plate's health fill is a percentage width", /^\d+%$/.test(plated.shownPlateFillWidth ?? ""), `${plated.shownPlateFillWidth}`);
+// The tier grammar from src/ui/plateState.ts: whole metres under 100, `~` and a multiple of 25 out
+// to coarse range. A shown plate is inside that range, so an empty string is a failure.
+check("a shown plate carries a distance in the tier grammar", /^~?\d+ m$/.test(plated.shownPlateDistance ?? ""), `${plated.shownPlateDistance}`);
+check("a shown plate carries a team class", /nameplate-(ally|enemy)/.test(plated.shownPlateClass ?? ""), `${plated.shownPlateClass}`);
 
-check(
-  "bot's health fill is a percentage width",
-  /^\d+%$/.test(plated.firstPlateFillWidth ?? ""),
-  `${plated.firstPlateFillWidth}`,
-);
-// The tier grammar from src/ui/plateState.ts: whole metres under 100, `~` and a multiple of 25
-// out to 300. A bot on screen at the tee is well inside that, so an empty string here is a
-// failure rather than a legitimately-distant plate.
-check(
-  "bot's plate carries a distance in the tier grammar",
-  /^~?\d+ m$/.test(plated.firstPlateDistance ?? ""),
-  `${plated.firstPlateDistance}`,
-);
-check(
-  "bot's plate carries a team class",
-  /nameplate-(ally|enemy)/.test(plated.firstPlateClass ?? ""),
-  `${plated.firstPlateClass}`,
-);
-
-console.log("=== PIN MARKER (H17) ===");
-check("exactly one pin marker", plated.pinMarkers === 1, `${plated.pinMarkers}`);
-// A number and a unit, not a placeholder and not an empty string. The distance is derived from the
-// ball and the cup, so at the tee of a 90 m hole it is a two-digit figure rather than 0.
-check(
-  "the pin marker carries a distance in whole yards",
-  /^\d+ yd$/.test(plated.pinMarkerDistance ?? ""),
-  `${plated.pinMarkerDistance}`,
-);
-check(
-  "the pin marker reports a real distance rather than zero at the tee",
-  Number.parseInt(plated.pinMarkerDistance ?? "0", 10) > 10,
-  `${plated.pinMarkerDistance}`,
-);
-const pinTransform = plated.pinMarkerTransform?.match(/translate3d\(([-\d.]+)px, ([-\d.]+)px, 0(?:px)?\)/) ?? null;
-check(
-  "the pin marker is placed inside the viewport, clamped rather than hidden",
-  pinTransform !== null &&
-    Number(pinTransform[1]) >= 0 &&
-    Number(pinTransform[1]) <= canvas.w &&
-    Number(pinTransform[2]) >= 0 &&
-    Number(pinTransform[2]) <= canvas.h,
-  `${plated.pinMarkerTransform}`,
-);
-
-// The visible === false branch (a point outside the camera's view) is reachable independent of
-// where the bot currently is: a point far behind the chase camera along the cart's own heading is
-// guaranteed behind the near plane.
+// A point far behind the chase camera along the cart's own heading is behind the near plane.
 const behindCamera = await page.evaluate(() => {
   const { render, sim } = window.__teetimeturrets;
   const out = { x: 0, y: 0 };
-  const heading = sim.cart.heading;
-  const forwardX = Math.cos(heading);
-  const forwardZ = Math.sin(heading);
   const p = sim.cart.position;
-  const visible = render.projectToScreen(p.x - forwardX * 100000, p.y, p.z - forwardZ * 100000, out);
-  return visible;
+  return render.projectToScreen(p.x - Math.cos(sim.cart.heading) * 100000, p.y, p.z - Math.sin(sim.cart.heading) * 100000, out);
 });
 check("a point far behind the camera projects as not visible", behindCamera === false, `${behindCamera}`);
 
-console.log("=== MATCH RESULTS ===");
-check("results overlay is hidden while the match runs", (await read()).resultsHidden === true);
-
-// Run the clock out rather than waiting three minutes for it.
-//
-// Written on `sim.match.remaining`, the clock itself, and not on `sim.matchTimeRemaining`, which
-// this line used until `938d00b` moved the countdown into `match.ts` and left a **getter with no
-// setter** behind. `page.evaluate` runs sloppy-mode, where assigning to one is a silent no-op:
-// the clock kept its full 180 s, the match never ended, and the four checks below went red while
-// nothing was wrong with the overlay. TypeScript cannot catch it -- this is a string in a browser.
-//
-// Still one tick short of zero rather than `match.finish()`, because the check below is named for
-// the clock running out and `finish()` is the buzzer that skips it. This way `Match.tick` is what
-// ends the match, which is the path a real match takes.
+console.log("=== MATCH OVER ===");
+// Written on `sim.match.remaining`, the clock itself: `sim.matchTimeRemaining` is a getter with no
+// setter, and page.evaluate's sloppy mode would swallow the assignment silently. One tick short of
+// zero rather than `match.finish()`, so `Match.tick` ends the match the way a real one ends.
 await page.evaluate(() => {
   window.__teetimeturrets.sim.match.remaining = 1 / 60;
 });
+await page.waitForFunction(() => window.__teetimeturrets.screen === "matchResults", { timeout: 20000 });
+await new Promise((r) => setTimeout(r, 300));
+const over = await page.evaluate(() => ({
+  screen: window.__teetimeturrets.screen,
+  bots: window.__teetimeturrets.sim.bots.length,
+  headline: document.querySelector(".arena-results__title")?.textContent ?? null,
+  scores: [...document.querySelectorAll(".arena-results__score-value")].map((el) => el.textContent),
+  mvp: document.querySelector(".arena-results__mvp")?.textContent ?? null,
+  rowNames: [...document.querySelectorAll(".arena-results__row-name")].map((el) => el.textContent),
+}));
+check("the clock running out routes to the results screen", over.screen === "matchResults", over.screen);
+// MatchResultsScreen builds this markup fresh in enter(), so non-empty text is deriveScoreboard's.
+check("results names a winner", (over.headline ?? "").length > 0, String(over.headline));
+check(
+  "results shows both teams' strokes",
+  over.scores.length === 2 && over.scores[0].startsWith("US ") && over.scores[1].startsWith("THEM "),
+  JSON.stringify(over.scores),
+);
+check("results names an MVP", (over.mvp ?? "").startsWith("MVP"), String(over.mvp));
+check(
+  "results lists the whole roster, player first",
+  over.rowNames.length === over.bots + 1 && over.rowNames[0] === "YOU",
+  `${JSON.stringify(over.rowNames)} for ${over.bots} bots`,
+);
+
+await page.click(".arena-results__actions .btn--primary"); // PLAY AGAIN
+await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 20000 });
 await new Promise((r) => setTimeout(r, 400));
-const ended = await page.evaluate(() => {
-  const { sim } = window.__teetimeturrets;
-  return {
-    hidden: document.getElementById("match-results").hidden,
-    headline: document.getElementById("results-headline").textContent,
-    you: document.getElementById("results-you").textContent,
-    bot: document.getElementById("results-bot").textContent,
-    strokes: sim.cart.strokesTaken,
-    bestBot: sim.bestBotStrokes(),
-  };
-});
-check("results overlay appears when the clock runs out", ended.hidden === false);
-check("results overlay names an outcome", ended.headline.length > 0, ended.headline);
-// index.html now ships these two spans empty (review round 1: a placeholder "YOU 0"/"BOT 0"
-// let the check above pass even with the writer never called). Checking against the sim's own
-// numbers also pins the results-you/results-bot id mapping in matchResults.ts -- a swap of
-// those two ids would fail one of these two checks.
-check("results overlay shows the player's score", ended.you === `YOU ${ended.strokes}`, ended.you);
-check(
-  "results overlay shows the bot's score",
-  ended.bot === (Number.isFinite(ended.bestBot) ? `BOT ${ended.bestBot}` : "BOT —"),
-  ended.bot,
-);
+const rematch = await page.evaluate(() => ({
+  remaining: window.__teetimeturrets.sim.match.remaining,
+  over: window.__teetimeturrets.sim.matchOver,
+}));
+check("PLAY AGAIN resets the match clock", rematch.remaining > 1, `${rematch.remaining}`);
+check("PLAY AGAIN resets the match itself", rematch.over === false, `${rematch.over}`);
 
-await page.click("#play-again");
-await new Promise((r) => setTimeout(r, 400));
-const restarted = await read();
-check("play again restarts the match", restarted.resultsHidden === true, `t=${restarted.timer}`);
-
-// ROADMAP.md Phase 1.75's gate, verbatim: "enter and leave every registered screen 20x in a loop
-// with no growth in renderer.info.memory (geometries/textures)". This is the check the phase
-// exists for, and the one Phase 3.5 repeats against the clubhouse -- a screen that forgets to
-// dispose its scene looks completely fine until the twentieth transition.
-//
-// The title screen is the subject because it is the heaviest thing that can be cycled cheaply: a
-// full terrain, ground mesh and instanced tree wood, with no Rapier world to rebuild each time.
-// Advancing a hole, through the real button rather than through the module.
-//
-// This is the wiring session.test.ts cannot reach. That suite proves the Session arithmetic in
-// node; what it cannot see is whether main.ts's startRound closure actually asks the session which
-// hole to load, because main.ts is boot code with no seam. The defect it replaced lived exactly
-// there -- every unit test was green while NEXT HOLE replayed hole 2 forever.
-//
-// Holing out for real would take a full round per hole, so the completion is fabricated and
-// everything after it is the shipped path: the Results screen is entered normally, NEXT HOLE is a
-// real click, and the hole that comes back is read off the new Sim's own spec.
-console.log("=== HOLE ADVANCE ===");
-const advanced = await page.evaluate(async () => {
-  const api = window.__teetimeturrets;
-  const first = api.sim.terrain.spec.index;
-
-  api.session.completeHole(4);
-  api.screens.show("results");
-  const next = [...document.querySelectorAll("#screens .results__actions .btn")]
-    .find((b) => b.textContent.startsWith("NEXT HOLE"));
-  const enabled = next !== undefined && !next.disabled;
-  next?.click();
-
-  for (let i = 0; i < 400 && api.screens.activeName !== "round"; i++) {
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  return {
-    first,
-    enabled,
-    second: api.sim.terrain.spec.index,
-    holeIndex: api.session.holeIndex,
-    card: api.round.card.map((c) => c.strokes),
-  };
-});
-check("NEXT HOLE is offered while the round is unfinished", advanced.enabled === true);
-check(
-  "NEXT HOLE loads a different hole",
-  advanced.second === advanced.first + 1,
-  `hole ${advanced.first} -> ${advanced.second}`,
-);
-check(
-  "the finished hole keeps its score on the card",
-  advanced.card[0] === 4 && advanced.card[1] === null,
-  JSON.stringify(advanced.card.slice(0, 3)),
-);
-check("the session is on the second hole", advanced.holeIndex === 1, String(advanced.holeIndex));
+await page.evaluate(() => window.__teetimeturrets.screens.show("title"));
+await new Promise((r) => setTimeout(r, 300));
 
 console.log("=== SCREEN LIFECYCLE (Phase 1.75 memory gate) ===");
 const leak = await page.evaluate(async () => {
@@ -776,7 +529,7 @@ await page.waitForFunction(() => window.__teetimeturrets.screen === "title", { t
 await page.evaluate(() => {
   [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "PLAY").click();
 });
-await page.waitForFunction(() => window.__teetimeturrets.screen === "round", { timeout: 30000 });
+await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 30000 });
 await new Promise((r) => setTimeout(r, 400));
 // TIRE_TUNING gives turf a different top speed, grip and off-road penalty from street, so the
 // tire the cart is actually running is the proof the purchase reached the physics, not the menu.
@@ -786,48 +539,6 @@ check(
   tireAfter.tire === "turf" && tireAfter.tire !== tireBefore,
   `${tireBefore} -> ${tireAfter.tire}`,
 );
-
-// === H8, the course map ===
-// The map is a canvas, so "the element is visible" proves nothing: a blank panel and a drawn
-// course are the same DOM. These count non-background pixels off the canvas itself, which is
-// the only evidence that mapGeometry ran and CourseMap painted it. Browser-visible behaviour the
-// node suite structurally cannot see -- TEST-AND-SPEC-PITFALLS section 5.
-const readMap = () =>
-  page.evaluate(() => {
-    const panel = document.querySelector(".course-map");
-    const canvas = document.querySelector(".course-map-canvas");
-    if (!panel || !canvas || panel.hidden) return { hidden: true, painted: 0, w: 0, h: 0 };
-    const ctx = canvas.getContext("2d");
-    const { width, height } = canvas;
-    if (width === 0 || height === 0) return { hidden: false, painted: 0, w: width, h: height };
-    const { data } = ctx.getImageData(0, 0, width, height);
-    let painted = 0;
-    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted++;
-    return { hidden: false, painted, w: width, h: height };
-  });
-
-const mapClosed = await readMap();
-check("the course map starts closed", mapClosed.hidden === true, `hidden=${mapClosed.hidden}`);
-
-await page.keyboard.press("KeyM");
-await new Promise((r) => setTimeout(r, 250));
-const mapHole = await readMap();
-check("M opens the map on the hole being played", mapHole.hidden === false, `hidden=${mapHole.hidden}`);
-check(
-  "the map has actually painted the hole, not just unhidden a panel",
-  mapHole.painted > mapHole.w * mapHole.h * 0.2,
-  `${mapHole.painted} of ${mapHole.w * mapHole.h} px`,
-);
-
-await page.keyboard.press("KeyM");
-await new Promise((r) => setTimeout(r, 250));
-const mapCourse = await readMap();
-check("a second M stays open, framing the course", mapCourse.hidden === false, `hidden=${mapCourse.hidden}`);
-check("the course view is painted too", mapCourse.painted > 0, `${mapCourse.painted} px`);
-
-await page.keyboard.press("Escape");
-await new Promise((r) => setTimeout(r, 250));
-check("Escape closes the map", (await readMap()).hidden === true);
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 

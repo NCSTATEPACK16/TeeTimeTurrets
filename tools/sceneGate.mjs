@@ -36,7 +36,6 @@ const SUBJECTS = [
   "cart-empty",
   "cart-followthrough",
   "ball",
-  "target",
   // Standing and felled are identical in every numeric check and obviously different in the
   // picture, which is what a gate screenshot is for. Keep this list in step with
   // tools/gate/gateScene.ts's SUBJECTS -- a subject added to only one of the two fails confusingly.
