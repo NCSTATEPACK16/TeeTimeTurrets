@@ -21,9 +21,18 @@ import type { PooledBall } from "./entities/BallPool";
 /** One ball hit is one point of health. A bar is `ARENA_MAX_HEALTH` points tall. */
 export const STROKE_DAMAGE = 1;
 
-/** Two carts at CART_TUNING.topSpeed head-on close at ~28 m/s: 22 damage. Ramming hurts, but
- * shooting stays the primary way to kill something. */
-export const SHUNT_DAMAGE_PER_MPS = 0.8;
+/**
+ * A ram does one point of damage per `RAM_MPS_PER_DAMAGE` m/s of closing speed, up to
+ * `RAM_MAX_DAMAGE`. It used to be 0.8 per m/s uncapped, which against an 8-point bar made every
+ * ram at speed a kill -- for both carts. Ramming hurts; shooting stays the way to kill something.
+ */
+export const RAM_MPS_PER_DAMAGE = 6;
+export const RAM_MAX_DAMAGE = 2;
+/**
+ * m/s. When one cart's own approach speed exceeds the other's by more than this, it is the rammer
+ * and takes half the damage it deals. Inside it -- a head-on -- both take the full amount.
+ */
+export const RAMMER_MARGIN_MPS = 1;
 /** Below this, contact between two carts is parking, not ramming: no damage and no shove. */
 export const SHUNT_MIN_SPEED = 3;
 /** Fraction of the closing speed each cart carries away from a shunt as `shuntVelocity`. */
@@ -160,9 +169,17 @@ function cartsShunt(
   // A ram can kill, and it takes the same stroke penalty a shot does -- death has one path.
   // Teammates still bounce off each other; they just do not hurt each other.
   if (!sameSide(first.index, second.index)) {
-    const damage = closing * SHUNT_DAMAGE_PER_MPS;
-    if (applyDamage(a.health, damage)) ctx.onCartKilled(a, first.index, second.index);
-    if (applyDamage(b.health, damage)) ctx.onCartKilled(b, second.index, first.index);
+    const damage = Math.min(RAM_MAX_DAMAGE, Math.floor(closing / RAM_MPS_PER_DAMAGE));
+    // Who drove into whom: each cart's own speed toward the other along the line between them.
+    const lx = b.position.x - a.position.x;
+    const lz = b.position.z - a.position.z;
+    const l = Math.hypot(lx, lz) || 1;
+    const aApproach = (velA.x * lx + velA.z * lz) / l;
+    const bApproach = -(velB.x * lx + velB.z * lz) / l;
+    const toA = aApproach > bApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
+    const toB = bApproach > aApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
+    if (toA > 0 && applyDamage(a.health, toA)) ctx.onCartKilled(a, first.index, second.index);
+    if (toB > 0 && applyDamage(b.health, toB)) ctx.onCartKilled(b, second.index, first.index);
   }
 
   // Along the line between them, so the pair separates rather than being flung sideways. Two

@@ -4,7 +4,7 @@ import { Cart } from "./entities/Cart";
 import { ARENA_MAX_HEALTH } from "./matchConfig";
 import {
   CombatRegistry,
-  SHUNT_DAMAGE_PER_MPS,
+  RAM_MAX_DAMAGE,
   SHUNT_MIN_SPEED,
   STROKE_DAMAGE,
   processContacts,
@@ -270,28 +270,56 @@ describe("combat contact resolution", () => {
     expect(killed).toEqual([cart]);
   });
 
-  it("damages both carts in a shunt and shoves both apart, never applying an impulse", () => {
-    // Bars tall enough to read the raw shunt damage off, rather than clamping it at zero.
-    cart.setMaxHealth(100);
-    const other = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI, maxHealth: 100 });
+  /** An enemy cart parked 1.2 m ahead of `cart` along +x, facing it. */
+  function parkedEnemy(): Cart {
+    const other = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
     const otherBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     const otherHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), otherBody).handle;
     registry.registerCart(otherHandle, other, 1);
+    otherHandles.set(other, otherHandle);
+    return other;
+  }
+  const otherHandles = new Map<Cart, number>();
 
+  it("caps a head-on at the ram maximum for both carts and shoves both apart, never an impulse", () => {
+    const other = parkedEnemy();
     cart.heading = 0;
     cart.speed = 14;
-    other.speed = 14; // heading pi, so the two close at 28 m/s
+    other.speed = 14; // heading pi, so the two close at 28 m/s: a mutual ram, nobody's victim
 
-    processContacts(queueOf([cartHandle, otherHandle, true]), ctx());
+    processContacts(queueOf([cartHandle, otherHandles.get(other)!, true]), ctx());
 
-    const expected = 28 * SHUNT_DAMAGE_PER_MPS;
-    expect(cart.health.hp).toBeCloseTo(100 - expected, 6);
-    expect(other.health.hp).toBeCloseTo(100 - expected, 6);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - RAM_MAX_DAMAGE);
+    expect(other.health.hp).toBe(ARENA_MAX_HEALTH - RAM_MAX_DAMAGE);
     // Pushed apart along the line between them: cart is at x=0, other at x=1.2.
     expect(cart.shuntVelocity.x).toBeLessThan(0);
     expect(other.shuntVelocity.x).toBeGreaterThan(0);
-    // A shunt is not a stat-tracked shot, and the cart body must be untouched by it.
+    // A shunt is not a stat-tracked shot.
     expect(stats.directHits).toBe(0);
+  });
+
+  it("hurts but does not kill a full-health cart rammed at 10 m/s", () => {
+    // At the old 0.8 damage per m/s this was 8 damage: every ram at speed was a kill.
+    const other = parkedEnemy();
+    cart.heading = 0;
+    cart.speed = 10;
+
+    processContacts(queueOf([cartHandle, otherHandles.get(other)!, true]), ctx());
+
+    expect(other.dead).toBe(false);
+    expect(other.health.hp).toBe(ARENA_MAX_HEALTH - 1);
+    expect(kills).toEqual([]);
+  });
+
+  it("costs the rammer half what it deals the parked cart", () => {
+    const other = parkedEnemy();
+    cart.heading = 0;
+    cart.speed = 14;
+
+    processContacts(queueOf([cartHandle, otherHandles.get(other)!, true]), ctx());
+
+    expect(other.health.hp).toBe(ARENA_MAX_HEALTH - 2);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - 1);
   });
 
   it("ignores a shunt below SHUNT_MIN_SPEED -- parking is not ramming", () => {

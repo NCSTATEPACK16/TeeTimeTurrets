@@ -314,6 +314,21 @@ describe("computeMuzzle", () => {
   });
 });
 
+describe("Cart pace", () => {
+  it("is fast: at least 18 m/s on fairway, reached inside two seconds", () => {
+    // The user's call (2026-09-24): "somewhat realistic but a lot of action". 14 m/s was not it.
+    const cart = new Cart();
+    const throttle = { ...idle(), throttle: 1 };
+    let reachedAt = Infinity;
+    for (let tick = 0; tick < 5 * 60; tick++) {
+      cart.step(throttle, DT, FAIRWAY);
+      if (cart.speed >= 18 && reachedAt === Infinity) reachedAt = tick * DT;
+    }
+    expect(cart.speed).toBeGreaterThanOrEqual(18);
+    expect(reachedAt).toBeLessThanOrEqual(2);
+  });
+});
+
 describe("Cart driving", () => {
   it("accelerates forward under throttle and caps at top speed", () => {
     const cart = new Cart();

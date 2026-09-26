@@ -427,8 +427,9 @@ describe("bot carts", () => {
       BOT_ENGAGE_RANGE,
     );
 
-    // Four seconds: the bot opens on the cup, ~90 m out, and reaches 40 m a little after five.
-    for (let i = 0; i < 240; i++) sim.step();
+    // Two and a half seconds: the bot opens on the cup, ~90 m out, and at 20 m/s reaches 40 m a
+    // little after three.
+    for (let i = 0; i < 150; i++) sim.step();
 
     const moved = Math.hypot(bot.position.x - start.x, bot.position.z - start.z);
     expect(moved, "the bot did not move at all").toBeGreaterThan(1);

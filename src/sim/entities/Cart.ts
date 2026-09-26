@@ -139,17 +139,21 @@ export const TURRET_GEOMETRY = {
 
 /** Starting values for playtesting, not measured constants -- tune by feel. */
 export const CART_TUNING = {
-  /** Forward top speed on a surface with no penalty, m/s (~31 mph: arcade, not a real cart). */
-  topSpeed: 14,
+  /**
+   * Forward top speed on a surface with no penalty, m/s (~45 mph: "somewhat realistic but a lot
+   * of action", the user's call on 2026-09-24). Rough takes it to ~14 m/s, so leaving the fairway
+   * still costs something.
+   */
+  topSpeed: 20,
   /** Reverse is deliberately slow enough that turning around beats backing up. */
-  reverseTopSpeed: 5,
-  accel: 9,
-  brakeDecel: 18,
+  reverseTopSpeed: 7,
+  accel: 16,
+  brakeDecel: 24,
   coastDecel: 3.5,
   /** Radians per second of chassis yaw at full grip and full steering authority. */
-  steerRate: 1.9,
+  steerRate: 2.4,
   /** Speed at which steering reaches full authority. */
-  steerFullSpeed: 6,
+  steerFullSpeed: 8,
   /** Steering authority floor, so a stopped cart can still pivot instead of locking up. */
   pivotAuthority: 0.25,
   /** Recoil speed per m/s of launch speed. Driver at full charge kicks ~6 m/s. */
