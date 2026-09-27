@@ -105,6 +105,24 @@
          positions itself with left/top and animates transform + opacity, then removes itself on
          animationend. The container never scrolls. */
       #hit-markers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      /* Low-HP vignette: a red edge whose opacity MatchScreen sets from lowHpIntensity. */
+      #low-hp {
+        position: fixed; inset: 0; pointer-events: none; opacity: 0;
+        background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 16, 16, 0.55) 100%);
+        animation: low-hp-pulse 1.1s ease-in-out infinite;
+      }
+      @keyframes low-hp-pulse { 50% { filter: brightness(1.35); } }
+      /* Damage direction: each flash is a full-screen box rotated about the centre with a red arc
+         at its top edge, so rotate(angle) points the arc where the shot came from. */
+      #damage-indicators { position: fixed; inset: 0; pointer-events: none; }
+      .damage-indicator {
+        position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0;
+      }
+      .damage-indicator::before {
+        content: ""; position: absolute; left: -90px; top: -38vh; width: 180px; height: 26px;
+        border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+        background: radial-gradient(ellipse at 50% 100%, rgba(255, 60, 40, 0.95), rgba(255, 60, 40, 0) 70%);
+      }
       /* Kill feed: top right, newest first, each line fading out after KILL_FEED_TTL_S. */
       #kill-feed {
         position: fixed; top: 14px; right: 16px; pointer-events: none;
@@ -536,6 +554,9 @@
       <div id="banner-headline"></div>
       <div id="banner-consequence"></div>
     </div>
+    <!-- Low-HP vignette and damage-direction flashes: styled here, driven by hitFeedback.ts. -->
+    <div id="low-hp"></div>
+    <div id="damage-indicators"></div>
     <div id="hit-markers"></div>
     <!-- Filled by killFeed.ts from Sim.events; empty in markup for the same reason as #hud-team-score. -->
     <div id="kill-feed" aria-live="polite"></div>

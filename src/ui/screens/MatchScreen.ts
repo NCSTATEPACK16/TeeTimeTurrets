@@ -15,6 +15,7 @@ import { BannerFeed, createBannerView } from "../bannerFeed";
 import type { BannerSource } from "../bannerFeed";
 import { HitMarkers } from "../hitMarkers";
 import { KillFeed, drawKillFeed } from "../killFeed";
+import { DamageIndicators, damageScreenAngle, lowHpIntensity, markerLabel } from "../hitFeedback";
 import { Nameplates } from "../nameplates";
 import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
@@ -67,6 +68,10 @@ export class MatchScreen implements Screen {
   private killFeedRoot: HTMLElement | null = null;
   private killFeed = new KillFeed();
   private killFeedDrawn = -1;
+  /** Damage-direction flashes (#damage-indicators) and the low-HP vignette (#low-hp). Optional. */
+  private readonly damageIndicators = new DamageIndicators();
+  private damageRoot: HTMLElement | null = null;
+  private lowHp: HTMLElement | null = null;
   private view: FrameView | null = null;
   /** Guards `onMatchOver`: called once. */
   private matchOverReported = false;
@@ -113,6 +118,9 @@ export class MatchScreen implements Screen {
     this.killFeedRoot = document.getElementById("kill-feed");
     this.killFeed = new KillFeed();
     this.killFeedDrawn = -1;
+    this.damageRoot = document.getElementById("damage-indicators");
+    this.lowHp = document.getElementById("low-hp");
+    this.damageIndicators.clear();
     this.matchOverReported = false;
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
@@ -206,6 +214,10 @@ export class MatchScreen implements Screen {
     if (this.banner) this.banner.root.hidden = true;
     this.killFeedRoot?.replaceChildren();
     this.killFeedRoot = null;
+    this.damageRoot?.replaceChildren();
+    this.damageRoot = null;
+    if (this.lowHp) this.lowHp.style.opacity = "0";
+    this.lowHp = null;
     this.hitMarkers?.dispose();
     this.hitMarkers = null;
     this.input?.dispose();
@@ -238,6 +250,13 @@ export class MatchScreen implements Screen {
 
     this.killFeed.update(dt);
     if (this.killFeedRoot) this.killFeedDrawn = drawKillFeed(this.killFeedRoot, this.killFeed, this.killFeedDrawn);
+
+    this.damageIndicators.update(dt);
+    if (this.damageRoot) drawDamageIndicators(this.damageRoot, this.damageIndicators);
+    if (this.lowHp) {
+      const intensity = lowHpIntensity(sim.cart.health.hp, sim.cart.health.max).toFixed(2);
+      if (this.lowHp.style.opacity !== intensity) this.lowHp.style.opacity = intensity;
+    }
   }
 
   /**
@@ -252,17 +271,28 @@ export class MatchScreen implements Screen {
     for (let s = cursor.begin(); s < log.total; s++) {
       const e = log.at(s)!;
       if (e.kind === "kill") this.killFeed.onKill(e.actor, e.target);
-      // Markers are the player's feedback: the player's own hits and kills, nobody else's.
-      if (e.actor === 0 && (e.kind === "hit" || e.kind === "kill")) this.spawnHitMarker(e.kind, e.x, e.y, e.z);
+      // Markers are the player's feedback: the player's own hits, rams and kills, nobody else's.
+      if (e.actor === 0) {
+        if (e.kind === "hit" || e.kind === "ram") this.spawnHitMarker("hit", markerLabel("hit", e.amount), e.x, e.y, e.z);
+        else if (e.kind === "kill") this.spawnHitMarker("kill", markerLabel("kill", 0), e.x, e.y, e.z);
+      }
+      // The player was hurt: flash the side it came from, pointing at the cart that did it.
+      if (e.target === 0 && (e.kind === "hit" || e.kind === "ram") && e.actor > 0) {
+        const from = sim.currentBotCarts[e.actor - 1];
+        if (from) {
+          const me = sim.cart.position;
+          this.damageIndicators.add(damageScreenAngle(from.position.x, from.position.z, me.x, me.z, sim.cart.turretYaw));
+        }
+      }
     }
     cursor.end();
   }
 
-  private spawnHitMarker(kind: "hit" | "kill", x: number, y: number, z: number): void {
+  private spawnHitMarker(kind: "hit" | "kill", label: string, x: number, y: number, z: number): void {
     if (!this.hitMarkers || !this.render) return;
     // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
     if (this.render.projectToScreen(x, y + HIT_MARKER_LIFT, z, this.hitScreenScratch)) {
-      this.hitMarkers.spawn(kind, this.hitScreenScratch.x, this.hitScreenScratch.y);
+      this.hitMarkers.spawn(kind, label, this.hitScreenScratch.x, this.hitScreenScratch.y);
     }
   }
 
@@ -433,4 +463,27 @@ function reloadFraction(remainingSeconds: number, club: ClubType): number {
 
 function cloneCart(t: CartTransform): CartTransform {
   return { position: { ...t.position }, heading: t.heading, turretYaw: t.turretYaw };
+}
+
+/**
+ * One arc per active flash, rotated to its direction and faded by its age. At most four, so the
+ * nodes are reused rather than rebuilt: extra ones are hidden, missing ones are added.
+ */
+function drawDamageIndicators(root: HTMLElement, indicators: DamageIndicators): void {
+  const active = indicators.active;
+  while (root.children.length < active.length) {
+    const arc = document.createElement("div");
+    arc.className = "damage-indicator";
+    root.appendChild(arc);
+  }
+  for (let i = 0; i < root.children.length; i++) {
+    const node = root.children[i] as HTMLElement;
+    const ind = active[i];
+    if (!ind) {
+      if (node.style.opacity !== "0") node.style.opacity = "0";
+      continue;
+    }
+    node.style.transform = `rotate(${ind.angle}rad)`;
+    node.style.opacity = ind.opacity.toFixed(2);
+  }
 }
