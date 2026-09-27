@@ -11,6 +11,9 @@ release rather than at Phase 5.
 | `src/**` (client, engine, sim, physics, render, ui) | Apache License 2.0 | `Apache-2.0` |
 | `tools/**` | Apache License 2.0 | `Apache-2.0` |
 | `index.html`, build config, `docs/**` | Apache License 2.0 | `Apache-2.0` |
+| `src/vendor/cot/**` (third-party, from Claude of Tanks) | MIT, notice in `src/vendor/cot/LICENSE` and `NOTICE` | `MIT` |
+| `reference/claude-of-tanks/**` (reading material, not built) | MIT, notice in that folder's `LICENSE` | `MIT` |
+| `public/textures/terrain/**` (ambientCG / Poly Haven) | Public domain | `CC0-1.0` |
 | `server/**` | GNU Affero General Public License v3.0 or later | `AGPL-3.0-or-later` |
 | Human-authored assets, if any are ever added | Creative Commons BY-SA 4.0 | `CC-BY-SA-4.0` |
 | `docs/concept/**` (AI-generated reference art) | No license claimed — provenance-tracked | — |
