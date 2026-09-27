@@ -789,7 +789,9 @@ export class Sim {
       return;
     }
 
-    const pooled = this.ballPool.acquire(rig.index);
+    // The player's shot may take a bot's ball out of the air rather than be refused; a bot's may
+    // not (BallPool.acquire, and docs/DECISIONS.md, 2026-09-27).
+    const pooled = this.ballPool.acquire(rig.index, isPlayer);
     if (!pooled) {
       // Every pooled body is in flight at once. `Cart.fire()` already spent the round on the
       // assumption a ball would spawn; refund it so this degrades to a true no-op.

@@ -144,6 +144,56 @@ describe("BallPool", () => {
     injectedPool.step(DT, 11 * DT);
     expect(ball.state).toBe("landed");
   });
+
+  /** Every body in flight, each held 50 m up so none counts as touched down, fired a tick apart. */
+  function fillInFlight(owners: (i: number) => number): { balls: ReturnType<BallPool["acquire"]>[]; time: number } {
+    const balls: ReturnType<BallPool["acquire"]>[] = [];
+    let time = 0;
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const ball = pool.acquire(owners(i))!;
+      ball.body.setTranslation({ x: i, y: 50, z: 0 }, true);
+      balls.push(ball);
+      time += DT;
+      pool.step(DT, time);
+    }
+    return { balls, time };
+  }
+
+  it("recycles a ball that has come down and is only rolling, before refusing anyone", () => {
+    const { balls, time } = fillInFlight(() => 1);
+    const roller = balls[7]!;
+    // On the grass and still moving: not at rest, so not landed, but no longer a shot in the air.
+    roller.body.setTranslation({ x: 0, y: 0.1, z: 0 }, true);
+    roller.body.setLinvel({ x: 6, y: 0, z: 0 }, true);
+    pool.step(DT, time + DT);
+    expect(roller.state).toBe("flying");
+
+    const next = pool.acquire(2);
+    expect(next).not.toBeNull();
+    expect(next!.body).toBe(roller.body);
+  });
+
+  it("gives the player the oldest bot ball still in the air rather than refusing the shot", () => {
+    const { balls } = fillInFlight((i) => 1 + (i % 7)); // seven bots' balls
+    expect(pool.acquire(3), "a bot is still refused when every ball is airborne").toBeNull();
+
+    const taken = pool.acquire(0, true);
+    expect(taken).not.toBeNull();
+    expect(taken!.body).toBe(balls[0]!.body); // fired first
+    expect(taken!.firedBy).toBe(0);
+    expect(taken!.spent).toBe(false);
+  });
+
+  it("never hands the player back one of their own shots still in the air", () => {
+    fillInFlight((i) => (i === 31 ? 1 : 0)); // all the player's but the newest
+    const taken = pool.acquire(0, true);
+    expect(taken).not.toBeNull();
+    expect(pool.all.filter((b) => b.state === "flying" && b.firedBy === 0)).toHaveLength(POOL_SIZE);
+
+    pool.releaseAll();
+    fillInFlight(() => 0);
+    expect(pool.acquire(0, true)).toBeNull();
+  });
 });
 
 describe("BallPool rolling and flight limits", () => {
@@ -196,4 +246,5 @@ describe("BallPool rolling and flight limits", () => {
     }
     expect(ball.state).toBe("idle");
   });
+
 });

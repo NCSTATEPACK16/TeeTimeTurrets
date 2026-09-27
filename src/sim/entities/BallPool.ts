@@ -35,6 +35,11 @@ export interface PooledBall {
   spent: boolean;
   /** Health points this ball takes off a cart: its club's `damage`, stamped when it is fired. */
   damage: number;
+  /**
+   * True once this flight has come down onto the ground. A ball that has touched down is rolling,
+   * not flying at anyone, so `acquire` may recycle it before it has come fully to rest.
+   */
+  touchedDown: boolean;
 }
 
 export const POOL_SIZE = 32;
@@ -108,29 +113,56 @@ export class BallPool {
         .setEnabled(false);
       world.createCollider(colliderDesc, body);
 
-      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER, firedAt: 0, spent: false, damage: 1 });
+      this.balls.push({
+        body,
+        state: "idle",
+        landedAt: 0,
+        firedBy: NO_KILLER,
+        firedAt: 0,
+        spent: false,
+        damage: 1,
+        touchedDown: false,
+      });
       this.restTicks.set(body, 0);
     }
   }
 
   /**
-   * idle -> flying. Force-recycles the oldest `landed` ball if no `idle` body remains (never a
-   * `flying` one -- an in-flight shot must never vanish mid-arc). Returns null only when every
-   * pooled body is simultaneously `flying`; the caller must degrade to a blank shot in that case.
+   * idle -> flying, taking the first body free in this order:
+   * 1. an `idle` one;
+   * 2. the oldest `landed` one;
+   * 3. the oldest `flying` one that has touched down or already hit something, so it is only
+   *    rolling and no longer a shot at anyone;
+   * 4. only when `takeOthersInFlight` is set, the oldest ball still in the air that someone
+   *    **else** fired.
+   *
+   * Step 4 is for the player alone (docs/DECISIONS.md, 2026-09-27). In a 4v4 the bots keep every
+   * body in the air most of the time, and a refused shot is a trigger pull that silently does
+   * nothing. The player's shot therefore takes a bot's ball out of the air rather than fail. A bot
+   * is still refused, and holds fire.
+   *
+   * Returns null when none of those is available; the caller degrades to a blank shot.
    *
    * `firedBy` has **no default**, on purpose. Every call site has to answer "whose shot is this"
    * rather than inherit an answer, because the wrong answer here is a kill credited to the wrong
    * cart and nothing about it would look wrong at the call site.
    */
-  acquire(firedBy: number): PooledBall | null {
-    const idle = this.balls.find((b) => b.state === "idle");
-    if (idle) return this.beginFlight(idle, firedBy);
-
-    const landed = this.balls.filter((b) => b.state === "landed");
-    if (landed.length === 0) return null;
-    let oldest = landed[0];
-    for (const b of landed) if (b.landedAt < oldest.landedAt) oldest = b;
-    return this.beginFlight(oldest, firedBy);
+  acquire(firedBy: number, takeOthersInFlight = false): PooledBall | null {
+    let landed: PooledBall | null = null;
+    let rolling: PooledBall | null = null;
+    let airborne: PooledBall | null = null;
+    for (const b of this.balls) {
+      if (b.state === "idle") return this.beginFlight(b, firedBy);
+      if (b.state === "landed") {
+        if (!landed || b.landedAt < landed.landedAt) landed = b;
+      } else if (b.touchedDown || b.spent) {
+        if (!rolling || b.firedAt < rolling.firedAt) rolling = b;
+      } else if (b.firedBy !== firedBy) {
+        if (!airborne || b.firedAt < airborne.firedAt) airborne = b;
+      }
+    }
+    const taken = landed ?? rolling ?? (takeOthersInFlight ? airborne : null);
+    return taken ? this.beginFlight(taken, firedBy) : null;
   }
 
   private beginFlight(ball: PooledBall, firedBy: number): PooledBall {
@@ -138,6 +170,7 @@ export class BallPool {
     ball.firedBy = firedBy;
     ball.firedAt = this.now;
     ball.spent = false;
+    ball.touchedDown = false;
     ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
     this.restTicks.set(ball.body, 0);
@@ -185,7 +218,10 @@ export class BallPool {
         }
         const t = ball.body.translation();
         const grounded = t.y - this.ground.heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
-        if (grounded) this.applyRollingResistance(ball.body, t.x, t.z, dt);
+        if (grounded) {
+          ball.touchedDown = true;
+          this.applyRollingResistance(ball.body, t.x, t.z, dt);
+        }
         const v = ball.body.linvel();
         const slow = Math.hypot(v.x, v.y, v.z) < REST_SPEED_THRESHOLD;
         const ticks = grounded && slow ? (this.restTicks.get(ball.body) ?? 0) + 1 : 0;
