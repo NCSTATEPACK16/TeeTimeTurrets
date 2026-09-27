@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Written 2026-09-26 (second session). Rewrite this file at the end of each session; it is a baton, not a log.
+Written 2026-09-26 (second session); commit and PR ledger added 2026-09-27. Rewrite this file at the end of each session; it is a baton, not a log.
 
 ---
 
@@ -33,33 +33,70 @@ Written 2026-09-26 (second session). Rewrite this file at the end of each sessio
 | 8 | Refactor: split `world.ts`, delete the generator |
 | 9 | Docs |
 
+## When a PR happens (the rule for this project)
+
+- **One PR per stage boundary.** The order is: finish the stage, commit locally with `git commit -s`, run the checkpoint (smoke, gate, build, probe), then **pause for the user's play-test**. Open the PR only after the user plays it and approves.
+- **Never push or open a PR without the user's explicit go-ahead in that session.** A PR for an earlier stage does not authorise a later one.
+- **Gate re-baselines need the user's approval** before they are committed.
+- **Next PR:** Stage 1, from `arena-only` into `main`. It carries Stage 0, the arena-only rewrite before it, and all of Stage 1 (every commit in the table below). It is blocked on 1.8 wiring, 1.9, the checkpoint and the play-test.
+- **Stages 2 onward:** each gets its own PR at its own boundary. They branch from `arena-only` (or from `main` once the Stage 1 PR merges), and the same pause applies.
+
+## Commits not in any PR
+
+`origin/main` is at `9ff0d01` (the PR #27 merge).
+
+**`arena-only`: 14 local commits. Not pushed; there is no `origin/arena-only`. These make up the planned Stage 1 PR.**
+
+| # | Commit | What it is |
+|---|---|---|
+| 1 | `02a505c` | Pre-plan: golden fingerprint of a scripted arena match, before stroke play was removed |
+| 2 | `7a39942` | Pre-plan: fired balls roll to a stop on the ground they are on |
+| 3 | `1eaa8d1` | Pre-plan: arena is the game; stroke play removed |
+| 4 | `da55631` | docs: arena-only handoff |
+| 5 | `d208c44` | Stage 0: smoke drives the arena; the gate drops the `target` subject |
+| 6 | `86dd6ec` | 1.1: teams; friendly fire off |
+| 7 | `9a5488c` | 1.2 + 1.3: 4v4 with clubhouse spawn pads |
+| 8 | `01590d5` | 1.4 + 1.6: faster carts; the ram is capped at 2 |
+| 9 | `126ad62` | docs: Stage 1 handoff |
+| 10 | `45d0331` | 1.5: ball-only cart hull hitbox |
+| 11 | `62387bb` | 1.5: the putter pistol; per-club damage and recoil |
+| 12 | `038cb6d` | 1.7: mouse fire, right-click cancel, turret camera, aim arc |
+| 13 | `0db043e` | 1.8 part one: aim solver and `BotMind` (not yet wired) |
+| 14 | `55889f7` | docs: 1.8 mid-way handoff |
+
+**Stray branches with commits outside `main`.** None of these has an open PR. Leave them alone unless the user decides otherwise.
+
+- **`origin/claude/wonderful-edison-2mxpxz`: 6 pushed commits made after PR #27 merged, so they were never merged.**
+  - The commits: `bf52835` (double cart speed, bot standoff), `2f5dee4` (putter like a handgun), `cbfedd5` (tree cover across the arena), `575b326` (gate rebaseline for the flatter loft), `cb039b6` (clubhouse in the drivable arena), `1c49b15` (markers, signs and a pin on every hole).
+  - They **overlap Stage 1** (speed, putter) **and Stages 4 and 6** (clubhouse, dressing), and were built on the pre-arena-only code. Do not merge them. Before those stages, ask the user whether to mine them for ideas or delete the branch.
+- **`tier-2-placed-hazards`: 3 local commits** (`cd8e096`, `eb0242b`, `647b14e`). `git cherry` says their patches are already in `main`, so the branch is safe to delete. Ask first.
+- **`biome-palettes-from-sheets`: 2 commits** (`6f2d396` docs handoff, pushed; `2616a4a` wip snapshot, local only). These are from 2026-09-06 and are superseded. Ask before deleting.
+- **`docs-stage-c-baton`: 1 local commit** (`58c046a`), an old 2026-09-10 docs baton. Superseded.
+- **PR #16 (`course-props-decorative`) is still OPEN,** but its branch has nothing outside `main`. Suggest closing it to the user.
+- A worktree exists at `.worktrees/procedural-course-generation`, on a merged branch. It can be removed.
+
 ## Branch and state
 
-- **Branch `arena-only`** is 13 commits over `origin/main`. It is not pushed and has no PR. The PR is planned for after the Stage 1 checkpoint and the user's play-test.
-- **Earlier commits (Stage 0 and 1.1-1.4, 1.6):**
-  - `d208c44` Stage 0: smoke on the arena path; the gate dropped the stale `target` subject.
-  - `86dd6ec` 1.1: teams; friendly fire off.
-  - `9a5488c` 1.2 + 1.3: 4v4 with clubhouse pads.
-  - `01590d5` 1.4 + 1.6: faster carts; the ram is capped at 2.
-- **This session's commits:**
-  1. `45d0331` **1.5 hull.**
-     - Each cart has a ball-only cylinder hitbox (`CART_HULL`: r 0.9, 0-2.8 m) on its body, registered as the cart.
-     - Collision groups are in `sim/collisionGroups.ts`. The KCC queries with `CART_GROUPS`, so driving is unchanged.
-     - A ball damages once per flight (`PooledBall.spent`), and only while `flying`.
-  2. `62387bb` **1.5 clubs.**
-     - `CLUB_STATS` gains `damage` (driver 2), `gravityScale` (putter 0.4) and `recoil` (m/s at full charge; a blank no longer kicks).
-     - Putter: 30-38 m/s, 1 deg loft, 0.08 s charge, 0.25 s reload, 0.4 deg spread. Loft 0 makes the club clip the canopy (`GolfClub.test.ts`).
-     - Carts start holding the putter.
-     - Bots: `BOT_STANDOFF` 15, `BOT_FIRE_RANGE` 35.
-  3. `038cb6d` **1.7 controls.**
-     - Mouse0 fires. Mouse2 sets `cancelCharge`, and the trigger must then be let go before it charges again.
-     - The camera follows the turret (`render/chaseCamera.ts`), with exponential smoothing in wall-clock frame time.
-     - The aim arc is `entities/AimArc.ts`, fed by `previewTrajectory` in `MatchScreen.draw`.
-  4. `0db043e` **1.8 bots, part one.**
-     - `sim/aimSolver.ts` gives the range -> charge table, and bots release at the solved charge.
-     - `computeBotIntent(..., mind: BotMind | null)` handles skill, unstick and ammo seeking, all unit-tested in `bot.test.ts`.
-     - **`world.ts` does not pass a mind yet**, so none of that is live in a match.
-     - `botAcceptance.test.ts`: an idle player is hit within 30 s on the shipped course.
+- **Work happens on branch `arena-only`.** The commits are in the table above.
+- **Stage 1 detail:**
+  - `45d0331` **1.5 hull.**
+    - Each cart has a ball-only cylinder hitbox (`CART_HULL`: r 0.9, 0-2.8 m) on its body, registered as the cart.
+    - Collision groups are in `sim/collisionGroups.ts`. The KCC queries with `CART_GROUPS`, so driving is unchanged.
+    - A ball damages once per flight (`PooledBall.spent`), and only while `flying`.
+  - `62387bb` **1.5 clubs.**
+    - `CLUB_STATS` gains `damage` (driver 2), `gravityScale` (putter 0.4) and `recoil` (m/s at full charge; a blank no longer kicks).
+    - Putter: 30-38 m/s, 1 deg loft, 0.08 s charge, 0.25 s reload, 0.4 deg spread. Loft 0 makes the club clip the canopy (`GolfClub.test.ts`).
+    - Carts start holding the putter.
+    - Bots: `BOT_STANDOFF` 15, `BOT_FIRE_RANGE` 35.
+  - `038cb6d` **1.7 controls.**
+    - Mouse0 fires. Mouse2 sets `cancelCharge`, and the trigger must then be let go before it charges again.
+    - The camera follows the turret (`render/chaseCamera.ts`), with exponential smoothing in wall-clock frame time.
+    - The aim arc is `entities/AimArc.ts`, fed by `previewTrajectory` in `MatchScreen.draw`.
+  - `0db043e` **1.8 bots, part one.**
+    - `sim/aimSolver.ts` gives the range -> charge table, and bots release at the solved charge.
+    - `computeBotIntent(..., mind: BotMind | null)` handles skill, unstick and ammo seeking, all unit-tested in `bot.test.ts`.
+    - **`world.ts` does not pass a mind yet**, so none of that is live in a match.
+    - `botAcceptance.test.ts`: an idle player is hit within 30 s on the shipped course.
 - **Verified at `0db043e`:**
   - `tsc` is clean.
   - Vitest: 902 tests pass (excluding the uncommitted file below).
