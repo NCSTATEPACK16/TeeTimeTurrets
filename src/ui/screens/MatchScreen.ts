@@ -454,14 +454,16 @@ export class MatchScreen implements Screen {
   }
 
   private buildControlsCard(): HTMLElement {
-    const go = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "GOT IT — CLICK TO DRIVE" });
+    const go = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "GOT IT" });
+    // Only dismisses. Clicking the canvas takes the pointer lock, as it always has, and that click
+    // is guarded against firing (KeyboardMouseSource), so the player's first aim is not a shot.
     go.addEventListener("click", () => {
       this.pause.dismissControls();
       if (this.settings) {
         this.settings.seenControls = true;
         this.options.onSettingsChange({ ...this.settings });
       }
-      this.resumePlay();
+      this.syncPause();
     });
     const row = (keys: string, action: string): HTMLElement =>
       el("div", { class: "controls__row" }, [el("span", { class: "controls__keys", text: keys }), el("span", { text: action })]);
@@ -470,7 +472,7 @@ export class MatchScreen implements Screen {
         el("h1", { class: "match-overlay__title", text: "CONTROLS" }),
         el("div", { class: "controls" }, [
           row("W A S D", "Drive"),
-          row("MOUSE", "Aim the turret"),
+          row("CLICK", "Take the mouse, then aim the turret with it"),
           row("LEFT CLICK", "Hold to charge, release to fire"),
           row("RIGHT CLICK", "Cancel a charge"),
           row("1  2  3", "Putter · iron · driver"),

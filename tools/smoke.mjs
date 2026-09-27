@@ -179,10 +179,11 @@ check(
   JSON.stringify(title.labels) === JSON.stringify(["PLAY", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
   title.labels.join(" / "),
 );
-// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead or absent.
+// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead or absent. SETTINGS was
+// built in Stage 2; MULTIPLAYER is the one still to come.
 check(
   "built screens are live and unbuilt ones are disabled, not absent",
-  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, true]),
+  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, false]),
   JSON.stringify(title.disabled),
 );
 check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
@@ -198,6 +199,30 @@ console.log("=== PLAY (the arena) ===");
 // is the one boot path in the file that earns a generous timeout.
 await clickTitle("PLAY");
 await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 30000 });
+
+// A fresh profile has never seen the controls, so the first match opens on the controls card,
+// frozen. Measured as the clock not moving across real time, since a card over a running match
+// would read the same in a screenshot.
+await page.waitForFunction(() => document.querySelector(".match-overlay__title") !== null, { timeout: 30000 }).catch(() => {});
+const card = await page.evaluate(async () => {
+  const { sim } = window.__teetimeturrets;
+  const before = sim.match.remaining;
+  await new Promise((r) => setTimeout(r, 1500));
+  return {
+    title: document.querySelector(".match-overlay__title")?.textContent ?? null,
+    frozen: sim.match.remaining === before,
+    remaining: sim.match.remaining,
+  };
+});
+check("a first match opens on the controls card", card.title === "CONTROLS", `${card.title}`);
+check("the match is frozen while the controls card is up", card.frozen === true, `${card.remaining}`);
+await page.evaluate(() => {
+  [...document.querySelectorAll(".match-overlay .btn")].find((b) => b.textContent === "GOT IT").click();
+});
+check(
+  "dismissing the card remembers it",
+  (await page.evaluate(() => JSON.parse(localStorage.getItem("teetimeturrets.settings") ?? "{}").seenControls)) === true,
+);
 // Until the clock moves, no input can: on a software-rendered GPU the match's first frames compile
 // shaders for seconds, and a fixed sleep here once let the whole DRIVE hold land before the first
 // tick. Wait for the sim itself to have stepped.
@@ -459,6 +484,43 @@ check(
   cancelCharged && heldAfterCancel.charge === 0,
   `charge ${cancelCharged ? "built" : "never built"}, then ${heldAfterCancel.charge}`,
 );
+
+console.log("=== PAUSE (Esc) ===");
+// Esc while the pointer is locked: the browser may spend the key on releasing the lock, and the
+// page pauses on either path. Frozen means the clock does not move across real time.
+await page.keyboard.press("Escape");
+await page.waitForFunction(() => document.querySelector(".match-overlay__title")?.textContent === "PAUSED", { timeout: 5000 }).catch(() => {});
+const paused = await page.evaluate(async () => {
+  const { sim } = window.__teetimeturrets;
+  const before = sim.match.remaining;
+  await new Promise((r) => setTimeout(r, 1000));
+  return {
+    title: document.querySelector(".match-overlay__title")?.textContent ?? null,
+    frozen: sim.match.remaining === before,
+    unlocked: document.pointerLockElement === null,
+    sliders: document.querySelectorAll(".match-overlay .settings__slider").length,
+  };
+});
+check("Esc pauses the match", paused.title === "PAUSED", `${paused.title}`);
+check("a paused match does not tick", paused.frozen === true);
+check("the pause menu frees the pointer so its buttons can be clicked", paused.unlocked === true);
+check("the pause menu carries the settings", paused.sliders === 4, `${paused.sliders} sliders`);
+await page.evaluate(() => {
+  [...document.querySelectorAll(".match-overlay .btn")].find((b) => b.textContent === "RESUME").click();
+});
+await page.waitForFunction(() => document.pointerLockElement === document.querySelector("canvas"), { timeout: 3000, polling: 50 }).catch(() => {});
+const resumed = await page.evaluate(async () => {
+  const { sim } = window.__teetimeturrets;
+  const before = sim.match.remaining;
+  await new Promise((r) => setTimeout(r, 1000));
+  return {
+    overlay: document.querySelector(".match-overlay") !== null,
+    ticking: sim.match.remaining < before,
+    locked: document.pointerLockElement === document.querySelector("canvas"),
+  };
+});
+check("RESUME closes the menu and the clock runs again", resumed.overlay === false && resumed.ticking === true);
+check("RESUME takes the pointer back", resumed.locked === true, `${resumed.locked}`);
 
 // Swing the turret off-axis and pick the driver for the screenshot: dead astern the barrel is
 // foreshortened to nothing, and the club-as-barrel is the whole point of the silhouette.
