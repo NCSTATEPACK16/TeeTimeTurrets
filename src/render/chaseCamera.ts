@@ -48,6 +48,19 @@ export const CHASE_TARGET_LERP = 0.2;
 
 const TUNED_FRAME_SECONDS = 1 / 60;
 
+/** Vertical field of view at rest, degrees. */
+export const CHASE_BASE_FOV = 60;
+/** Degrees the view widens by at full speed: the rush of a flat-out cart. */
+export const CHASE_FOV_KICK = 12;
+/** Forward speed, m/s, at which the whole kick is in. A street cart's top speed on fairway. */
+export const CHASE_FOV_FULL_SPEED = 20;
+
+/** The field of view for a cart moving at `speed` m/s. Reversing does not widen it. */
+export function chaseFov(speed: number): number {
+  const t = Math.min(1, Math.max(0, speed / CHASE_FOV_FULL_SPEED));
+  return CHASE_BASE_FOV + CHASE_FOV_KICK * t;
+}
+
 /**
  * The fraction of the remaining distance to close in a frame `frameSeconds` long: exponential
  * decay, so the camera settles at the same speed at any frame rate. A fixed per-frame factor

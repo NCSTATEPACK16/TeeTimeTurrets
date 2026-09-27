@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHASE_DISTANCE, CHASE_POSITION_LERP, chasePose, chaseSmoothing } from "./chaseCamera";
+import { CHASE_BASE_FOV, CHASE_DISTANCE, CHASE_FOV_KICK, CHASE_FOV_FULL_SPEED, CHASE_POSITION_LERP, chaseFov, chasePose, chaseSmoothing } from "./chaseCamera";
 import type { CartTransform } from "../sim/world";
 
 function cartAt(heading: number, turretYaw: number): CartTransform {
@@ -31,5 +31,14 @@ describe("chase camera", () => {
 
   it("does not move at all in a zero-length frame", () => {
     expect(chaseSmoothing(CHASE_POSITION_LERP, 0)).toBe(0);
+  });
+});
+
+describe("speed FOV", () => {
+  it("widens with speed, up to a ceiling, and not at all when stopped or reversing", () => {
+    expect(chaseFov(0)).toBe(CHASE_BASE_FOV);
+    expect(chaseFov(-5)).toBe(CHASE_BASE_FOV);
+    expect(chaseFov(CHASE_FOV_FULL_SPEED / 2)).toBeCloseTo(CHASE_BASE_FOV + CHASE_FOV_KICK / 2, 9);
+    expect(chaseFov(CHASE_FOV_FULL_SPEED * 3)).toBe(CHASE_BASE_FOV + CHASE_FOV_KICK);
   });
 });
