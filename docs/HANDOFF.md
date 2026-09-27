@@ -47,6 +47,12 @@ The milestones "Stage 1" to "Stage 10" each hold that stage's issues (#29–#68,
 - Vitest: 902 tests pass, plus **2 red on purpose in `src/sim/botMind.test.ts`**. Those two are the spec for 1.8. CI stays red until they pass.
 - The golden fingerprint is `1107444919`. It is re-recorded deliberately whenever the sim changes.
 - Smoke and the gate have not been run since Stage 0.
+- **CI shows 2 more failures, and they must be settled first, before step 1.** CI run `36320325184` on PR #28, Linux on Node 22.23:
+  - `arenaGolden.test.ts` "replays identically" **times out at 5 s.** CI's `npm test` is a bare `vitest run`, with no `--testTimeout=30000`. Fix: add `testTimeout` to `vitest.config.ts` rather than relying on the flag.
+  - `arenaGolden.test.ts` "matches the recorded fingerprint" gets **`1424064728` on CI but `1107444919` locally** (macOS, Node 26.4). The golden is not portable across platforms and Node versions.
+  - Find out why before re-recording anything. Likely suspects are transcendental `Math.*` results differing between V8 versions, and iteration order.
+  - Then decide which environment is canonical and say so in `DECISIONS.md`. CI is the only shared one, and cloud sessions run Linux too.
+  - Until then, a golden re-recorded in the cloud will fail on the user's Mac, and the reverse is also true.
 
 **Steps:**
 1. **1.8 Wire the minds** (`src/sim/world.ts`) to turn `botMind.test.ts` green.
