@@ -53,7 +53,7 @@ export class KeyboardMouseSource implements InputSource {
 
   private readonly onMouseMove = (event: MouseEvent): void => {
     if (document.pointerLockElement !== this.canvas) return;
-    this.pointerAimDelta += event.movementX * POINTER_SENSITIVITY;
+    this.pointerAimDelta += event.movementX * POINTER_SENSITIVITY * this.sensitivity;
   };
 
   // Mouse buttons join the key sets as `Mouse<button>`, so `intentFromKeys` binds them from the
@@ -86,6 +86,9 @@ export class KeyboardMouseSource implements InputSource {
     this.pressedThisTick.clear();
     this.pointerAimDelta = 0;
   };
+
+  /** The player's aim-sensitivity setting, a multiplier on `POINTER_SENSITIVITY`. */
+  sensitivity = 1;
 
   constructor(canvas: HTMLElement) {
     this.canvas = canvas;

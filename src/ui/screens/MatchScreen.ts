@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
 import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
+import type { HolePlacement } from "../../sim/courseGeometry";
 import { CLUB_STATS } from "../../physics/Ballistics";
 import type { ClubType } from "../../physics/Ballistics";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE, createPreviewBuffer } from "../../sim/world";
@@ -22,6 +23,17 @@ import type { PlateTeam } from "../plateState";
 import { hasLineOfSight } from "../../sim/lineOfSight";
 import type { HeightSampler } from "../../sim/lineOfSight";
 import type { Screen } from "../../app/ScreenManager";
+import type { Settings } from "../../app/settings";
+import type { AudioEngine } from "../../audio/synth";
+import { createCueRequest, cueFor } from "../../audio/cues";
+import { lowHealthVignette } from "../hudState";
+import { PauseOverlay } from "../pauseOverlay";
+import type { PauseMode } from "../pauseOverlay";
+import { on } from "../dom";
+import { CourseMap } from "../courseMap";
+import type { MapMarker } from "../courseMap";
+import { buildMapHoles, nearestHoleNumber } from "../courseMapHoles";
+import { ENEMY_FADE_S } from "../plateState";
 
 /**
  * One arena match on screen: sim, scene, input, HUD, nameplates, banners and hit markers, with a
@@ -38,6 +50,18 @@ export interface MatchScreenOptions {
   readonly nameplateRoot: HTMLElement;
   /** Called once, when the match clock runs out. Drives the transition to `MatchResultsScreen`. */
   readonly onMatchOver: () => void;
+  /** Where the pause overlay mounts: the screens layer, above the HUD. */
+  readonly screensRoot: HTMLElement;
+  /** Null plays the match silent -- a browser with no WebAudio, or a harness. */
+  readonly audio: AudioEngine | null;
+  readonly settings: () => Settings;
+  readonly onSettingsChange: (next: Settings) => void;
+  /** MAIN MENU from the pause overlay. */
+  readonly onMainMenu: () => void;
+  /** True on a player's first match: it opens paused on the controls card. */
+  readonly showControls: boolean;
+  /** The controls card was dismissed. */
+  readonly onControlsSeen: () => void;
 }
 
 export class MatchScreen implements Screen {
@@ -70,6 +94,16 @@ export class MatchScreen implements Screen {
   private scoreStrip: HTMLElement | null = null;
   /** Wall-clock ms of the last feedback update, for frame-rate-independent fades. */
   private lastFeedbackMs = 0;
+  /** True while the sim is frozen behind the pause overlay or the controls card. */
+  private paused = false;
+  private pause: PauseOverlay | null = null;
+  private readonly teardown: (() => void)[] = [];
+  /** Whether the canvas held the pointer lock last time it changed, so losing it can pause. */
+  private hadPointerLock = false;
+  private readonly cueScratch = createCueRequest();
+  private readonly listenerScratch = { x: 0, z: 0, yaw: 0 };
+  /** The `M` map. Its course layer is sampled the first time it opens. */
+  private courseMap: CourseMap | null = null;
   private readonly hitScreenScratch = { x: 0, y: 0 };
   private view: FrameView | null = null;
   /** Guards `onMatchOver`: called once. */
@@ -123,6 +157,38 @@ export class MatchScreen implements Screen {
     this.scoreStrip = document.getElementById("score-strip");
     this.lastFeedbackMs = performance.now();
     this.matchOverReported = false;
+    this.input.sensitivity = this.options.settings().sensitivity;
+
+    this.paused = false;
+    this.pause = new PauseOverlay(this.options.screensRoot, this.options.settings, {
+      resume: () => this.resume(),
+      mainMenu: () => this.options.onMainMenu(),
+      settingsChanged: (next) => {
+        this.options.onSettingsChange(next);
+        if (this.input) this.input.sensitivity = next.sensitivity;
+      },
+    });
+    this.hadPointerLock = false;
+    this.teardown.push(on(window, "keydown", (event) => this.onKey(event)));
+    const onVisibility = (): void => {
+      if (document.hidden) this.pauseMatch("paused");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    this.teardown.push(() => document.removeEventListener("visibilitychange", onVisibility));
+    const onLockChange = (): void => {
+      const locked = document.pointerLockElement === renderer.domElement;
+      // Esc while the pointer is captured is swallowed by the browser to release it, so the only
+      // sign the player wanted out is the lock going. A lock the match itself let go of (the
+      // buzzer, a screen change) is not that: those tear this listener down first.
+      if (this.hadPointerLock && !locked) this.pauseMatch("paused");
+      this.hadPointerLock = locked;
+    };
+    document.addEventListener("pointerlockchange", onLockChange);
+    this.teardown.push(() => document.removeEventListener("pointerlockchange", onLockChange));
+    const holes = arena.course.holes;
+    this.courseMap = new CourseMap(nameplateRoot, () => buildMapHoles(holes));
+    if (this.options.showControls) this.pauseMatch("controls");
+    this.options.audio?.startMatch();
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
     // no-allocation rule just as the fixed step is.
@@ -148,6 +214,11 @@ export class MatchScreen implements Screen {
   step(): void {
     const { sim } = this.options;
     if (!this.input) return;
+    if (this.paused) {
+      // A press made while paused must not fire the tick play resumes on.
+      this.input.endTick();
+      return;
+    }
     sim.step(this.input.sample());
     this.input.endTick();
     this.elapsedSeconds += FIXED_DT;
@@ -179,7 +250,8 @@ export class MatchScreen implements Screen {
     view.elapsedSeconds = this.elapsedSeconds;
     const now = performance.now();
     // Capped, so a frame after the tab was hidden does not snap the camera across the course.
-    view.frameSeconds = Math.min((now - this.lastDrawMs) / 1000, MAX_FRAME_SECONDS);
+    // Zero while paused: the smoke, the shake and the camera hold still with the sim.
+    view.frameSeconds = this.paused ? 0 : Math.min((now - this.lastDrawMs) / 1000, MAX_FRAME_SECONDS);
     this.lastDrawMs = now;
     // The arc for the shot being charged, or a full-power one while the trigger is up, so the
     // player can aim before committing. Nothing while dead: there is no turret to aim.
@@ -198,6 +270,7 @@ export class MatchScreen implements Screen {
     this.drawNameplates();
     this.readEvents(sim, view.cart);
     this.drawFeedback();
+    this.drawCourseMap();
     drawHud(this.hud, sim);
     this.updateBanner(sim);
   }
@@ -214,7 +287,21 @@ export class MatchScreen implements Screen {
     this.render.draw(this.view);
   }
 
+  /** True while the match is frozen behind the pause overlay or the controls card. */
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
   exit(): void {
+    // Listeners first: letting go of the pointer lock below must not read as the player pausing.
+    for (const off of this.teardown) off();
+    this.teardown.length = 0;
+    this.pause?.dispose();
+    this.pause = null;
+    this.paused = false;
+    this.courseMap?.dispose();
+    this.courseMap = null;
+    this.options.audio?.stopMatch();
     this.options.hudRoot.hidden = true;
     // #hud-combat is a sibling of #hud, not a child, so hiding the HUD root leaves the health
     // and ammo cards lit over whatever screen comes next.
@@ -268,9 +355,15 @@ export class MatchScreen implements Screen {
    */
   private readEvents(sim: Sim, player: CartTransform): void {
     const log = sim.events;
+    const listener = this.listenerScratch;
+    listener.x = player.position.x;
+    listener.z = player.position.z;
+    listener.yaw = player.turretYaw;
+    const audio = this.options.audio;
     for (let seq = log.firstUnread(this.eventCursor); seq < log.head; seq++) {
       const e = log.at(seq)!;
       this.render?.react(e);
+      if (audio && cueFor(e, listener, this.cueScratch)) audio.play(this.cueScratch);
       switch (e.kind) {
         case "hit":
           if (e.actor === 0) this.spawnHitMarker("hit", e.amount, e.x, e.y, e.z);
@@ -297,6 +390,74 @@ export class MatchScreen implements Screen {
     this.eventCursor = log.head;
   }
 
+  /** Freezes the sim behind the overlay. Letting go of the pointer is part of pausing. */
+  private pauseMatch(mode: PauseMode): void {
+    if (!this.pause || this.options.sim.matchOver) return;
+    if (this.paused && this.pause.mode === mode) return;
+    this.paused = true;
+    this.pause.show(mode);
+    if (document.pointerLockElement !== null) document.exitPointerLock();
+  }
+
+  private resume(): void {
+    if (!this.paused || !this.pause) return;
+    const wasControls = this.pause.mode === "controls";
+    this.paused = false;
+    this.pause.hide();
+    // Measured from now: the paused stretch is not a frame.
+    this.lastDrawMs = performance.now();
+    if (wasControls) this.options.onControlsSeen();
+  }
+
+  private onKey(event: KeyboardEvent): void {
+    if (event.code === "KeyM" && !this.paused) {
+      this.courseMap?.cycle();
+      return;
+    }
+    if (event.code === "Escape") {
+      // An open map is closed first; Esc again pauses.
+      if (this.courseMap?.visible) {
+        this.courseMap.close();
+        return;
+      }
+      if (!this.paused) this.pauseMatch("paused");
+      else this.resume();
+      return;
+    }
+    // The first-play card goes with any of the keys a player would try.
+    if (this.pause?.mode === "controls" && (event.code === "Enter" || event.code === "Space")) this.resume();
+  }
+
+  /**
+   * The `M` map. Costs nothing while closed. The player, every teammate and every bucket are always
+   * on it; an enemy only where its nameplate would be -- in sight, or within the plate's fade after
+   * sight broke. A map showing every enemy through the hills would give away what the plates keep.
+   */
+  private drawCourseMap(): void {
+    const map = this.courseMap;
+    const view = this.view;
+    if (!map || !map.visible || !view) return;
+    const { sim, arena } = this.options;
+    const now = performance.now();
+
+    mapMarkers.length = 0;
+    mapMarkers.push({ x: view.cart.position.x, z: view.cart.position.z, kind: "self", heading: view.cart.heading });
+    for (let i = 0; i < view.botCarts.length; i++) {
+      if (view.botDead[i]) continue;
+      const bot = view.botCarts[i]!;
+      const team = plateTeamOf(i + 1, 0);
+      if (team === "enemy") {
+        const lastSeen = this.lastSeenAtMs[i];
+        if (lastSeen === undefined || (now - lastSeen) / 1000 > ENEMY_FADE_S) continue;
+      }
+      mapMarkers.push({ x: bot.position.x, z: bot.position.z, kind: team, heading: bot.heading });
+    }
+    for (const pickup of sim.pickups) {
+      mapMarkers.push({ x: pickup.position.x, z: pickup.position.z, kind: "pickup", heading: 0 });
+    }
+    map.draw(mapMarkers, nearestHoleNumber(holePlacements(arena), view.cart.position.x, view.cart.position.z));
+  }
+
   private spawnHitMarker(kind: "hit" | "kill", damage: number, x: number, y: number, z: number): void {
     if (!this.hitMarkers || !this.render) return;
     // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
@@ -318,6 +479,13 @@ export class MatchScreen implements Screen {
     const now = performance.now();
     const dt = Math.min(Math.max(0, (now - this.lastFeedbackMs) / 1000), MAX_FRAME_SECONDS);
     this.lastFeedbackMs = now;
+    const cart = this.options.sim.cart;
+    this.options.audio?.update(
+      dt,
+      cart.speed,
+      lowHealthVignette(cart.health.max > 0 ? cart.health.hp / cart.health.max : 0, cart.dead),
+      this.paused,
+    );
     this.killFeed.update(dt);
     this.damageFlashes.update(dt);
     this.killFeedDom?.draw(this.killFeed.lines);
@@ -357,6 +525,20 @@ const NAMEPLATE_HEIGHT = 2.6;
 const HIT_MARKER_LIFT = 1.5;
 
 const plateScratch = { x: 0, y: 0 };
+
+/** Reused per frame while the map is open; the render loop is covered by the no-allocation rule. */
+const mapMarkers: MapMarker[] = [];
+const placementCache = new WeakMap<ArenaSource, readonly HolePlacement[]>();
+
+/** The course's hole placements, gathered once per arena rather than mapped every frame. */
+function holePlacements(arena: ArenaSource): readonly HolePlacement[] {
+  let placements = placementCache.get(arena);
+  if (!placements) {
+    placements = arena.course.holes.map((h) => h.placement);
+    placementCache.set(arena, placements);
+  }
+  return placements;
+}
 
 /** Reused per cart per frame; the render loop is covered by the no-allocation rule. Mutable so it
  *  can be rewritten in place, then read through the readonly `PlateSource` view. */

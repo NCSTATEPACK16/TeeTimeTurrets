@@ -49,7 +49,10 @@
          to the DOM as well as to GPU resources -- markup parked in index.html would outlive the
          screen that owns it and quietly accumulate listeners. */
       #screens { position: fixed; inset: 0; z-index: 20; }
-      #screens:empty { pointer-events: none; }
+      /* Click-through except where a screen is actually showing: the match's pause overlay lives
+         here hidden for the whole match, and an :empty rule would let it block the canvas. */
+      #screens { pointer-events: none; }
+      #screens > :not([hidden]) { pointer-events: auto; }
 
       #hud[hidden] { display: none; }
       #hud {
@@ -352,6 +355,20 @@
       .btn--primary { background: var(--accent); color: var(--accent-ink); }
       .btn--wide { width: 100%; }
 
+      /* Settings panel, the Settings screen and the pause overlay (Stage 2). */
+      .settings { display: grid; gap: 10px; margin: 6px 0 16px; }
+      .settings__row { display: grid; grid-template-columns: 150px 1fr 56px; align-items: center; gap: 12px; }
+      .settings__label { color: var(--ink-dim); }
+      .settings__range { width: 100%; accent-color: var(--accent); }
+      .settings__value { text-align: right; font-variant-numeric: tabular-nums; }
+      .settings-screen, .pause { align-items: center; justify-content: center; }
+      .settings-screen__panel, .pause__panel { width: min(520px, 92vw); max-height: 92vh; overflow: auto; }
+      .settings-screen__title, .pause__title { margin: 0 0 14px; font: 800 28px system-ui, sans-serif; letter-spacing: 0.1em; }
+      .pause[hidden] { display: none; }
+      .pause__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+      .controls { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+      .controls dt { color: var(--status); }
+      .controls dd { margin: 0; color: var(--ink-dim); }
       .panel {
         background: var(--panel-solid);
         border-radius: var(--radius-modal);

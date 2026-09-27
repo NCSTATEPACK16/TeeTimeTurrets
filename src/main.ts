@@ -13,6 +13,10 @@ import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import { MatchScreen } from "./ui/screens/MatchScreen";
 import { MatchResultsScreen } from "./ui/screens/MatchResultsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
+import { SettingsScreen } from "./ui/screens/SettingsScreen";
+import { browserStore, hasSeenControls, loadSettings, markControlsSeen, saveSettings } from "./app/settings";
+import type { Settings } from "./app/settings";
+import { AudioEngine } from "./audio/synth";
 
 /**
  * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
@@ -28,7 +32,7 @@ const VERSION = "v0.1.0";
 /** Coins a new player starts with, until progression pays out per match. */
 const STARTING_COINS = 6000;
 
-type ScreenName = "title" | "match" | "matchResults" | "clubhouse";
+type ScreenName = "title" | "match" | "matchResults" | "clubhouse" | "settings";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
@@ -48,6 +52,19 @@ async function main(): Promise<void> {
   window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
+
+  const store = browserStore();
+  let settings: Settings = loadSettings(store);
+  const audio = new AudioEngine(settings);
+  // Browsers only start audio from inside a gesture. Every click and key is one; unlocking an
+  // unlocked engine does nothing, so the listeners simply stay.
+  window.addEventListener("pointerdown", () => audio.unlock());
+  window.addEventListener("keydown", () => audio.unlock());
+  const changeSettings = (next: Settings): void => {
+    settings = next;
+    saveSettings(store, settings);
+    audio.apply(settings);
+  };
 
   const course = authoredCourse(COURSE_SEED);
   const screens = new ScreenManager<ScreenName>();
@@ -96,9 +113,9 @@ async function main(): Promise<void> {
       actions: {
         play: () => void startMatch(),
         clubhouse: () => screens.show("clubhouse"),
-        // Still undefined, so these render visibly disabled rather than absent.
+        // Still undefined, so it renders visibly disabled rather than absent.
         multiplayer: undefined,
-        settings: undefined,
+        settings: () => screens.show("settings"),
       },
     });
   });
@@ -114,8 +131,24 @@ async function main(): Promise<void> {
       hudRoot,
       nameplateRoot,
       onMatchOver: () => screens.show("matchResults"),
+      screensRoot,
+      audio,
+      settings: () => settings,
+      onSettingsChange: changeSettings,
+      onMainMenu: () => screens.show("title"),
+      showControls: !hasSeenControls(store),
+      onControlsSeen: () => markControlsSeen(store),
     });
     return matchScreen;
+  });
+
+  screens.register("settings", () => {
+    return new SettingsScreen({
+      root: screensRoot,
+      settings: () => settings,
+      onChange: changeSettings,
+      onBack: () => screens.show("title"),
+    });
   });
 
   screens.register("matchResults", () => {
@@ -170,6 +203,13 @@ async function main(): Promise<void> {
     },
     course,
     screens,
+    audio,
+    get settings() {
+      return settings;
+    },
+    get match() {
+      return matchScreen;
+    },
     // Exposed for the memory gate in tools/smoke.mjs: `renderer.info.memory` is the only honest way
     // to ask whether a screen gave its geometries and textures back.
     renderer,

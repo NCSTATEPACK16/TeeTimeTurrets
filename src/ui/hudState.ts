@@ -86,7 +86,12 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.timerText = formatClock(source.matchTimeRemaining);
   out.teamScoreText = `US ${source.match.teamStrokes(PLAYER_TEAM)} — THEM ${source.match.teamStrokes(ENEMY_TEAM)}`;
   out.pointsText = `KILLS ${source.match.pointsFor(PLAYER)}`;
-  out.vignette01 = cart.dead ? 0 : clamp01((LOW_HEALTH_FRACTION - out.healthFraction) / LOW_HEALTH_FRACTION);
+  out.vignette01 = lowHealthVignette(out.healthFraction, cart.dead);
+}
+
+/** How far the low-health vignette closes in: shared by the HUD and the heartbeat. */
+export function lowHealthVignette(healthFraction: number, dead: boolean): number {
+  return dead ? 0 : clamp01((LOW_HEALTH_FRACTION - healthFraction) / LOW_HEALTH_FRACTION);
 }
 
 /**
