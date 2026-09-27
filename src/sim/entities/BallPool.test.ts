@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import RAPIER from "@dimforge/rapier3d-compat";
-import { BallPool, LANDED_BALL_DESPAWN_S, POOL_SIZE } from "./BallPool";
+import { BallPool, LANDED_BALL_DESPAWN_S, MAX_FLIGHT_S, POOL_SIZE } from "./BallPool";
 import { NO_KILLER } from "../matchConfig";
 
 const DT = 1 / 60;
@@ -16,7 +16,7 @@ describe("BallPool", () => {
   beforeEach(async () => {
     await RAPIER.init();
     world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-    pool = new BallPool(world, heightAt);
+    pool = new BallPool(world, { heightAt });
   });
 
   it("acquire returns a distinct idle body each call up to POOL_SIZE", () => {
@@ -132,7 +132,7 @@ describe("BallPool", () => {
     // the constructor-injected one, this ball would never satisfy the grounded check at this
     // height and the test would fail.
     const injectedGroundY = 500;
-    const injectedPool = new BallPool(world, () => injectedGroundY);
+    const injectedPool = new BallPool(world, { heightAt: () => injectedGroundY });
 
     const ball = injectedPool.acquire(0)!;
     ball.body.setTranslation({ x: 0, y: injectedGroundY + 0.1, z: 0 }, true);
@@ -143,5 +143,57 @@ describe("BallPool", () => {
 
     injectedPool.step(DT, 11 * DT);
     expect(ball.state).toBe("landed");
+  });
+});
+
+describe("BallPool rolling and flight limits", () => {
+  it("drags a ball rolling on turf to a stop, where damping alone leaves it creeping", async () => {
+    await RAPIER.init();
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    // A long gentle slope, as a flat plane collider tilted about Z: the case damping cannot stop.
+    const tilt = 0.08;
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(200, 0.5, 200)
+        .setTranslation(0, -0.5, 0)
+        .setRotation({ x: 0, y: 0, z: Math.sin(tilt / 2), w: Math.cos(tilt / 2) }),
+    );
+    const heightAt = (x: number) => Math.tan(tilt) * x;
+    const tuningAt = (_x: number, _z: number, out: { rolling: number; bounceScale: number }) => {
+      out.rolling = 0.12;
+      out.bounceScale = 0.8;
+    };
+    const pool = new BallPool(world, { heightAt, tuningAt });
+    const ball = pool.acquire(0)!;
+    // Downhill (-x). Rolled uphill instead, the ball passes through zero speed at the top of its
+    // climb and the rest detector reads that apex as a stop -- a test that passes with no drag at all.
+    ball.body.setTranslation({ x: 0, y: 0.5, z: 0 }, true);
+    ball.body.setLinvel({ x: -3, y: 0, z: 0 }, true);
+
+    let time = 0;
+    for (let i = 0; i < 10 * 60; i++) {
+      world.step();
+      time += DT;
+      pool.step(DT, time);
+    }
+    expect(ball.state).toBe("landed");
+  });
+
+  it("gives back a ball that is still flying after MAX_FLIGHT_S", async () => {
+    await RAPIER.init();
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 }); // no gravity: it never comes down
+    const pool = new BallPool(world, { heightAt: () => -100 });
+    const ball = pool.acquire(0)!;
+    ball.body.setTranslation({ x: 0, y: 0, z: 0 }, true); // far above the ground, and staying there
+    let time = 0;
+    while (time < MAX_FLIGHT_S - 0.5) {
+      time += DT;
+      pool.step(DT, time);
+    }
+    expect(ball.state).toBe("flying");
+    while (time < MAX_FLIGHT_S + 0.5) {
+      time += DT;
+      pool.step(DT, time);
+    }
+    expect(ball.state).toBe("idle");
   });
 });

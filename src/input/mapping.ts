@@ -4,8 +4,8 @@ import type { PlayerIntent } from "./InputSource";
 
 /**
  * Keys to intent, as a pure function so the binding table is testable with no DOM. The browser
- * shell around it only has to collect three things: which keys are held, which went down this
- * tick, and how far the pointer moved.
+ * shell around it only has to collect three things: which keys (and mouse buttons, as
+ * `Mouse0`/`Mouse2`) are held, which went down this tick, and how far the pointer moved.
  */
 
 /**
@@ -46,7 +46,12 @@ export function intentFromKeys(
   // F as well as Space: Space is the natural swing key when standing still, but it is awkward to
   // hold while the same hand is on WASD, so driving and firing at once wants a key under the
   // fingers already there.
-  out.fire = keysDown.has("Space") || keysDown.has("KeyF");
+  // The left mouse button is the main trigger; the keys stay for anyone not on a mouse. Mouse
+  // buttons arrive as `Mouse<button>` codes in the same sets as keys, so this stays one table.
+  out.fire = keysDown.has("Mouse0") || keysDown.has("Space") || keysDown.has("KeyF");
+  // Edge-triggered: a held right button cancels once, and the cart then waits for the trigger to
+  // be let go before charging again.
+  out.cancelCharge = keysPressedThisTick.has("Mouse2");
 
   const keyTurn = (bool(keysDown.has("KeyE")) - bool(keysDown.has("KeyQ"))) * TURRET_KEY_STEP;
   out.aimDelta = pointerAimDelta + keyTurn;

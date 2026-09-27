@@ -6,6 +6,7 @@ import {
   createPlateStateScratch,
   derivePlateState,
   formatPlateDistance,
+  plateTeamOf,
 } from "./plateState";
 import type { PlateSource, PlateState } from "./plateState";
 
@@ -122,5 +123,25 @@ describe("passthrough fields", () => {
   it("applies the same tiering as formatPlateDistance", () => {
     expect(derive(source({ distanceM: 87 })).distanceText).toBe("87 m");
     expect(derive(source({ distanceM: 410 })).distanceText).toBe("");
+  });
+});
+
+describe("plateTeamOf", () => {
+  it("reads a cart on the viewer's team as an ally and the other side as an enemy", () => {
+    // `teamOf` alternates: rigs 0, 2, 4, 6 against 1, 3, 5, 7.
+    expect([1, 2, 3, 4, 5, 6, 7].map((rig) => plateTeamOf(rig, 0))).toEqual([
+      "enemy",
+      "ally",
+      "enemy",
+      "ally",
+      "enemy",
+      "ally",
+      "enemy",
+    ]);
+  });
+
+  it("is relative to the viewer, not fixed to team 0", () => {
+    expect(plateTeamOf(3, 1)).toBe("ally");
+    expect(plateTeamOf(2, 1)).toBe("enemy");
   });
 });

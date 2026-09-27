@@ -18,14 +18,12 @@ const stateScratch = createHudStateScratch();
 export interface Hud {
   powerFill: HTMLElement;
   club: HTMLElement;
-  strokes: HTMLElement;
   status: HTMLElement;
   combat: HTMLElement;
   healthFill: HTMLElement;
   healthText: HTMLElement;
   ammoCount: HTMLElement;
   timer: HTMLElement;
-  /** Arena's two. Hidden in stroke play, and `strokes` is hidden in arena; never both. */
   teamScore: HTMLElement;
   points: HTMLElement;
 }
@@ -34,7 +32,6 @@ export function readHud(): Hud | null {
   const ids = [
     "power-fill",
     "hud-club",
-    "hud-strokes",
     "hud-status",
     "hud-combat",
     "health-fill",
@@ -50,7 +47,6 @@ export function readHud(): Hud | null {
   const [
     powerFill,
     club,
-    strokes,
     status,
     combat,
     healthFill,
@@ -64,7 +60,6 @@ export function readHud(): Hud | null {
   return {
     powerFill: powerFill!,
     club: club!,
-    strokes: strokes!,
     status: status!,
     combat: combat!,
     healthFill: healthFill!,
@@ -82,32 +77,16 @@ export function drawHud(hud: Hud, source: HudSource): void {
 
   setWidth(hud.powerFill, state.charge01);
   setText(hud.club, state.clubText);
-  setText(hud.strokes, state.strokesText);
   setText(hud.status, state.status);
   setText(hud.timer, state.timerText);
 
-  // Which readout is showing. Hidden rather than emptied, per UI-SPEC §5: an element left in
-  // place with nothing in it reads as a bug, and a stroke count in a mode with no strokes reads
-  // as a worse one. The strings are written either way -- `deriveHudState` derives both sets --
-  // so switching mode never leaves a stale value behind a `hidden` that later comes off.
   setText(hud.teamScore, state.teamScoreText);
   setText(hud.points, state.pointsText);
-  setHidden(hud.strokes, !state.golfVisible);
-  setHidden(hud.teamScore, !state.arenaVisible);
-  setHidden(hud.points, !state.arenaVisible);
 
-  // Hidden outright rather than shown full: an inert bar reads as a bug (UI-SPEC section 5).
-  if (hud.combat.hidden === state.combatVisible) hud.combat.hidden = !state.combatVisible;
-  if (!state.combatVisible) return;
-
+  if (hud.combat.hidden) hud.combat.hidden = false;
   setWidth(hud.healthFill, state.healthFraction);
   setText(hud.healthText, state.healthText);
   setText(hud.ammoCount, state.ammoText);
-}
-
-/** Guarded for the same reason `setText` is: this runs every frame at 60fps. */
-function setHidden(element: HTMLElement, hidden: boolean): void {
-  if (element.hidden !== hidden) element.hidden = hidden;
 }
 
 /** Guarded so an unchanged string does not dirty the DOM every frame at 60fps. */

@@ -36,7 +36,6 @@ const SUBJECTS = [
   "cart-empty",
   "cart-followthrough",
   "ball",
-  "target",
   // Standing and felled are identical in every numeric check and obviously different in the
   // picture, which is what a gate screenshot is for. Keep this list in step with
   // tools/gate/gateScene.ts's SUBJECTS -- a subject added to only one of the two fails confusingly.
@@ -61,10 +60,31 @@ const SUBJECTS = [
   "boardwalk_section",
 ];
 
-const server = spawn("npx", ["vite", "preview", "--outDir", DIST, "--port", String(PORT)], {
+// Three guards against testing the wrong page, all learned the hard way. `server.kill()` used to
+// kill only `npx`, which orphaned the `vite` under it still serving; Vite then quietly took the next
+// port for the following run, and the one after that found an orphan here and loaded *the game*,
+// timing out on `__gate.ready`. So: refuse a port that already answers, fail rather than move
+// (`--strictPort`), and kill the whole process group.
+try {
+  if ((await fetch(`http://localhost:${PORT}`)).ok) {
+    throw new Error(`something is already serving port ${PORT}; stop it and rerun`);
+  }
+} catch (err) {
+  if (err instanceof Error && err.message.startsWith("something is already serving")) throw err;
+  /* nothing listening: good */
+}
+const server = spawn("npx", ["vite", "preview", "--outDir", DIST, "--port", String(PORT), "--strictPort"], {
   stdio: "ignore",
+  detached: true,
 });
-process.on("exit", () => server.kill());
+function stopServer() {
+  try {
+    process.kill(-server.pid);
+  } catch {
+    /* already gone */
+  }
+}
+process.on("exit", stopServer);
 
 async function waitForServer(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -125,7 +145,11 @@ try {
   // asset. The harness already publishes its own list, so compare them once and say which side is
   // missing what instead of leaving the next person to work it out from a screenshot that never
   // appeared.
-  await page.goto(`http://localhost:${PORT}/?subject=${SUBJECTS[0]}`, { waitUntil: "networkidle0" });
+  // "load", not "networkidle0", for every subject: on a software-rendered GPU (SwiftShader, as in
+  // a cloud container) Chrome never reports the network idle, though nothing is in flight. The
+  // harness builds and renders synchronously and sets `ready` after, so the wait below is the
+  // real one.
+  await page.goto(`http://localhost:${PORT}/?subject=${SUBJECTS[0]}`, { waitUntil: "load" });
   await page.waitForFunction(() => window.__gate?.ready === true, { timeout: 20000 });
   const harnessSubjects = await page.evaluate(() => window.__gate.subjects);
   const missingHere = harnessSubjects.filter((s) => !SUBJECTS.includes(s));
@@ -139,7 +163,7 @@ try {
   }
 
   for (const subject of SUBJECTS) {
-    await page.goto(`http://localhost:${PORT}/?subject=${subject}`, { waitUntil: "networkidle0" });
+    await page.goto(`http://localhost:${PORT}/?subject=${subject}`, { waitUntil: "load" });
     await page.waitForFunction(() => window.__gate?.ready === true, { timeout: 20000 });
 
     const metrics = await page.evaluate(() => window.__gate.metrics());
@@ -196,5 +220,5 @@ try {
   }
 } finally {
   await browser.close();
-  server.kill();
+  stopServer();
 }

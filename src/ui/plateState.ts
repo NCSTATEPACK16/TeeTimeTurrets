@@ -1,3 +1,5 @@
+import { teamOf } from "../sim/matchConfig";
+
 /**
  * The DOM-free half of the cart nameplate: sim state in, display values out. Split from
  * `nameplates.ts` for the same reason `hudState.ts` is split from `hud.ts` -- the rules below are
@@ -23,6 +25,11 @@
 
 /** Whose plate this is. Allies ignore line of sight; enemies do not. */
 export type PlateTeam = "ally" | "enemy";
+
+/** Which way `rig`'s plate reads to the player at `viewer`: the only friend-or-foe rule. */
+export function plateTeamOf(rig: number, viewer: number): PlateTeam {
+  return teamOf(rig) === teamOf(viewer) ? "ally" : "enemy";
+}
 
 /** Under this, in metres, the plate reports an exact whole-metre distance. */
 export const EXACT_RANGE_M = 100;

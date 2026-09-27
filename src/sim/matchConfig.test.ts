@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PLAYERS, NO_KILLER, TEAM_COUNT, teamOf } from "./matchConfig";
+import { ARENA_BOTS, MAX_PLAYERS, NO_KILLER, TEAM_COUNT, teamOf } from "./matchConfig";
 
 /**
  * The only rule in `matchConfig.ts` that is logic rather than a number, and the one place a
@@ -44,5 +44,11 @@ describe("teamOf", () => {
     // `Match.scoreKill` guards on this sentinel before indexing `points`. A sentinel of 0 would
     // silently credit the human for every drowning on the course.
     expect(NO_KILLER).toBeLessThan(0);
+  });
+});
+
+describe("the arena roster", () => {
+  it("is four against four: the player and three allies against four bots", () => {
+    expect(sizes(ARENA_BOTS + 1)).toEqual([4, 4]);
   });
 });

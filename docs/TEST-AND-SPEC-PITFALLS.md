@@ -12,7 +12,7 @@ this file holds the ways we have violated them while believing we had not.
 
 ## 1. The recurring one: a test that passes for a reason unrelated to its name
 
-Twelve instances in the table, and the turret session added four more that are described in that
+Thirteen instances in the table, and the turret session added four more that are described in that
 spec's own header rather than here. This is the defect class this repo produces, and it produces it
 faster than review catches it. In each case the suite was green, the name described the
 right behavior, and the assertion was measuring something else entirely.
@@ -31,6 +31,7 @@ right behavior, and the assertion was measuring something else entirely.
 | 10 | `props.test.ts`'s distance-post placement | The posts stand at the 150, 100 and 50 yard marks | `toBeLessThan(4)` — a **4 m** tolerance (`props.test.ts:89` and `:157`) against a change of **0.16–0.44 m**. Routing `MARKER_DISTANCES_M` through `units.ts` moves 150 yd from a stale `137` to `137.16`, 100 yd from `91` to `91.44`, 50 yd from `46` to `45.72`. The tolerance is 9× to 25× the effect. **A plan and a session brief both predicted a red here that could not happen**, and two sessions went looking for why the fix "didn't take". The 4 m is legitimate — it admits the spline's own sampling — and the defect was the stale constant, not the tolerance. But a tolerance that wide cannot be cited as evidence about a sub-metre change. |
 | 11 | `inspectLayout`'s crossing check | No two fairways cross | The exemption for **consecutive** holes — which are meant to meet at their ends — also forgave two consecutive fairways crossing *anywhere at all*. Four pairs crossed on the first fitted routing and one did so at 65% along hole 6, mid-fairway: a tee shot played across live ground. A check scoped one notch wider than its claim. `authoredLayout.test.ts` now asserts the property actually wanted — corridors may cross only at a green-to-tee handover, on any pair — separately, because `inspectLayout` still cannot see it. |
 | 12 | `bot.test.ts`'s "idles outside its engagement range", with `world.cart.test.ts`'s "stays put while the player is out of its engagement range" | A bot does not pathfind across the course | **Both were green while arena combat did not happen at all.** They asserted the behaviour that had become the bug: `computeBotIntent` returned a zero intent beyond 40 m, and the authored routing deals carts one to a hole with the closest two tees on the course 74 m apart, so every bot stood on its own tee for the whole match. Neither test was wrong when written; both were unit assertions against a hand-placed pair of carts, and neither could see the distances the *course* deals. See the note below. |
+| 13 | probe: `driver distance` | The driver's reach has not changed | The shot's **total** distance only. On the probe's hole, a driver 20% faster (40 → 48 m/s) carries 104 m instead of 75 m into rising ground, stops dead, and lands on 103.4 m total against 103.8. The check passed. Found by mutating `CLUB_STATS` after re-pointing the check at the arena reference; it now holds carry and total, and both a faster and a slower driver fail it. |
 
 **8 and 9 were found by mutating the finished module, not by a red run** — both were written after
 the code they cover, which is the case the red-first rule cannot reach. A comparison operator
@@ -252,10 +253,19 @@ reason rather than fixed:
   never passes through the branch that applies it. The bot's decision *not* to shoot is
   expressed as the action that shoots. The player labours under the same release-fires
   rule, so this is design, not asymmetry — but it is design nobody chose.
-- **`reset()` reproduces the RNG stream, not a bit-identical physics replay.** The Rapier
+- > **Resolved in Stage 1 (issue #30).** `reset()` now frees the Rapier world and builds a new
+  > one in `create()`'s order, and also clears the ball pool, bucket cooldowns, the pool clock
+  > and each cart's weapon. `arenaGolden.test.ts` checks that a rematch replays the first match
+  > to the bit. The original entry stays below.
+
+  **`reset()` reproduces the RNG stream, not a bit-identical physics replay.** The Rapier
   world carries step-count history. The code matches its stated promise; anyone building
   replay or spectator features will expect more than it gives.
-- **The tick that ends the match is discarded.** An N-tick match simulates N-1 ticks, so an
+- > **Resolved in Stage 1 (issue #30).** The buzzer tick is simulated in full, and the world
+  > freezes after it. `world.cart.test.ts` "simulates the buzzer tick rather than discarding it"
+  > checks both the cart and a ball in flight. The original entry stays below.
+
+  **The tick that ends the match is discarded.** An N-tick match simulates N-1 ticks, so an
   event that would resolve on the buzzer tick (a ball in flight landing a hit) never
   resolves. Negligible at 180 s; do not restate "the closing tick's score is the one that
   counts" in a doc, because it isn't quite true.

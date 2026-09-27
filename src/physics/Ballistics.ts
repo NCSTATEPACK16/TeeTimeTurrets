@@ -31,17 +31,60 @@ export interface ClubStats {
   reloadSeconds: number;
   /** Aim-cone half-angle (degrees) applied as random spread on release. */
   spreadDeg: number;
+  /** Health points one ball from this club takes off the cart it hits. */
+  damage: number;
+  /**
+   * Multiplier on gravity for this club's ball in flight. Below 1 is what makes the putter a
+   * pistol: a real-gravity ball at pistol speed drops ~7 m over 40 m, well under any cart.
+   */
+  gravityScale: number;
+  /** m/s the shot kicks the cart backwards at full charge; scales with launch speed below that. */
+  recoil: number;
 }
 
 /**
  * Fast/short/quick vs. slow/long/powerful, per design direction: putter trades power for
  * accuracy and reload speed, driver is the opposite extreme, iron is the midpoint.
  * Starting values for playtesting, not measured constants -- tune by feel.
+ *
+ * The putter is the arena's close-range pistol (the user's call, 2026-09-24): near-instant
+ * charge, fast, flat and tight, with a kick small enough to fire on the move. It reaches 40 m in
+ * about a second still at cart height -- `putterPistol.test.ts` holds it to that.
  */
 export const CLUB_STATS: Record<ClubType, ClubStats> = {
-  [ClubType.Putter]: { loftDeg: 3, minSpeed: 2, maxSpeed: 9, chargeSeconds: 0.5, reloadSeconds: 0.4, spreadDeg: 1 },
-  [ClubType.Iron]: { loftDeg: 22, minSpeed: 8, maxSpeed: 24, chargeSeconds: 0.9, reloadSeconds: 1.1, spreadDeg: 3 },
-  [ClubType.Driver]: { loftDeg: 13, minSpeed: 14, maxSpeed: 40, chargeSeconds: 1.4, reloadSeconds: 2.2, spreadDeg: 5 },
+  [ClubType.Putter]: {
+    loftDeg: 1,
+    minSpeed: 30,
+    maxSpeed: 38,
+    chargeSeconds: 0.08,
+    reloadSeconds: 0.25,
+    spreadDeg: 0.4,
+    damage: 1,
+    gravityScale: 0.4,
+    recoil: 0.6,
+  },
+  [ClubType.Iron]: {
+    loftDeg: 22,
+    minSpeed: 8,
+    maxSpeed: 24,
+    chargeSeconds: 0.7,
+    reloadSeconds: 1.1,
+    spreadDeg: 3,
+    damage: 1,
+    gravityScale: 1,
+    recoil: 3.6,
+  },
+  [ClubType.Driver]: {
+    loftDeg: 13,
+    minSpeed: 14,
+    maxSpeed: 40,
+    chargeSeconds: 1.4,
+    reloadSeconds: 2.2,
+    spreadDeg: 5,
+    damage: 2,
+    gravityScale: 1,
+    recoil: 6,
+  },
 };
 
 /**

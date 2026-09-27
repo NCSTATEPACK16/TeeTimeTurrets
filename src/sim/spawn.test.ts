@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SPAWN_CLEARANCE_M } from "./matchConfig";
-import { createSpawnSet, openingSpawn, respawnPoint } from "./spawn";
+import { SPAWN_CLEARANCE_M, TEAM_COUNT, teamOf } from "./matchConfig";
+import { PAD_OFFSET_M, PAD_SLOTS, createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnHole, SpawnOccupant } from "./spawn";
 import { mulberry32 } from "./rng";
 
@@ -173,3 +173,48 @@ describe("respawnPoint", () => {
     expect(new Set(first).size).toBeGreaterThan(1);
   });
 });
+
+describe("team pads at the clubhouse", () => {
+  const clubhouse = { x: -240, z: -480 };
+  const pads = createTeamPads(clubhouse, flat);
+
+  it("puts team 0 west of the clubhouse and team 1 east, the building between them", () => {
+    expect(pads).toHaveLength(TEAM_COUNT);
+    for (const slot of pads[0]!) expect(slot.x).toBeCloseTo(clubhouse.x - PAD_OFFSET_M, 6);
+    for (const slot of pads[1]!) expect(slot.x).toBeCloseTo(clubhouse.x + PAD_OFFSET_M, 6);
+  });
+
+  it("gives every team a full squad of slots, none within 5 m of another", () => {
+    const all = pads.flat();
+    expect(all).toHaveLength(TEAM_COUNT * PAD_SLOTS);
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        expect(Math.hypot(all[i]!.x - all[j]!.x, all[i]!.z - all[j]!.z)).toBeGreaterThanOrEqual(5);
+      }
+    }
+  });
+
+  it("faces every slot north, onto the course and away from the road", () => {
+    for (const slot of pads.flat()) {
+      expect(Math.sin(slot.heading)).toBeCloseTo(1, 6);
+    }
+  });
+
+  it("stands a slot at the ground's own height", () => {
+    const sloped = createTeamPads(clubhouse, (x, z) => x * 0.01 + z * 0.02);
+    for (const slot of sloped.flat()) expect(slot.y).toBeCloseTo(slot.x * 0.01 + slot.z * 0.02, 9);
+  });
+
+  it("deals each cart onto its own team's pad, a squad to distinct slots", () => {
+    const roster = TEAM_COUNT * PAD_SLOTS;
+    const taken = new Set<SpawnPointLike>();
+    for (let index = 0; index < roster; index++) {
+      const spawn = padSpawn(pads, index);
+      expect(pads[teamOf(index)]).toContain(spawn);
+      taken.add(spawn);
+    }
+    expect(taken.size).toBe(roster);
+  });
+});
+
+type SpawnPointLike = ReturnType<typeof padSpawn>;

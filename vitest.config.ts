@@ -13,5 +13,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "tools/**/*.test.mjs"],
+    // The 5 s default is shorter than one scripted arena match: `arenaGolden.test.ts` plays one in
+    // about 9 s and its replay check plays two in about 18 s. CI runs a bare `vitest run`, so the
+    // budget has to live here rather than in a `--testTimeout` flag somebody has to remember.
+    testTimeout: 30_000,
   },
 });

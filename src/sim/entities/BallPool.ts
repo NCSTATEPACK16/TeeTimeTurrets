@@ -1,6 +1,9 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { NO_KILLER } from "../matchConfig";
+import { createSurfaceTuning } from "../surfaces";
+import type { MutableSurfaceTuning } from "../surfaces";
 import { BALL_RADIUS as POOLED_BALL_RADIUS } from "./ballShape";
+import { BALL_GROUPS } from "../collisionGroups";
 
 /** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
  * explicit out-of-scope list (docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1). */
@@ -23,10 +26,37 @@ export interface PooledBall {
    * is a kill waiting to be credited to the wrong cart.
    */
   firedBy: number;
+  /** Sim time the ball left the muzzle, for `MAX_FLIGHT_S`. */
+  firedAt: number;
+  /**
+   * True once this flight has done its damage. A cart has two colliders (capsule and hull), and a
+   * ball can graze both or bounce back into one; a shot is one hit however many contacts it makes.
+   */
+  spent: boolean;
+  /** Health points this ball takes off a cart: its club's `damage`, stamped when it is fired. */
+  damage: number;
 }
 
 export const POOL_SIZE = 32;
 export const LANDED_BALL_DESPAWN_S = 15;
+/**
+ * A ball still flying after this long is given back to the pool. Rolling resistance brings a ball on
+ * any real slope to rest well inside it; this is the backstop for one that never settles (caught on a
+ * seam, jittering in a hollow) so it cannot hold a pool slot for the rest of the match.
+ */
+export const MAX_FLIGHT_S = 20;
+
+/**
+ * The ground a pooled ball rolls on: its height, for "has it come down", and its material, for how
+ * hard the turf drags at it. `tuningAt` is optional so a test can hand the pool bare flat ground.
+ */
+export interface PoolGround {
+  heightAt(x: number, z: number): number;
+  tuningAt?(x: number, z: number, out: MutableSurfaceTuning): void;
+}
+
+/** Matches world.ts's GRAVITY; a leaf module cannot import it from there without a cycle. */
+const GRAVITY = 9.81;
 
 // POOLED_BALL_RADIUS comes from ballShape.ts, the shared leaf module -- see its docstring. The
 // rest still mirrors world.ts's BALL_DENSITY/etc: those aren't shared because nothing outside
@@ -50,14 +80,13 @@ const PARKED_POSITION = { x: 0, y: -1000, z: 0 };
 export class BallPool {
   private readonly balls: PooledBall[];
   private readonly restTicks = new WeakMap<RAPIER.RigidBody, number>();
-  private readonly heightAt: (x: number, z: number) => number;
+  private readonly ground: PoolGround;
+  private readonly tuningScratch = createSurfaceTuning();
+  /** Sim time as of the last `step`, so `acquire` can stamp `firedAt` without being passed it. */
+  private now = 0;
 
-  constructor(
-    world: RAPIER.World,
-    heightAt: (x: number, z: number) => number,
-    poolSize: number = POOL_SIZE,
-  ) {
-    this.heightAt = heightAt;
+  constructor(world: RAPIER.World, ground: PoolGround, poolSize: number = POOL_SIZE) {
+    this.ground = ground;
     this.balls = [];
     for (let i = 0; i < poolSize; i++) {
       const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -72,13 +101,14 @@ export class BallPool {
         .setDensity(POOLED_BALL_DENSITY)
         .setFriction(POOLED_BALL_FRICTION)
         .setRestitution(POOLED_BALL_RESTITUTION)
+        .setCollisionGroups(BALL_GROUPS)
         // Combat balls are the ones that hit things, so they carry the collision events
         // sim/combat.ts dispatches on.
         .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
         .setEnabled(false);
       world.createCollider(colliderDesc, body);
 
-      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER });
+      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER, firedAt: 0, spent: false, damage: 1 });
       this.restTicks.set(body, 0);
     }
   }
@@ -106,6 +136,8 @@ export class BallPool {
   private beginFlight(ball: PooledBall, firedBy: number): PooledBall {
     ball.state = "flying";
     ball.firedBy = firedBy;
+    ball.firedAt = this.now;
+    ball.spent = false;
     ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
     this.restTicks.set(ball.body, 0);
@@ -134,14 +166,27 @@ export class BallPool {
     }
   }
 
-  /** flying -> landed on sustained rest (mirrors world.ts's isGrounded/restTicks pattern);
-   * landed -> idle after LANDED_BALL_DESPAWN_S with no pickup. */
-  step(_dt: number, simTime: number): void {
+  /**
+   * flying -> landed on sustained rest (mirrors world.ts's isGrounded/restTicks pattern);
+   * landed -> idle after LANDED_BALL_DESPAWN_S with no pickup; flying -> idle after MAX_FLIGHT_S.
+   *
+   * A grounded flying ball is also dragged by the turf it is rolling on. Rapier's damping alone
+   * decays toward a terminal creep on any slope rather than to a stop (docs/DECISIONS.md "Rolling
+   * resistance"), and a ball that never stops never lands -- so it could never be picked up as
+   * ammo, never despawn, and would hold its pool slot until every shot came out a blank.
+   */
+  step(dt: number, simTime: number): void {
+    this.now = simTime;
     for (const ball of this.balls) {
       if (ball.state === "flying") {
+        if (simTime - ball.firedAt >= MAX_FLIGHT_S) {
+          this.release(ball);
+          continue;
+        }
         const t = ball.body.translation();
+        const grounded = t.y - this.ground.heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
+        if (grounded) this.applyRollingResistance(ball.body, t.x, t.z, dt);
         const v = ball.body.linvel();
-        const grounded = t.y - this.heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
         const slow = Math.hypot(v.x, v.y, v.z) < REST_SPEED_THRESHOLD;
         const ticks = grounded && slow ? (this.restTicks.get(ball.body) ?? 0) + 1 : 0;
         this.restTicks.set(ball.body, ticks);
@@ -155,6 +200,23 @@ export class BallPool {
         }
       }
     }
+  }
+
+  /**
+   * Constant deceleration against horizontal motion plus a per-surface bounce cut, clamped so it
+   * stops the ball rather than reversing it. Direct velocity changes rather than impulses, so the
+   * result is mass-independent and exactly reproducible on an authoritative server.
+   */
+  private applyRollingResistance(body: RAPIER.RigidBody, x: number, z: number, dt: number): void {
+    if (!this.ground.tuningAt) return;
+    const tuning = this.tuningScratch;
+    this.ground.tuningAt(x, z, tuning);
+    const v = body.linvel();
+    const horizontalSpeed = Math.hypot(v.x, v.z);
+    const speedDrop = tuning.rolling * GRAVITY * dt;
+    const scale = horizontalSpeed < 1e-4 ? 1 : Math.max(0, 1 - speedDrop / horizontalSpeed);
+    const bounceY = v.y > 0 ? v.y * tuning.bounceScale : v.y;
+    body.setLinvel({ x: v.x * scale, y: bounceY, z: v.z * scale }, true);
   }
 
   /** Every pooled body, whatever its state -- for one-time setup like registering colliders for

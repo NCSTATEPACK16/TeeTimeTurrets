@@ -11,6 +11,9 @@ release rather than at Phase 5.
 | `src/**` (client, engine, sim, physics, render, ui) | Apache License 2.0 | `Apache-2.0` |
 | `tools/**` | Apache License 2.0 | `Apache-2.0` |
 | `index.html`, build config, `docs/**` | Apache License 2.0 | `Apache-2.0` |
+| `src/vendor/cot/**` (third-party, from Claude of Tanks) | MIT, notice in `src/vendor/cot/LICENSE` and `NOTICE` | `MIT` |
+| `reference/claude-of-tanks/**` (reading material, not built) | MIT, notice in that folder's `LICENSE` | `MIT` |
+| `public/textures/terrain/**` (ambientCG / Poly Haven) | Public domain | `CC0-1.0` |
 | `server/**` | GNU Affero General Public License v3.0 or later | `AGPL-3.0-or-later` |
 | Human-authored assets, if any are ever added | Creative Commons BY-SA 4.0 | `CC-BY-SA-4.0` |
 | `docs/concept/**` (AI-generated reference art) | No license claimed — provenance-tracked | — |
@@ -117,6 +120,20 @@ runtime, with no mesh file anywhere in that path.
 The source is the Blender scene, not the `.glb`: re-author and re-export rather than editing the
 binary. The `.glb` is build output that happens to be committed because there is no asset build
 step and one 16 KB file does not justify inventing one.
+
+## Terrain textures (CC0)
+
+Photoscanned PBR sets in `public/textures/terrain/`, at 1K JPG, with colour, OpenGL normal and roughness maps only. All are CC0 1.0 (public domain) from their original publishers. They were taken from the copies in the Claude of Tanks repository, whose `LICENSE-POLICY.md` leaves third-party material under its original licence. `public/textures/**` is not in its Reserved Content list.
+
+| Set | Files | Source | Use |
+|---|---|---|---|
+| Grass004 | `Grass004_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | fairway, green |
+| withered_grass | `withered_grass_{diff,nor_gl,rough}_1k.jpg` | Poly Haven, CC0 | rough |
+| Ground093C | `Ground093C_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | sand/bunker candidate (verify visually) |
+| Ground071 | `Ground071_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | dirt, cart path |
+| Rock058 | `Rock058_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | steep slopes |
+
+CC0 requires no attribution. It is recorded here so provenance is auditable. Before shipping, resize or KTX2-compress these to fit the bundle budget (Stage 5 in `docs/REVAMP-PLAN.md`).
 
 ## What this does not cure
 

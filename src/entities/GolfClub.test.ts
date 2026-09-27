@@ -58,13 +58,14 @@ describe("swingAngle", () => {
   });
 
   it("takes the same wall-clock time to swing on every club, not the same fraction of reload", () => {
-    // A putter reloads in 0.4 s and a driver in 2.2 s. A fixed fraction would make the driver's
-    // swing five times slower than the putter's, which is backwards: the swing is a swing and
-    // the reload is fetching another ball.
-    const putter = CLUB_STATS[ClubType.Putter].reloadSeconds;
+    // An iron reloads in 1.1 s and a driver in 2.2 s. A fixed fraction would make the driver's
+    // swing twice as slow as the iron's, which is backwards: the swing is a swing and the reload
+    // is fetching another ball. The putter is left out on purpose: its 0.25 s pistol reload is
+    // shorter than a full swing, so its swing is compressed to fit (the `0.5` cap above).
+    const iron = CLUB_STATS[ClubType.Iron].reloadSeconds;
     const driver = CLUB_STATS[ClubType.Driver].reloadSeconds;
     const atOneTenthSecond = (s: number): number => swingAngle(0, 0.1 / s, s, 1);
-    expect(atOneTenthSecond(putter)).toBeCloseTo(atOneTenthSecond(driver), 2);
+    expect(atOneTenthSecond(iron)).toBeCloseTo(atOneTenthSecond(driver), 2);
   });
 
   it("finishes the follow-through and returns to address before the reload ends", () => {

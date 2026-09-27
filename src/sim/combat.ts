@@ -1,10 +1,7 @@
-import type RAPIER from "@dimforge/rapier3d-compat";
 import { applyDamage } from "./health";
+import { teamOf } from "./matchConfig";
 import type { Cart } from "./entities/Cart";
 import type { PooledBall } from "./entities/BallPool";
-import type { Pin } from "./entities/Pin";
-import type { Target, TargetPart } from "./entities/Target";
-import type { Stats } from "./stats";
 
 /**
  * The combat orchestrator: the only module in the project that reads Rapier collision events.
@@ -22,64 +19,30 @@ import type { Stats } from "./stats";
  */
 
 /**
- * Damage tuning, derived from the ball speeds Ballistics.CLUB_STATS can actually produce
- * (putter minimum 2 m/s to driver maximum 40 m/s) against Cart's STARTING_HP of 100:
- *
- * - A full-charge driver lands on the MAX clamp, so two clean hits kill. A one-shot kill would
- *   make the respawn loop the whole game.
- * - A putter tap lands on the MIN clamp, so a weak hit still registers rather than reading as a
- *   miss the player cannot distinguish from one.
- * - A mid-charge iron (~16 m/s) does 24, which is the shape the curve exists for: charge and
- *   club choice both matter, neither is decisive on its own.
- */
-export const DAMAGE_PER_MPS = 1.5;
-export const MIN_HIT_DAMAGE = 5;
-export const MAX_HIT_DAMAGE = 60;
-
-/**
- * Cart-only mode's whole damage rule: one ball hit is one stroke and one point of health, and a
- * health bar is 2 x par points tall. Speed no longer scales damage -- a stroke is a stroke, and
- * making a driver hit worth more strokes than a putter hit would be scoring the club rather than
- * the shot.
- *
- * DAMAGE_PER_MPS / MIN_HIT_DAMAGE / MAX_HIT_DAMAGE and `hitDamage` above are kept, unreferenced
- * by the live path, as the reference curve for a future mode that wants graduated damage back --
- * the same dormant-code exception the design spec makes for the stationary swing.
+ * One stroke of damage: what the water costs. A ball does its club's `damage` instead
+ * (`CLUB_STATS`), which for the putter and iron is this same one point.
  */
 export const STROKE_DAMAGE = 1;
 
-/** Two carts at CART_TUNING.topSpeed head-on close at ~28 m/s: 22 damage. Ramming hurts, but
- * shooting stays the primary way to kill something. */
-export const SHUNT_DAMAGE_PER_MPS = 0.8;
+/**
+ * A ram does one point of damage per `RAM_MPS_PER_DAMAGE` m/s of closing speed, up to
+ * `RAM_MAX_DAMAGE`. It used to be 0.8 per m/s uncapped, which against an 8-point bar made every
+ * ram at speed a kill -- for both carts. Ramming hurts; shooting stays the way to kill something.
+ */
+export const RAM_MPS_PER_DAMAGE = 6;
+export const RAM_MAX_DAMAGE = 2;
+/**
+ * m/s. When one cart's own approach speed exceeds the other's by more than this, it is the rammer
+ * and takes half the damage it deals. Inside it -- a head-on -- both take the full amount.
+ */
+export const RAMMER_MARGIN_MPS = 1;
 /** Below this, contact between two carts is parking, not ramming: no damage and no shove. */
 export const SHUNT_MIN_SPEED = 3;
 /** Fraction of the closing speed each cart carries away from a shunt as `shuntVelocity`. */
 export const SHUNT_VELOCITY_TRANSFER = 0.5;
 
-/**
- * Impulse per m/s of ball impact speed, applied to the struck ragdoll part. Scripted rather than
- * left to the solver because the contact that produced the event was resolved against a *Fixed*
- * body on that tick -- the flip to Dynamic necessarily happens after it. docs/DECISIONS.md
- * "Ball mass" names this exact approach as the controllable path, and Target's own velocity
- * clamp bounds whatever this asks for.
- */
-export const KNOCKDOWN_IMPULSE_PER_MPS = 12;
-
-/**
- * What a collider handle turns out to belong to.
- *
- * `courseBall` is the player's own ball on the ground, and it is a separate kind from `ball` on
- * purpose. Fired ammo can hurt a cart; the resting course ball must not, or driving forward off the
- * tee runs the player into their own ball for a stroke -- which at 2 x par health is lethal, and is
- * the bug that got the course ball unregistered in the first place. It is registered now only so it
- * can knock the pin down, and every other pairing it could form is deliberately left unhandled.
- */
-export type Actor =
-  | { kind: "ball"; ball: PooledBall }
-  | { kind: "courseBall"; body: RAPIER.RigidBody }
-  | { kind: "targetPart"; target: Target; part: TargetPart }
-  | { kind: "cart"; cart: Cart; index: number }
-  | { kind: "pin"; pin: Pin };
+/** What a collider handle turns out to belong to: a fired ball, or a cart. */
+export type Actor = { kind: "ball"; ball: PooledBall } | { kind: "cart"; cart: Cart; index: number };
 
 /**
  * Collider handle -> entity. A drained collision event carries two integer handles and nothing
@@ -94,39 +57,19 @@ export class CombatRegistry {
     this.actors.set(handle, { kind: "ball", ball });
   }
 
-  /** The course ball has no shooter and deliberately does not acquire a fake one. */
-  registerCourseBall(handle: number, body: RAPIER.RigidBody): void {
-    this.actors.set(handle, { kind: "courseBall", body });
-  }
-
   /** `index` is the cart's index in `Sim.rigs` -- the same index the scoreboard, the bot
    *  array and the nameplates all use, so no second identity has to be mapped to it. */
   registerCart(handle: number, cart: Cart, index: number): void {
     this.actors.set(handle, { kind: "cart", cart, index });
   }
 
-  registerPin(handle: number, pin: Pin): void {
-    this.actors.set(handle, { kind: "pin", pin });
-  }
-
-  /** The pin's collider is destroyed when it is felled, so its handle must not outlive it: Rapier
-   *  reuses handles, and a stale entry would make some later collider answer as the pin. */
-  unregisterPin(handle: number): void {
-    this.actors.delete(handle);
-  }
-
-  registerTarget(target: Target): void {
-    for (const part of target.parts) {
-      this.actors.set(part.collider.handle, { kind: "targetPart", target, part });
-    }
-  }
-
-  unregisterTarget(target: Target): void {
-    for (const part of target.parts) this.actors.delete(part.collider.handle);
-  }
-
   get(handle: number): Actor | undefined {
     return this.actors.get(handle);
+  }
+
+  /** Forgets every handle, for a world that is being rebuilt: its handles start over. */
+  clear(): void {
+    this.actors.clear();
   }
 }
 
@@ -137,7 +80,6 @@ export interface CollisionEventSource {
 
 export interface CombatContext {
   registry: CombatRegistry;
-  stats: Stats;
   /**
    * A fired ball connected with something. `shooter` is the rig that fired it; `x`/`y`/`z` are the
    * ball's position at impact, which is where a hit marker floats.
@@ -156,16 +98,6 @@ export interface CombatContext {
    * be a second way of answering a question the registry already answered.
    */
   onCartKilled: (cart: Cart, victim: number, killer: number) => void;
-  /**
-   * Called on the contact that fells the pin. `world.ts` owns the Rapier resources, so removing the
-   * collider is its job rather than this module's -- the same split `onCartKilled` already uses.
-   */
-  onPinStruck: () => void;
-}
-
-/** Damage for a ball landing at `speed` m/s relative to what it hit. */
-export function hitDamage(speed: number): number {
-  return Math.min(MAX_HIT_DAMAGE, Math.max(MIN_HIT_DAMAGE, speed * DAMAGE_PER_MPS));
 }
 
 /**
@@ -182,7 +114,6 @@ function cartVelocity(cart: Cart, out: { x: number; z: number }): void {
 // Per-tick scratch, reused across contacts, per the AGENTS.md no-allocation-in-the-hot-loop rule.
 const velA = { x: 0, z: 0 };
 const velB = { x: 0, z: 0 };
-const impulseScratch = { x: 0, y: 0, z: 0 };
 
 /**
  * Drains one tick's collision events and resolves each independently -- no cross-contact state,
@@ -195,61 +126,16 @@ export function processContacts(queue: CollisionEventSource, ctx: CombatContext)
     const b = ctx.registry.get(handle2);
     if (!a || !b) return;
 
-    if (a.kind === "ball" && b.kind === "targetPart") return ballHitsTarget(a.ball, b, ctx);
-    if (b.kind === "ball" && a.kind === "targetPart") return ballHitsTarget(b.ball, a, ctx);
     if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.ball, b, ctx);
     if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.ball, a, ctx);
     if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a, b, ctx);
-    if (a.kind === "pin" || b.kind === "pin") return ballHitsPin(a, b, ctx);
   });
 }
 
-function ballHitsTarget(
-  ball: PooledBall,
-  hit: { target: Target; part: TargetPart },
-  ctx: CombatContext,
-): void {
-  const wasDown = hit.target.isDown;
-  const v = ball.body.linvel();
-  const speed = Math.hypot(v.x, v.y, v.z);
-  const scale = speed < 1e-6 ? 0 : KNOCKDOWN_IMPULSE_PER_MPS;
-
-  impulseScratch.x = v.x * scale;
-  impulseScratch.y = v.y * scale;
-  impulseScratch.z = v.z * scale;
-  hit.target.knockDown(hit.part, impulseScratch);
-
-  const at = ball.body.translation();
-  ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
-  // `targetsDown` is deliberately still unattributed: it counts ragdolls down on this hole,
-  // which is a fact about the world rather than about whoever knocked one over.
-  if (!wasDown) ctx.stats.targetsDown += 1;
-}
-
-/**
- * A ball touching the pin knocks it over -- fired ammo or the played course ball, either one.
- *
- * **Carts are deliberately not handled here, and that is not an omission.** A cart is kinematic and
- * driven by the character controller, which resolves its movement to stop `CHARACTER_OFFSET`
- * (0.02 m) short of whatever it hits -- far wider than the narrow phase's prediction distance, so a
- * cart pressed against the pin produces a blocked movement and no contact event at all. `world.ts`
- * reads the controller's own collision report instead. A cart branch here would be code no test
- * could kill, which is worse than no branch: it would read as the cart's path while doing nothing.
- *
- * Not a damage rule and not a scoring one either: no `stats.targetsDown` entry, no hit marker, no
- * coins (spec, out of scope). The pin is a tactical object, so the only consequence is that the
- * collider goes away.
- *
- * The ground is not an actor, so a felled pin lying on the green cannot re-trigger this -- and the
- * pin's handle is unregistered the moment it falls, so nothing can hit it twice.
- */
-function ballHitsPin(a: Actor, b: Actor, ctx: CombatContext): void {
-  const other = a.kind === "pin" ? b : a;
-  if (other.kind !== "ball" && other.kind !== "courseBall") return;
-  ctx.onPinStruck();
-}
-
 function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, ctx: CombatContext): void {
+  // A shot hurts while it is in the air, once. A landed ball is ammo lying on the grass, and a
+  // spent one already hit something -- the hull and the capsule are two contacts, not two hits.
+  if (ball.state !== "flying" || ball.spent) return;
   const cart = victim.cart;
   // A cart awaiting respawn is out of the world: it takes no damage, no stroke, and generates
   // no accuracy credit for whoever shot at it. `world.ts` freezes it for the same reason.
@@ -258,11 +144,14 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
   // valid thing to have hit, so the shot earns nothing either. Ramming is deliberately not
   // guarded -- a cart that cannot be shot and cannot be pushed can park inside an enemy.
   if (cart.protectedFor > 0) return;
+  // Friendly fire is off (docs/DECISIONS.md, 2026-09-26), and a cart's own ball is the same case:
+  // a teammate's shot passes through as if the cart were not there, and earns nothing.
+  if (sameSide(ball.firedBy, victim.index)) return;
 
+  ball.spent = true;
   const at = ball.body.translation();
   ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
-  cart.strokesTaken += 1;
-  if (applyDamage(cart.health, STROKE_DAMAGE)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
+  if (applyDamage(cart.health, ball.damage)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
 }
 
 /**
@@ -290,9 +179,20 @@ function cartsShunt(
   if (closing < SHUNT_MIN_SPEED) return;
 
   // A ram can kill, and it takes the same stroke penalty a shot does -- death has one path.
-  const damage = closing * SHUNT_DAMAGE_PER_MPS;
-  if (applyDamage(a.health, damage)) ctx.onCartKilled(a, first.index, second.index);
-  if (applyDamage(b.health, damage)) ctx.onCartKilled(b, second.index, first.index);
+  // Teammates still bounce off each other; they just do not hurt each other.
+  if (!sameSide(first.index, second.index)) {
+    const damage = Math.min(RAM_MAX_DAMAGE, Math.floor(closing / RAM_MPS_PER_DAMAGE));
+    // Who drove into whom: each cart's own speed toward the other along the line between them.
+    const lx = b.position.x - a.position.x;
+    const lz = b.position.z - a.position.z;
+    const l = Math.hypot(lx, lz) || 1;
+    const aApproach = (velA.x * lx + velA.z * lz) / l;
+    const bApproach = -(velB.x * lx + velB.z * lz) / l;
+    const toA = aApproach > bApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
+    const toB = bApproach > aApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
+    if (toA > 0 && applyDamage(a.health, toA)) ctx.onCartKilled(a, first.index, second.index);
+    if (toB > 0 && applyDamage(b.health, toB)) ctx.onCartKilled(b, second.index, first.index);
+  }
 
   // Along the line between them, so the pair separates rather than being flung sideways. Two
   // carts exactly co-located (only reachable synthetically) fall back to the closing direction.
@@ -310,4 +210,9 @@ function cartsShunt(
   a.shuntVelocity.z += dz * push;
   b.shuntVelocity.x -= dx * push;
   b.shuntVelocity.z -= dz * push;
+}
+
+/** Whether two rigs are on the same side, a rig counting as on its own. */
+function sameSide(a: number, b: number): boolean {
+  return a === b || (a >= 0 && b >= 0 && teamOf(a) === teamOf(b));
 }

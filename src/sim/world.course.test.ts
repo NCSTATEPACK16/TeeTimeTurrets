@@ -1,37 +1,29 @@
 import { describe, expect, it } from "vitest";
+import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
-import { generateCourse } from "./course";
 import { authoredCourse } from "./authoredCourse";
-import { metresNorthOfBoundary } from "./authoredLayout";
+import { AUTHORED_CLUBHOUSE, metresNorthOfBoundary } from "./authoredLayout";
 import { buildCourseWorld } from "./courseWorld";
+import { arenaFromCourse } from "./arena";
 import { BOT_ENGAGE_RANGE } from "./bot";
-import { CART_COLLIDER, RESPAWN_DELAY_S } from "./entities/Cart";
-import { createCourseSurfaces } from "./courseSurfaces";
-import { createCourseTerrain } from "./courseTerrain";
+import { CART_COLLIDER, RESPAWN_DELAY_S, STARTING_AMMO } from "./entities/Cart";
 import type { CourseTerrain, PlacedHole } from "./courseTerrain";
-import { solveCourseLayout, toCourseFrame } from "./courseLayout";
-import type { LayoutHole } from "./courseLayout";
-import { SurfaceId, createSurfaces } from "./surfaces";
-import { createTerrain } from "./terrain";
-import { mulberry32 } from "./rng";
-import { ARENA_BOTS, ARENA_MAX_HEALTH } from "./matchConfig";
+import { toCourseFrame } from "./courseLayout";
+import { SurfaceId } from "./surfaces";
+import type { Surfaces } from "./surfaces";
+import { ARENA_BOTS, ARENA_MAX_HEALTH, teamOf } from "./matchConfig";
+import { miniCourse } from "./testing/miniCourse";
 import { Sim } from "./world";
 
 /**
- * Arena, driven headlessly against the real Rapier world, the way `world.cart.test.ts` drives
- * stroke play's.
- *
- * Stage B's half of this file is the ground: which one `Sim` is standing on, and that a cart
- * driving off a hole's field finds course under it rather than air. Stage C's half is the mode --
- * `loadCourse` is now the switch, and the furniture it *removes* is asserted at the registration
- * as well as at the count, because a spec that says a thing becomes dormant and leaves it
- * registered is how driving over your own tee became lethal (`docs/TEST-AND-SPEC-PITFALLS.md` §4).
+ * The arena on a course, driven headlessly against the real Rapier world: the ground a cart stands
+ * on across hole boundaries, the spawns, the scoring, and the shipped eighteen-hole course.
  */
 
 const COURSE_SEED = 2026;
-/** Six holes and 8 m cells: the assembly is the same, and the heightfield builds in a test's
- *  worth of time rather than a level load's. The cell size is the caller's to choose. */
+/** Six authored holes and 8 m cells: the assembly is the shipped one, and the heightfield builds in
+ *  a test's worth of time rather than a level load's. */
 const TEST_HOLES = 6;
 const TEST_CELL_M = 8;
 /**
@@ -67,17 +59,9 @@ function groundGap(sim: Sim, terrain: CourseTerrain): number {
   return p.y - CART_COLLIDER.groundOffset - terrain.heightAt(p.x, p.z);
 }
 
-function surfacesFor(terrain: CourseTerrain, holes: readonly PlacedHole[]) {
-  return createCourseSurfaces(terrain, holes.map((h) => createSurfaces(h.spec, h.terrain)));
-}
-
 /** A course-frame point that is water, found by scanning one hole's own pond. Null if the six
  *  generated holes happen to be dry, which the caller asserts against rather than skipping. */
-function wetPoint(
-  terrain: CourseTerrain,
-  holes: readonly PlacedHole[],
-): { x: number; z: number } | null {
-  const surfaces = surfacesFor(terrain, holes);
+function wetPoint(terrain: CourseTerrain, surfaces: Surfaces): { x: number; z: number } | null {
   const step = 4;
   for (let x = terrain.bounds.minX; x < terrain.bounds.maxX; x += step) {
     for (let z = terrain.bounds.minZ; z < terrain.bounds.maxZ; z += step) {
@@ -87,44 +71,15 @@ function wetPoint(
   return null;
 }
 
-/**
- * Memoised. Generating six holes and assembling them is ~700 ms, every test in this file needs
- * one, and the result is read-only -- only the `Sim` built on top of it is per-test. Rebuilding
- * it a dozen times is what pushed this file's tests past Vitest's 5 s default under a parallel
- * run, which surfaces as a timeout and reads exactly like a failed assertion.
- */
-let cachedCourse: { terrain: CourseTerrain; holes: PlacedHole[] } | null = null;
-
-function buildCourse(): { terrain: CourseTerrain; holes: PlacedHole[] } {
-  if (cachedCourse !== null) return cachedCourse;
-  const generated = generateCourse(COURSE_SEED, TEST_HOLES);
-  const layoutHoles: LayoutHole[] = generated.holes.map((h) => ({
-    index: h.index,
-    tee: h.tee,
-    cup: h.cup,
-    control: h.control,
-  }));
-  const layout = solveCourseLayout(layoutHoles);
-  const holes: PlacedHole[] = layout.placements.map((placement) => {
-    const spec = generated.holes[placement.index]!;
-    return { placement, spec, terrain: createTerrain(spec) };
-  });
-  cachedCourse = {
-    terrain: createCourseTerrain(holes, { rough: mulberry32(COURSE_SEED), cellM: TEST_CELL_M }),
-    holes,
-  };
-  return cachedCourse;
-}
-
-async function arenaSim(): Promise<{ sim: Sim; terrain: CourseTerrain; holes: PlacedHole[] }> {
-  const { terrain, holes } = buildCourse();
-  const sim = await Sim.create(holes[0]!.spec, { botCount: 0 });
-  sim.loadCourse(
-    terrain,
-    createCourseSurfaces(terrain, holes.map((h) => createSurfaces(h.spec, h.terrain))),
-    holes,
-  );
-  return { sim, terrain, holes };
+async function arenaSim(botCount = 0): Promise<{
+  sim: Sim;
+  terrain: CourseTerrain;
+  surfaces: Surfaces;
+  holes: readonly PlacedHole[];
+}> {
+  const course = miniCourse(TEST_HOLES, TEST_CELL_M, COURSE_SEED);
+  const sim = await Sim.create(course.ground, { botCount });
+  return { sim, terrain: course.terrain, surfaces: course.surfaces, holes: course.holes };
 }
 
 describe("standing on the whole course", () => {
@@ -175,8 +130,7 @@ describe("standing on the whole course", () => {
   });
 
   it("puts a cart standing at another hole's tee on that hole's ground", async () => {
-    // Nothing in stroke play's world exists out there: on one hole's collider this cart would
-    // fall until the out-of-bounds floor caught it.
+    // On one hole's collider alone this cart would fall until the out-of-bounds floor caught it.
     const { sim, terrain, holes } = await arenaSim();
     const distant = holes[holes.length - 1]!;
     const tee = { x: 0, z: 0 };
@@ -195,11 +149,7 @@ describe("standing on the whole course", () => {
   });
 
   it("reads the course's materials under the cart, not the hole's", async () => {
-    const { sim, terrain, holes } = await arenaSim();
-    const surfaces = createCourseSurfaces(
-      terrain,
-      holes.map((h) => createSurfaces(h.spec, h.terrain)),
-    );
+    const { sim, surfaces, holes } = await arenaSim();
     const distant = holes[holes.length - 1]!;
     const cup = { x: 0, z: 0 };
     toCourseFrame(distant.placement, distant.spec.cup.x, distant.spec.cup.z, cup);
@@ -211,73 +161,10 @@ describe("standing on the whole course", () => {
   });
 });
 
-/**
- * Stage C: `loadCourse` is the mode switch, and what it *removes* is as much the point as what
- * it stands on. `docs/TEST-AND-SPEC-PITFALLS.md` §4 is the reason each removal is asserted at the
- * registration as well as at the count -- a spec that says a thing becomes dormant and leaves it
- * registered is how driving over your own tee became lethal.
- */
-describe("arena takes stroke play's furniture out of the world", () => {
-  function actorFor(sim: Sim, handle: number): unknown {
-    return (sim as unknown as { registry: { get(h: number): unknown } }).registry.get(handle);
-  }
-
-  it("says which mode it is in", async () => {
-    const { terrain, holes } = buildCourse();
-    const sim = await Sim.create(holes[0]!.spec, { botCount: 0 });
-    expect(sim.arena).toBe(false);
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
-    expect(sim.arena).toBe(true);
-  });
-
-  it("takes every target out of the world, the count and the registry", async () => {
-    const { terrain, holes } = buildCourse();
-    const sim = await Sim.create(holes[0]!.spec, { botCount: 0 });
-    // The control: stroke play stood three of them up, so "none afterwards" is a change rather
-    // than a description of a sim that never had any.
-    expect(sim.targets.length).toBeGreaterThan(0);
-    const handles = sim.targets.flatMap((t) => t.parts.map((part) => part.collider.handle));
-    expect(handles.length).toBeGreaterThan(0);
-
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
-
-    expect(sim.targets).toHaveLength(0);
-    expect(sim.targetPartCount).toBe(0);
-    for (const handle of handles) expect(actorFor(sim, handle)).toBeUndefined();
-  });
-
-  it("takes the pin out of the world and out of the registry", async () => {
-    const { terrain, holes } = buildCourse();
-    const sim = await Sim.create(holes[0]!.spec, { botCount: 0 });
-    expect(sim.pinStanding).toBe(true);
-    const pinHandle = (sim as unknown as { pinCollider: { handle: number } }).pinCollider.handle;
-    expect(actorFor(sim, pinHandle)).toBeDefined();
-
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
-
-    expect(actorFor(sim, pinHandle)).toBeUndefined();
-  });
-
-  it("parks the played ball where no check can reach it, and leaves it there", async () => {
-    const { terrain, holes } = buildCourse();
-    const sim = await Sim.create(holes[0]!.spec, { botCount: 0 });
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
-
-    expect(sim.current.position.y).toBeLessThan(-100);
-    // Still there after a long drive: a ball merely teleported once would fall back through the
-    // world under gravity and could re-enter a height check on the way.
-    play(sim, [{ ticks: 10 * 60, intent: { throttle: 1 } }]);
-    expect(sim.current.position.y).toBeLessThan(-100);
-    expect(sim.holedOut).toBe(false);
-  });
-});
-
 describe("arena spawns, health and scoring", () => {
   it("deals every cart its own hole's tee, facing that hole's cup", async () => {
-    const { terrain, holes } = buildCourse();
     // Five bots and six holes, so every cart can have a tee to itself.
-    const sim = await Sim.create(holes[0]!.spec, { botCount: 5 });
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
+    const { sim, holes } = await arenaSim(5);
 
     const carts = [sim.cart, ...sim.bots];
     const tees = holes.map((h) => {
@@ -299,25 +186,12 @@ describe("arena spawns, health and scoring", () => {
       expect(nearest.d).toBeLessThan(1);
       claimed.add(nearest.i);
     }
-    // Six carts, six different tees. Red against every cart being left where `Sim.create` put it,
-    // which is what Stage B's loadCourse did and which puts them all in one heap.
+    // Six carts, six different tees -- not one heap on hole 1.
     expect(claimed.size).toBe(6);
   });
 
-  it("sizes every cart to the arena bar once, and never re-sizes it", async () => {
-    const { terrain, holes } = buildCourse();
-    // Deliberately **not** a par 4: `2 x par` is 8 there, which is `ARENA_MAX_HEALTH` exactly, so
-    // a par-4 hole makes the control below vacuous and the test unable to tell the two rules
-    // apart. The band is 6-10 and only one value in it collides.
-    const contrast = holes.find((h) => h.spec.par !== 4);
-    expect(contrast).toBeDefined();
-    const sim = await Sim.create(contrast!.spec, { botCount: 1 });
-
-    // The control: stroke play sized it to 2 x par, which for this hole is not the arena bar.
-    expect(sim.cart.health.max).toBe(2 * contrast!.spec.par);
-    expect(sim.cart.health.max).not.toBe(ARENA_MAX_HEALTH);
-
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
+  it("sizes every cart to the arena bar, and a respawn refills it without re-sizing it", async () => {
+    const { sim } = await arenaSim(1);
     expect(sim.cart.health.max).toBe(ARENA_MAX_HEALTH);
     expect(sim.bots[0]!.health.max).toBe(ARENA_MAX_HEALTH);
 
@@ -333,13 +207,11 @@ describe("arena spawns, health and scoring", () => {
   });
 
   it("scores a drowning as a stroke against the team and a point for nobody", async () => {
-    const { terrain, holes } = buildCourse();
-    const sim = await Sim.create(holes[0]!.spec, { botCount: 1 });
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
+    const { sim, terrain, surfaces } = await arenaSim(1);
 
     // One hit from death, then driven into water.
     sim.cart.health.hp = 1;
-    const wet = wetPoint(terrain, holes);
+    const wet = wetPoint(terrain, surfaces);
     expect(wet).not.toBeNull();
     sim.cart.position.x = wet!.x;
     sim.cart.position.z = wet!.z;
@@ -356,21 +228,6 @@ describe("arena spawns, health and scoring", () => {
     expect(sim.match.pointsFor(1)).toBe(0);
   });
 
-  it("keeps hits absorbed and deaths as two different numbers", async () => {
-    // D1, and the highest-risk sentence in the design: `strokesTaken` counts ball hits, arena's
-    // stroke counts deaths, and they differ by the height of the health bar. A cart that has been
-    // shot without dying is the case where folding them together is visible.
-    const { terrain, holes } = buildCourse();
-    const sim = await Sim.create(holes[0]!.spec, { botCount: 1 });
-    sim.loadCourse(terrain, surfacesFor(terrain, holes), holes);
-
-    sim.cart.strokesTaken = 3;
-    sim.cart.health.hp = ARENA_MAX_HEALTH - 3;
-
-    expect(sim.cart.strokesTaken).toBe(3);
-    expect(sim.match.strokesFor(0)).toBe(0);
-    expect(sim.match.teamStrokes(0)).toBe(0);
-  });
 });
 
 
@@ -386,8 +243,7 @@ function authoredWorld(): ReturnType<typeof buildCourseWorld> {
 
 async function authoredSim(): Promise<{ sim: Sim; world: ReturnType<typeof buildCourseWorld> }> {
   const world = authoredWorld();
-  const sim = await Sim.create(world.holes[0]!.spec, { botCount: 0 });
-  sim.loadCourse(world.terrain, world.surfaces, world.holes, world.southBoundary);
+  const sim = await Sim.create(arenaFromCourse(world), { botCount: 0 });
   return { sim, world };
 }
 
@@ -416,10 +272,11 @@ describe("County Home Road is a barrier", () => {
     }
     expect(wedge, "no ground inside the bounds lies south of the road").toBeGreaterThan(0);
 
-    // Point it south and hold the throttle. Measured rather than guessed at: from hole 1's tee the
-    // cart starts 78 m north of the road and is against the barrier -- held at `BARRIER_INSET_M`,
-    // 6 m -- by the eighth second, and stays there. Fifteen seconds is comfortably past that and
-    // still short enough to be honest about what the test needs.
+    // Point it south and hold the throttle. The player opens on team 0's pad beside the clubhouse,
+    // a few tens of metres north of the road, so fifteen seconds puts it against the barrier --
+    // held at `BARRIER_INSET_M` -- with most of the run to spare.
+    const openingNorth = metresNorthOfBoundary(sim.cart.position.x, sim.cart.position.z);
+    expect(openingNorth).toBeLessThan(80);
     sim.cart.heading = -Math.PI / 2;
     play(sim, [{ ticks: 15 * 60, intent: { throttle: 1 } }]);
 
@@ -434,51 +291,109 @@ describe("County Home Road is a barrier", () => {
   }, 30000);
 });
 
-describe("an arena match on the authored course is a match", () => {
+describe("both teams spawn at the clubhouse", () => {
   /**
-   * **The regression this exists to catch shipped, and nothing in the suite noticed.**
-   *
-   * `computeBotIntent` used to return a zero intent beyond `BOT_ENGAGE_RANGE`, on the reasoning
-   * that closing would be pathfinding. That was sound while the arena was one generated hole. The
-   * authored routing deals carts one to a hole across a course roughly 1,590 x 1,290 m: the nearest
-   * pair a six-cart roster gets is 75 m and the closest two tees anywhere are 74 m, both outside the
-   * 40 m range. So every bot stood still from the opening tick, no bot ever reached anyone, and
-   * arena combat did not happen -- while `bot.test.ts` and `world.cart.test.ts` both stayed green,
-   * because both asserted the idling that was the bug.
-   *
-   * Every existing assertion was a unit one against a hand-placed pair of carts. This is the
-   * missing one: the carts the *course* deals, on the course it deals them onto.
+   * The authored routing dealt carts one to a tee, up to ~800 m apart on a course about
+   * 1,590 x 1,290 m, and respawned them at random tees: at 14 m/s a cart could spend a third of a
+   * three-minute match driving to the fight. The user's rule (2026-09-24) is that both teams spawn
+   * at the clubhouse, on opposite sides of it.
    */
-  it("deals carts far apart and still brings a bot into range of the player", async () => {
+  it("opens every cart on its own team's side of the clubhouse, on dry ground", async () => {
     const world = authoredWorld();
-    const sim = await Sim.create(world.holes[0]!.spec, { botCount: ARENA_BOTS });
-    sim.loadCourse(world.terrain, world.surfaces, world.holes, world.southBoundary);
+    const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+    const carts = [sim.cart, ...sim.bots];
 
+    for (let i = 0; i < carts.length; i++) {
+      const p = carts[i]!.position;
+      const side = teamOf(i) === 0 ? -1 : 1;
+      const east = p.x - AUTHORED_CLUBHOUSE.x;
+      expect(east * side, `cart ${i} at ${east.toFixed(0)} m east of the clubhouse`).toBeGreaterThan(15);
+      expect(Math.hypot(p.x - AUTHORED_CLUBHOUSE.x, p.z - AUTHORED_CLUBHOUSE.z)).toBeLessThan(50);
+      expect(world.surfaces.surfaceAt(p.x, p.z)).not.toBe(SurfaceId.Water);
+      expect(metresNorthOfBoundary(p.x, p.z)).toBeGreaterThan(10);
+    }
+  }, 60000);
+
+  it("brings the other team into range of an idle player within twenty seconds", async () => {
+    const world = authoredWorld();
+    const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+    const enemies = sim.bots.filter((_, i) => teamOf(i + 1) !== teamOf(0));
     const distanceToPlayer = (bot: { position: { x: number; z: number } }): number =>
       Math.hypot(bot.position.x - sim.cart.position.x, bot.position.z - sim.cart.position.z);
 
-    // The premise: they start well outside engagement range, or the test proves nothing. Measured
-    // rather than assumed, because it is exactly the fact that changed under the old rule.
-    const opening = sim.bots.map(distanceToPlayer);
+    // The premise: no enemy opens already inside engagement range, or this proves nothing.
+    const opening = enemies.map(distanceToPlayer);
     expect(Math.min(...opening), `opening distances ${opening.map((d) => d.toFixed(0))}`).toBeGreaterThan(
       BOT_ENGAGE_RANGE,
     );
 
-    // The player holds still. Any closing is the bots' doing. A bot that reaches the player now
-    // kills it -- bots fire an effective short-range club -- and the player respawns across the
-    // course, so the *final* distance measures the respawn, not the closing. The nearest a bot got
-    // over the whole minute is what proves one came into range.
-    const source = new ScriptedInputSource([{ ticks: 60 * 60, intent: {} }]);
+    const source = new ScriptedInputSource([{ ticks: 20 * 60, intent: {} }]);
     let nearest = Infinity;
-    for (let i = 0; i < 60 * 60; i++) {
+    for (let i = 0; i < 20 * 60; i++) {
       sim.step(source.sample());
       source.endTick();
-      for (const bot of sim.bots) nearest = Math.min(nearest, distanceToPlayer(bot));
+      for (const bot of enemies) nearest = Math.min(nearest, distanceToPlayer(bot));
     }
-
-    expect(
-      nearest,
-      `over 60 s the nearest a bot got was ${nearest.toFixed(0)} m, from ${Math.min(...opening).toFixed(0)} m`,
-    ).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
+    expect(nearest).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
   }, 60000);
+
+  it("brings a dead cart back on its own team's side with a fresh load of ammo", async () => {
+    const world = authoredWorld();
+    const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+    // Rig 3 is on team 1, east of the clubhouse. Drive it far off first, so a respawn that ignored
+    // the pads could not land on them by standing still.
+    const bot = sim.bots[2]!;
+    expect(teamOf(3)).toBe(1);
+    const rigs = (sim as unknown as { rigs: { cart: typeof bot; body: { setTranslation(v: object, w: boolean): void } }[] }).rigs;
+    const far = { x: AUTHORED_CLUBHOUSE.x + 300, z: AUTHORED_CLUBHOUSE.z + 300 };
+    bot.position.x = far.x;
+    bot.position.z = far.z;
+    bot.position.y = sim.heightAt(far.x, far.z) + CART_COLLIDER.groundOffset;
+    rigs[3]!.body.setTranslation({ ...bot.position }, true);
+    bot.ammo = 0;
+    bot.health.hp = 0;
+    bot.dead = true;
+    bot.respawnTimer = RESPAWN_DELAY_S;
+
+    for (let i = 0; i < Math.ceil(RESPAWN_DELAY_S * 60) + 2; i++) sim.step();
+
+    expect(bot.dead).toBe(false);
+    expect(bot.position.x - AUTHORED_CLUBHOUSE.x).toBeGreaterThan(15);
+    expect(Math.hypot(bot.position.x - AUTHORED_CLUBHOUSE.x, bot.position.z - AUTHORED_CLUBHOUSE.z)).toBeLessThan(50);
+    expect(bot.ammo).toBeGreaterThanOrEqual(STARTING_AMMO - 1);
+  }, 60000);
+});
+
+describe("fired balls on the course", () => {
+  /**
+   * A pooled ball decides it has landed by comparing its height with the ground under it. The pool
+   * was built with a closure over `sim.terrain` -- the hole the Sim was created on -- and arena
+   * never replaced it, so on the course a ball was judged against hole 1's heightfield read at
+   * course coordinates. Where that ground sits higher than the course, a ball lying on the grass
+   * never lands and can never be picked up as ammo; where it sits lower, a ball "lands" in the air.
+   */
+  it("lands where the course ground is, so it can be picked back up", async () => {
+    const { sim, world } = await authoredSim();
+    interface PoolLike {
+      all: readonly { state: string; body: { translation(): { x: number; y: number; z: number } } }[];
+    }
+    const pool = (sim as unknown as { ballPool: PoolLike }).ballPool;
+
+    // One full-charge putter shot along the fairway, then hands off until it has come to rest.
+    play(sim, [
+      { ticks: 1, intent: { selectClub: ClubType.Putter } },
+      { ticks: 30, intent: { fire: true } },
+      { ticks: 1, intent: {} },
+      { ticks: 8 * 60, intent: {} },
+    ]);
+
+    const fired = pool.all.filter((b) => b.state !== "idle");
+    expect(fired.length, "the shot never left the muzzle").toBe(1);
+    const ball = fired[0]!;
+    const at = ball.body.translation();
+    const gap = at.y - world.terrain.heightAt(at.x, at.z);
+    // The premise: the ball is lying on the course's own ground, not caught on anything.
+    expect(Math.abs(gap), `ball rests ${gap.toFixed(2)} m off the course ground`).toBeLessThan(1);
+    expect(ball.state).toBe("landed");
+  }, 30000);
 });

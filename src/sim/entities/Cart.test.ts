@@ -8,11 +8,11 @@ import {
   Cart,
   MAX_AMMO,
   STARTING_AMMO,
-  STARTING_HP,
   TURRET_GEOMETRY,
   TireType,
   computeMuzzle,
 } from "./Cart";
+import { ARENA_MAX_HEALTH } from "../matchConfig";
 import type { CartIntent } from "./Cart";
 
 /**
@@ -27,7 +27,7 @@ const FAIRWAY = SURFACES[SurfaceId.Fairway];
 const DT = 1 / 60;
 
 function idle(overrides: Partial<CartIntent> = {}): CartIntent {
-  return { throttle: 0, steer: 0, brake: false, aimDelta: 0, fire: false, ...overrides };
+  return { throttle: 0, steer: 0, brake: false, aimDelta: 0, fire: false, cancelCharge: false, ...overrides };
 }
 
 /** Advance `seconds` of simulated time at the fixed rate, holding one intent throughout. */
@@ -35,6 +35,12 @@ function run(cart: Cart, seconds: number, intent: CartIntent, surface: SurfaceTu
   const ticks = Math.round(seconds / DT);
   for (let i = 0; i < ticks; i++) cart.step(intent, DT, surface);
 }
+
+describe("Cart loadout", () => {
+  it("starts holding the putter, the arena's close-range sidearm", () => {
+    expect(new Cart().equippedClub).toBe(ClubType.Putter);
+  });
+});
 
 describe("Cart reload gating", () => {
   let cart: Cart;
@@ -133,6 +139,28 @@ describe("Cart swing charge", () => {
     expect(cart.charge).toBe(0);
   });
 
+  it("cancelling drops the charge, and letting go afterwards fires nothing", () => {
+    run(cart, 0.3, idle({ fire: true }));
+    const ammo = cart.ammo;
+    cart.step(idle({ fire: true, cancelCharge: true }), DT, FAIRWAY);
+    expect(cart.charge).toBe(0);
+
+    cart.step(idle({ fire: false }), DT, FAIRWAY);
+    expect(cart.shot.fired).toBe(false);
+    expect(cart.ammo).toBe(ammo);
+  });
+
+  it("after a cancel, the trigger has to be let go before it charges again", () => {
+    run(cart, 0.3, idle({ fire: true }));
+    cart.step(idle({ fire: true, cancelCharge: true }), DT, FAIRWAY);
+    run(cart, 0.3, idle({ fire: true }));
+    expect(cart.charge).toBe(0);
+
+    cart.step(idle({ fire: false }), DT, FAIRWAY);
+    run(cart, 0.3, idle({ fire: true }));
+    expect(cart.charge).toBeGreaterThan(0);
+  });
+
   it("does not accumulate charge while reloading", () => {
     cart.fire(1);
     run(cart, 0.3, idle({ fire: true }));
@@ -176,6 +204,20 @@ describe("Cart recoil as self-propulsion", () => {
     expect(Math.hypot(driver.recoil.x, driver.recoil.z)).toBeGreaterThan(
       Math.hypot(putter.recoil.x, putter.recoil.z) * 2,
     );
+  });
+
+  it("kicks the club's own recoil at full charge", () => {
+    for (const club of [ClubType.Putter, ClubType.Iron, ClubType.Driver]) {
+      const c = new Cart({ club });
+      c.fire(1);
+      expect(Math.hypot(c.recoil.x, c.recoil.z), club).toBeCloseTo(CLUB_STATS[club].recoil, 9);
+    }
+  });
+
+  it("barely moves the cart with a full-charge putter shot, so the pistol can be fired on the move", () => {
+    const c = new Cart({ club: ClubType.Putter });
+    c.fire(1);
+    expect(Math.hypot(c.recoil.x, c.recoil.z)).toBeLessThanOrEqual(1);
   });
 
   it("kicks harder at full charge than at no charge", () => {
@@ -314,6 +356,21 @@ describe("computeMuzzle", () => {
   });
 });
 
+describe("Cart pace", () => {
+  it("is fast: at least 18 m/s on fairway, reached inside two seconds", () => {
+    // The user's call (2026-09-24): "somewhat realistic but a lot of action". 14 m/s was not it.
+    const cart = new Cart();
+    const throttle = { ...idle(), throttle: 1 };
+    let reachedAt = Infinity;
+    for (let tick = 0; tick < 5 * 60; tick++) {
+      cart.step(throttle, DT, FAIRWAY);
+      if (cart.speed >= 18 && reachedAt === Infinity) reachedAt = tick * DT;
+    }
+    expect(cart.speed).toBeGreaterThanOrEqual(18);
+    expect(reachedAt).toBeLessThanOrEqual(2);
+  });
+});
+
 describe("Cart driving", () => {
   it("accelerates forward under throttle and caps at top speed", () => {
     const cart = new Cart();
@@ -429,13 +486,14 @@ describe("Cart ammo", () => {
     expect(cart.shot.hasBall).toBe(true);
   });
 
-  it("fire() at 0 ammo leaves ammo at 0, sets hasBall false, and still recoils", () => {
+  it("fire() at 0 ammo leaves ammo at 0, sets hasBall false, and does not kick", () => {
+    // A blank throws nothing, so there is nothing to push back against. It used to kick like a
+    // real shot, which made an empty putter a free, silent way to skate the cart around.
     cart.ammo = 0;
-    const before = { x: cart.recoil.x, z: cart.recoil.z };
     cart.fire(1);
     expect(cart.ammo).toBe(0);
     expect(cart.shot.hasBall).toBe(false);
-    expect(cart.recoil.x).not.toBeCloseTo(before.x, 9);
+    expect(Math.hypot(cart.recoil.x, cart.recoil.z)).toBe(0);
   });
 
   it("fire() while reloading does not touch ammo or hasBall", () => {
@@ -447,6 +505,64 @@ describe("Cart ammo", () => {
   });
 });
 
+describe("Cart rearm", () => {
+  /** Everything the weapon carries between ticks, private state included. */
+  function weapon(cart: Cart): Record<string, unknown> {
+    const c = cart as unknown as Record<string, unknown>;
+    const keys = ["club", "ammo", "reload", "chargeHeld", "wasFiring", "cancelled", "shot"];
+    return Object.fromEntries(keys.map((k) => [k, structuredClone(c[k])]));
+  }
+
+  /**
+   * What a match can leave on a cart's weapon. No one cart can show all of it at once -- a charge
+   * only builds once the reload is done, and a cancel drops the charge -- so each scenario dirties
+   * part of it, and the last test checks that between them they dirty every field.
+   */
+  const scenarios: Record<string, (cart: Cart) => void> = {
+    // Clubs swapped, a full driver shot fired, ammo picked up, the reload still running.
+    fired: (cart) => {
+      cart.selectClub(ClubType.Driver);
+      run(cart, 2, idle({ fire: true }));
+      run(cart, 1 / 60, idle());
+      cart.addAmmo(40);
+    },
+    // The trigger held down on a charge when the buzzer went.
+    charging: (cart) => run(cart, 0.25, idle({ fire: true })),
+    // The trigger held down after a cancel, which latches until it is let go.
+    cancelled: (cart) => run(cart, 0.25, idle({ fire: true, cancelCharge: true })),
+  };
+
+  function usedCart(scenario: string): Cart {
+    const cart = new Cart({ club: ClubType.Iron });
+    scenarios[scenario]!(cart);
+    return cart;
+  }
+
+  for (const scenario of Object.keys(scenarios)) {
+    it(`leaves the weapon exactly as a new cart of the same loadout has it (${scenario})`, () => {
+      const fresh = new Cart({ club: ClubType.Iron });
+      const used = usedCart(scenario);
+      expect(weapon(used)).not.toEqual(weapon(fresh));
+
+      used.rearm();
+
+      expect(weapon(used)).toEqual(weapon(fresh));
+    });
+  }
+
+  it("is tested against every field of the weapon, not only some", () => {
+    const fresh = weapon(new Cart({ club: ClubType.Iron }));
+    const dirtied = new Set<string>();
+    for (const scenario of Object.keys(scenarios)) {
+      const used = weapon(usedCart(scenario));
+      for (const key of Object.keys(fresh)) {
+        if (JSON.stringify(used[key]) !== JSON.stringify(fresh[key])) dirtied.add(key);
+      }
+    }
+    expect([...dirtied].sort()).toEqual(Object.keys(fresh).sort());
+  });
+});
+
 describe("Cart health, death and shunting", () => {
   let cart: Cart;
   beforeEach(() => {
@@ -454,8 +570,8 @@ describe("Cart health, death and shunting", () => {
   });
 
   it("starts alive at full HP", () => {
-    expect(cart.health.hp).toBe(STARTING_HP);
-    expect(cart.health.max).toBe(STARTING_HP);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+    expect(cart.health.max).toBe(ARENA_MAX_HEALTH);
     expect(cart.dead).toBe(false);
     expect(cart.respawnTimer).toBe(0);
   });
@@ -492,34 +608,31 @@ describe("Cart health, death and shunting", () => {
 
     cart.revive();
 
-    expect(cart.health.hp).toBe(STARTING_HP);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
     expect(cart.dead).toBe(false);
     expect(cart.respawnTimer).toBe(0);
     expect(cart.speed).toBe(0);
     expect(cart.recoil.x).toBe(0);
     expect(cart.shuntVelocity.z).toBe(0);
   });
+
+  it("revive() tops ammo back up to the starting load, and never takes any away", () => {
+    cart.ammo = 0;
+    cart.revive();
+    expect(cart.ammo).toBe(STARTING_AMMO);
+
+    cart.ammo = STARTING_AMMO + 12;
+    cart.revive();
+    expect(cart.ammo).toBe(STARTING_AMMO + 12);
+  });
 });
 
-describe("stroke bookkeeping", () => {
-  it("sizes health from the maxHealth option and defaults to STARTING_HP", () => {
-    expect(new Cart().health.max).toBe(STARTING_HP);
+describe("health bar sizing", () => {
+  it("sizes health from the maxHealth option and defaults to ARENA_MAX_HEALTH", () => {
+    expect(new Cart().health.max).toBe(ARENA_MAX_HEALTH);
     const sized = new Cart({ maxHealth: 8 });
     expect(sized.health.max).toBe(8);
     expect(sized.health.hp).toBe(8);
-  });
-
-  it("keeps strokesTaken across a respawn but clears it on clearStrokes", () => {
-    const cart = new Cart({ maxHealth: 8 });
-    cart.strokesTaken = 3;
-    cart.health.hp = 0;
-
-    cart.revive();
-    expect(cart.health.hp).toBe(8);
-    expect(cart.strokesTaken).toBe(3);
-
-    cart.clearStrokes();
-    expect(cart.strokesTaken).toBe(0);
   });
 
   it("setMaxHealth resizes and refills", () => {

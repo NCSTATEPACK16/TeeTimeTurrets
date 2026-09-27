@@ -3,6 +3,7 @@ import type { Vec3 } from "../../physics/Ballistics";
 import { createHealth, setMaxHealth } from "../health";
 import type { Health } from "../health";
 import type { SurfaceTuning } from "../surfaces";
+import { ARENA_MAX_HEALTH } from "../matchConfig";
 
 /**
  * The golf cart as tank chassis: chassis heading, an independently-aimed turret, an equipped
@@ -40,6 +41,11 @@ export interface CartIntent {
   aimDelta: number;
   /** True while the swing button is held; the release edge is what fires. */
   fire: boolean;
+  /**
+   * Drop the charge without firing. The trigger then has to be let go before it charges again,
+   * so a cancel with the fire button still down is not immediately a fresh swing.
+   */
+  cancelCharge: boolean;
 }
 
 export enum TireType {
@@ -77,14 +83,8 @@ export const BUCKET_REFILL_AMMO = 30;
 export const MAX_AMMO = 100;
 
 /**
- * Placeholder-but-real starting values, the same status POOL_SIZE had in the ammo spec: tunable
- * by feel once played. At 100 HP the damage table in `sim/combat.ts` makes a full-charge driver
- * hit worth 60, so two clean hits kill and a putter tap does not.
- */
-export const STARTING_HP = 100;
-/**
- * Death is a stroke penalty plus a wait, not a dead end -- long enough to be a real cost, short
- * enough that a hole is never abandoned over it.
+ * Death is a stroke against the team plus a wait -- long enough to be a real cost, short enough
+ * that nobody is sat out of a three-minute match for long.
  */
 export const RESPAWN_DELAY_S = 3;
 
@@ -99,6 +99,23 @@ export const CART_COLLIDER = {
   halfHeight: 0.35,
   get groundOffset(): number {
     return this.radius + this.halfHeight;
+  },
+} as const;
+
+/**
+ * The hitbox a fired ball strikes: a cylinder from the ground to just over the turret pivot.
+ *
+ * The capsule above is the shape the cart *drives* with and tops out at 1.9 m, but the muzzle is
+ * 2.6 m up, so a flat shot at a nearby cart flew clean over it. The hull touches balls only (see
+ * `collisionGroups.ts`), so it changes what a shot can hit without changing how a cart drives.
+ * A cylinder rather than a box because the cart body is never rotated with its heading.
+ */
+export const CART_HULL = {
+  radius: 0.9,
+  height: 2.8,
+  /** Hull centre above the capsule centre, which is the body's origin. */
+  get centreOffset(): number {
+    return this.height / 2 - CART_COLLIDER.groundOffset;
   },
 } as const;
 
@@ -144,21 +161,23 @@ export const TURRET_GEOMETRY = {
 
 /** Starting values for playtesting, not measured constants -- tune by feel. */
 export const CART_TUNING = {
-  /** Forward top speed on a surface with no penalty, m/s (~31 mph: arcade, not a real cart). */
-  topSpeed: 14,
+  /**
+   * Forward top speed on a surface with no penalty, m/s (~45 mph: "somewhat realistic but a lot
+   * of action", the user's call on 2026-09-24). Rough takes it to ~14 m/s, so leaving the fairway
+   * still costs something.
+   */
+  topSpeed: 20,
   /** Reverse is deliberately slow enough that turning around beats backing up. */
-  reverseTopSpeed: 5,
-  accel: 9,
-  brakeDecel: 18,
+  reverseTopSpeed: 7,
+  accel: 16,
+  brakeDecel: 24,
   coastDecel: 3.5,
   /** Radians per second of chassis yaw at full grip and full steering authority. */
-  steerRate: 1.9,
+  steerRate: 2.4,
   /** Speed at which steering reaches full authority. */
-  steerFullSpeed: 6,
+  steerFullSpeed: 8,
   /** Steering authority floor, so a stopped cart can still pivot instead of locking up. */
   pivotAuthority: 0.25,
-  /** Recoil speed per m/s of launch speed. Driver at full charge kicks ~6 m/s. */
-  recoilCoefficient: 0.15,
   /** Exponential decay rate of the recoil velocity, per second (~0.3 s half-life). */
   recoilDecay: 2.2,
   /** Lowest surface multiplier a tire choice can drag the cart down to. */
@@ -172,11 +191,7 @@ export interface CartOptions {
   heading?: number;
   /** Turret angle *relative to the chassis*. 0 aims straight over the bonnet. */
   turretOffset?: number;
-  /**
-   * Size of the health bar. Cart-only mode passes `2 * hole.par` -- the hole's par is the
-   * number of strokes it is worth, and health is that budget doubled. Defaults to STARTING_HP
-   * for a cart built without a hole (tests, and the dormant stationary path).
-   */
+  /** Size of the health bar. Defaults to `ARENA_MAX_HEALTH`. */
   maxHealth?: number;
 }
 
@@ -241,14 +256,6 @@ export class Cart {
    */
   protectedFor: number;
   /**
-   * Strokes taken this match: one per ball hit, one per water entry. The match score.
-   *
-   * A real counter rather than `health.max - health.hp`, because a respawn refills the bar and
-   * a derived value would silently reset the score with it. Cart-vs-cart shunting deliberately
-   * does not touch this -- ramming is a shove, not a stroke (spec section 5).
-   */
-  strokesTaken: number;
-  /**
    * True while this cart is standing on a hazard surface. The edge into water is what costs a
    * stroke, not the state -- a cart parked in the shallows must not be drained every tick.
    * Owned here rather than in a parallel array in `world.ts` so it cannot fall out of step with
@@ -263,9 +270,13 @@ export class Cart {
   ammo: number;
 
   private club: ClubType;
+  /** The club this cart was built with, which a rematch goes back to. See `rearm`. */
+  private readonly startingClub: ClubType;
   private reload = 0;
   private chargeHeld = 0;
   private wasFiring = false;
+  /** Set by a cancel; cleared when the trigger is let go. See `CartIntent.cancelCharge`. */
+  private cancelled = false;
 
   constructor(options: CartOptions = {}) {
     const start = options.position ?? { x: 0, y: 0, z: 0 };
@@ -274,16 +285,16 @@ export class Cart {
     this.turretOffset = options.turretOffset ?? 0;
     this.speed = 0;
     this.tire = options.tire ?? TireType.Street;
-    this.club = options.club ?? ClubType.Driver;
+    this.club = options.club ?? ClubType.Putter;
+    this.startingClub = this.club;
     this.recoil = { x: 0, z: 0 };
     this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
     this.ammo = STARTING_AMMO;
-    this.health = createHealth(options.maxHealth ?? STARTING_HP);
+    this.health = createHealth(options.maxHealth ?? ARENA_MAX_HEALTH);
     this.dead = false;
     this.respawnTimer = 0;
     this.protectedFor = 0;
-    this.strokesTaken = 0;
     this.wasInWater = false;
     this.lastSafePosition = { x: start.x, y: start.y, z: start.z };
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
@@ -342,19 +353,35 @@ export class Cart {
     this.recoil.z = 0;
     this.shuntVelocity.x = 0;
     this.shuntVelocity.z = 0;
+    // A cart comes back able to fight. Topped up, not reset: dying never costs a cart the ammo it
+    // had gathered above the starting load.
+    this.ammo = Math.max(this.ammo, STARTING_AMMO);
   }
 
   /**
-   * Resize the health bar for a new hole's par. Refills, so a hole always opens at full HP --
-   * `strokesTaken` is deliberately untouched, since it spans the match rather than the hole.
+   * The weapon back to how a new cart of this loadout has it: its starting club and load, no
+   * reload pending, nothing charged, the trigger up. `Sim.reset`'s half of a rematch for the cart.
+   *
+   * Not part of `revive()`, on purpose. Coming back from a death is not a new match: a cart keeps
+   * the club it chose and the ammo it gathered above the starting load (see `revive`).
    */
-  setMaxHealth(max: number): void {
-    setMaxHealth(this.health, max);
+  rearm(): void {
+    this.club = this.startingClub;
+    this.ammo = STARTING_AMMO;
+    this.reload = 0;
+    this.chargeHeld = 0;
+    this.wasFiring = false;
+    this.cancelled = false;
+    this.shot.fired = false;
+    this.shot.hasBall = false;
+    this.shot.club = this.club;
+    this.shot.charge01 = 0;
+    this.shot.yaw = 0;
   }
 
-  /** Zeroes the match score. Called by `Sim.reset()`, never by a respawn. */
-  clearStrokes(): void {
-    this.strokesTaken = 0;
+  /** Resize the health bar -- an armour upgrade. Refills, so the change never leaves a half bar. */
+  setMaxHealth(max: number): void {
+    setMaxHealth(this.health, max);
   }
 
   /** Clamps to MAX_AMMO. Used by bucket refills and landed-ball pickups alike. */
@@ -380,16 +407,19 @@ export class Cart {
     const stats = CLUB_STATS[this.club];
     const charge = clamp01(charge01);
     const launchSpeed = stats.minSpeed + (stats.maxSpeed - stats.minSpeed) * charge;
-    const kick = launchSpeed * CART_TUNING.recoilCoefficient;
-
-    this.recoil.x -= Math.cos(this.turretYaw) * kick;
-    this.recoil.z -= Math.sin(this.turretYaw) * kick;
 
     this.reload = stats.reloadSeconds;
     this.chargeHeld = 0;
 
     const hasBall = this.ammo > 0;
-    if (hasBall) this.ammo -= 1;
+    if (hasBall) {
+      this.ammo -= 1;
+      // The club's own kick, scaled by how hard the ball left. A blank throws nothing, so it
+      // pushes against nothing.
+      const kick = (stats.recoil * launchSpeed) / stats.maxSpeed;
+      this.recoil.x -= Math.cos(this.turretYaw) * kick;
+      this.recoil.z -= Math.sin(this.turretYaw) * kick;
+    }
 
     this.shot.fired = true;
     this.shot.hasBall = hasBall;
@@ -426,6 +456,15 @@ export class Cart {
 
   /** Charge on hold, fire on the release edge. Charging is blocked while reloading. */
   private stepSwing(intent: CartIntent, dt: number): void {
+    if (intent.cancelCharge) {
+      this.chargeHeld = 0;
+      this.cancelled = true;
+    }
+    if (this.cancelled) {
+      if (!intent.fire) this.cancelled = false;
+      this.wasFiring = intent.fire;
+      return;
+    }
     if (intent.fire) {
       if (this.canFire) {
         this.chargeHeld = clamp01(this.chargeHeld + dt / CLUB_STATS[this.club].chargeSeconds);

@@ -8,9 +8,7 @@ import {
 import type { BannerSource } from "./bannerFeed";
 
 const QUIET: BannerSource = {
-  holedOut: false,
-  lastShotInWater: false,
-  lastShotOutOfBounds: false,
+  playerInWater: false,
   playerDead: false,
   playerKills: 0,
 };
@@ -31,26 +29,26 @@ describe("BannerFeed", () => {
   it("fires on the rising edge of an event, then holds at full for the dwell", () => {
     const feed = new BannerFeed();
     feed.update(QUIET, 1 / 60);
-    feed.update({ ...QUIET, lastShotInWater: true }, 1 / 60);
+    feed.update({ ...QUIET, playerInWater: true }, 1 / 60);
 
     const v = view(feed);
     expect(v.visible).toBe(true);
     expect(v.headline).toBe("WATER HAZARD");
-    expect(v.consequence).toBe("PLUS ONE STROKE");
+    expect(v.consequence).toBe("MINUS ONE HP");
     expect(v.opacity).toBe(1);
   });
 
   it("does not re-fire while the flag stays true -- an event is an edge", () => {
     const feed = new BannerFeed();
-    feed.update({ ...QUIET, lastShotInWater: true }, 1 / 60); // baseline call captures true, no fire
+    feed.update({ ...QUIET, playerInWater: true }, 1 / 60); // baseline call captures true, no fire
     // The first update baselines; drive an actual edge from false -> true.
     const feed2 = new BannerFeed();
     feed2.update(QUIET, 1 / 60);
-    feed2.update({ ...QUIET, lastShotInWater: true }, 1 / 60);
+    feed2.update({ ...QUIET, playerInWater: true }, 1 / 60);
     // Hold the flag true and let it dwell down past a full banner lifetime.
     let ticks = 0;
     for (let t = 0; t < BANNER_DWELL_S + BANNER_FADE_S + 1; t += 1 / 60) {
-      feed2.update({ ...QUIET, lastShotInWater: true }, 1 / 60);
+      feed2.update({ ...QUIET, playerInWater: true }, 1 / 60);
       ticks++;
     }
     expect(ticks).toBeGreaterThan(0);
@@ -86,7 +84,7 @@ describe("BannerFeed", () => {
     const feed = new BannerFeed();
     feed.update(QUIET, 1 / 60);
     // Water and a kill on the same tick: the kill outranks the hazard.
-    feed.update({ ...QUIET, lastShotInWater: true, playerKills: 1 }, 1 / 60);
+    feed.update({ ...QUIET, playerInWater: true, playerKills: 1 }, 1 / 60);
     expect(view(feed).headline).toBe("ENEMY DOWN");
   });
 

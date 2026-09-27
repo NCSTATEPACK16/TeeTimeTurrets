@@ -65,6 +65,20 @@ describe("intentFromKeys held actions", () => {
     expect(intentFromKeys(NONE, held("Space"), 0).fire).toBe(false);
   });
 
+  it("fires while the left mouse button is held", () => {
+    expect(intentFromKeys(held("Mouse0"), NONE, 0).fire).toBe(true);
+  });
+
+  it("cancels the charge on the tick the right mouse button goes down, not while it is held", () => {
+    expect(intentFromKeys(held("Mouse2"), held("Mouse2"), 0).cancelCharge).toBe(true);
+    expect(intentFromKeys(held("Mouse2"), NONE, 0).cancelCharge).toBe(false);
+  });
+
+  it("clears a cancel from a reused intent on the next tick", () => {
+    const out = intentFromKeys(held("Mouse2"), held("Mouse2"), 0);
+    expect(intentFromKeys(NONE, NONE, 0, out).cancelCharge).toBe(false);
+  });
+
   it("brakes while shift is held", () => {
     expect(intentFromKeys(held("ShiftLeft"), NONE, 0).brake).toBe(true);
   });

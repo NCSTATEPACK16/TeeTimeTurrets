@@ -1,16 +1,12 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Cart, STARTING_HP } from "./entities/Cart";
-import { Pin } from "./entities/Pin";
-import { Target } from "./entities/Target";
+import { Cart } from "./entities/Cart";
+import { ARENA_MAX_HEALTH } from "./matchConfig";
 import {
   CombatRegistry,
-  MAX_HIT_DAMAGE,
-  MIN_HIT_DAMAGE,
-  SHUNT_DAMAGE_PER_MPS,
+  RAM_MAX_DAMAGE,
   SHUNT_MIN_SPEED,
   STROKE_DAMAGE,
-  hitDamage,
   processContacts,
 } from "./combat";
 import type { CollisionEventSource } from "./combat";
@@ -22,7 +18,7 @@ import type { Stats } from "./stats";
  * Dispatch is tested against a fake queue exposing only `drainCollisionEvents` -- the whole
  * surface `processContacts` uses -- so the contact cases can be scripted exactly instead of
  * being staged in a physics world and hoped for. The entities either side of a contact
- * (`Target`, `Cart`, ball bodies) are the real ones.
+ * (`Cart`, ball bodies) are the real ones.
  */
 
 type Event = [number, number, boolean];
@@ -39,7 +35,6 @@ describe("combat contact resolution", () => {
   let world: RAPIER.World;
   let registry: CombatRegistry;
   let stats: Stats;
-  let target: Target;
   let cart: Cart;
   let cartHandle: number;
   let ball: PooledBall;
@@ -52,7 +47,6 @@ describe("combat contact resolution", () => {
   let hits: number[];
   /** Every `onBallHit` impact position, in order -- where a hit marker would float. */
   let hitPositions: { x: number; y: number; z: number }[];
-  let pinStrikes: number;
 
   beforeAll(async () => {
     await RAPIER.init();
@@ -74,17 +68,17 @@ describe("combat contact resolution", () => {
         killed.push(c);
         kills.push({ victim, killer });
       },
-      onPinStruck: () => pinStrikes++,
     };
   }
 
-  /** A pooled ball, shaped as `BallPool` builds them. `firedBy` defaults to rig 0 -- the player --
-   *  because that is what every pre-Stage-C test implicitly assumed. */
-  function makeBall(vx: number, firedBy = 0): { ball: PooledBall; handle: number } {
+  /** A pooled ball, shaped as `BallPool` builds them. `firedBy` defaults to rig 1 -- an enemy of
+   *  the rig-0 cart these tests shoot at. It was 0 until friendly fire went off, and a cart's own
+   *  ball no longer hurts it. */
+  function makeBall(vx: number, firedBy = 1): { ball: PooledBall; handle: number } {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(0.15).setDensity(1130), body);
     body.setLinvel({ x: vx, y: 0, z: 0 }, true);
-    return { ball: { body, state: "flying", landedAt: 0, firedBy }, handle: collider.handle };
+    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false, damage: STROKE_DAMAGE }, handle: collider.handle };
   }
 
   beforeEach(() => {
@@ -96,10 +90,6 @@ describe("combat contact resolution", () => {
     kills = [];
     hits = [];
     hitPositions = [];
-    pinStrikes = 0;
-
-    target = new Target(world, { x: 10, y: 0, z: 0 });
-    registry.registerTarget(target);
 
     cart = new Cart({ position: { x: 0, y: 0, z: 0 } });
     const cartBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
@@ -112,39 +102,11 @@ describe("combat contact resolution", () => {
     registry.registerBall(ballHandle, ball);
   });
 
-  it("a ball hitting a target part knocks the rig down and counts one hit and one target", () => {
-    const part = target.part("torso");
-    processContacts(queueOf([ballHandle, part.collider.handle, true]), ctx());
-
-    expect(target.isDown).toBe(true);
-    expect(stats.directHits).toBe(1);
-    expect(stats.targetsDown).toBe(1);
-  });
-
-  it("counts targetsDown once per target however many parts are hit", () => {
-    processContacts(
-      queueOf(
-        [ballHandle, target.part("torso").collider.handle, true],
-        [ballHandle, target.part("head").collider.handle, true],
-      ),
-      ctx(),
-    );
-
-    expect(stats.directHits).toBe(2);
-    expect(stats.targetsDown).toBe(1);
-  });
-
-  it("shoves the struck part along the ball's travel direction", () => {
-    const part = target.part("torso");
-    processContacts(queueOf([part.collider.handle, ballHandle, true]), ctx());
-    expect(part.body.linvel().x).toBeGreaterThan(0);
-  });
-
   it("a ball hitting a cart costs one point of health and counts a direct hit", () => {
     processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
 
     expect(stats.directHits).toBe(1);
-    expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
   });
 
   it("reports where the ball was at impact, so a hit marker can float there", () => {
@@ -165,16 +127,6 @@ describe("combat contact resolution", () => {
       // 3, and specifically not 0. Every ball reported 0 before Stage C, because there was
       // nowhere for the answer to live -- and 0 is the player, so it read as correct.
       expect(hits).toEqual([3]);
-    });
-
-    it("reports the shooter of a ball that hit a target too", () => {
-      // The control on the assertion above, and the other half of pitfall §4: the target path
-      // credited `directHits` inline with exactly the same blind spot.
-      const fromBot = makeBall(20, 2);
-      registry.registerBall(fromBot.handle, fromBot.ball);
-      processContacts(queueOf([fromBot.handle, target.part("torso").collider.handle, true]), ctx());
-
-      expect(hits).toEqual([2]);
     });
 
     it("attributes a lethal hit to the shooter and names the victim's own index", () => {
@@ -208,13 +160,63 @@ describe("combat contact resolution", () => {
     });
   });
 
+  describe("friendly fire is off", () => {
+    it("a teammate's ball does no damage and earns its shooter nothing", () => {
+      // Rig 2 is on rig 0's team (`teamOf` alternates).
+      const fromAlly = makeBall(20, 2);
+      registry.registerBall(fromAlly.handle, fromAlly.ball);
+      processContacts(queueOf([fromAlly.handle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(hits).toEqual([]);
+      expect(kills).toEqual([]);
+    });
+
+    it("a cart's own ball does not hurt it", () => {
+      const own = makeBall(20, 0);
+      registry.registerBall(own.handle, own.ball);
+      processContacts(queueOf([own.handle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(hits).toEqual([]);
+    });
+
+    it("an enemy's ball still does damage", () => {
+      // The control for the two above: without it they pass against a `ballHitsCart` that never
+      // does anything.
+      const fromEnemy = makeBall(20, 3);
+      registry.registerBall(fromEnemy.handle, fromEnemy.ball);
+      processContacts(queueOf([fromEnemy.handle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
+      expect(hits).toEqual([3]);
+    });
+
+    it("teammates who collide take no damage but are still shoved apart", () => {
+      const ally = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
+      const allyBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
+      const allyHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), allyBody).handle;
+      registry.registerCart(allyHandle, ally, 2);
+      cart.heading = 0;
+      cart.speed = 14;
+      ally.speed = 14;
+
+      processContacts(queueOf([cartHandle, allyHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(ally.health.hp).toBe(ARENA_MAX_HEALTH);
+      // Pushed apart along the line between them: the ally is at +x, so the cart goes -x.
+      expect(cart.shuntVelocity.x).toBeLessThan(-1);
+      expect(ally.shuntVelocity.x).toBeGreaterThan(1);
+    });
+  });
+
   describe("spawn protection", () => {
     it("takes no damage and earns the shooter no credit while it holds", () => {
       cart.protectedFor = 3;
       processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
 
-      expect(cart.health.hp).toBe(STARTING_HP);
-      expect(cart.strokesTaken).toBe(0);
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
       expect(hits).toEqual([]);
       expect(stats.directHits).toBe(0);
     });
@@ -225,8 +227,8 @@ describe("combat contact resolution", () => {
       cart.protectedFor = 0;
       processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
 
-      expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
-      expect(hits).toEqual([0]);
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
+      expect(hits).toEqual([1]);
     });
 
     it("does not stop a ram", () => {
@@ -243,14 +245,8 @@ describe("combat contact resolution", () => {
 
       processContacts(queueOf([cartHandle, otherHandle, true]), ctx());
 
-      expect(cart.health.hp).toBeLessThan(STARTING_HP);
+      expect(cart.health.hp).toBeLessThan(ARENA_MAX_HEALTH);
     });
-  });
-
-  it("clamps a full-charge driver hit to MAX_HIT_DAMAGE and a putter tap to MIN_HIT_DAMAGE", () => {
-    expect(hitDamage(40)).toBe(MAX_HIT_DAMAGE);
-    expect(hitDamage(2)).toBe(MIN_HIT_DAMAGE);
-    expect(hitDamage(0)).toBe(MIN_HIT_DAMAGE);
   });
 
   it("costs a flat point of health regardless of the cart's own speed", () => {
@@ -260,7 +256,7 @@ describe("combat contact resolution", () => {
     cart.heading = 0;
     cart.speed = 30;
     processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
-    expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
   });
 
   it("reports a kill exactly once even when two lethal contacts drain in the same tick", () => {
@@ -274,26 +270,56 @@ describe("combat contact resolution", () => {
     expect(killed).toEqual([cart]);
   });
 
-  it("damages both carts in a shunt and shoves both apart, never applying an impulse", () => {
+  /** An enemy cart parked 1.2 m ahead of `cart` along +x, facing it. */
+  function parkedEnemy(): Cart {
     const other = new Cart({ position: { x: 1.2, y: 0, z: 0 }, heading: Math.PI });
     const otherBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     const otherHandle = world.createCollider(RAPIER.ColliderDesc.capsule(0.35, 0.6), otherBody).handle;
     registry.registerCart(otherHandle, other, 1);
+    otherHandles.set(other, otherHandle);
+    return other;
+  }
+  const otherHandles = new Map<Cart, number>();
 
+  it("caps a head-on at the ram maximum for both carts and shoves both apart, never an impulse", () => {
+    const other = parkedEnemy();
     cart.heading = 0;
     cart.speed = 14;
-    other.speed = 14; // heading pi, so the two close at 28 m/s
+    other.speed = 14; // heading pi, so the two close at 28 m/s: a mutual ram, nobody's victim
 
-    processContacts(queueOf([cartHandle, otherHandle, true]), ctx());
+    processContacts(queueOf([cartHandle, otherHandles.get(other)!, true]), ctx());
 
-    const expected = 28 * SHUNT_DAMAGE_PER_MPS;
-    expect(cart.health.hp).toBeCloseTo(STARTING_HP - expected, 6);
-    expect(other.health.hp).toBeCloseTo(STARTING_HP - expected, 6);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - RAM_MAX_DAMAGE);
+    expect(other.health.hp).toBe(ARENA_MAX_HEALTH - RAM_MAX_DAMAGE);
     // Pushed apart along the line between them: cart is at x=0, other at x=1.2.
     expect(cart.shuntVelocity.x).toBeLessThan(0);
     expect(other.shuntVelocity.x).toBeGreaterThan(0);
-    // A shunt is not a stat-tracked shot, and the cart body must be untouched by it.
+    // A shunt is not a stat-tracked shot.
     expect(stats.directHits).toBe(0);
+  });
+
+  it("hurts but does not kill a full-health cart rammed at 10 m/s", () => {
+    // At the old 0.8 damage per m/s this was 8 damage: every ram at speed was a kill.
+    const other = parkedEnemy();
+    cart.heading = 0;
+    cart.speed = 10;
+
+    processContacts(queueOf([cartHandle, otherHandles.get(other)!, true]), ctx());
+
+    expect(other.dead).toBe(false);
+    expect(other.health.hp).toBe(ARENA_MAX_HEALTH - 1);
+    expect(kills).toEqual([]);
+  });
+
+  it("costs the rammer half what it deals the parked cart", () => {
+    const other = parkedEnemy();
+    cart.heading = 0;
+    cart.speed = 14;
+
+    processContacts(queueOf([cartHandle, otherHandles.get(other)!, true]), ctx());
+
+    expect(other.health.hp).toBe(ARENA_MAX_HEALTH - 2);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - 1);
   });
 
   it("ignores a shunt below SHUNT_MIN_SPEED -- parking is not ramming", () => {
@@ -306,20 +332,20 @@ describe("combat contact resolution", () => {
 
     processContacts(queueOf([cartHandle, otherHandle, true]), ctx());
 
-    expect(cart.health.hp).toBe(STARTING_HP);
-    expect(other.health.hp).toBe(STARTING_HP);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+    expect(other.health.hp).toBe(ARENA_MAX_HEALTH);
     expect(cart.shuntVelocity.x).toBe(0);
   });
 
   it("ignores separation events -- only the start of a contact is a hit", () => {
     processContacts(queueOf([ballHandle, cartHandle, false]), ctx());
-    expect(cart.health.hp).toBe(STARTING_HP);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
     expect(stats.directHits).toBe(0);
   });
 
   it("ignores contacts involving anything it does not know about, like the ground", () => {
     processContacts(queueOf([ballHandle, 9999, true], [4242, cartHandle, true]), ctx());
-    expect(cart.health.hp).toBe(STARTING_HP);
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
     expect(stats.directHits).toBe(0);
   });
 
@@ -330,27 +356,45 @@ describe("combat contact resolution", () => {
     expect(stats.directHits).toBe(0);
   });
 
-  it("forgets a target's colliders once it is unregistered", () => {
-    const handle = target.part("torso").collider.handle;
-    registry.unregisterTarget(target);
-    processContacts(queueOf([ballHandle, handle, true]), ctx());
-    expect(target.isDown).toBe(false);
-    expect(stats.directHits).toBe(0);
+  describe("a ball damages once per flight", () => {
+    it("touching the hull and the capsule of one cart costs one point, not two", () => {
+      const hullHandle = world.createCollider(
+        RAPIER.ColliderDesc.cylinder(1.4, 0.9),
+        world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
+      ).handle;
+      registry.registerCart(hullHandle, cart, 0);
+
+      processContacts(queueOf([ballHandle, hullHandle, true], [ballHandle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
+      expect(stats.directHits).toBe(1);
+    });
+
+    it("does the damage the ball carries: a driver ball hits for its club's damage", () => {
+      ball.damage = 2;
+      processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - 2);
+    });
+
+    it("a ball that has landed does no damage when a cart drives into it", () => {
+      ball.state = "landed";
+      processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(stats.directHits).toBe(0);
+    });
   });
 
-  describe("a ball hit is exactly one stroke", () => {
-    it("costs one point of health and one stroke, whatever the ball's speed", () => {
+  describe("a ball hit is exactly one point", () => {
+    it("costs one point of health, whatever the ball's speed", () => {
       const slow = makeBall(3);
       registry.registerBall(slow.handle, slow.ball);
       processContacts(queueOf([slow.handle, cartHandle, true]), ctx());
-      expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE);
-      expect(cart.strokesTaken).toBe(1);
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
 
       const fast = makeBall(40);
       registry.registerBall(fast.handle, fast.ball);
       processContacts(queueOf([fast.handle, cartHandle, true]), ctx());
-      expect(cart.health.hp).toBe(STARTING_HP - STROKE_DAMAGE * 2);
-      expect(cart.strokesTaken).toBe(2);
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE * 2);
     });
 
     it("still counts the hit as a direct hit for accuracy stats", () => {
@@ -360,21 +404,24 @@ describe("combat contact resolution", () => {
       expect(stats.directHits).toBe(1);
     });
 
-    it("kills on the hit that empties a bar sized to par", () => {
+    it("kills on the hit that empties the bar", () => {
       const small = new Cart({ maxHealth: 2 });
       const collider = world.createCollider(
         RAPIER.ColliderDesc.capsule(0.35, 0.6),
         world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
       );
       registry.registerCart(collider.handle, small, 1);
-      const ball = makeBall(20);
+      // From rig 0: the default shooter is rig 1, which would be this cart shooting itself.
+      const ball = makeBall(20, 0);
       registry.registerBall(ball.handle, ball.ball);
 
       processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
       expect(killed).toHaveLength(0);
-      processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
+      // A second ball: one flight is one hit.
+      const second = makeBall(20, 0);
+      registry.registerBall(second.handle, second.ball);
+      processContacts(queueOf([second.handle, collider.handle, true]), ctx());
       expect(small.health.hp).toBe(0);
-      expect(small.strokesTaken).toBe(2);
       expect(killed).toEqual([small]);
     });
 
@@ -383,12 +430,11 @@ describe("combat contact resolution", () => {
       const ball = makeBall(20);
       registry.registerBall(ball.handle, ball.ball);
       processContacts(queueOf([ball.handle, cartHandle, true]), ctx());
-      expect(cart.health.hp).toBe(STARTING_HP);
-      expect(cart.strokesTaken).toBe(0);
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
       expect(stats.directHits).toBe(0);
     });
 
-    it("leaves shunt damage velocity-scaled and free of strokes", () => {
+    it("leaves shunt damage velocity-scaled", () => {
       const other = new Cart();
       const collider = world.createCollider(
         RAPIER.ColliderDesc.capsule(0.35, 0.6),
@@ -402,71 +448,7 @@ describe("combat contact resolution", () => {
 
       processContacts(queueOf([cartHandle, collider.handle, true]), ctx());
 
-      expect(cart.health.hp).toBeLessThan(STARTING_HP - STROKE_DAMAGE);
-      expect(cart.strokesTaken).toBe(0);
-      expect(other.strokesTaken).toBe(0);
-    });
-  });
-
-  /**
-   * The pin's own seam. `world.props.test.ts` proves the pin falls when a ball actually hits it in a
-   * live world; these say what the rule *is*, including the pairings it must ignore -- a scripted
-   * contact is the only way to ask about a pairing the physics will not produce on demand.
-   */
-  describe("the pin", () => {
-    let pin: Pin;
-    let pinHandle: number;
-
-    beforeEach(() => {
-      pin = new Pin();
-      pinHandle = world.createCollider(
-        RAPIER.ColliderDesc.cylinder(1.05, 0.025),
-        world.createRigidBody(RAPIER.RigidBodyDesc.fixed()),
-      ).handle;
-      registry.registerPin(pinHandle, pin);
-    });
-
-    it("is knocked down by fired ammo", () => {
-      processContacts(queueOf([ballHandle, pinHandle, true]), ctx());
-      expect(pinStrikes).toBe(1);
-    });
-
-    it("is knocked down by the played course ball, whichever order the handles arrive in", () => {
-      const played = makeBall(9);
-      registry.registerCourseBall(played.handle, played.ball.body);
-      processContacts(queueOf([pinHandle, played.handle, true]), ctx());
-      expect(pinStrikes).toBe(1);
-    });
-
-    it("costs no health, no stroke and no stats -- it is not a scoring target", () => {
-      processContacts(queueOf([ballHandle, pinHandle, true]), ctx());
-      expect(stats.directHits).toBe(0);
-      expect(stats.targetsDown).toBe(0);
-      expect(cart.strokesTaken).toBe(0);
-      expect(killed).toHaveLength(0);
-    });
-
-    it("is not felled by a cart contact here -- that path is the character controller's", () => {
-      // Not an oversight: a kinematic cart never reaches this collider's narrow phase, because the
-      // controller stops it CHARACTER_OFFSET short of touching. `world.ts`'s `checkPinRun` owns it,
-      // and `world.props.test.ts` drives a real cart into a real pin to prove it.
-      processContacts(queueOf([cartHandle, pinHandle, true]), ctx());
-      expect(pinStrikes).toBe(0);
-    });
-
-    it("stops answering as the pin once its handle has been unregistered", () => {
-      // Rapier reuses collider handles. A felled pin whose handle stayed in the registry would make
-      // whichever collider inherited that handle report as the pin, so the unregister is not
-      // housekeeping -- it is what stops a later target or a rebuilt ground answering for it.
-      registry.unregisterPin(pinHandle);
-      processContacts(queueOf([ballHandle, pinHandle, true]), ctx());
-      expect(pinStrikes).toBe(0);
-    });
-
-    it("ignores a contact between the pin and a target part", () => {
-      processContacts(queueOf([target.part("torso").collider.handle, pinHandle, true]), ctx());
-      expect(pinStrikes).toBe(0);
-      expect(target.isDown).toBe(false);
+      expect(cart.health.hp).toBeLessThan(ARENA_MAX_HEALTH - STROKE_DAMAGE);
     });
   });
 });

@@ -2,15 +2,20 @@ import { describe, expect, it } from "vitest";
 import { neutralIntent } from "../input/InputSource";
 import type { PlayerIntent } from "../input/InputSource";
 import { Cart } from "./entities/Cart";
+import { ClubType } from "../physics/Ballistics";
+import { solveShot } from "./aimSolver";
 import { mulberry32 } from "./rng";
 import {
-  BOT_CHARGE_RELEASE,
   BOT_ENGAGE_RANGE,
   BOT_FIRE_RANGE,
   BOT_FIRE_TOLERANCE,
   BOT_STANDOFF,
+  BOT_STUCK_S,
+  BOT_UNSTICK_S,
   computeBotIntent,
+  createBotMind,
 } from "./bot";
+import type { BotMind } from "./bot";
 
 /** A distance the bot both aims and fires at: within its putter's reach. */
 const INSIDE_FIRE_RANGE = BOT_FIRE_RANGE - 2;
@@ -26,9 +31,10 @@ function intentFor(
   bot: Cart,
   target: { x: number; z: number; dead?: boolean },
   random: () => number = mulberry32(1),
+  mind: BotMind | null = null,
 ): PlayerIntent {
   const out = neutralIntent();
-  computeBotIntent(bot, { x: target.x, z: target.z, dead: target.dead ?? false }, DT, random, out);
+  computeBotIntent(bot, { x: target.x, z: target.z, dead: target.dead ?? false }, DT, random, out, mind);
   return out;
 }
 
@@ -102,7 +108,7 @@ describe("computeBotIntent", () => {
     // Cart.step charges while `fire` is held; once charged enough the bot lets go, and the
     // release edge is what actually fires. This is how a stateless function drives a
     // charge-and-release weapon without carrying a timer of its own.
-    (bot as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
+    (bot as unknown as { chargeHeld: number }).chargeHeld = 1;
     expect(intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }).fire).toBe(false);
   });
 
@@ -132,7 +138,7 @@ describe("computeBotIntent", () => {
 
   it("nudges the shot inside the club's spread cone on the release tick", () => {
     const bot = botAt(0, 0);
-    (bot as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
+    (bot as unknown as { chargeHeld: number }).chargeHeld = 1;
     // A random that returns 1 puts the spread at the positive edge of the cone.
     const spread = intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }, () => 1).aimDelta;
     const centred = intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }, () => 0.5).aimDelta;
@@ -142,8 +148,8 @@ describe("computeBotIntent", () => {
   it("is deterministic for a fixed seed", () => {
     const a = botAt(0, 0);
     const b = botAt(0, 0);
-    (a as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
-    (b as unknown as { chargeHeld: number }).chargeHeld = BOT_CHARGE_RELEASE;
+    (a as unknown as { chargeHeld: number }).chargeHeld = 1;
+    (b as unknown as { chargeHeld: number }).chargeHeld = 1;
     expect(intentFor(a, { x: INSIDE_FIRE_RANGE, z: 0 }, mulberry32(7)).aimDelta).toBe(
       intentFor(b, { x: INSIDE_FIRE_RANGE, z: 0 }, mulberry32(7)).aimDelta,
     );
@@ -151,5 +157,113 @@ describe("computeBotIntent", () => {
 
   it("never asks to change club", () => {
     expect(intentFor(botAt(0, 0), { x: INSIDE_FIRE_RANGE, z: 0 }).selectClub).toBeNull();
+  });
+});
+
+describe("bot shot solving", () => {
+  it("charges harder for a far target than a near one", () => {
+    expect(solveShot(ClubType.Putter, 35)).toBeGreaterThan(solveShot(ClubType.Putter, BOT_STANDOFF));
+  });
+
+  it("lets go at the charge solved for its range, not at one fixed charge", () => {
+    const near = BOT_STANDOFF;
+    const far = BOT_FIRE_RANGE - 1;
+    const between = (solveShot(ClubType.Putter, near) + solveShot(ClubType.Putter, far)) / 2;
+
+    const a = botAt(0, 0);
+    (a as unknown as { chargeHeld: number }).chargeHeld = between;
+    expect(intentFor(a, { x: near, z: 0 }).fire, "near: charged enough, so it lets go").toBe(false);
+
+    const b = botAt(0, 0);
+    (b as unknown as { chargeHeld: number }).chargeHeld = between;
+    expect(intentFor(b, { x: far, z: 0 }).fire, "far: not charged enough, so it keeps holding").toBe(true);
+  });
+});
+
+describe("bot ammo seeking", () => {
+  it("with no ammo, drives to the nearest ammo it knows of instead of at the enemy", () => {
+    const bot = botAt(0, 0);
+    bot.ammo = 0;
+    const mind = createBotMind(0.5);
+    mind.hasAmmoTarget = true;
+    mind.ammoX = 0;
+    mind.ammoZ = 20;
+    const intent = intentFor(bot, { x: 20, z: 0 }, mulberry32(1), mind);
+    expect(intent.steer).toBe(1); // toward +z, the ammo; the enemy dead ahead would be 0
+    expect(intent.throttle).toBe(1);
+  });
+
+  it("drives right onto the ammo rather than stopping at a standoff from it", () => {
+    const bot = botAt(0, 0);
+    bot.ammo = 0;
+    const mind = createBotMind(0.5);
+    mind.hasAmmoTarget = true;
+    mind.ammoX = 5;
+    mind.ammoZ = 0;
+    // The enemy is inside the standoff, so a bot fighting it would hold station, not drive.
+    const intent = intentFor(bot, { x: BOT_STANDOFF - 3, z: 0 }, mulberry32(1), mind);
+    expect(intent.throttle).toBe(1);
+    expect(intent.brake).toBe(false);
+  });
+
+  it("fights on while it still has ammo, whatever ammo is lying around", () => {
+    const bot = botAt(0, 0);
+    const mind = createBotMind(0.5);
+    mind.hasAmmoTarget = true;
+    mind.ammoX = 0;
+    mind.ammoZ = 20;
+    expect(intentFor(bot, { x: 20, z: 0 }, mulberry32(1), mind).steer).toBe(0);
+  });
+});
+
+describe("bot unsticking", () => {
+  it("backs out after trying to drive for BOT_STUCK_S without getting anywhere", () => {
+    const bot = botAt(0, 0);
+    const mind = createBotMind(0.5);
+    const ticks = Math.ceil(BOT_STUCK_S / DT) + 1;
+    let last = neutralIntent();
+    // The cart never moves: it is wedged against something.
+    for (let i = 0; i < ticks; i++) last = intentFor(bot, { x: 100, z: 0 }, mulberry32(1), mind);
+    expect(last.throttle).toBe(-1);
+    expect(last.steer).not.toBe(0);
+  });
+
+  it("goes back to the fight once it has backed out for BOT_UNSTICK_S", () => {
+    const bot = botAt(0, 0);
+    const mind = createBotMind(0.5);
+    const ticks = Math.ceil((BOT_STUCK_S + BOT_UNSTICK_S) / DT) + 2;
+    let last = neutralIntent();
+    for (let i = 0; i < ticks; i++) {
+      last = intentFor(bot, { x: 100, z: 0 }, mulberry32(1), mind);
+      // Backing out works: the cart moves while reversing.
+      if (last.throttle < 0) bot.position.x -= 0.1;
+    }
+    expect(last.throttle).toBe(1);
+  });
+
+  it("does not count holding station at the standoff as being stuck", () => {
+    const bot = botAt(0, 0);
+    const mind = createBotMind(0.5);
+    const ticks = Math.ceil((BOT_STUCK_S * 2) / DT);
+    for (let i = 0; i < ticks; i++) {
+      expect(intentFor(bot, { x: BOT_STANDOFF - 1, z: 0 }, mulberry32(1), mind).throttle).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+describe("bot skill", () => {
+  it("a low-skill bot throws its shot wider than a high-skill one on the same draw", () => {
+    const shot = (skill: number): number => {
+      const bot = botAt(0, 0);
+      (bot as unknown as { chargeHeld: number }).chargeHeld = 1;
+      return intentFor(bot, { x: INSIDE_FIRE_RANGE, z: 0 }, () => 1, createBotMind(skill)).aimDelta;
+    };
+    expect(shot(0)).toBeGreaterThan(shot(1));
+  });
+
+  it("a high-skill bot slews its turret faster", () => {
+    const slew = (skill: number): number =>
+      Math.abs(intentFor(botAt(0, 0), { x: 0, z: INSIDE_FIRE_RANGE }, mulberry32(1), createBotMind(skill)).aimDelta);
+    expect(slew(1)).toBeGreaterThan(slew(0));
   });
 });

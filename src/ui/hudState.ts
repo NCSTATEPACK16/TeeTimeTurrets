@@ -1,5 +1,4 @@
 import type { ClubType } from "../physics/Ballistics";
-import { toYards } from "../sim/units";
 
 /**
  * The DOM-free half of the HUD: sim state in, display values out. Split from the writing half so
@@ -12,10 +11,6 @@ import { toYards } from "../sim/units";
 
 /** The structural slice of Sim this module needs. Structural so tests need no Rapier world. */
 export interface HudSource {
-  readonly strokes: number;
-  readonly holedOut: boolean;
-  readonly lastShotInWater: boolean;
-  readonly lastShotOutOfBounds: boolean;
   readonly matchTimeRemaining: number;
   readonly cart: {
     readonly equippedClub: ClubType;
@@ -27,20 +22,11 @@ export interface HudSource {
     readonly respawnTimer: number;
     readonly health: { readonly hp: number; readonly max: number };
   };
-  /** The ball, from the most recent fixed step. H17 measures from here, not from the cart. */
-  readonly current: { readonly position: { readonly x: number; readonly y: number; readonly z: number } };
-  /** Only `cupPosition` is read. Structural, so this module still needs no terrain and no Rapier. */
-  readonly terrain: { readonly cupPosition: { readonly x: number; readonly y: number; readonly z: number } };
   /**
-   * True in arena. Optional so every existing fixture -- and stroke play itself -- constructs a
-   * valid source without knowing the mode exists.
+   * The scoreboard. Two methods rather than the arrays behind them, because `Match` keeps those
+   * private and a HUD has no business holding a writable handle to the score.
    */
-  readonly arena?: boolean;
-  /**
-   * The scoreboard, in arena. Two methods rather than the arrays behind them, because `Match`
-   * keeps those private and a HUD has no business holding a writable handle to the score.
-   */
-  readonly match?: {
+  readonly match: {
     teamStrokes(team: number): number;
     pointsFor(index: number): number;
   };
@@ -53,24 +39,13 @@ const ENEMY_TEAM = 1;
 
 export interface HudState {
   clubText: string;
-  strokesText: string;
   charge01: number;
   status: string;
-  /** UI-SPEC H6 and H7. False hides them outright; see the note in deriveHudState below. */
-  combatVisible: boolean;
   healthFraction: number;
   healthText: string;
   ammoText: string;
   timerText: string;
-  /** UI-SPEC H17: whole yards from the ball to the cup, e.g. `"150 yd"`. */
-  pinDistanceText: string;
-  /**
-   * Whether the golf fields (strokes, pin distance) and the arena ones (team score, kills) are
-   * showing. Never both. The strings behind each are derived either way -- see `deriveHudState`.
-   */
-  golfVisible: boolean;
-  arenaVisible: boolean;
-  /** Both sides' deaths, the player's first: `"US 4 — THEM 7"`. */
+  /** Both sides' strokes, the player's first: `"US 4 — THEM 7"`. */
   teamScoreText: string;
   /** The player's own kills: `"KILLS 3"`. */
   pointsText: string;
@@ -81,17 +56,12 @@ export interface HudState {
 export function createHudStateScratch(): HudState {
   return {
     clubText: "",
-    strokesText: "",
     charge01: 0,
     status: "",
-    combatVisible: false,
     healthFraction: 0,
     healthText: "",
     ammoText: "",
     timerText: "",
-    pinDistanceText: "",
-    golfVisible: false,
-    arenaVisible: false,
     teamScoreText: "",
     pointsText: "",
   };
@@ -105,48 +75,14 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   const cart = source.cart;
 
   out.clubText = cart.equippedClub.toUpperCase();
-  out.strokesText = `STROKES ${source.strokes}`;
   out.charge01 = clamp01(cart.charge);
   out.status = statusText(source);
-  // There is one HUD configuration now: the cart is the only way to play, so health and ammo
-  // are always live. UI-SPEC section 5's rule that H6/H7 hide rather than show inert is what
-  // this flag exists for, and it gains a real second condition when CTF and TARGETS land.
-  out.combatVisible = true;
   out.healthFraction = cart.health.max > 0 ? clamp01(cart.health.hp / cart.health.max) : 0;
   out.healthText = `${Math.max(0, Math.round(cart.health.hp))}`;
   out.ammoText = `${Math.max(0, Math.round(cart.ammo))}`;
   out.timerText = formatClock(source.matchTimeRemaining);
-  out.pinDistanceText = `${Math.round(toYards(flatDistance(source)))} yd`;
-
-  // Visibility is the only thing the mode decides. Both sets of strings are derived in both
-  // modes, on purpose: a blank field is a rendering decision and a missing one is a crash, and
-  // this function runs inside the render loop where a throw is a black screen rather than a
-  // wrong number. That is also why `match` is read defensively -- `Sim` always has one, and a
-  // source that claims arena without a scoreboard still has to render.
-  const arena = source.arena === true;
-  out.arenaVisible = arena;
-  out.golfVisible = !arena;
-  out.teamScoreText = `US ${source.match?.teamStrokes(PLAYER_TEAM) ?? 0} — THEM ${
-    source.match?.teamStrokes(ENEMY_TEAM) ?? 0
-  }`;
-  out.pointsText = `KILLS ${source.match?.pointsFor(PLAYER) ?? 0}`;
-}
-
-/**
- * Ball to cup, in the XZ plane.
- *
- * Flat rather than three-dimensional, for the reason `RoundScreen.trackLongestDrive` gives about a
- * drive: a yardage is a distance along the ground, and folding in the drop to a green below you
- * would report a downhill hole as longer than it plays.
- *
- * From the ball rather than from the cart because that is the number a club choice is made against.
- * The cart's own distance to the pin is a different and much less useful figure -- you are not
- * hitting the ball from there.
- */
-function flatDistance(source: HudSource): number {
-  const ball = source.current.position;
-  const cup = source.terrain.cupPosition;
-  return Math.hypot(ball.x - cup.x, ball.z - cup.z);
+  out.teamScoreText = `US ${source.match.teamStrokes(PLAYER_TEAM)} — THEM ${source.match.teamStrokes(ENEMY_TEAM)}`;
+  out.pointsText = `KILLS ${source.match.pointsFor(PLAYER)}`;
 }
 
 /**
@@ -162,11 +98,8 @@ function flatDistance(source: HudSource): number {
  */
 function statusText(source: HudSource): string {
   const cart = source.cart;
-  if (source.holedOut) return "HOLED OUT — R to reset";
   if (cart.dead) return `DESTROYED — RESPAWNING ${(Math.floor(cart.respawnTimer * 10) / 10).toFixed(1)}s`;
   if (!cart.canFire) return `RELOADING ${(Math.floor(cart.reloadRemaining * 10) / 10).toFixed(1)}s`;
-  if (source.lastShotInWater) return "WATER HAZARD — plus one stroke";
-  if (source.lastShotOutOfBounds) return "OUT OF BOUNDS — returned to the tee";
   return cart.ammo > 0 ? "READY" : "NO AMMO — fire a blank to boost";
 }
 

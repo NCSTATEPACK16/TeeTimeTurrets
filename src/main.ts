@@ -5,38 +5,30 @@ import { FIXED_DT, Sim } from "./sim/world";
 import { authoredCourse } from "./sim/authoredCourse";
 import { buildCourseWorld } from "./sim/courseWorld";
 import type { CourseWorld } from "./sim/courseWorld";
+import { arenaFromCourse } from "./sim/arena";
 import { ARENA_BOTS } from "./sim/matchConfig";
-import { Session } from "./sim/session";
-import { parseHoleIndex } from "./devHoleParam";
 import { createLoadout, tireTypeFor } from "./sim/loadout";
+import type { ArenaSource } from "./render/scene";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
-import { RoundScreen } from "./ui/screens/RoundScreen";
-import { ResultsScreen } from "./ui/screens/ResultsScreen";
+import { MatchScreen } from "./ui/screens/MatchScreen";
 import { MatchResultsScreen } from "./ui/screens/MatchResultsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 
 /**
- * Boot and routing. Everything that used to live here -- the sim, the scene, the input, the HUD
- * wiring, the frame view -- is now `RoundScreen`; this file's job is to own the things that
- * outlive any one screen (the renderer, the loop, the course, the round) and to say which screen
- * comes next.
- *
- * That split is Phase 1.75's whole point. One WebGL context is shared by the title backdrop, the
- * round and later the clubhouse; each screen builds and frees its own scene around it.
- *
- * Which hole comes next, the card and the purse are `sim/session.ts`, not locals here. They lived
- * here as three mutable variables and the advance between them was wrong in a way no test could
- * see, because this file has no seam a node test can reach -- see `session.test.ts`.
+ * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
+ * loop, the course and the player's loadout -- and says which screen comes next. One WebGL context
+ * is shared by the title backdrop, the match and the clubhouse; each screen builds and frees its
+ * own scene around it.
  */
 
-/**
- * Fixed until a course-select screen exists. Changing it changes every hole, which is the whole
- * point of the seed -- and is the cheapest way to eyeball generation variety during development.
- */
+/** The course is authored; the seed drives only its seeded detail (bunkers, rough, trees). */
 const COURSE_SEED = 2026;
-const VERSION = "v0.0.1";
+const VERSION = "v0.1.0";
 
-type ScreenName = "title" | "round" | "arena" | "arenaResults" | "results" | "clubhouse";
+/** Coins a new player starts with, until progression pays out per match. */
+const STARTING_COINS = 6000;
+
+type ScreenName = "title" | "match" | "matchResults" | "clubhouse";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
@@ -58,139 +50,89 @@ async function main(): Promise<void> {
   });
 
   const course = authoredCourse(COURSE_SEED);
-  const holeIndex = parseHoleIndex(window.location.search, course.holes.length);
-
   const screens = new ScreenManager<ScreenName>();
 
-  // One session for the page. Built once and never replaced: replacing it is the defect
-  // `session.test.ts` exists to hold shut.
-  const session = new Session(course.holes.map((h) => h.par), 6000);
   let sim: Sim | null = null;
-  let roundScreen: RoundScreen | null = null;
+  let matchScreen: MatchScreen | null = null;
   /**
-   * Built on the first ARENA press and kept for the page. Routing, eighteen heightfields and the
-   * blended course cost about a second, and rebuilding it per match would pay that on every
-   * rematch to arrive at exactly the same course -- the seed is fixed, so the result cannot differ.
+   * Built on the first PLAY and kept for the page. Eighteen heightfields and the blended course
+   * cost about a second, and the seed is fixed, so rebuilding per match could only arrive at
+   * exactly the same course.
    */
   let courseWorld: CourseWorld | null = null;
+  let arenaSource: ArenaSource | null = null;
 
-  // Page-scoped for now. Persisting the loadout is BACKLOG #48's job; the clubhouse works either
-  // way because it only ever reads and writes it through here.
+  // Page-scoped for now; persisting the player's profile is the progression work's job.
   let loadout = createLoadout();
+  let coins = STARTING_COINS;
 
-  const startRound = async (): Promise<void> => {
-    const spec = course.holes[session.holeIndex];
-    if (!spec) throw new Error("course has no holes");
-    // The one purchase that is not cosmetic: the tire the player bought is the tire the physics
-    // uses, which is what makes ROADMAP.md's "tire type is a stat, not a skin" true rather than
-    // merely stated.
-    sim = await Sim.create(spec, { tire: tireTypeFor(loadout) });
-    // The hole's counters, held for the length of the hole: `Session` prices this hole from them
-    // and folds them into the card when it is scored.
-    session.startHole(sim.stats);
-    screens.show("round");
-  };
-
-  /**
-   * Arena: eighteen holes as one drivable place, per `DECISIONS.md` "Arena mode, and a course that
-   * is one place".
-   *
-   * The Sim is still created from a single hole spec and then switched, which is `loadCourse`'s
-   * contract -- it needs a built world with rigs in it before it can swap the ground under them.
-   * Hole 1 is that spec and nothing of it survives the switch: the pin, the targets and the played
-   * ball are all removed, and the playfield becomes the course.
-   *
-   * No `session.startHole`. Arena scores points and strokes on `Sim.match`, not on the round card,
-   * and folding a deathmatch into the scorecard is exactly the conflation `DECISIONS.md` warns off.
-   */
-  const startArena = async (): Promise<void> => {
-    const spec = course.holes[0];
-    if (!spec) throw new Error("course has no holes");
-    courseWorld ??= buildCourseWorld(course, COURSE_SEED);
-    sim = await Sim.create(spec, { tire: tireTypeFor(loadout), botCount: ARENA_BOTS });
-    sim.loadCourse(courseWorld.terrain, courseWorld.surfaces, courseWorld.holes, courseWorld.southBoundary);
-    screens.show("arena");
+  const startMatch = async (): Promise<void> => {
+    if (courseWorld === null) {
+      courseWorld = buildCourseWorld(course, COURSE_SEED);
+      arenaSource = {
+        course: courseWorld.terrain,
+        surfaces: courseWorld.surfaces,
+        southBoundary: courseWorld.southBoundary,
+        seed: COURSE_SEED,
+      };
+    }
+    // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
+    // match's has to be freed by hand or every rematch leaks a whole course.
+    sim?.dispose();
+    // The tire the player bought is the tire the physics uses: the one purchase that is a stat.
+    sim = await Sim.create(arenaFromCourse(courseWorld), {
+      tire: tireTypeFor(loadout),
+      botCount: ARENA_BOTS,
+    });
+    screens.show("match");
   };
 
   screens.register("title", () => {
-    const backdropHole = course.holes[holeIndex] ?? course.holes[0]!;
     return new TitleScreen({
       root: screensRoot,
       renderer,
-      backdropHole,
+      backdropHole: course.holes[0]!,
       version: VERSION,
       actions: {
-        play: () => void startRound(),
-        arena: () => void startArena(),
+        play: () => void startMatch(),
         clubhouse: () => screens.show("clubhouse"),
-        // Still undefined, so these render visibly disabled rather than absent -- ROADMAP.md
-        // asks for exactly that: a button that looks alive and does nothing is worse.
+        // Still undefined, so these render visibly disabled rather than absent.
         multiplayer: undefined,
         settings: undefined,
       },
     });
   });
 
-  screens.register("round", () => {
+  screens.register("match", () => {
     const live = sim;
-    if (!live) throw new Error("round screen entered with no sim");
-    roundScreen = new RoundScreen({
+    const arena = arenaSource;
+    if (!live || !arena) throw new Error("match screen entered with no sim or no course");
+    matchScreen = new MatchScreen({
       renderer,
       sim: live,
-      round: session.card,
+      arena,
       hudRoot,
       nameplateRoot,
-      onHoleComplete: (strokes) => {
-        session.completeHole(strokes);
-        // Mouse-aim players are pointer-locked and cannot reach a button until it is released.
-        if (document.pointerLockElement !== null) document.exitPointerLock();
-        screens.show("results");
-      },
+      onMatchOver: () => screens.show("matchResults"),
     });
-    return roundScreen;
+    return matchScreen;
   });
 
-  // Same screen class as `round`, with the course passed in. The differences -- no pin marker, no
-  // hole map, no hole to complete -- all fall out of that one option; see `RoundScreenOptions`.
-  screens.register("arena", () => {
+  screens.register("matchResults", () => {
     const live = sim;
-    const world = courseWorld;
-    if (!live || !world) throw new Error("arena screen entered with no sim or no course");
-    roundScreen = new RoundScreen({
-      renderer,
-      sim: live,
-      round: session.card,
-      hudRoot,
-      nameplateRoot,
-      arena: {
-        course: world.terrain,
-        surfaces: world.surfaces,
-        southBoundary: world.southBoundary,
-        seed: COURSE_SEED,
-      },
-      onMatchOver: () => screens.show("arenaResults"),
-    });
-    return roundScreen;
-  });
-
-  // D12: arena's own ending, not stroke play's cart-combat overlay -- see
-  // `MatchResultsScreen.ts`'s header for why the two cannot share numbers.
-  screens.register("arenaResults", () => {
-    const live = sim;
-    const behind = roundScreen;
-    if (!live) throw new Error("arena results screen entered with no sim");
+    const behind = matchScreen;
+    if (!live) throw new Error("results screen entered with no sim");
     return new MatchResultsScreen({
       root: screensRoot,
       match: live.match,
-      // Keeps the finished arena on screen under the scrim, same as `results`' `drawBehind`.
+      // Keeps the finished match on screen under the scrim.
       drawBehind: behind ? () => behind.drawStill() : undefined,
       actions: {
-        // The same Sim and the same cached course world -- `Sim.reset()` is already arena-aware
-        // (re-tees every cart at its opening spawn, resets the spawn stream and the match clock)
-        // so a rematch replays rather than rebuilding eighteen holes a second time.
+        // The same Sim and the same cached course: `Sim.reset()` re-tees every cart, resets the
+        // seeded streams and the clock, so a rematch replays rather than rebuilding eighteen holes.
         playAgain: () => {
           live.reset();
-          screens.show("arena");
+          screens.show("match");
         },
         mainMenu: () => screens.show("title"),
       },
@@ -202,52 +144,34 @@ async function main(): Promise<void> {
       root: screensRoot,
       renderer,
       loadout,
-      coins: session.coins,
+      coins,
       onConfirm: (next, remaining) => {
         loadout = next;
-        session.spend(session.coins - remaining);
+        coins = remaining;
       },
       onBack: () => screens.show("title"),
     });
   });
 
-  screens.register("results", () => {
-    const behind = roundScreen;
-    return new ResultsScreen({
-      root: screensRoot,
-      round: session.card,
-      // Keeps the finished hole on screen under the scrim instead of a black page.
-      drawBehind: behind ? () => behind.drawStill() : undefined,
-      actions: {
-        mainMenu: () => screens.show("title"),
-        nextHole: session.complete ? undefined : () => void startRound(),
-      },
-    });
-  });
-
   // Dev-only inspection hook for manual tuning in the browser console, and what tools/smoke.mjs
-  // drives. Getters rather than fixed values: `sim` and the scene are rebuilt on every round, so
-  // a snapshot taken at boot would go stale the moment the player pressed PLAY.
+  // drives. Getters rather than fixed values: `sim` and the scene are rebuilt on every match.
   (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = {
     get sim() {
       return sim;
     },
     get render() {
-      return roundScreen?.scene ?? null;
+      return matchScreen?.scene ?? null;
     },
-    get round() {
-      return session.card;
-    },
-    get session() {
-      return session;
+    get coins() {
+      return coins;
     },
     get screen() {
       return screens.activeName;
     },
     course,
     screens,
-    // Exposed for the Phase 1.75 memory gate in tools/smoke.mjs: `renderer.info.memory` is the
-    // only honest way to ask whether a screen gave its geometries and textures back.
+    // Exposed for the memory gate in tools/smoke.mjs: `renderer.info.memory` is the only honest way
+    // to ask whether a screen gave its geometries and textures back.
     renderer,
   };
 

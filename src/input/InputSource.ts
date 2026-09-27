@@ -1,5 +1,4 @@
-import type { ClubType } from "../physics/Ballistics";
-import type { CartIntent } from "../sim/entities/Cart";
+import type { PlayerIntent } from "../sim/intent";
 
 /**
  * The input *interface*, written against image 14's touch control inventory rather than against
@@ -7,16 +6,12 @@ import type { CartIntent } from "../sim/entities/Cart";
  * button -- all things a thumbstick, a gamepad and a scripted test array can produce as
  * naturally as a key. If any of these were key states, the Phase 4 touch layer would be a
  * refactor of every input path instead of one new class.
+ *
+ * The intent itself is the sim's type (`sim/intent.ts`): the sim consumes it, so the input layer
+ * depends on the sim and never the reverse. Re-exported here for the sources that produce it.
  */
-
-/**
- * Everything the player can express in one tick. Extends the cart's own control intent with the
- * edge-triggered choice that belongs to the player rather than to the chassis.
- */
-export interface PlayerIntent extends CartIntent {
-  /** Set on the tick a club is chosen, null otherwise. Edge-triggered, not held. */
-  selectClub: ClubType | null;
-}
+export { neutralIntent } from "../sim/intent";
+export type { PlayerIntent } from "../sim/intent";
 
 export interface InputSource {
   /**
@@ -28,15 +23,4 @@ export interface InputSource {
   /** Called after `sample()` so delta-accumulating sources can zero their accumulators. */
   endTick(): void;
   dispose(): void;
-}
-
-export function neutralIntent(): PlayerIntent {
-  return {
-    throttle: 0,
-    steer: 0,
-    brake: false,
-    aimDelta: 0,
-    fire: false,
-    selectClub: null,
-  };
 }

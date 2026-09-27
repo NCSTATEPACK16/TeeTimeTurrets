@@ -1,11 +1,8 @@
-import type RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { fixedHoleSpec } from "../sim/course";
 import { CUP_RADIUS, createTerrain } from "../sim/terrain";
-import { PIN_SHAPE } from "../sim/entities/Pin";
-import { Sim } from "../sim/world";
-import { Flagstick, placeFlagstick } from "./Flagstick";
+import { Flagstick, PIN_SHAPE, placeFlagstick } from "./Flagstick";
 
 /**
  * A render-layer test, so it may import three -- the node environment exists to catch a three
@@ -180,42 +177,6 @@ describe("placeFlagstick", () => {
     expect((pole.min.x + pole.max.x) / 2).toBeCloseTo(cup.x, 2);
     expect((pole.min.z + pole.max.z) / 2).toBeCloseTo(cup.z, 2);
     expect(pole.min.y).toBeCloseTo(cup.y, 2);
-    pin.dispose();
-  });
-});
-
-/**
- * Spec criterion 2, the half that has to cross the sim/render seam.
- *
- * The comparison is between the **live Rapier collider** and the **drawn pole's world bounding
- * box** -- not between each of them and `PIN_SHAPE`. Both do read `PIN_SHAPE`, and that is the
- * point: it is the *anchoring* that differs on the two sides, because a Rapier cylinder is
- * centre-anchored and the mesh is base-anchored. Getting that offset wrong on one side is precisely
- * the shape of the 0.26 m muzzle defect, and only a test that puts the two ends next to each other
- * can see it.
- *
- * This lives here rather than in `world.props.test.ts` because it needs three, and `src/sim/**` may
- * not import it.
- */
-describe("the pin's collider and the pin's drawn pole", () => {
-  it("agree in world space to well inside a centimetre", async () => {
-    const sim = await Sim.create(fixedHoleSpec(), { botCount: 0 });
-    const collider = (sim as unknown as { pinCollider: RAPIER.Collider | null }).pinCollider;
-    expect(collider).not.toBeNull();
-
-    const pin = new Flagstick();
-    placeFlagstick(pin, sim.terrain);
-    const pole = boxOf(pin, "pin_pole");
-
-    const centre = collider!.translation();
-    const half = collider!.halfHeight();
-    expect((pole.min.x + pole.max.x) / 2).toBeCloseTo(centre.x, 2);
-    expect((pole.min.z + pole.max.z) / 2).toBeCloseTo(centre.z, 2);
-    expect(pole.min.y).toBeCloseTo(centre.y - half, 2);
-    expect(pole.max.y).toBeCloseTo(centre.y + half, 2);
-    // And no wider than what deflects: a pole drawn fatter than its collider is a ball visibly
-    // passing through geometry.
-    expect((pole.max.x - pole.min.x) / 2).toBeLessThanOrEqual(collider!.radius() + 1e-6);
     pin.dispose();
   });
 });

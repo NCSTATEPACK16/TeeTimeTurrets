@@ -203,7 +203,7 @@ export function clubStatCards(): readonly ClubStatCard[] {
           // better. Drawing raw seconds would give the putter the shortest bar for its best stat.
           label: "RELOAD",
           value: slowestReload === 0 ? 0 : 1 - (stats.reloadSeconds - fastest()) / span(),
-          detail: `${stats.reloadSeconds.toFixed(1)} s`,
+          detail: `${Number(stats.reloadSeconds.toFixed(2))} s`,
         },
       ],
     };
