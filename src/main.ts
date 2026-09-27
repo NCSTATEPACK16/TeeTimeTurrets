@@ -17,6 +17,8 @@ import { SettingsScreen } from "./ui/screens/SettingsScreen";
 import { browserStore, hasSeenControls, loadSettings, markControlsSeen, saveSettings } from "./app/settings";
 import type { Settings } from "./app/settings";
 import { AudioEngine } from "./audio/synth";
+import { pixelRatioFor, probeDeviceFacts, resolveQuality } from "./render/quality";
+import type { QualityPreset } from "./render/quality";
 
 /**
  * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
@@ -43,18 +45,25 @@ async function main(): Promise<void> {
     throw new Error("expected #app, #screens, #hud and #nameplates in index.html");
   }
 
-  // Created once and shared. A context per screen would hit the browser's hard limit on live
-  // WebGL contexts within a few transitions, and lose the title backdrop's whole reason to exist.
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  container.appendChild(renderer.domElement);
-  window.addEventListener("resize", () => {
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
   const store = browserStore();
   let settings: Settings = loadSettings(store);
+
+  // The quality preset is resolved before the renderer exists, because it decides whether the
+  // context is multisampled -- which cannot change without a new context.
+  const device = probeDeviceFacts();
+  let quality: QualityPreset = resolveQuality(settings.quality, device);
+
+  // Created once and shared. A context per screen would hit the browser's hard limit on live
+  // WebGL contexts within a few transitions, and lose the title backdrop's whole reason to exist.
+  const renderer = new THREE.WebGLRenderer({ antialias: quality.msaa });
+  const fitRenderer = (): void => {
+    renderer.setPixelRatio(pixelRatioFor(quality, window.devicePixelRatio));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  };
+  fitRenderer();
+  container.appendChild(renderer.domElement);
+  window.addEventListener("resize", fitRenderer);
+
   const audio = new AudioEngine(settings);
   // Browsers only start audio from inside a gesture. Every click and key is one; unlocking an
   // unlocked engine does nothing, so the listeners simply stay.
@@ -64,6 +73,8 @@ async function main(): Promise<void> {
     settings = next;
     saveSettings(store, settings);
     audio.apply(settings);
+    quality = resolveQuality(settings.quality, device);
+    fitRenderer();
   };
 
   const course = authoredCourse(COURSE_SEED);
@@ -209,6 +220,10 @@ async function main(): Promise<void> {
     get settings() {
       return settings;
     },
+    get quality() {
+      return quality;
+    },
+    device,
     get match() {
       return matchScreen;
     },

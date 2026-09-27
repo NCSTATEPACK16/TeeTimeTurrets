@@ -7,6 +7,9 @@
  * save keeps whatever is still good about it rather than being thrown away whole.
  */
 
+import { isQualityChoice } from "../render/quality";
+import type { QualityChoice } from "../render/quality";
+
 export interface Settings {
   /** 0..1, over everything. */
   master: number;
@@ -17,6 +20,8 @@ export interface Settings {
   muted: boolean;
   /** Mouse-aim multiplier, 0.25..3. */
   sensitivity: number;
+  /** Graphics preset, or `auto` to let the device pick (`render/quality.ts`). */
+  quality: QualityChoice;
 }
 
 /** The slice of `Storage` used here, so tests can hand in a map or a store that throws. */
@@ -31,6 +36,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   music: 0.5,
   muted: false,
   sensitivity: 1,
+  quality: "auto",
 });
 
 export const SETTINGS_KEY = "teetimeturrets.settings.v1";
@@ -66,6 +72,7 @@ export function loadSettings(store: KeyValueStore | null): Settings {
   if (typeof s.sensitivity === "number" && s.sensitivity >= SENSITIVITY_MIN && s.sensitivity <= SENSITIVITY_MAX) {
     out.sensitivity = s.sensitivity;
   }
+  if (isQualityChoice(s.quality)) out.quality = s.quality;
   return out;
 }
 

@@ -412,12 +412,23 @@ check("Esc again resumes", resumed && !overlayAfter, `clock moving ${resumed}, o
 
 console.log("=== CLUB SELECT (3, then 1) ===");
 // Select away and back, so the putter check cannot pass on a cart that simply spawned with it.
+// Waited for rather than slept on: the key is read on the next fixed tick and the HUD on the frame
+// after it, and a software-rendered frame is not guaranteed inside any fixed wall-clock wait.
+const clubShown = (club, label) =>
+  page
+    .waitForFunction(
+      (c, l) => window.__teetimeturrets.sim.cart.equippedClub === c && document.getElementById("hud-club")?.textContent === l,
+      { timeout: 5000, polling: 50 },
+      club,
+      label,
+    )
+    .catch(() => {});
 await page.keyboard.press("Digit3");
-await new Promise((r) => setTimeout(r, 150));
+await clubShown("driver", "DRIVER");
 const driver = await read();
 check("3 selects the driver", driver.club === "driver" && driver.hudClub === "DRIVER", `${driver.club} / ${driver.hudClub}`);
 await page.keyboard.press("Digit1");
-await new Promise((r) => setTimeout(r, 150));
+await clubShown("putter", "PUTTER");
 const putter = await read();
 check("1 selects the putter", putter.club === "putter", putter.club);
 check("HUD shows the equipped club", putter.hudClub === "PUTTER", putter.hudClub);
@@ -731,6 +742,34 @@ const settingsOut = await page.evaluate(() => {
 check("SETTINGS opens from the title", settingsOut.screen === "settings", settingsOut.screen);
 check("a volume change is saved", settingsOut.saved === 0.37, `${settingsOut.saved}`);
 check("and applied at once", settingsOut.live === 0.37, `${settingsOut.live}`);
+
+// Graphics quality (Stage 3). This browser is SwiftShader, which `pickQuality` sends to low -- and
+// low is the one preset whose context is not multisampled, so the pick is visible on the renderer.
+const qualityOut = await page.evaluate(() => {
+  const hook = window.__teetimeturrets;
+  const select = document.querySelector('.settings-screen [data-setting="quality"]');
+  const boot = { name: hook.quality.name, gpu: hook.device.gpu, antialias: hook.renderer.getContext().getContextAttributes().antialias };
+  if (!select) return { boot, picked: null, saved: null, back: null };
+  select.value = "high";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  const picked = hook.quality.name;
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem("teetimeturrets.settings.v1") ?? "null")?.quality ?? null;
+  } catch {
+    saved = "unreadable";
+  }
+  select.value = "auto";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  return { boot, picked, saved, back: hook.quality.name };
+});
+check(
+  "auto picks low on a software renderer, with no MSAA",
+  qualityOut.boot.name === "low" && qualityOut.boot.antialias === false,
+  `${qualityOut.boot.name}, antialias ${qualityOut.boot.antialias}, gpu "${qualityOut.boot.gpu}"`,
+);
+check("GRAPHICS switches the preset and saves it", qualityOut.picked === "high" && qualityOut.saved === "high", `${qualityOut.picked} / saved ${qualityOut.saved}`);
+check("and AUTO hands it back to the device", qualityOut.back === "low", `${qualityOut.back}`);
 await page.evaluate(() => [...document.querySelectorAll(".settings-screen .btn")].find((b) => b.textContent === "BACK").click());
 await page.waitForFunction(() => window.__teetimeturrets.screen === "title", { timeout: 10000 });
 

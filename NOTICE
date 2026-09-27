@@ -68,6 +68,12 @@ Ported code
     Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
     Ported verbatim.
 
+  src/render/quality.ts
+    Derived from src/engine/quality.ts in Claude of Tanks.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Adapted: the device-tier heuristics in pickQuality and probeDeviceFacts, and
+    the quality-ladder-as-data pattern. The presets and their values are new.
+
   reference/claude-of-tanks/*.ts.txt
     Copied from src/engine/{sky,lighting,quality,cameraRig,post}.ts in Claude of
     Tanks as reading material; not compiled or shipped.

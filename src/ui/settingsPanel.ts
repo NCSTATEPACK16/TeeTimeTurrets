@@ -1,9 +1,10 @@
 import { SENSITIVITY_MAX, SENSITIVITY_MIN } from "../app/settings";
 import type { Settings } from "../app/settings";
+import { QUALITY, QUALITY_NAMES, isQualityChoice } from "../render/quality";
 import { el, on } from "./dom";
 
 /**
- * The settings controls -- three volumes, mute, mouse sensitivity -- as one block of DOM, used by
+ * The settings controls -- three volumes, mute, mouse sensitivity, graphics -- as one block of DOM, used by
  * the Settings screen and by the pause overlay. Every change calls `onChange` with a fresh copy;
  * the caller saves it and applies it. Returns its root and the function that removes its listeners.
  */
@@ -59,6 +60,20 @@ export function buildSettingsPanel(
     }),
   );
 
+  // Graphics. The pixel ratio changes at once; shadows and post-processing at the next match,
+  // because a scene's lights and composer are built with it; anti-aliasing on the next load, because
+  // it belongs to the WebGL context.
+  const quality = el("select", { class: "settings__select", attrs: { "data-setting": "quality" } }, [
+    el("option", { text: "AUTO", attrs: { value: "auto" } }),
+    ...QUALITY_NAMES.map((name) => el("option", { text: QUALITY[name].label, attrs: { value: name } })),
+  ]);
+  quality.value = current.quality;
+  teardown.push(
+    on(quality, "change", () => {
+      if (isQualityChoice(quality.value)) commit({ quality: quality.value });
+    }),
+  );
+
   const root = el("div", { class: "settings" }, [
     slider("MASTER", "master"),
     slider("EFFECTS", "sfx"),
@@ -69,6 +84,8 @@ export function buildSettingsPanel(
       sensitivity,
       sensitivityValue,
     ]),
+    el("label", { class: "settings__row" }, [el("span", { class: "settings__label", text: "GRAPHICS" }), quality]),
+    el("p", { class: "settings__note", text: "Graphics apply from the next match." }),
   ]);
 
   return {

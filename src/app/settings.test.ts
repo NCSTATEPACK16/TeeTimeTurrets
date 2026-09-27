@@ -30,7 +30,7 @@ describe("settings", () => {
 
   it("round-trips what was saved", () => {
     const store = memoryStore();
-    const mine = { master: 0.3, sfx: 1, music: 0, muted: true, sensitivity: 1.8 };
+    const mine = { master: 0.3, sfx: 1, music: 0, muted: true, sensitivity: 1.8, quality: "high" as const };
     expect(saveSettings(store, mine)).toBe(true);
     expect(loadSettings(store)).toEqual(mine);
   });
@@ -38,6 +38,17 @@ describe("settings", () => {
   it("keeps the good fields of a damaged save and defaults the rest", () => {
     const store = memoryStore({ [SETTINGS_KEY]: JSON.stringify({ master: 0.4, sfx: "loud", music: 7, muted: "yes" }) });
     expect(loadSettings(store)).toEqual({ ...DEFAULT_SETTINGS, master: 0.4 });
+  });
+
+  it("lets the device pick the graphics quality until the player does", () => {
+    expect(DEFAULT_SETTINGS.quality).toBe("auto");
+    const store = memoryStore({ [SETTINGS_KEY]: JSON.stringify({ quality: "low" }) });
+    expect(loadSettings(store).quality).toBe("low");
+  });
+
+  it("ignores a saved quality it does not know, such as a preset from a later version", () => {
+    const store = memoryStore({ [SETTINGS_KEY]: JSON.stringify({ quality: "ultra", master: 0.2 }) });
+    expect(loadSettings(store)).toEqual({ ...DEFAULT_SETTINGS, master: 0.2 });
   });
 
   it("survives a save that is not JSON at all", () => {
