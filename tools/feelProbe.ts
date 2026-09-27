@@ -7,7 +7,9 @@ import { createNoise2D } from "simplex-noise";
 import { Sim, FIXED_DT } from "../src/sim/world";
 import { mulberry32 } from "../src/sim/rng";
 import { fixedHoleSpec } from "../src/sim/course";
-import { CUP_RADIUS, NOISE_MAX_GRADIENT, createTerrain } from "../src/sim/terrain";
+import { NOISE_MAX_GRADIENT, createTerrain } from "../src/sim/terrain";
+import { arenaFromHole } from "../src/sim/arena";
+import { neutralIntent } from "../src/sim/intent";
 // REFERENCE_CARRY_M lives in sim/carry.ts, not sim/course.ts: it was moved into a leaf module to
 // break a value import cycle (see that file's header). course.ts imports it but does not re-export
 // it, so this import had been dangling and `npm run probe` could not build.
@@ -123,31 +125,68 @@ interface ShotResult {
   timedOut: boolean;
 }
 
+/** The player's pooled balls, read through the TS-private pool: the probe measures, it never drives it. */
+interface ProbeBall {
+  state: "idle" | "flying" | "landed";
+  firedBy: number;
+  body: { translation(): { x: number; y: number; z: number } };
+}
+function poolOf(sim: Sim): readonly ProbeBall[] {
+  return (sim as unknown as { ballPool: { all: readonly ProbeBall[] } }).ballPool.all;
+}
+
+/** Deepest the ball's centre may sit below the terrain surface under it before it counts as tunnelling. */
+const TUNNEL_TOLERANCE_M = 0.5;
+/** Lowest height of a fired ball's centre above the terrain under it, over every tick measured. */
+let lowestClearanceM = Infinity;
+
+/**
+ * One full-charge shot of `club`, fired the way the game fires one: the player's cart selects the
+ * club, the turret is swung to +X, the trigger is held past the club's charge time and let go. The
+ * ball is then the pooled ball the cart put in the air, followed until the pool calls it landed.
+ *
+ * Until the arena became the only mode this drove the stroke-play course ball directly, and that
+ * ball is gone. Measuring from the muzzle rather than the tee also means `apex` is above the
+ * muzzle, about 2.4 m up.
+ */
 async function shoot(sim: Sim, club: ClubType): Promise<ShotResult> {
   sim.reset();
+  const intent = neutralIntent();
+  intent.selectClub = club;
+  intent.aimDelta = -sim.cart.turretYaw;
+  sim.step(intent);
+  intent.selectClub = null;
+  intent.aimDelta = 0;
+  const chargeTicks = Math.ceil(CLUB_STATS[club].chargeSeconds / FIXED_DT) + 2;
+  intent.fire = true;
+  for (let i = 0; i < chargeTicks; i++) sim.step(intent);
+  intent.fire = false;
+  sim.step(intent);
+  const ball = poolOf(sim).find((b) => b.state === "flying" && b.firedBy === 0);
+  if (!ball) throw new Error(`probe: the ${club} shot put no ball in the air`);
+
   const v = computeLaunchVelocity(club, 1, 0);
   const launchSpeed = Math.hypot(v.x, v.y, v.z);
-  // Sim.launch uses its own DEFAULT_CLUB, so drive the body through the same
-  // public path the game uses but force the club we want via a direct velocity set.
-  (sim as unknown as { ball: { setLinvel: (v: unknown, w: boolean) => void } }).ball.setLinvel(v, true);
-
-  const start = { ...sim.current.position };
+  const start = ball.body.translation();
   let apex = start.y;
   let flightS = 0;
   let landed = false;
   let everAirborne = false;
   let carryM = 0;
   let bounces = 0;
+  let prevY = start.y;
   let prevVy = v.y;
-  let outOfBounds = false;
   let ticks = 0;
-  let settleS = 0;
-  let lastPos = { x: start.x, y: start.y, z: start.z };
+  let end = start;
 
-  for (; ticks < MAX_TICKS; ticks++) {
+  for (; ticks < MAX_TICKS && ball.state === "flying"; ticks++) {
     sim.step();
-    const p = sim.current.position;
+    // `sim.step` moves the state, which the loop condition's narrowing cannot see.
+    if ((ball.state as ProbeBall["state"]) === "idle") break; // released by the pool, not landed
+    const p = ball.body.translation();
+    end = p;
     const groundY = heightAt(p.x, p.z);
+    lowestClearanceM = Math.min(lowestClearanceM, p.y - groundY);
     const airborne = p.y - groundY > 0.35;
     if (airborne) everAirborne = true;
     apex = Math.max(apex, p.y);
@@ -161,30 +200,14 @@ async function shoot(sim: Sim, club: ClubType): Promise<ShotResult> {
         carryM = Math.hypot(p.x - start.x, p.z - start.z);
       }
     } else {
-      const vy = (sim.current.position.y - sim.previous.position.y) / FIXED_DT;
+      const vy = (p.y - prevY) / FIXED_DT;
       if (prevVy < -0.5 && vy > 0.5) bounces++;
       prevVy = vy;
     }
-
-    // Sim returns an out-of-bounds ball to the tee itself, so read its flag rather than
-    // re-testing the position (which is back in bounds by the time we see it).
-    if (sim.lastShotOutOfBounds) {
-      outOfBounds = true;
-      console.log(
-        `    [oob] ${club} left the field at t=${(ticks * FIXED_DT).toFixed(2)}s ` +
-          `last in-bounds pos x=${lastPos.x.toFixed(1)} y=${lastPos.y.toFixed(2)} z=${lastPos.z.toFixed(1)} ` +
-          `(terrain y=${heightAt(lastPos.x, lastPos.z).toFixed(2)})`,
-      );
-      break;
-    }
-    lastPos = { x: p.x, y: p.y, z: p.z };
-    // Require ground contact as well as low speed: at the apex of a bounce the
-    // vertical velocity passes through zero and isResting() alone reads true.
-    if (!airborne && ticks > 5 && sim.isResting()) break;
+    prevY = p.y;
   }
-  settleS = ticks * FIXED_DT;
-  const end = sim.current.position;
   const totalM = Math.hypot(end.x - start.x, end.z - start.z);
+  const half = FIELD_SIZE / 2;
 
   return {
     club,
@@ -194,83 +217,16 @@ async function shoot(sim: Sim, club: ClubType): Promise<ShotResult> {
     totalM,
     apexM: apex - start.y,
     flightS,
-    settleS,
+    settleS: ticks * FIXED_DT,
     bounces,
-    outOfBounds,
-    inWater: sim.lastShotInWater,
-    timedOut: ticks >= MAX_TICKS - 1,
+    outOfBounds: Math.abs(end.x) > half || Math.abs(end.z) > half,
+    inWater: surfaceAt(end.x, end.z) === SurfaceId.Water,
+    timedOut: ball.state === "flying",
   };
 }
 
 function fmt(n: number, d = 1): string {
   return n.toFixed(d).padStart(7);
-}
-
-type BallHandle = { setTranslation: (v: unknown, w: boolean) => void; setLinvel: (v: unknown, w: boolean) => void };
-function ballOf(sim: Sim): BallHandle {
-  return (sim as unknown as { ball: BallHandle }).ball;
-}
-
-/**
- * The hazard and hole-out paths are new game rules, not tuning, so assert they actually
- * fire rather than inferring it from a distance number.
- */
-function hazardAndHoleOutChecks(sim: Sim): void {
-  console.log("\n=== RULES CHECKS ===");
-
-  // Water: drop the ball straight into the pond that crosses the fairway.
-  sim.reset();
-  const pond = findWater();
-  if (!pond) {
-    console.log("  water      SKIP - no water found on the course");
-  } else {
-    ballOf(sim).setTranslation({ x: pond.x, y: heightAt(pond.x, pond.z) + 0.2, z: pond.z }, true);
-    ballOf(sim).setLinvel({ x: 0, y: 0, z: 0 }, true);
-    let fired = false;
-    for (let i = 0; i < 240 && !fired; i++) {
-      sim.step();
-      fired = sim.lastShotInWater;
-    }
-    console.log(`  water      ${fired ? "PASS" : "FAIL"} - penalty fired=${fired}, strokes=${sim.strokes}`);
-  }
-
-  // Hole-out: putt from just outside the cup, straight at it.
-  sim.reset();
-  const approach = 2.0;
-  const angle = Math.atan2(0 - CUP_POSITION.z, 0 - CUP_POSITION.x);
-  const fromX = CUP_POSITION.x + Math.cos(angle) * approach;
-  const fromZ = CUP_POSITION.z + Math.sin(angle) * approach;
-  ballOf(sim).setTranslation({ x: fromX, y: heightAt(fromX, fromZ) + 0.2, z: fromZ }, true);
-  const puttSpeed = 2.6;
-  ballOf(sim).setLinvel({ x: -Math.cos(angle) * puttSpeed, y: 0, z: -Math.sin(angle) * puttSpeed }, true);
-  let holed = false;
-  let closest = Infinity;
-  let speedAtClosest = 0;
-  for (let i = 0; i < 600 && !holed; i++) {
-    sim.step();
-    const p = sim.current.position;
-    const d = Math.hypot(p.x - CUP_POSITION.x, p.z - CUP_POSITION.z);
-    if (d < closest) {
-      closest = d;
-      const q = sim.previous.position;
-      speedAtClosest = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) / FIXED_DT;
-    }
-    holed = sim.holedOut;
-  }
-  console.log(
-    `  hole-out   ${holed ? "PASS" : "FAIL"} - from ${approach} m at ${puttSpeed} m/s; ` +
-      `closest approach ${closest.toFixed(2)} m (cup radius ${CUP_RADIUS}), speed there ${speedAtClosest.toFixed(2)} m/s`,
-  );
-  sim.reset();
-}
-
-function findWater(): { x: number; z: number } | null {
-  for (let x = -FIELD_SIZE / 2 + 2; x < FIELD_SIZE / 2 - 2; x += 1) {
-    for (let z = -FIELD_SIZE / 2 + 2; z < FIELD_SIZE / 2 - 2; z += 1) {
-      if (surfaceAt(x, z) === SurfaceId.Water) return { x, z };
-    }
-  }
-  return null;
 }
 
 /** Fixed so the measurement is comparable run to run; the band's job is to catch a library bump. */
@@ -410,10 +366,10 @@ async function main(): Promise<void> {
 
   surfaceReport();
 
-  // No bot: it spawns 2.5 m past the cup, right on the hole-out putt's line, so an overshoot
-  // could clip its capsule and make these numbers -- cited in tuning docstrings -- flaky.
-  const sim = await Sim.create(HOLE, { botCount: 0 });
-  console.log("\n=== FULL-POWER SHOTS (charge = 1.0, flat aim down +X) ===");
+  // No bot: one standing downrange could clip a shot and make these numbers -- cited in tuning
+  // docstrings -- flaky.
+  const sim = await Sim.create(arenaFromHole(HOLE), { botCount: 0 });
+  console.log("\n=== FULL-POWER SHOTS (charge = 1.0, turret down +X, from the cart's muzzle) ===");
   console.log("  club      v0   carry    roll   total    apex  flight  settle  bnc  result");
   for (const club of [ClubType.Putter, ClubType.Iron, ClubType.Driver]) {
     const r = await shoot(sim, club);
@@ -423,12 +379,19 @@ async function main(): Promise<void> {
         `  ${r.outOfBounds ? "OOB" : r.inWater ? "WATER" : "-"}${r.timedOut ? "  TIMED-OUT" : ""}`,
     );
   }
-  hazardAndHoleOutChecks(sim);
   console.log("\n  club stats:", JSON.stringify(CLUB_STATS));
 
   console.log("\n=== COURSE CHECKS ===");
   noiseGradientCheck();
   await driverDistanceCheck(sim);
+  // AGENTS.md: after a ball or terrain tuning change, a full-power shot's height must stay bounded
+  // through flight and settling, not diverge toward free fall.
+  report(
+    "ball stays above ground",
+    lowestClearanceM >= -TUNNEL_TOLERANCE_M,
+    `lowest ball centre ${lowestClearanceM.toFixed(3)} m above the terrain under it, over every tick of ` +
+      `the three full-power shots and the driver check (limit -${TUNNEL_TOLERANCE_M} m)`,
+  );
   coursePlayabilityCheck();
   acceptanceReport();
 
