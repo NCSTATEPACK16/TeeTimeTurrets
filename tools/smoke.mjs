@@ -88,11 +88,11 @@ function chargeBuilt() {
 /**
  * Presses and releases a trigger until a shot leaves, at most `tries` times, and says what happened.
  *
- * Retried because of a game behaviour, not a harness one: with eight carts on the putter the
- * 32-ball pool is often entirely in flight, and `Sim.resolveShot` then refunds the round and fires
- * nothing (measured headlessly: exhausted on over half of all ticks from 2.3 s in). A refusal
- * shows as a charge that built and a shot count that did not move, and is reported in the detail
- * rather than read as the input path failing.
+ * Retried because of a game behaviour, not a harness one: when every one of the 32 pooled balls
+ * is up in the air at once, `Sim.resolveShot` refunds the round and fires nothing. Since the pool
+ * recycles balls rolling on the ground that is rare (6 refusals across eight carts in a measured
+ * minute), but it is not impossible. A refusal shows as a charge that built and a shot count that
+ * did not move, and is reported in the detail rather than read as the input path failing.
  */
 async function fireUntilAShotLeaves(press, release, tries = 10) {
   let refused = 0;

@@ -43,15 +43,17 @@ Rewritten 2026-09-27, at the end of the cloud session that finished Stage 1. Rew
 
 - `tsc` clean. **912 tests pass** on a bare `vitest run`; CI's `test` job is green.
 - **Smoke passes**, including new mouse-fire, pointer-lock and turret-camera checks.
-- **Gate: 17 of 18 pass.** `cart-putter` drifts, and a re-baseline is proposed in the PR, **not committed**.
-- **Probe: runs again, and fails one check** (driver distance, below). The tunnelling check passes.
+- **Gate: 17 of 18 pass.** `cart-putter` drifted with the putter's loft; the user re-baselined it after, and at `becd6b8` the gate passes 18 of 18.
+- **Probe: runs again.** It failed only the driver distance check, which the user retargeted after; at `becd6b8` every probe check passes, tunnelling included.
 
 ### Waiting on the user
 
 1. **The play-test.**
-2. **Approve the gate re-baseline for `cart-putter`, or not.** Its bbox height is 3.0038 m against a baseline of 3.0710 m, 2.2% over a 0.5% band; the signature passes. The cause is the putter's loft going from 3° to 1° in `62387bb` (Stage 1.5): the barrel's pitch is the club's loft, and about 2 m of barrel × (sin 3° − sin 1°) ≈ 0.07 m. Once approved: `npm run gate -- --update-baseline`, then commit **only** `tools/gate-baseline/cart-putter.png`, `metrics.json` and `signatures.json`, and check the diff touches only `cart-putter`.
-3. **The ball pool runs dry in a 4v4, and the player's shots silently don't fire.** Measured headlessly over 60 s of the arena with the player firing every 0.75 s: all 32 pooled balls are in flight on 64% of ticks, from 2.3 s in, and the player's shots were refused 32 times out of 64. `Sim.resolveShot` refunds the round when `BallPool.acquire` returns null, so nothing is shown. This predates this session: at `90bfe6c` it was 56% of ticks and 25 refused out of 58. The options are a bigger pool (render buffers and Stage 3's budgets), balls that count as landed sooner, a slower bot fire rate, or reclaiming the oldest flying ball. That is a design call.
-4. **The driver falls short of the course's reference distance.** Now that the probe runs, it measures the driver at 103.8 m total (75.3 carry + 28.5 roll) against the 129 m `REFERENCE_CARRY_M`, 19.5% short against a 15% band. That constant was the stroke-play ball's, launched from the tee with no pool drag. Either the driver is retuned or the check gets a new reference; left failing on purpose.
+
+Settled since the checkpoint above:
+- **`cart-putter` re-baselined** (`ff2832b`), for the putter's 1° loft.
+- **The probe's driver check** now holds the arena driver to its measured carry and total (`74c44f8`).
+- **The ball pool no longer refuses the player's shots** (`becd6b8`). When every ball is in flight, `BallPool.acquire` recycles the oldest one rolling on the ground. It still refuses only when all 32 are up in the air: in a measured minute of 4v4 that happened 6 times across eight carts, and to the player 0 times out of 48 (it was 32 out of 64).
 
 ## What Stage 1 did this session
 
@@ -76,7 +78,7 @@ Rewritten 2026-09-27, at the end of the cloud session that finished Stage 1. Rew
 `REVAMP-PLAN.md` "Stage 2: juice, audio and feedback". Branch `stage-2-juice` from `main` if #28 has merged, otherwise from `arena-only`, and say which in the PR. Three things in this repo bear on it:
 - **`Sim.events` replaces `hitEvents`.** The hit-marker pool, `hitEventEpoch`, and `killCart`/`creditHit` in `world.ts` are the current producers.
 - **Hit markers show a fake "+50".**
-- **The pool refusal above is the most audible silent failure in the game.** If it stays, Stage 2's "click" sound for a refused shot is worth asking about.
+- **A refused shot is still silent.** It is rare now (all 32 balls in the air), but Stage 2's audio can give it a dry-fire click.
 
 ## Audit findings still open (from 2026-09-26)
 
