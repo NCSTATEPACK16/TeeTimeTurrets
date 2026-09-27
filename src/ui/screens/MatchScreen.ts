@@ -33,7 +33,8 @@ import { on } from "../dom";
 import { CourseMap } from "../courseMap";
 import type { MapMarker } from "../courseMap";
 import { buildMapHoles, nearestHoleNumber } from "../courseMapHoles";
-import { ENEMY_FADE_S } from "../plateState";
+import { COARSE_RANGE_M, ENEMY_FADE_S } from "../plateState";
+import { LosSchedule } from "../losSchedule";
 
 /**
  * One arena match on screen: sim, scene, input, HUD, nameplates, banners and hit markers, with a
@@ -102,6 +103,9 @@ export class MatchScreen implements Screen {
   private hadPointerLock = false;
   private readonly cueScratch = createCueRequest();
   private readonly listenerScratch = { x: 0, z: 0, yaw: 0 };
+  /** When each enemy plate next walks its line of sight, and what it saw last time. */
+  private los = new LosSchedule(0, LOS_PERIOD_MS);
+  private readonly losSeen: boolean[] = [];
   /** The `M` map. Its course layer is sampled the first time it opens. */
   private courseMap: CourseMap | null = null;
   private readonly hitScreenScratch = { x: 0, y: 0 };
@@ -137,6 +141,8 @@ export class MatchScreen implements Screen {
       sim.bots.map((_, i) => plateTeamOf(i + 1, 0)),
     );
     this.lastSeenAtMs.length = 0;
+    this.los = new LosSchedule(sim.bots.length, LOS_PERIOD_MS);
+    this.losSeen.length = 0;
     this.input = new KeyboardMouseSource(renderer.domElement);
     this.hud = readHud();
     if (!this.hud) throw new Error("expected the #hud elements in index.html");
@@ -510,10 +516,15 @@ export class MatchScreen implements Screen {
         sim,
         this.lastSeenAtMs,
         now,
+        this.los,
+        this.losSeen,
       );
     }
   }
 }
+
+/** Milliseconds between one enemy plate's line-of-sight walks: ten a second. */
+const LOS_PERIOD_MS = 100;
 
 /** Longest frame the camera smoothing is given: a frame after a hidden tab is not 30 s long. */
 const MAX_FRAME_SECONDS = 0.1;
@@ -563,6 +574,8 @@ function placeNameplate(
   terrain: HeightSampler,
   lastSeenAtMs: number[],
   nowMs: number,
+  los: LosSchedule,
+  losSeen: boolean[],
 ): void {
   const onScreen = render.projectToScreen(
     cart.position.x,
@@ -574,26 +587,39 @@ function placeNameplate(
   // Sight is measured cart to cart at plate height, not from the camera: the chase camera floats
   // behind and above the player, so a ridge the cart is actually hiding behind would read as
   // clear from the camera's vantage. The plate answers "can I see them", not "can the camera".
-  // An ally's plate shows through terrain regardless, so its sight line is never walked.
+  // An ally's plate shows through terrain regardless, so its sight line is never walked. Nor is
+  // an enemy's that is off screen or past plate range, where the plate cannot show anyway -- it is
+  // walked the moment it comes back. Otherwise the walk is scheduled, ten a second per cart and
+  // staggered, and the last answer stands between walks.
   const team = plateTeamOf(index + 1, 0);
-  const seen = team === "ally" || hasLineOfSight(
-    terrain,
-    player.position.x,
-    player.position.y + NAMEPLATE_HEIGHT,
-    player.position.z,
-    cart.position.x,
-    cart.position.y + NAMEPLATE_HEIGHT,
-    cart.position.z,
-  );
+  // Flat rather than three-dimensional: a range is a distance along the ground, and folding in the
+  // drop to a cart below you overstates it.
+  const distanceM = Math.hypot(cart.position.x - player.position.x, cart.position.z - player.position.z);
+  let seen: boolean;
+  if (team === "ally") {
+    seen = true;
+  } else if (!onScreen || distanceM > COARSE_RANGE_M) {
+    seen = false;
+    los.invalidate(index);
+  } else if (los.due(index, nowMs)) {
+    seen = hasLineOfSight(
+      terrain,
+      player.position.x,
+      player.position.y + NAMEPLATE_HEIGHT,
+      player.position.z,
+      cart.position.x,
+      cart.position.y + NAMEPLATE_HEIGHT,
+      cart.position.z,
+    );
+    losSeen[index] = seen;
+    los.done(index, nowMs);
+  } else {
+    seen = losSeen[index] === true;
+  }
   if (seen) lastSeenAtMs[index] = nowMs;
   const lastSeen = lastSeenAtMs[index];
 
-  // Flat rather than three-dimensional: a range is a distance along the ground, and folding in the
-  // drop to a cart below you overstates it.
-  plateSourceScratch.distanceM = Math.hypot(
-    cart.position.x - player.position.x,
-    cart.position.z - player.position.z,
-  );
+  plateSourceScratch.distanceM = distanceM;
   plateSourceScratch.team = team;
   plateSourceScratch.healthFraction = health.max > 0 ? health.hp / health.max : 0;
   plateSourceScratch.onScreen = onScreen;
