@@ -255,7 +255,11 @@ reason rather than fixed:
 - **`reset()` reproduces the RNG stream, not a bit-identical physics replay.** The Rapier
   world carries step-count history. The code matches its stated promise; anyone building
   replay or spectator features will expect more than it gives.
-- **The tick that ends the match is discarded.** An N-tick match simulates N-1 ticks, so an
+- > **Resolved in Stage 1 (issue #30).** The buzzer tick is simulated in full, and the world
+  > freezes after it. `world.cart.test.ts` "simulates the buzzer tick rather than discarding it"
+  > checks both the cart and a ball in flight. The original entry stays below.
+
+  **The tick that ends the match is discarded.** An N-tick match simulates N-1 ticks, so an
   event that would resolve on the buzzer tick (a ball in flight landing a hit) never
   resolves. Negligible at 180 s; do not restate "the closing tick's score is the one that
   counts" in a doc, because it isn't quite true.

@@ -514,19 +514,9 @@ export class Sim {
    */
   step(intent: PlayerIntent = IDLE_INTENT): void {
     if (this.disposed) throw new Error("Sim.step called after dispose()");
-    // A finished match freezes exactly where it stood. On the single tick that ends it, every
-    // previous/current pair collapses onto its current value, so a renderer lerping between them
-    // holds still rather than hanging one tick apart forever.
+    // A finished match freezes exactly where it stood.
     if (this.match.over) return;
     this.match.tick(FIXED_DT);
-    if (this.match.over) {
-      this.syncCurrentCart();
-      this.previousCart = this.currentCart;
-      this.previousBotCarts = this.currentBotCarts.slice();
-      this.previousPoolTransforms.set(this.currentPoolTransforms);
-      return;
-    }
-
     const swapPool = this.previousPoolTransforms;
     this.previousPoolTransforms = this.currentPoolTransforms;
     this.currentPoolTransforms = swapPool;
@@ -542,12 +532,22 @@ export class Sim {
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
     // Fresh set of hit-marker events for this tick. The epoch bump lets a consumer spawn each
-    // marker once even when it renders several frames between steps; the early returns above skip
+    // marker once even when it renders several frames between steps; the early return above skips
     // it, so a frozen (match-over) scene stops producing events.
     this.hitEventCount = 0;
     this.hitEventEpoch++;
     processContacts(this.eventQueue, this.combatContext);
     this.syncCurrentPool();
+
+    // The tick that ends the match is still a whole tick -- carts move, balls fly, a hit lands and
+    // a kill scores -- and only then does the world freeze. Every previous/current pair collapses
+    // onto its current value, so a renderer lerping between them holds still rather than hanging
+    // one tick apart forever.
+    if (this.match.over) {
+      this.previousCart = this.currentCart;
+      this.previousBotCarts = this.currentBotCarts.slice();
+      this.previousPoolTransforms.set(this.currentPoolTransforms);
+    }
   }
 
   /**

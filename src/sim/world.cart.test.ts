@@ -704,13 +704,12 @@ describe("the match clock", () => {
 
   it("keeps the score a cart died on: a death before the closing tick still counts", async () => {
     // matchDurationS is 5/60, so the buzzer fires on the 5th step() (the tick where
-    // matchTimeRemaining first falls to <= half a tick). That tick's early return -- correctly,
-    // per the freeze fix above -- never touches a cart, so killing the bot beforehand and only
-    // then taking the *last* step (as this test originally did after 4 pre-steps) never runs a
-    // single real tick over the dead bot: no respawn-timer tick, nothing on the death path at
-    // all. Killing after 3 steps instead leaves two real ticks (the 4th and 5th) to run before
-    // the clock closes -- the 4th is a genuine, non-early-return tick that processes the death
-    // (stepRespawn counts the timer down), and only the 5th ends the match.
+    // matchTimeRemaining first falls to <= half a tick). When this test was written that tick
+    // returned early and never touched a cart, so killing the bot and then taking only the *last*
+    // step ran no tick over the dead bot at all. The buzzer tick is simulated now ("simulates the
+    // buzzer tick" below), but the test still kills after 3 steps, so the 4th -- a tick that is
+    // plainly not the last -- is the one shown to process the death (stepRespawn counts the timer
+    // down) before the 5th ends the match.
     const sim = await holeSim(fixedHoleSpec(), 1, 5 / 60);
     for (let i = 0; i < 3; i++) sim.step();
     (sim as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(sim.bots[0]!, 1, 0);
@@ -723,6 +722,30 @@ describe("the match clock", () => {
     expect(sim.matchOver).toBe(true);
     expect(sim.match.strokesFor(1)).toBe(1);
     expect(sim.match.winningTeam()).toBe(0);
+  });
+
+  it("simulates the buzzer tick rather than discarding it", async () => {
+    // A one-second match is 60 ticks, and the 60th is the one that ends it. The player drives the
+    // whole way and puts a ball in the air early, so both the cart and the physics world have
+    // something to move on the last tick. Each check is a different half of "the tick happened":
+    // the cart moves in `stepCarts`, the ball only in `world.step`.
+    const sim = await holeSim(fixedHoleSpec(), 0, 1);
+    const drive = neutralIntent();
+    drive.throttle = 1;
+    const fire = { ...drive, fire: true };
+    for (let i = 0; i < 59; i++) sim.step(i < 10 ? fire : drive);
+    expect(sim.matchOver).toBe(false);
+    const flying = (sim as unknown as { ballPool: BallPool }).ballPool.all.find((b) => b.state === "flying");
+    expect(flying).toBeDefined();
+    const cartBefore = { ...sim.cart.position };
+    const ballBefore = flying!.body.translation();
+
+    sim.step(drive);
+
+    expect(sim.matchOver).toBe(true);
+    expect(Math.hypot(sim.cart.position.x - cartBefore.x, sim.cart.position.z - cartBefore.z)).toBeGreaterThan(0.05);
+    const ballAfter = flying!.body.translation();
+    expect(Math.hypot(ballAfter.x - ballBefore.x, ballAfter.z - ballBefore.z)).toBeGreaterThan(0.05);
   });
 
   it("reset re-rolls the clock and clears the result", async () => {
