@@ -35,11 +35,10 @@ import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } 
 import type { SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, PREVIEW_MAX_POINTS, PREVIEW_MAX_TICKS, PREVIEW_SAMPLE_STRIDE } from "./frame";
+import type { CartTransform } from "./frame";
 
 export type { Vec3 } from "./course";
-
-/** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
-export const FIXED_DT = 1 / 60;
 
 /**
  * Re-exported from `matchConfig.ts`, which is where it lives along with every other arena tunable.
@@ -47,29 +46,17 @@ export const FIXED_DT = 1 / 60;
  */
 export { MATCH_DURATION_S };
 
-/** Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. */
-export const TRANSFORM_STRIDE = 7;
-
-/** As TRANSFORM_STRIDE, plus a trailing 1/0 active flag: an idle pool slot is parked far below
- *  the world and must not be drawn where it is parked. */
-export const POOL_TRANSFORM_STRIDE = 8;
-
-/** Aim-preview arc granularity: `Sim.previewTrajectory` writes one point every this many ticks. */
-export const PREVIEW_SAMPLE_STRIDE = 4;
-/** Hard cap on the ticks `previewTrajectory` integrates (~6 s at FIXED_DT), so a flat shot that
- *  never quite lands still terminates the loop. */
-const PREVIEW_MAX_TICKS = 360;
-/** Upper bound on points `previewTrajectory` writes: the tick cap over the stride, plus the muzzle
- *  point and a final landing point. Sizes `createPreviewBuffer`. */
-export const PREVIEW_MAX_POINTS = Math.ceil(PREVIEW_MAX_TICKS / PREVIEW_SAMPLE_STRIDE) + 2;
-
-/** A reusable buffer of `Vec3`s for `previewTrajectory` to fill, so the arc allocates nothing per
- *  frame. A caller holds one and passes it in every frame. */
-export function createPreviewBuffer(): Vec3[] {
-  const buffer: Vec3[] = [];
-  for (let i = 0; i < PREVIEW_MAX_POINTS; i++) buffer.push({ x: 0, y: 0, z: 0 });
-  return buffer;
-}
+// The clock and the render-facing shapes live in `frame.ts`, which does not import Rapier, so the
+// renderer and the page's entry can use them without loading the physics engine.
+export {
+  FIXED_DT,
+  POOL_TRANSFORM_STRIDE,
+  PREVIEW_MAX_POINTS,
+  PREVIEW_SAMPLE_STRIDE,
+  TRANSFORM_STRIDE,
+  createPreviewBuffer,
+} from "./frame";
+export type { CartTransform } from "./frame";
 
 function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
   const p = out[i]!;
@@ -110,14 +97,6 @@ export const CART_MIN_SLOPE_SLIDE_DEG = 32;
 export const CART_AUTOSTEP_HEIGHT = 0.45;
 export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
 export const CART_SNAP_TO_GROUND = 0.6;
-
-export interface CartTransform {
-  position: Vec3;
-  /** Chassis yaw, radians. */
-  heading: number;
-  /** Turret yaw, radians, absolute in world space. */
-  turretYaw: number;
-}
 
 /**
  * Everything the world owns for one cart: the state machine, the kinematic body it drives, the

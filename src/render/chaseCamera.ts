@@ -1,4 +1,4 @@
-import type { CartTransform } from "../sim/world";
+import type { CartTransform } from "../sim/frame";
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next

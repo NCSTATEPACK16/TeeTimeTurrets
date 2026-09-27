@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
-import { FIXED_DT, Sim } from "./sim/world";
+import { FIXED_DT } from "./sim/frame";
+import type { Sim } from "./sim/world";
 import { authoredCourse } from "./sim/authoredCourse";
 import { buildCourseWorld } from "./sim/courseWorld";
 import type { CourseWorld } from "./sim/courseWorld";
@@ -94,7 +95,22 @@ async function main(): Promise<void> {
   let loadout = createLoadout();
   let coins = STARTING_COINS;
 
+  /**
+   * The sim and Rapier, loaded on the first PLAY rather than with the page: Rapier inlines its WASM
+   * and is most of the bundle, and nothing before a match needs it. Prefetched once the title has
+   * drawn, so PLAY rarely waits on it. Forgotten on failure, so the next PLAY tries again.
+   */
+  let simModule: Promise<typeof import("./sim/world")> | null = null;
+  const loadSim = (): Promise<typeof import("./sim/world")> => {
+    simModule ??= import("./sim/world").catch((err: unknown) => {
+      simModule = null;
+      throw err;
+    });
+    return simModule;
+  };
+
   const startMatch = async (): Promise<void> => {
+    const { Sim } = await loadSim();
     if (courseWorld === null) {
       courseWorld = buildCourseWorld(course, COURSE_SEED);
       const playfield = arenaFromCourse(courseWorld).playfield;
@@ -118,6 +134,8 @@ async function main(): Promise<void> {
   };
 
   screens.register("title", () => {
+    // After the title's first frame, so the download never competes with it.
+    requestAnimationFrame(() => setTimeout(() => void loadSim().catch(() => {}), 0));
     return new TitleScreen({
       root: screensRoot,
       renderer,

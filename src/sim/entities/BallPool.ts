@@ -4,6 +4,7 @@ import { createSurfaceTuning } from "../surfaces";
 import type { MutableSurfaceTuning } from "../surfaces";
 import { BALL_RADIUS as POOLED_BALL_RADIUS } from "./ballShape";
 import { BALL_GROUPS } from "../collisionGroups";
+import { POOL_SIZE } from "../frame";
 
 /** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
  * explicit out-of-scope list (docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1). */
@@ -45,7 +46,8 @@ export interface PooledBall {
   restTicks: number;
 }
 
-export const POOL_SIZE = 32;
+/** Lives in `frame.ts`, which the renderer can import without Rapier. */
+export { POOL_SIZE };
 export const LANDED_BALL_DESPAWN_S = 15;
 /**
  * A ball still flying after this long is given back to the pool. Rolling resistance brings a ball on

@@ -189,6 +189,27 @@ check(
 check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
 check("shows a version string", typeof title.version === "string" && title.version.length > 0, title.version);
 
+// Loading (Stage 3): Rapier is most of the bundle and not needed until PLAY, so the page's entry
+// script does not carry it, and the chunk that does is fetched while the title is up.
+const loading = await page.evaluate(async () => {
+  const entry = document.querySelector('script[type="module"][src]')?.src ?? null;
+  const entryBytes = entry ? (await (await fetch(entry)).arrayBuffer()).byteLength : 0;
+  return { entry, entryBytes };
+});
+const prefetched = await page
+  .waitForFunction(
+    () => performance.getEntriesByType("resource").some((r) => /\/assets\/world-[^/]*\.js$/.test(r.name)),
+    { timeout: 20000, polling: 100 },
+  )
+  .then(() => true, () => false);
+const simStillNull = await page.evaluate(() => window.__teetimeturrets.sim === null);
+check(
+  "the entry script leaves the physics engine out",
+  loading.entryBytes > 0 && loading.entryBytes < 1_500_000,
+  `${loading.entry?.split("/").pop()} ${(loading.entryBytes / 1e6).toFixed(2)} MB`,
+);
+check("and the title prefetches it before PLAY", prefetched && simStillNull, `fetched ${prefetched}, no sim yet ${simStillNull}`);
+
 const clickTitle = (label) =>
   page.evaluate((l) => {
     [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === l).click();
