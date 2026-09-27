@@ -13,6 +13,7 @@ import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import { MatchScreen } from "./ui/screens/MatchScreen";
 import { MatchResultsScreen } from "./ui/screens/MatchResultsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
+import { gameAudio } from "./audio/audioEngine";
 
 /**
  * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
@@ -48,6 +49,11 @@ async function main(): Promise<void> {
   window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
+  // Browsers only start audio from a user gesture. Every gesture calls it, because a context can
+  // also be suspended later (a hidden tab), and `unlock` resumes it.
+  const unlockAudio = (): void => gameAudio.unlock();
+  window.addEventListener("pointerdown", unlockAudio, { capture: true });
+  window.addEventListener("keydown", unlockAudio, { capture: true });
 
   const course = authoredCourse(COURSE_SEED);
   const screens = new ScreenManager<ScreenName>();

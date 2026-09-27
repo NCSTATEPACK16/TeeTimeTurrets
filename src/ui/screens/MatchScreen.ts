@@ -17,6 +17,8 @@ import type { BannerSource } from "../bannerFeed";
 import { HitMarkers } from "../hitMarkers";
 import { KillFeed, drawKillFeed } from "../killFeed";
 import { DamageIndicators, damageScreenAngle, lowHpIntensity, markerLabel } from "../hitFeedback";
+import { gameAudio } from "../../audio/audioEngine";
+import { cueFor, heartbeatInterval } from "../../audio/audioDirector";
 import { Nameplates } from "../nameplates";
 import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
@@ -71,6 +73,10 @@ export class MatchScreen implements Screen {
   private killFeedDrawn = -1;
   /** Damage-direction flashes (#damage-indicators) and the low-HP vignette (#low-hp). Optional. */
   private readonly damageIndicators = new DamageIndicators();
+  /** Where the player hears from, refreshed each frame for `cueFor`. */
+  private readonly listener = { x: 0, z: 0, yaw: 0 };
+  /** Seconds since the last low-health heartbeat. */
+  private sinceHeartbeat = 0;
   private damageRoot: HTMLElement | null = null;
   private lowHp: HTMLElement | null = null;
   private view: FrameView | null = null;
@@ -219,6 +225,7 @@ export class MatchScreen implements Screen {
     // and ammo cards lit over whatever screen comes next.
     if (this.hud) this.hud.combat.hidden = true;
     if (this.banner) this.banner.root.hidden = true;
+    gameAudio.engineStop();
     this.killFeedRoot?.replaceChildren();
     this.killFeedRoot = null;
     this.damageRoot?.replaceChildren();
@@ -260,9 +267,19 @@ export class MatchScreen implements Screen {
 
     this.damageIndicators.update(dt);
     if (this.damageRoot) drawDamageIndicators(this.damageRoot, this.damageIndicators);
+    const lowHp = lowHpIntensity(sim.cart.health.hp, sim.cart.health.max);
     if (this.lowHp) {
-      const intensity = lowHpIntensity(sim.cart.health.hp, sim.cart.health.max).toFixed(2);
-      if (this.lowHp.style.opacity !== intensity) this.lowHp.style.opacity = intensity;
+      const opacity = lowHp.toFixed(2);
+      if (this.lowHp.style.opacity !== opacity) this.lowHp.style.opacity = opacity;
+    }
+
+    // Sound that follows state rather than events: the motor, and the heartbeat at low health.
+    if (sim.matchOver || sim.cart.dead) gameAudio.engineStop();
+    else gameAudio.engine(sim.cart.speed / CART_TUNING.topSpeed);
+    this.sinceHeartbeat += dt;
+    if (!sim.matchOver && this.sinceHeartbeat >= heartbeatInterval(lowHp)) {
+      this.sinceHeartbeat = 0;
+      gameAudio.heartbeat(lowHp);
     }
   }
 
@@ -275,8 +292,13 @@ export class MatchScreen implements Screen {
     const cursor = this.eventCursor;
     if (!cursor) return;
     const log = sim.events;
+    this.listener.x = sim.cart.position.x;
+    this.listener.z = sim.cart.position.z;
+    this.listener.yaw = sim.cart.turretYaw;
     for (let s = cursor.begin(); s < log.total; s++) {
       const e = log.at(s)!;
+      const cue = cueFor(e, this.listener);
+      if (cue) gameAudio.play(cue);
       if (e.kind === "kill") this.killFeed.onKill(e.actor, e.target);
       this.playEffect(e.kind, e.x, e.y, e.z);
       this.addTrauma(sim, e.kind, e.actor, e.target, e.club, e.x, e.z);
