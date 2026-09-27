@@ -20,6 +20,10 @@ import { DamageIndicators, damageScreenAngle, lowHpIntensity, markerLabel } from
 import { gameAudio } from "../../audio/audioEngine";
 import { cueFor, heartbeatInterval } from "../../audio/audioDirector";
 import { PauseState } from "../pauseState";
+import { CourseMap } from "../courseMap";
+import type { MapMarker } from "../courseMap";
+import { courseMapHoles, nearestHoleNumber } from "../courseMapHoles";
+import { teamOf } from "../../sim/matchConfig";
 import type { Settings } from "../../app/settings";
 import { buildSettingsPanel } from "../settingsPanel";
 import { el } from "../dom";
@@ -93,8 +97,21 @@ export class MatchScreen implements Screen {
   private settings: Settings | null = null;
   private overlay: HTMLElement | null = null;
   private overlayPanel = "";
+  /** The `M` map: closed, framed on the hole you are on, or the whole course. */
+  private courseMap: CourseMap | null = null;
+  private readonly mapMarkers: MapMarker[] = [];
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (event.code !== "Escape" || event.repeat) return;
+    if (event.repeat) return;
+    if (event.code === "KeyM" && !this.pause.paused) {
+      this.courseMap?.cycle();
+      return;
+    }
+    if (event.code !== "Escape") return;
+    // Esc closes an open map before it pauses anything.
+    if (this.courseMap?.visible) {
+      this.courseMap.close();
+      return;
+    }
     this.pause.escape(this.options.sim.matchOver);
     this.syncPause();
   };
@@ -141,6 +158,8 @@ export class MatchScreen implements Screen {
     this.settings = { ...this.options.settings };
     this.input.sensitivity = this.settings.sensitivity;
     this.pause = new PauseState({ showControls: !this.settings.seenControls });
+    // The holes are sampled on first open (courseMapHoles), not here: most matches never open it.
+    this.courseMap = new CourseMap(nameplateRoot, () => courseMapHoles(arena));
     this.overlayPanel = "";
     window.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("pointerlockchange", this.onPointerLockChange);
@@ -241,6 +260,7 @@ export class MatchScreen implements Screen {
     this.render.draw(view);
     this.drawNameplates();
     this.drainEvents(sim);
+    this.drawCourseMap();
     drawHud(this.hud, sim);
     this.updateBanner(sim);
   }
@@ -268,6 +288,8 @@ export class MatchScreen implements Screen {
     document.removeEventListener("pointerlockchange", this.onPointerLockChange);
     this.overlay?.remove();
     this.overlay = null;
+    this.courseMap?.dispose();
+    this.courseMap = null;
     this.killFeedRoot?.replaceChildren();
     this.killFeedRoot = null;
     this.damageRoot?.replaceChildren();
@@ -381,6 +403,35 @@ export class MatchScreen implements Screen {
         if (d < NEAR_BLAST_M) trauma.add(TRAUMA_NEAR_BLAST * (1 - d / NEAR_BLAST_M));
       }
     }
+  }
+
+  /**
+   * The `M` map's live layer: the player, every living cart in its team's colour, and the ammo
+   * buckets. Costs nothing while the map is closed.
+   */
+  private drawCourseMap(): void {
+    const map = this.courseMap;
+    const view = this.view;
+    if (!map || !map.visible || !view) return;
+    const { sim } = this.options;
+    const markers = this.mapMarkers;
+    markers.length = 0;
+    if (!sim.cart.dead) {
+      markers.push({ x: view.cart.position.x, z: view.cart.position.z, kind: "self", heading: view.cart.heading });
+    }
+    for (let i = 0; i < view.botCarts.length; i++) {
+      if (view.botDead[i]) continue;
+      const bot = view.botCarts[i]!;
+      // Bot i is rig i + 1.
+      const kind = teamOf(i + 1) === teamOf(0) ? "ally" : "enemy";
+      markers.push({ x: bot.position.x, z: bot.position.z, kind, heading: 0 });
+    }
+    for (const bucket of sim.pickups) {
+      if (bucket.cooldownRemaining > 0) continue;
+      markers.push({ x: bucket.position.x, z: bucket.position.z, kind: "pickup", heading: 0 });
+    }
+    const holes = courseMapHoles(this.options.arena);
+    map.draw(markers, nearestHoleNumber(holes, view.cart.position.x, view.cart.position.z));
   }
 
   /** Shows the card `PauseState` asks for, rebuilding it only when that changes. */

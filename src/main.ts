@@ -17,6 +17,7 @@ import { gameAudio } from "./audio/audioEngine";
 import { loadSettings, pageStorage, saveSettings } from "./app/settings";
 import type { Settings } from "./app/settings";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
+import { courseMapHoles } from "./ui/courseMapHoles";
 
 /**
  * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
@@ -94,6 +95,9 @@ async function main(): Promise<void> {
         southBoundary: courseWorld.southBoundary,
         seed: COURSE_SEED,
       };
+      // The M map's holes, sampled now, while PLAY is already loading, rather than on first open
+      // in the middle of a fight. Cached for the page, like the course.
+      courseMapHoles(arenaSource);
     }
     // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
     // match's has to be freed by hand or every rematch leaks a whole course.
