@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Rewritten 2026-09-27, when this project moved to cloud sessions. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-09-27, at the end of the cloud session that finished Stage 1. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
@@ -8,7 +8,7 @@ Rewritten 2026-09-27, when this project moved to cloud sessions. Rewrite this fi
 
 1. `AGENTS.md`: the rules, the Claude of Tanks license note, and the "see red first" testing rule.
 2. **`docs/REVAMP-PLAN.md`: the master stage order and each stage's contents.** It supersedes older plans.
-3. `docs/DECISIONS.md`: the newest section is the 2026-09-27 revamp.
+3. `docs/DECISIONS.md`: the two newest sections are the 2026-09-27 revamp and "The golden fingerprint is Linux x64's".
 4. `docs/TEST-AND-SPEC-PITFALLS.md` before writing a test or a spec.
 
 ## The direction (set by the user; do not relitigate)
@@ -20,14 +20,12 @@ Rewritten 2026-09-27, when this project moved to cloud sessions. Rewrite this fi
 - Blender authors primitive-graph JSON only, in a **new** `.blend`. Never touch `art/clubhouse-and-cart.blend`.
 - **Cloud sessions:** work one stage, run the checkpoint, push, update the draft PR, rewrite this file, then **STOP** for the user's play-test. Never merge. Never re-baseline the gate without the user's approval. Never start the next stage without the user saying so.
 
-## Stages and GitHub
-
-The milestones "Stage 1" to "Stage 10" each hold that stage's issues (#29–#68, labelled `ready-for-agent`; each lists what blocks it). Close issues from the PR (`Closes #n`).
+## Where things stand
 
 | # | Stage | Branch | Status |
 |---|---|---|---|
-| 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only` (draft PR #28 → `main`) | **in progress** |
-| 2 | Juice and audio | `stage-2-juice` | — |
+| 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only` (draft PR #28 → `main`) | **done; waiting on the user** (below) |
+| 2 | Juice and audio | `stage-2-juice` | next, once the user says so |
 | 3 | Foundations: performance and render base | `stage-3-foundations` | — |
 | 4 | Handling feel and arena zone | `stage-4-handling-zone` | — |
 | 5 | Environment | `stage-5-environment` | — |
@@ -37,81 +35,84 @@ The milestones "Stage 1" to "Stage 10" each hold that stage's issues (#29–#68,
 | 9 | Refactor | `stage-9-refactor` | — |
 | 10 | Docs | `stage-10-docs` | — |
 
+- The milestones "Stage 1" to "Stage 10" each hold that stage's issues (#29–#68, labelled `ready-for-agent`; each lists what blocks it). Close issues from the PR (`Closes #n`).
 - **Branching.** Each later stage branches from `main` once the previous PR has merged. If it hasn't merged, branch from the previous stage's branch and say so in the PR.
-- **Archived work.** Tag `archive/wonderful-edison` keeps an old branch's `courseTrees.ts` (`cbfedd5`), `courseProps.ts` (`1c49b15`) and clubhouse-in-arena (`cb039b6`) commits. Stages 5 and 7 start from them (see `REVAMP-PLAN.md`). **Do not merge the tag.** It was built on pre-arena-only code; lift files from it with `git show <sha>:<path>`.
+- **Archived work.** Tag `archive/wonderful-edison` keeps an old branch's `courseTrees.ts` (`cbfedd5`), `courseProps.ts` (`1c49b15`) and clubhouse-in-arena (`cb039b6`) commits. Stages 5 and 7 start from them (see `REVAMP-PLAN.md`). **Do not merge the tag.** Lift files from it with `git show <sha>:<path>`.
 
-## Pick up here: Stage 1 on `arena-only`
+### Stage 1 checkpoint, at `f4332ef` (outputs are in PR #28's description)
 
-**State at `5b85025` and after:**
-- `tsc` is clean.
-- Vitest: 902 tests pass, plus **2 red on purpose in `src/sim/botMind.test.ts`**. Those two are the spec for 1.8. CI stays red until they pass.
-- The golden fingerprint is `1107444919`. It is re-recorded deliberately whenever the sim changes.
-- Smoke and the gate have not been run since Stage 0.
-- **CI shows 2 more failures, and they must be settled first, before step 1.** CI run `36320325184` on PR #28, Linux on Node 22.23:
-  - `arenaGolden.test.ts` "replays identically" **times out at 5 s.** CI's `npm test` is a bare `vitest run`, with no `--testTimeout=30000`. Fix: add `testTimeout` to `vitest.config.ts` rather than relying on the flag.
-  - `arenaGolden.test.ts` "matches the recorded fingerprint" gets **`1424064728` on CI but `1107444919` locally** (macOS, Node 26.4). The golden is not portable across platforms and Node versions.
-  - Find out why before re-recording anything. Likely suspects are transcendental `Math.*` results differing between V8 versions, and iteration order.
-  - Then decide which environment is canonical and say so in `DECISIONS.md`. CI is the only shared one, and cloud sessions run Linux too.
-  - Until then, a golden re-recorded in the cloud will fail on the user's Mac, and the reverse is also true.
+- `tsc` clean. **912 tests pass** on a bare `vitest run`; CI's `test` job is green.
+- **Smoke passes**, including new mouse-fire, pointer-lock and turret-camera checks.
+- **Gate: 17 of 18 pass.** `cart-putter` drifts, and a re-baseline is proposed in the PR, **not committed**.
+- **Probe: runs again, and fails one check** (driver distance, below). The tunnelling check passes.
 
-**Steps:**
-1. **1.8 Wire the minds** (`src/sim/world.ts`) to turn `botMind.test.ts` green.
-   - Add `mind: BotMind | null` to `CartRig`.
-   - In `addCartRig`, for a bot, set the skill to `mulberry32(hashChannel(this.seed, 0, BOT_SKILL_CHANNEL, botIndex))()`. Pass the bot index in, because `rigs.length - 1` is only right after the player's rig has been added.
-   - In `intentFor`, when `cart.ammo <= 0`, write the nearest ammo into `mind.ammoX/Z/hasAmmoTarget`. That is an off-cooldown bucket or a `landed` ball. Loop without allocating, and do not use `ballsNear`.
-   - Pass `rig.mind` to `computeBotIntent`.
-   - Then re-record the golden and re-run `botAcceptance.test.ts`.
-2. **1.9 Rematch.**
-   - `Sim.reset` should call `BallPool.releaseAll`, reset the bucket cooldowns and `simTime`, and reset each mind (`createBotMind` with the same skill).
-   - Fix the discarded buzzer tick. `step()` returns right after `match.tick` sets `over`, so the final tick's movement and contacts never happen. Write a failing test first.
-3. **Checkpoint.**
-   - Run `npm run smoke`. Update `tools/smoke.mjs` for mouse fire and the turret camera if it needs it.
-   - Run `npm run build`, which includes the gate. Propose any re-baseline in the PR and do not commit it.
-   - Run `npm run probe`. The tunneling check applies, since ball tuning changed in 1.5.
-   - Paste the outputs into the PR, rewrite this file, push, and STOP.
+### Waiting on the user
 
-**What Stage 1 already did** (the commits are on `arena-only`):
-- **1.1 Teams.** Friendly fire is off.
-- **1.2 and 1.3.** 4v4 with clubhouse spawn pads.
-- **1.4 and 1.6.** Faster carts; the ram is capped at 2.
-- **1.5 Ball-only hull hitbox.** `CART_HULL` is a cylinder, r 0.9, 0–2.8 m.
-- **1.5 Putter pistol.** `CLUB_STATS` gains `damage`, `gravityScale` and `recoil`. The putter fires at 30–38 m/s with 1° loft.
-- **1.7 Controls.** Mouse0 fires. Mouse2 cancels, and the trigger must be let go before it charges again. The camera follows the turret. The aim arc is `entities/AimArc.ts`.
-- **1.8, first half.**
-  - `sim/aimSolver.ts` holds the range → charge table.
-  - `computeBotIntent(..., mind)` handles skill, getting unstuck and ammo seeking.
-  - `botAcceptance.test.ts` checks that an idle player is hit within 30 s.
+1. **The play-test.**
+2. **Approve the gate re-baseline for `cart-putter`, or not.** Its bbox height is 3.0038 m against a baseline of 3.0710 m, 2.2% over a 0.5% band; the signature passes. The cause is the putter's loft going from 3° to 1° in `62387bb` (Stage 1.5): the barrel's pitch is the club's loft, and about 2 m of barrel × (sin 3° − sin 1°) ≈ 0.07 m. Once approved: `npm run gate -- --update-baseline`, then commit **only** `tools/gate-baseline/cart-putter.png`, `metrics.json` and `signatures.json`, and check the diff touches only `cart-putter`.
+3. **The ball pool runs dry in a 4v4, and the player's shots silently don't fire.** Measured headlessly over 60 s of the arena with the player firing every 0.75 s: all 32 pooled balls are in flight on 64% of ticks, from 2.3 s in, and the player's shots were refused 32 times out of 64. `Sim.resolveShot` refunds the round when `BallPool.acquire` returns null, so nothing is shown. This predates this session: at `90bfe6c` it was 56% of ticks and 25 refused out of 58. The options are a bigger pool (render buffers and Stage 3's budgets), balls that count as landed sooner, a slower bot fire rate, or reclaiming the oldest flying ball. That is a design call.
+4. **The driver falls short of the course's reference distance.** Now that the probe runs, it measures the driver at 103.8 m total (75.3 carry + 28.5 roll) against the 129 m `REFERENCE_CARRY_M`, 19.5% short against a 15% band. That constant was the stroke-play ball's, launched from the tee with no pool drag. Either the driver is retuned or the check gets a new reference; left failing on purpose.
 
-## New in the repo for the revamp
+## What Stage 1 did this session
 
-- **`src/vendor/cot/`.** MIT code from Claude of Tanks: `terrainMobility.ts` (Stage 4), `botRoutePlanner.ts` (Stage 6) and `shadowStability.ts` (Stage 3). Each has a `NOTICE` entry. They are DOM-free, so `src/sim/**` may import them.
-- **`reference/claude-of-tanks/*.ts.txt`.** MIT engine files: sky, lighting, quality, cameraRig and post. They are reading material only and not compiled. Adapt them in small pieces, and add a `NOTICE` entry for anything that lands in `src/`.
-- **`public/textures/terrain/`.** Five CC0 PBR sets, used in Stage 5 (see `LICENSES.md`).
-- **The Claude of Tanks repo itself is not available to cloud sessions, and nothing more may be taken from it.** Its world and vehicle code is proprietary. `REVAMP-PLAN.md` describes the techniques by name, so write them from scratch.
+- **CI settled first.**
+  - `vitest.config.ts` has `testTimeout: 30_000`, so `--testTimeout` is no longer needed.
+  - **The golden fingerprint is recorded on Linux x64**, the platform CI runs. An Apple Silicon Mac computes a different one because V8's `Math.sin`, `Math.cos` and `Math.atan2` round a few inputs one ulp apart on arm64. That was measured, not guessed: an emulated arm64 Node reproduced the Mac's exact number, and swapping 361 `Math` results for x64's made it match x64 on every tick. See `DECISIONS.md`. **Expect `matches the recorded fingerprint` to fail on the user's Mac; that is by design.**
+- **#29 Bots use their minds.** `CartRig.mind`, a skill per bot from `BOT_SKILL_CHANNEL`, and the nearest off-cooldown bucket or landed ball written in when a bot is empty.
+  - `botMind.test.ts`'s refill test had the bot shove the player onto the bucket, so the bot now starts off to the player's side.
+  - A third test covers "a landed ball, not a bucket on cooldown".
+- **#30 Rematch.**
+  - The buzzer tick is simulated in full.
+  - `Sim.reset()` rebuilds the Rapier world through `buildPhysics()`, in `create()`'s order; the heights are kept, so a reset takes 2–8 ms.
+  - `reset()` also clears bucket cooldowns and `simTime`, and calls `Cart.rearm()` for each cart. Ammo no longer survives a rematch.
+  - A rematch now replays the first match bit for bit (`arenaGolden.test.ts`).
+- **#31 Checkpoint.**
+  - Smoke checks mouse fire (the click that takes the pointer lock does not fire, the left button fires, a right-click drops the charge), the turret camera, and that the results screen leaves the pointer free.
+  - Smoke and the gate no longer leave orphaned `vite preview` servers behind, and they refuse a port something else is already serving.
+  - The probe was ported to fire through the cart and the ball pool.
+
+## Next session: Stage 2, only when the user says so
+
+`REVAMP-PLAN.md` "Stage 2: juice, audio and feedback". Branch `stage-2-juice` from `main` if #28 has merged, otherwise from `arena-only`, and say which in the PR. Three things in this repo bear on it:
+- **`Sim.events` replaces `hitEvents`.** The hit-marker pool, `hitEventEpoch`, and `killCart`/`creditHit` in `world.ts` are the current producers.
+- **Hit markers show a fake "+50".**
+- **The pool refusal above is the most audible silent failure in the game.** If it stays, Stage 2's "click" sound for a refused shot is worth asking about.
 
 ## Audit findings still open (from 2026-09-26)
 
 - **Performance** (Stage 3):
   - Nameplate line of sight runs up to about 3,500 `heightAt` calls per frame.
-  - The heightfield is rebuilt on every PLAY, and `CourseGround` on every match.
-  - A match has about 545 meshes, and each cart costs about 78 draw calls.
+  - The heightfield is rebuilt on every PLAY (though no longer on a rematch), and `CourseGround` on every match. `Sim.create` takes about 5 s on the full course in Node.
+  - The smoke counts 705 meshes in a match scene (the audit said about 545), and each cart costs about 78 draw calls.
   - Near tiles are never evicted.
-  - The sim allocates every tick.
+  - The sim allocates every tick. That includes Rapier's `translation()`, which the new ammo search calls per landed ball while a bot is empty.
   - DPR is 2 with MSAA.
   - The bundle is one 3.6 MB chunk.
 - **Economy bug** (Stage 8): `clubhouseState.ts` rebuilds owned items from the equipped set, so an earlier purchase is lost when you switch items.
 - **Paint and skin** never reach the match renderer (Stage 8).
-- **Hit markers** show a fake "+50" (Stage 2).
+- **Cross-platform sim determinism** (unscheduled): see `DECISIONS.md`, "Open: a sim that computes the same bits everywhere". It is also `RESEARCH-NEEDED.md` item 5, now partly answered by measurement: `Math.sin`/`cos`/`atan2` do differ by architecture, and Rapier's WASM did not across one 40 s match.
 
 ## Traps
 
-- **See every new test fail before trusting it, and read the red.** A red for the wrong reason (a throw in setup, say) is not the red you want.
+- **See every new test fail before trusting it, and read the red.** This session caught three inert checks by mutation, each green with the thing it guarded removed:
+  - The smoke's "a pooled ball is in flight" passed on a bot's ball.
+  - "The click that takes the lock does not fire" passed because a full pool refused the shot.
+  - "The release after a cancel fires nothing" passed for the same reason, and was dropped.
 - **Vitest hides `console.log`** unless you run with `--silent=false --reporter=verbose`.
-- **Tests need `--testTimeout=30000`.** The golden test times out at the 5 s default.
+- **The golden is Linux x64's.** Re-record it only from Linux x64 (cloud sessions and CI are), and in the same commit as the change that moves it.
+- **Smoke and the gate in a cloud container:**
+  - Chrome renders with SwiftShader, so both scripts wait on sim state or `__gate.ready`, never on `networkidle0` or fixed sleeps.
+  - The smoke holds the player at full health until MATCH OVER, because bots kill an idle player within the control checks.
+  - `node tools/smoke.mjs` reuses `dist/`. After a mutation experiment, rebuild with `npm run smoke`, or you are testing the mutant.
+- **Killing preview servers from Bash:** `ps | grep 'vite preview' | kill` matches the shell running it. Kill by PID in a separate command.
+- **`tools/feelProbe.ts` is not type-checked** (it needs Node types that `tsconfig.json` does not load), which is how it rotted unnoticed. Build it with `npm run probe` after any `Sim` API change.
 - **Test cart-on-cart and ball-on-cart hits by teleporting once**, never by pinning a kinematic body every tick.
 - **Coordinates:** +z is north.
   - The road (`southBoundary`) runs about 30 m south of the clubhouse.
   - `AUTHORED_CLUBHOUSE` is `{x:-241.2, z:-477.3}`.
   - Hole centres are `AUTHORED_PLACEMENTS` in `authoredLayout.ts`.
 - **Rough scales cart speed by 0.72,** and most ground near the clubhouse is rough.
-- **Git hygiene.** Never put AI-session metadata in commits or PRs. Always use `git commit -s`. Never `git add -A`: the user's local tree has a modified `.blend` and a `.scratch/` folder that must never be committed.
+- **Git hygiene.**
+  - Never put AI-session metadata in commits or PRs.
+  - Always use `git commit -s`.
+  - Never `git add -A`: the user's local tree has a modified `.blend` and a `.scratch/` folder that must never be committed.
