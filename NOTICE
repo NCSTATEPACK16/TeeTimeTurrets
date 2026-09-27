@@ -24,8 +24,7 @@ It does NOT cover `server/`, which is licensed AGPL-3.0-or-later under its own
 --------------------------------------------------------------------------------
 Third-party attributions
 
-No third-party source has been vendored into this repository yet. Runtime
-dependencies are consumed through npm and carry their own licenses (see
+Runtime dependencies are consumed through npm and carry their own licenses (see
 `package-lock.json` and each package's own LICENSE file):
 
   three                        MIT
@@ -50,3 +49,31 @@ unsure which you wrote, assume it is a port and add the entry.
 
 Nothing may be ported from that project's Reserved Content paths under any
 circumstances — see the License note in `AGENTS.md` for the enumerated list.
+
+--------------------------------------------------------------------------------
+Ported code
+
+  src/vendor/cot/terrainMobility.ts
+    Derived from src/sim/terrainMobility.ts in Claude of Tanks.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Ported verbatim.
+
+  src/vendor/cot/botRoutePlanner.ts
+    Derived from src/sim/botRoutePlanner.ts in Claude of Tanks.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Ported verbatim, except import specifiers drop the .ts extension.
+
+  src/vendor/cot/shadowStability.ts
+    Derived from src/engine/shadowStability.ts in Claude of Tanks.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Ported verbatim.
+
+  reference/claude-of-tanks/*.ts.txt
+    Copied from src/engine/{sky,lighting,quality,cameraRig,post}.ts in Claude of
+    Tanks as reading material; not compiled or shipped.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    post.ts.txt also contains AMD FidelityFX FSR1 code under AMD's MIT notice.
+
+  The full MIT notice travels with the code at src/vendor/cot/LICENSE and
+  reference/claude-of-tanks/LICENSE.
+
