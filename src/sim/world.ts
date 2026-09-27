@@ -194,6 +194,14 @@ export class Sim {
   previousBotCarts: CartTransform[] = [];
   /** Bot cart transforms from the most recent fixed step. One per bot. */
   currentBotCarts: CartTransform[] = [];
+  /**
+   * The two transforms each cart's `previous`/`current` pair is drawn from, swapped every tick:
+   * the new `current` is written into whichever one `previous` is not holding. A renderer
+   * interpolating between the pair never sees either overwritten under it, and a tick allocates no
+   * transform at all.
+   */
+  private readonly cartBuffers: [CartTransform, CartTransform] = [blankTransform(), blankTransform()];
+  private readonly botBuffers: [CartTransform, CartTransform][] = [];
   private ballPool!: BallPool;
   /** Ammo buckets. One for now; course-scale supply placement is Stage D's. */
   private readonly buckets: Bucket[] = [];
@@ -260,7 +268,7 @@ export class Sim {
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
-    this.currentCart = cartTransformOf(this.cart);
+    this.currentCart = writeTransform(this.cart, this.cartBuffers[0]);
     this.previousCart = this.currentCart;
   }
 
@@ -308,8 +316,7 @@ export class Sim {
     for (const rig of sim.rigs) sim.placeRig(rig, sim.openingPoint(rig.index));
 
     sim.syncCurrentCart();
-    sim.previousCart = sim.currentCart;
-    sim.previousBotCarts = sim.currentBotCarts.slice();
+    sim.collapseRenderPairs();
     sim.syncCurrentPool();
     sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
@@ -529,8 +536,7 @@ export class Sim {
     // onto its current value, so a renderer lerping between them holds still rather than hanging
     // one tick apart forever.
     if (this.match.over) {
-      this.previousCart = this.currentCart;
-      this.previousBotCarts = this.currentBotCarts.slice();
+      this.collapseRenderPairs();
       this.previousPoolTransforms.set(this.currentPoolTransforms);
     }
   }
@@ -906,8 +912,7 @@ export class Sim {
     }
 
     this.syncCurrentCart();
-    this.previousCart = this.currentCart;
-    this.previousBotCarts = this.currentBotCarts.slice();
+    this.collapseRenderPairs();
     this.syncCurrentPool();
     this.previousPoolTransforms.set(this.currentPoolTransforms);
   }
@@ -928,10 +933,17 @@ export class Sim {
    * every cart one tick behind everything else.
    */
   private syncCurrentCart(): void {
-    this.currentCart = cartTransformOf(this.cart);
+    this.currentCart = writeTransform(this.cart, otherOf(this.cartBuffers, this.previousCart));
     for (let i = 0; i < this.bots.length; i++) {
-      this.currentBotCarts[i] = cartTransformOf(this.bots[i]!);
+      const pair = (this.botBuffers[i] ??= [blankTransform(), blankTransform()]);
+      this.currentBotCarts[i] = writeTransform(this.bots[i]!, otherOf(pair, this.previousBotCarts[i]));
     }
+  }
+
+  /** Every previous/current pair onto its current value, so an interpolating renderer holds still. */
+  private collapseRenderPairs(): void {
+    this.previousCart = this.currentCart;
+    for (let i = 0; i < this.currentBotCarts.length; i++) this.previousBotCarts[i] = this.currentBotCarts[i]!;
   }
 
   /**
@@ -973,11 +985,22 @@ export class Sim {
 /** Neutral intent for callers that step without driving. Frozen: `Sim` never writes to it. */
 const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
 
-function cartTransformOf(cart: Cart): CartTransform {
+function blankTransform(): CartTransform {
+  return { position: { x: 0, y: 0, z: 0 }, heading: 0, turretYaw: 0 };
+}
+
+/** Writes `cart`'s state into `out` and returns it. */
+function writeTransform(cart: Cart, out: CartTransform): CartTransform {
   const p = cart.position;
-  return {
-    position: { x: p.x, y: p.y, z: p.z },
-    heading: cart.heading,
-    turretYaw: cart.turretYaw,
-  };
+  out.position.x = p.x;
+  out.position.y = p.y;
+  out.position.z = p.z;
+  out.heading = cart.heading;
+  out.turretYaw = cart.turretYaw;
+  return out;
+}
+
+/** The buffer of `pair` that is not `avoid`. */
+function otherOf(pair: [CartTransform, CartTransform], avoid: CartTransform | undefined): CartTransform {
+  return pair[0] === avoid ? pair[1] : pair[0];
 }

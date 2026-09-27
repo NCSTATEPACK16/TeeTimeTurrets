@@ -78,7 +78,7 @@ describe("combat contact resolution", () => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(0.15).setDensity(1130), body);
     body.setLinvel({ x: vx, y: 0, z: 0 }, true);
-    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false, damage: STROKE_DAMAGE, onGround: false }, handle: collider.handle };
+    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false, damage: STROKE_DAMAGE, onGround: false, restTicks: 0 }, handle: collider.handle };
   }
 
   beforeEach(() => {

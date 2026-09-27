@@ -121,16 +121,28 @@ const velB = { x: 0, z: 0 };
  * matching how BallPool.step already treats each pooled ball.
  */
 export function processContacts(queue: CollisionEventSource, ctx: CombatContext): void {
-  queue.drainCollisionEvents((handle1, handle2, started) => {
-    if (!started) return;
-    const a = ctx.registry.get(handle1);
-    const b = ctx.registry.get(handle2);
-    if (!a || !b) return;
+  activeContext = ctx;
+  queue.drainCollisionEvents(onContact);
+  activeContext = null;
+}
 
-    if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.ball, b, ctx);
-    if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.ball, a, ctx);
-    if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a, b, ctx);
-  });
+/**
+ * The context `onContact` resolves against, set for the length of one `processContacts` call. A
+ * module-level callback reading it, rather than an arrow function closing over `ctx`, because the
+ * arrow would be a new closure every tick -- an allocation in the fixed step.
+ */
+let activeContext: CombatContext | null = null;
+
+function onContact(handle1: number, handle2: number, started: boolean): void {
+  const ctx = activeContext;
+  if (!started || ctx === null) return;
+  const a = ctx.registry.get(handle1);
+  const b = ctx.registry.get(handle2);
+  if (!a || !b) return;
+
+  if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.ball, b, ctx);
+  if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.ball, a, ctx);
+  if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a, b, ctx);
 }
 
 function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, ctx: CombatContext): void {

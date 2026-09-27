@@ -41,6 +41,8 @@ export interface PooledBall {
    * ball fair game for `acquire` to recycle when the whole pool is in flight.
    */
   onGround: boolean;
+  /** Consecutive ticks this flying ball has sat grounded and slow; `REST_HOLD_TICKS` lands it. */
+  restTicks: number;
 }
 
 export const POOL_SIZE = 32;
@@ -85,7 +87,8 @@ const PARKED_POSITION = { x: 0, y: -1000, z: 0 };
 
 export class BallPool {
   private readonly balls: PooledBall[];
-  private readonly restTicks = new WeakMap<RAPIER.RigidBody, number>();
+  /** `ballsNear`'s answer, rewritten on every call rather than built. */
+  private readonly nearScratch: PooledBall[] = [];
   private readonly ground: PoolGround;
   private readonly tuningScratch = createSurfaceTuning();
   /** Sim time as of the last `step`, so `acquire` can stamp `firedAt` without being passed it. */
@@ -123,8 +126,8 @@ export class BallPool {
         spent: false,
         damage: 1,
         onGround: false,
+        restTicks: 0,
       });
-      this.restTicks.set(body, 0);
     }
   }
 
@@ -166,7 +169,7 @@ export class BallPool {
     ball.spent = false;
     ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
-    this.restTicks.set(ball.body, 0);
+    ball.restTicks = 0;
     return ball;
   }
 
@@ -182,7 +185,7 @@ export class BallPool {
     ball.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     ball.body.collider(0).setEnabled(false);
     ball.body.setEnabled(false);
-    this.restTicks.set(ball.body, 0);
+    ball.restTicks = 0;
   }
 
   /** Releases every ball not already idle. Used when swapping holes so stale in-flight/landed
@@ -216,9 +219,8 @@ export class BallPool {
         if (grounded) this.applyRollingResistance(ball.body, t.x, t.z, dt);
         const v = ball.body.linvel();
         const slow = Math.hypot(v.x, v.y, v.z) < REST_SPEED_THRESHOLD;
-        const ticks = grounded && slow ? (this.restTicks.get(ball.body) ?? 0) + 1 : 0;
-        this.restTicks.set(ball.body, ticks);
-        if (ticks >= REST_HOLD_TICKS) {
+        ball.restTicks = grounded && slow ? ball.restTicks + 1 : 0;
+        if (ball.restTicks >= REST_HOLD_TICKS) {
           ball.state = "landed";
           ball.onGround = false;
           ball.landedAt = simTime;
@@ -254,12 +256,18 @@ export class BallPool {
     return this.balls;
   }
 
-  /** "landed" balls only, for pickup checks. */
-  ballsNear(x: number, z: number, radius: number): PooledBall[] {
-    return this.balls.filter((b) => {
-      if (b.state !== "landed") return false;
+  /**
+   * "landed" balls only, for pickup checks. The returned array is reused: it holds this call's
+   * answer until the next call, so a caller iterates it and does not keep it.
+   */
+  ballsNear(x: number, z: number, radius: number): readonly PooledBall[] {
+    const out = this.nearScratch;
+    out.length = 0;
+    for (const b of this.balls) {
+      if (b.state !== "landed") continue;
       const t = b.body.translation();
-      return Math.hypot(t.x - x, t.z - z) <= radius;
-    });
+      if (Math.hypot(t.x - x, t.z - z) <= radius) out.push(b);
+    }
+    return out;
   }
 }
