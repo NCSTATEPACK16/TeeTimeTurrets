@@ -1,4 +1,5 @@
-import type { HitEventKind } from "../sim/world";
+/** What a marker marks: the player's ball connecting, or a cart the player killed. */
+export type MarkerKind = "hit" | "kill";
 
 /**
  * Hit markers (UI-SPEC H11, image 00): the little `+50` / `DIRECT HIT!` / `ENEMY DOWN` callouts
@@ -19,7 +20,7 @@ interface MarkerText {
   readonly variant: string;
 }
 
-const TEXT: Record<HitEventKind, MarkerText> = {
+const TEXT: Record<MarkerKind, MarkerText> = {
   hit: { label: "+50", variant: "hit-marker--hit" },
   kill: { label: "ENEMY DOWN", variant: "hit-marker--kill" },
 };
@@ -35,7 +36,7 @@ export class HitMarkers {
   }
 
   /** Spawns one marker at a screen pixel position. `screenX/Y` come from `projectToScreen`. */
-  spawn(kind: HitEventKind, screenX: number, screenY: number): void {
+  spawn(kind: MarkerKind, screenX: number, screenY: number): void {
     const text = TEXT[kind];
     const node = document.createElement("div");
     node.className = `hit-marker ${text.variant}`;

@@ -6,6 +6,7 @@ import { CLUB_STATS } from "../../physics/Ballistics";
 import type { ClubType } from "../../physics/Ballistics";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE, createPreviewBuffer } from "../../sim/world";
 import type { CartTransform } from "../../sim/world";
+import type { SimEventCursor } from "../../sim/events";
 import { drawHud, readHud } from "../hud";
 import type { Hud } from "../hud";
 import { drawBanner, readBanner } from "../banner";
@@ -57,9 +58,9 @@ export class MatchScreen implements Screen {
   private lastBannerMs = 0;
   /** UI-SPEC H11. Optional like the banner; the match runs without #hit-markers. */
   private hitMarkers: HitMarkers | null = null;
-  /** The last `Sim.hitEventEpoch` consumed, so each tick's events spawn a marker exactly once
-   *  however many frames render between steps. */
-  private lastHitEpoch = 0;
+  /** This screen's place in `Sim.events`, so each event is handled exactly once however many
+   *  ticks ran since the last frame. Made on `enter`, which starts it at the present. */
+  private eventCursor: SimEventCursor | null = null;
   private readonly hitScreenScratch = { x: 0, y: 0 };
   private view: FrameView | null = null;
   /** Guards `onMatchOver`: called once. */
@@ -103,7 +104,7 @@ export class MatchScreen implements Screen {
     this.lastBannerMs = performance.now();
     const hitRoot = document.getElementById("hit-markers");
     this.hitMarkers = hitRoot ? new HitMarkers(hitRoot) : null;
-    this.lastHitEpoch = sim.hitEventEpoch;
+    this.eventCursor = sim.events.cursor();
     this.matchOverReported = false;
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
@@ -227,20 +228,24 @@ export class MatchScreen implements Screen {
   }
 
   /**
-   * Spawns a hit marker for each of the tick's player-attributed combat events, once per tick. The
-   * epoch gate is what makes it once: the sim advances at a fixed step while this renders at the
-   * display rate. Runs after `render.draw`, so the camera `projectToScreen` reads is this frame's.
+   * Spawns a hit marker for each of the player's hits and kills since the last frame, once each.
+   * The cursor is what makes it once, and what keeps every tick's events when several ticks run
+   * between frames. Runs after `render.draw`, so the camera `projectToScreen` reads is this frame's.
    */
   private drawHitMarkers(sim: Sim): void {
-    if (!this.hitMarkers || !this.render) return;
-    if (sim.hitEventEpoch === this.lastHitEpoch) return;
-    this.lastHitEpoch = sim.hitEventEpoch;
-    for (let i = 0; i < sim.hitEventCount; i++) {
-      const e = sim.hitEvents[i]!;
+    const cursor = this.eventCursor;
+    if (!cursor) return;
+    const log = sim.events;
+    for (let s = cursor.begin(); s < log.total; s++) {
+      const e = log.at(s)!;
+      // Markers are the player's feedback: the player's own hits and kills, nobody else's.
+      if (e.actor !== 0 || (e.kind !== "hit" && e.kind !== "kill")) continue;
+      if (!this.hitMarkers || !this.render) continue;
       // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
       const onScreen = this.render.projectToScreen(e.x, e.y + HIT_MARKER_LIFT, e.z, this.hitScreenScratch);
       if (onScreen) this.hitMarkers.spawn(e.kind, this.hitScreenScratch.x, this.hitScreenScratch.y);
     }
+    cursor.end();
   }
 
   private drawNameplates(): void {

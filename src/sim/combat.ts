@@ -89,7 +89,12 @@ export interface CombatContext {
    * module that could not tell whose ball it was meant a bot's hit inflated the player's
    * accuracy. `world.ts` now decides, and it decides by asking whether `shooter` is rig 0.
    */
-  onBallHit: (shooter: number, x: number, y: number, z: number) => void;
+  onBallHit: (shooter: number, victim: number, damage: number, x: number, y: number, z: number) => void;
+  /**
+   * A ram hurt a cart. `rammer` is the other cart, `victim` the one that took `damage`, and
+   * `x`/`y`/`z` is where the victim was. Reported for feedback only; the damage is already applied.
+   */
+  onRamDamage: (rammer: number, victim: number, damage: number, x: number, y: number, z: number) => void;
   /**
    * Called once, on the contact that takes a cart from above zero HP to zero.
    *
@@ -150,7 +155,7 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
 
   ball.spent = true;
   const at = ball.body.translation();
-  ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
+  ctx.onBallHit(ball.firedBy, victim.index, ball.damage, at.x, at.y, at.z);
   if (applyDamage(cart.health, ball.damage)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
 }
 
@@ -190,8 +195,16 @@ function cartsShunt(
     const bApproach = -(velB.x * lx + velB.z * lz) / l;
     const toA = aApproach > bApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
     const toB = bApproach > aApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
-    if (toA > 0 && applyDamage(a.health, toA)) ctx.onCartKilled(a, first.index, second.index);
-    if (toB > 0 && applyDamage(b.health, toB)) ctx.onCartKilled(b, second.index, first.index);
+    if (toA > 0) {
+      const lethal = applyDamage(a.health, toA);
+      ctx.onRamDamage(second.index, first.index, toA, a.position.x, a.position.y, a.position.z);
+      if (lethal) ctx.onCartKilled(a, first.index, second.index);
+    }
+    if (toB > 0) {
+      const lethal = applyDamage(b.health, toB);
+      ctx.onRamDamage(first.index, second.index, toB, b.position.x, b.position.y, b.position.z);
+      if (lethal) ctx.onCartKilled(b, second.index, first.index);
+    }
   }
 
   // Along the line between them, so the pair separates rather than being flung sideways. Two

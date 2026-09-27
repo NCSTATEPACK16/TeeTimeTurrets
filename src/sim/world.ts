@@ -33,6 +33,7 @@ import {
 import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
+import { NO_RIG, SimEventLog } from "./events";
 
 export type { Vec3 } from "./course";
 
@@ -75,20 +76,6 @@ function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: numb
   p.y = y;
   p.z = z;
 }
-
-/** What a hit marker is marking: a player ball connecting, or a cart the player killed. */
-export type HitEventKind = "hit" | "kill";
-/** A world-space combat event for the render layer to float a hit marker over. Attributed to the
- *  player only -- bot-on-bot hits are not marked, or the arena would be a blizzard of numbers. */
-export interface HitEvent {
-  kind: HitEventKind;
-  x: number;
-  y: number;
-  z: number;
-}
-/** Most player-attributed events one tick can hold. A dropped overflow event is a missing marker,
- *  never a wrong number, so a fixed pool is safe. */
-const HIT_EVENT_CAPACITY = 16;
 
 /**
  * Air drag on a fired ball, mirrored by `previewTrajectory` so the aim arc matches the flight.
@@ -233,19 +220,12 @@ export class Sim {
   private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly botTarget = { x: 0, z: 0, dead: false };
   /**
-   * Player-attributed combat events for the current tick, for the render layer's hit markers. A
-   * fixed pool written in place (no per-tick allocation); `hitEventCount` says how many are live and
-   * `hitEventEpoch` ticks up once per step so a consumer spawns each marker exactly once however
-   * many frames it renders between steps.
+   * Everything that happened, for whatever reacts to it: markers, the kill feed, effects, audio.
+   * Every cart's events, not just the player's; a reader filters. See `events.ts`.
    */
-  private readonly hitEventPool: HitEvent[] = Array.from({ length: HIT_EVENT_CAPACITY }, () => ({
-    kind: "hit" as HitEventKind,
-    x: 0,
-    y: 0,
-    z: 0,
-  }));
-  hitEventCount = 0;
-  hitEventEpoch = 0;
+  readonly events = new SimEventLog();
+  /** Ticks stepped since the match started, stamped on each event. */
+  private tickCount = 0;
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   /** The clock and the scoreboard. Its roster is set in `create`, once every rig exists. */
   readonly match: Match;
@@ -324,7 +304,9 @@ export class Sim {
 
     sim.combatContext = {
       registry: sim.registry,
-      onBallHit: (shooter, x, y, z) => sim.creditHit(shooter, x, y, z),
+      onBallHit: (shooter, victim, damage, x, y, z) => sim.creditHit(shooter, victim, damage, x, y, z),
+      onRamDamage: (rammer, victim, damage, x, y, z) =>
+        sim.events.push("ram", sim.tickCount, rammer, victim, damage, x, y, z),
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
     };
     // Now that every rig exists. The scoreboard is indexed by rig index.
@@ -486,34 +468,18 @@ export class Sim {
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
     this.match.scoreKill(killer, victim);
-    // A kill the player made floats a marker over the cart that went down. Only the player's, for
-    // the same reason `creditHit` credits only rig 0 -- the markers are the player's feedback.
-    if (killer === 0) this.recordHitEvent("kill", cart.position.x, cart.position.y, cart.position.z);
-  }
-
-  /** The player-attributed combat events from the last stepped tick, for the hit-marker layer. */
-  get hitEvents(): readonly HitEvent[] {
-    return this.hitEventPool;
-  }
-
-  /** Writes one event into the pool in place, dropping it if the tick's pool is already full. */
-  private recordHitEvent(kind: HitEventKind, x: number, y: number, z: number): void {
-    if (this.hitEventCount >= this.hitEventPool.length) return;
-    const e = this.hitEventPool[this.hitEventCount++]!;
-    e.kind = kind;
-    e.x = x;
-    e.y = y;
-    e.z = z;
+    const p = cart.position;
+    this.events.push("kill", this.tickCount, killer, victim, 0, p.x, p.y, p.z);
   }
 
   /**
    * A fired ball connected, and `shooter` is the rig that fired it. `Sim.stats` is the **player's**
-   * -- it is the accuracy the results screen reports -- so only rig 0's hits may write it.
+   * -- it is the accuracy the results screen reports -- so only rig 0's hits may write it. The event
+   * is everyone's: whoever reads the log decides whose hits it shows.
    */
-  private creditHit(shooter: number, x: number, y: number, z: number): void {
-    if (shooter !== 0) return;
-    this.stats.directHits += 1;
-    this.recordHitEvent("hit", x, y, z);
+  private creditHit(shooter: number, victim: number, damage: number, x: number, y: number, z: number): void {
+    if (shooter === 0) this.stats.directHits += 1;
+    this.events.push("hit", this.tickCount, shooter, victim, damage, x, y, z);
   }
 
   /** One cart onto one spawn point: position, facing, momentum and the body, in that order. */
@@ -546,6 +512,7 @@ export class Sim {
     // A finished match freezes exactly where it stood.
     if (this.match.over) return;
     this.match.tick(FIXED_DT);
+    this.tickCount++;
     const swapPool = this.previousPoolTransforms;
     this.previousPoolTransforms = this.currentPoolTransforms;
     this.currentPoolTransforms = swapPool;
@@ -560,11 +527,6 @@ export class Sim {
     // Stepping with the queue is what fills it; combat.ts drains it immediately afterwards, so
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
-    // Fresh set of hit-marker events for this tick. The epoch bump lets a consumer spawn each
-    // marker once even when it renders several frames between steps; the early return above skips
-    // it, so a frozen (match-over) scene stops producing events.
-    this.hitEventCount = 0;
-    this.hitEventEpoch++;
     processContacts(this.eventQueue, this.combatContext);
     this.syncCurrentPool();
 
@@ -682,11 +644,15 @@ export class Sim {
     this.checkCartWater(rig);
 
     for (const bucket of this.buckets) {
-      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) cart.addAmmo(BUCKET_REFILL_AMMO);
+      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) {
+        cart.addAmmo(BUCKET_REFILL_AMMO);
+        this.events.push("pickup", this.tickCount, rig.index, NO_RIG, BUCKET_REFILL_AMMO, c.x, c.y, c.z);
+      }
     }
     for (const landed of this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE)) {
       cart.addAmmo(1);
       this.ballPool.release(landed);
+      this.events.push("pickup", this.tickCount, rig.index, NO_RIG, 1, c.x, c.y, c.z);
     }
 
     if (cart.shot.fired) {
@@ -704,6 +670,8 @@ export class Sim {
     if (rig.cart.respawnTimer > 0) return;
     this.placeRig(rig, this.respawnPointFor(rig.index));
     rig.cart.revive();
+    const p = rig.cart.position;
+    this.events.push("respawn", this.tickCount, rig.index, NO_RIG, 0, p.x, p.y, p.z);
     // After `revive`, which clears it: protection is a property of respawning, granted here and
     // nowhere else, so `reset` starting a fresh match does not start it behind a shield.
     rig.cart.protectedFor = SPAWN_PROTECTION_S;
@@ -795,6 +763,7 @@ export class Sim {
 
     if (cart.wasInWater) return;
     cart.wasInWater = true;
+    this.events.push("splash", this.tickCount, rig.index, NO_RIG, 0, p.x, p.y, p.z);
 
     if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart, rig.index, NO_KILLER);
 
@@ -816,6 +785,7 @@ export class Sim {
     const isPlayer = rig.index === 0;
     if (!cart.shot.hasBall) {
       if (isPlayer) this.lastShotWasStrike = false;
+      this.pushDry(rig);
       return;
     }
 
@@ -825,6 +795,7 @@ export class Sim {
       // assumption a ball would spawn; refund it so this degrades to a true no-op.
       cart.addAmmo(1);
       if (isPlayer) this.lastShotWasStrike = false;
+      this.pushDry(rig);
       return;
     }
 
@@ -843,6 +814,15 @@ export class Sim {
     const stats = CLUB_STATS[cart.shot.club];
     pooled.body.setGravityScale(stats.gravityScale, true);
     pooled.damage = stats.damage;
+    const m = this.muzzleScratch;
+    this.events.push("shot", this.tickCount, rig.index, NO_RIG, 0, m.x, m.y, m.z, cart.shot.club);
+  }
+
+  /** A trigger pull that put nothing in the air, at the cart's own muzzle. */
+  private pushDry(rig: CartRig): void {
+    computeMuzzle(rig.cart, this.muzzleScratch);
+    const m = this.muzzleScratch;
+    this.events.push("dry", this.tickCount, rig.index, NO_RIG, 0, m.x, m.y, m.z);
   }
 
   /** Where a shot from the player's turret would leave from. */
@@ -925,7 +905,7 @@ export class Sim {
     this.buildPhysics();
     for (const bucket of this.buckets) bucket.cooldownRemaining = 0;
     this.simTime = 0;
-    this.hitEventCount = 0;
+    this.tickCount = 0;
 
     for (const rig of this.rigs) {
       this.placeRig(rig, this.openingPoint(rig.index));
