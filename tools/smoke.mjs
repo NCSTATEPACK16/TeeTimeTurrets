@@ -179,10 +179,11 @@ check(
   JSON.stringify(title.labels) === JSON.stringify(["PLAY", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
   title.labels.join(" / "),
 );
-// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead or absent.
+// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead or absent. SETTINGS is
+// built as of Stage 2; MULTIPLAYER is not.
 check(
   "built screens are live and unbuilt ones are disabled, not absent",
-  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, true]),
+  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, false]),
   JSON.stringify(title.disabled),
 );
 check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
@@ -198,6 +199,24 @@ console.log("=== PLAY (the arena) ===");
 // is the one boot path in the file that earns a generous timeout.
 await clickTitle("PLAY");
 await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 30000 });
+
+console.log("=== CONTROLS CARD (first play) ===");
+// A fresh browser profile is a first play, so the match opens paused on the controls card. The
+// overlay is built by the match screen, never shipped in markup, so only the code can show it.
+await page
+  .waitForFunction(() => document.getElementById("pause-overlay")?.hidden === false, { timeout: 20000 })
+  .catch(() => {});
+const card = await page.evaluate(() => ({
+  shown: document.getElementById("pause-overlay")?.hidden === false,
+  title: document.querySelector("#pause-overlay .pause__title")?.textContent ?? null,
+  remaining: window.__teetimeturrets.sim.match.remaining,
+  duration: window.__teetimeturrets.sim.match.durationS,
+}));
+check("the first match opens on the controls card", card.shown && card.title === "HOW TO PLAY", `${card.shown} ${card.title}`);
+await new Promise((r) => setTimeout(r, 1500));
+const heldClock = await page.evaluate(() => window.__teetimeturrets.sim.match.remaining);
+check("the clock does not run behind the card", heldClock === card.duration, `${heldClock} of ${card.duration}`);
+await page.keyboard.press("Enter");
 // Until the clock moves, no input can: on a software-rendered GPU the match's first frames compile
 // shaders for seconds, and a fixed sleep here once let the whole DRIVE hold land before the first
 // tick. Wait for the sim itself to have stepped.
@@ -368,6 +387,29 @@ check(
   `${offTurret.toFixed(2)} rad off the turret, ${offChassis.toFixed(2)} rad off the chassis`,
 );
 
+console.log("=== PAUSE (Esc) ===");
+// Not pointer-locked yet (that is MOUSE FIRE's), so the key reaches the page.
+await page.keyboard.press("Escape");
+await page
+  .waitForFunction(() => document.getElementById("pause-overlay")?.hidden === false, { timeout: 5000 })
+  .catch(() => {});
+const pausedAt = await page.evaluate(() => ({
+  shown: document.getElementById("pause-overlay")?.hidden === false,
+  title: document.querySelector("#pause-overlay .pause__title")?.textContent ?? null,
+  remaining: window.__teetimeturrets.sim.match.remaining,
+}));
+check("Esc pauses on the pause overlay", pausedAt.shown && pausedAt.title === "PAUSED", `${pausedAt.shown} ${pausedAt.title}`);
+await new Promise((r) => setTimeout(r, 1000));
+const pausedLater = await page.evaluate(() => window.__teetimeturrets.sim.match.remaining);
+check("the clock stops while paused", pausedLater === pausedAt.remaining, `${pausedAt.remaining} -> ${pausedLater}`);
+await page.keyboard.press("Escape");
+const resumed = await waitForSimSeconds(0.2).then(
+  () => true,
+  () => false,
+);
+const overlayAfter = await page.evaluate(() => document.getElementById("pause-overlay")?.hidden === false);
+check("Esc again resumes", resumed && !overlayAfter, `clock moving ${resumed}, overlay ${overlayAfter}`);
+
 console.log("=== CLUB SELECT (3, then 1) ===");
 // Select away and back, so the putter check cannot pass on a cart that simply spawned with it.
 await page.keyboard.press("Digit3");
@@ -384,6 +426,19 @@ console.log("=== FIRE (F) ===");
 // Counted in shots that left, not in ammo: buckets and landed balls refill ammo, and a cart parked
 // next to the ball it just fired picks it straight back up.
 const cartBeforeShot = putter.cart;
+// The bots' magazines are held empty for this section, so the smoke and sound counters below can
+// only be moved by the player's shot. Measured with the bots firing, they climbed by hundreds
+// between two reads and would have passed with the player's shot doing nothing.
+await page.evaluate(() => {
+  window.__smokeQuietBots = setInterval(() => {
+    for (const bot of window.__teetimeturrets.sim?.bots ?? []) bot.ammo = 0;
+  }, 16);
+});
+await new Promise((r) => setTimeout(r, 1500)); // let any bot shot already in the air finish
+const juiceBefore = await page.evaluate(() => ({
+  puffs: window.__teetimeturrets.render.effects.spawned,
+  cues: window.__teetimeturrets.audio.stats.byCue.putter ?? 0,
+}));
 const fShot = await fireUntilAShotLeaves(
   () => page.keyboard.down("KeyF"),
   () => page.keyboard.up("KeyF"),
@@ -400,6 +455,19 @@ check(
   shot.topPlayerBallY !== null && shot.topPlayerBallY > cartBeforeShot.y,
   `ball y=${shot.topPlayerBallY?.toFixed(2)} vs cart y=${cartBeforeShot.y.toFixed(2)}`,
 );
+
+// Counters, not a live count: a putter's smoke is gone in a third of a second, which a slow
+// renderer can spend on one frame.
+const juiceAfter = await page.evaluate(() => ({
+  puffs: window.__teetimeturrets.render.effects.spawned,
+  cues: window.__teetimeturrets.audio.stats.byCue.putter ?? 0,
+}));
+check("a shot puts smoke at the muzzle", juiceAfter.puffs > juiceBefore.puffs, `${juiceBefore.puffs} -> ${juiceAfter.puffs} puffs`);
+check("a shot asks for the putter's report", juiceAfter.cues > juiceBefore.cues, `${juiceBefore.cues} -> ${juiceAfter.cues}`);
+await page.evaluate(() => {
+  clearInterval(window.__smokeQuietBots);
+  for (const bot of window.__teetimeturrets.sim?.bots ?? []) bot.ammo = 30;
+});
 
 console.log("=== COMBAT HUD ===");
 check("health and ammo are always visible", shot.hudCombatHidden === false);
@@ -426,6 +494,8 @@ await page
 await waitForSimSeconds(0.5); // for a stray shot to show
 const locked = await read();
 check("clicking the canvas takes the pointer lock", locked.pointerLocked === true, `${locked.pointerLocked}`);
+const audioRunning = await page.evaluate(() => window.__teetimeturrets.audio.running);
+check("a click unlocks the audio", audioRunning === true, `${audioRunning}`);
 check(
   "the click that takes the lock does not fire",
   midClick.charge === 0 && locked.shotsFired === beforeLock.shotsFired,
@@ -513,8 +583,81 @@ const behindCamera = await page.evaluate(() => {
 });
 check("a point far behind the camera projects as not visible", behindCamera === false, `${behindCamera}`);
 
+console.log("=== FEEDBACK (kill feed, hit marker, damage flash, score strip) ===");
+// Driven through the sim's own handlers, the ones combat.ts calls, so every consumer downstream of
+// Sim.events is the real one. The player's hit lands just ahead of the cart along the camera's
+// line, which puts its marker on screen.
+const feedback = await page.evaluate(async () => {
+  const { sim, render } = window.__teetimeturrets;
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const p = sim.cart.position;
+  const cam = render.camera.position;
+  const hx = p.x + (p.x - cam.x);
+  const hz = p.z + (p.z - cam.z);
+  const onScreen = render.projectToScreen(hx, p.y + 1.5, hz, { x: 0, y: 0 });
+  sim.combatContext.onBallHit(0, 1, 2, hx, p.y, hz);
+  sim.killCart(sim.bots[0], 1, 0);
+  sim.combatContext.onBallHit(2, 0, 1, p.x, p.y, p.z);
+  await frame();
+  await frame();
+  return {
+    lines: [...document.querySelectorAll("#kill-feed .kill-line")].filter((l) => !l.hidden).map((l) => l.textContent),
+    markers: [...document.querySelectorAll("#hit-markers .hit-marker")].map((m) => m.textContent),
+    wedges: [...document.querySelectorAll("#damage-flash .damage-wedge")].map((w) => Number(w.style.opacity || 0)),
+    pulse: document.getElementById("score-strip").classList.contains("score-strip--pulse"),
+    onScreen,
+  };
+});
+// Anywhere in the feed, not necessarily on top: a bot can make a kill in the same frame.
+check("a kill goes in the kill feed", feedback.lines.some((l) => /YOU\s*\u25b8\s*BOT 1/.test(l)), JSON.stringify(feedback.lines));
+check(
+  "a hit marker shows what the hit scored",
+  feedback.markers.includes("+20"),
+  `${JSON.stringify(feedback.markers)}, hit point ${feedback.onScreen ? "on" : "OFF"} screen`,
+);
+check("a hit on the player flashes a wedge", feedback.wedges.some((o) => o > 0.5), JSON.stringify(feedback.wedges));
+check("a stroke pulses the score strip", feedback.pulse === true);
+
+console.log("=== MAP (M) ===");
+await page.keyboard.press("KeyM");
+const mapOpen = await page.evaluate(async () => {
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+  await frame();
+  await frame();
+  const root = document.querySelector(".course-map");
+  const canvas = document.querySelector(".course-map-canvas");
+  if (!root || !canvas) return { visible: false, drawn: 0 };
+  const ctx = canvas.getContext("2d");
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  let drawn = 0;
+  for (let i = 3; i < data.length; i += 4 * 97) if (data[i] > 0) drawn++;
+  return { visible: !root.hidden, drawn };
+});
+check("M opens the course map", mapOpen.visible === true);
+check("the map draws the course", mapOpen.drawn > 100, `${mapOpen.drawn} painted samples`);
+await page.keyboard.press("KeyM");
+await page.keyboard.press("KeyM");
+const mapClosed = await page.evaluate(() => document.querySelector(".course-map")?.hidden === true);
+check("M cycles the map closed again", mapOpen.visible === true && mapClosed === true);
+
 console.log("=== MATCH OVER ===");
 await page.evaluate(() => clearInterval(window.__smokeKeepAlive));
+// The vignette follows health: off at full, closing in at one point left.
+const vignette = await page.evaluate(async () => {
+  const { sim } = window.__teetimeturrets;
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const read = () => Number(document.getElementById("lowhp-vignette").style.opacity || 0);
+  sim.cart.health.hp = sim.cart.health.max;
+  await frame();
+  await frame();
+  const full = read();
+  sim.cart.health.hp = 1;
+  await frame();
+  await frame();
+  return { full, low: read() };
+});
+check("the low-health vignette is off at full health", vignette.full === 0, `${vignette.full}`);
+check("and closes in at one point left", vignette.low > 0.5, `${vignette.low}`);
 // Written on `sim.match.remaining`, the clock itself: `sim.matchTimeRemaining` is a getter with no
 // setter, and page.evaluate's sloppy mode would swallow the assignment silently. One tick short of
 // zero rather than `match.finish()`, so `Match.tick` ends the match the way a real one ends.
@@ -568,6 +711,28 @@ check("PLAY AGAIN resets the match itself", rematch.over === false, `${rematch.o
 
 await page.evaluate(() => window.__teetimeturrets.screens.show("title"));
 await new Promise((r) => setTimeout(r, 300));
+
+console.log("=== SETTINGS ===");
+await clickTitle("SETTINGS");
+await page.waitForFunction(() => window.__teetimeturrets.screen === "settings", { timeout: 10000 }).catch(() => {});
+const settingsOut = await page.evaluate(() => {
+  const range = document.querySelector('.settings-screen [data-setting="master"]');
+  if (!range) return { screen: window.__teetimeturrets.screen, saved: null, live: null };
+  range.value = "37";
+  range.dispatchEvent(new Event("input", { bubbles: true }));
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem("teetimeturrets.settings.v1") ?? "null")?.master ?? null;
+  } catch {
+    saved = "unreadable";
+  }
+  return { screen: window.__teetimeturrets.screen, saved, live: window.__teetimeturrets.settings.master };
+});
+check("SETTINGS opens from the title", settingsOut.screen === "settings", settingsOut.screen);
+check("a volume change is saved", settingsOut.saved === 0.37, `${settingsOut.saved}`);
+check("and applied at once", settingsOut.live === 0.37, `${settingsOut.live}`);
+await page.evaluate(() => [...document.querySelectorAll(".settings-screen .btn")].find((b) => b.textContent === "BACK").click());
+await page.waitForFunction(() => window.__teetimeturrets.screen === "title", { timeout: 10000 });
 
 console.log("=== SCREEN LIFECYCLE (Phase 1.75 memory gate) ===");
 const leak = await page.evaluate(async () => {
