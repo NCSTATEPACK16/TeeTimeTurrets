@@ -1076,11 +1076,14 @@ border, or any 3/4 or perspective "hero" view.
   pose where the shaft comes closest to the canopy) each differ in exactly one of those. Those two
   swing subjects are what a re-baseline is *read* for: the flat scythe and the golf swing look
   identical in every numeric check and completely different in the PNG.
-- **Draw calls went up by 53% per cart.** The graph assembler builds an `Object3D` per node, so the
-  rider is 26 more draw calls on top of the cart's 52, on every cart including the four bots —
-  15 for the original mannequin and 11 more for the joints, neck and fists. Within budget today;
-  it is the first thing to look at if the round ever gets draw-call bound, and the fix is merging
-  static nodes per slot in `primitiveGraph.ts`, not deleting riders.
+- **A cart is 17 draw calls, rider and loaded ball included.** `buildGraph` makes an `Object3D`
+  per node, which drew a cart in 78 (52 cart nodes, 26 rider) and a round of eight in over six
+  hundred. `GolfClub` now builds both graphs with `mergeGraphBySlot`: one mesh per material slot
+  for each rigid part, where a part is the root or a node the pose code moves or hides. Slots keep
+  their own material, so the loadout still repaints with one write; the geometry is built once
+  and shared by every cart. A new pivot in the Blender scene has to be added to `CART_FRAMES` in
+  `GolfClub.ts`, or it is merged into the part it hangs from and posing it moves nothing —
+  `GolfClub.test.ts` compares the drawn shape against the unmerged graph in several poses.
 - **Dispose everything.** Every `THREE.Mesh`'s geometry and material, and every `InstancedMesh`
   buffer, on teardown — see `GolfClub.dispose()` for the pattern.
 

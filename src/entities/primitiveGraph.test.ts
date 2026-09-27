@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { buildGraph, mergeGraph, mergeGraphInstances } from "./primitiveGraph";
-import type { PrimitiveGraph, PrimitiveNode } from "./primitiveGraph";
+import { buildGraph, mergeGraph, mergeGraphBySlot, mergeGraphInstances } from "./primitiveGraph";
+import type { BuiltGraph, PrimitiveGraph, PrimitiveNode } from "./primitiveGraph";
 
 /**
  * The assembler is the one piece of the ASSET_PIPELINE.md section 4 pipeline that runs in the
@@ -487,5 +487,272 @@ describe("mergeGraphInstances", () => {
     }
     merged.dispose();
     expect(freed).toBe(2);
+  });
+});
+
+/**
+ * The cart's own draw-call fix. A cart is 52 nodes and its rider 26, and a round draws eight of
+ * them: over six hundred draws for the carts alone, where `REVAMP-PLAN.md` Stage 3 budgets about
+ * 150. `mergeGraph` would get there and take the clubhouse loadout with it, so this merges per
+ * **slot** instead, and only within a rigid part: whatever hangs rigidly off one posed node is one
+ * mesh per slot, and a posed node keeps its own.
+ *
+ * The test that matters is "the shape buildGraph draws, in any pose". A merge that bakes a node
+ * into the wrong part draws correctly at rest and comes apart the moment the turret turns.
+ */
+describe("mergeGraphBySlot", () => {
+  const PARTS: PrimitiveGraph["slots"] = {
+    ...SLOTS,
+    barrel: { color: 0x303840, roughness: 0.4, metalness: 0.8 },
+  };
+
+  // The cart's shape in miniature: a body with wheels and a roof, and a turret whose swing arm hangs
+  // off a tilted, scaled yoke -- the yoke is the part a merge is most likely to get wrong, because
+  // nothing poses it and everything below it depends on it.
+  const turretGraph = (): PrimitiveGraph =>
+    graph(
+      node({
+        name: "body",
+        params: [2, 0.5, 3],
+        children: [
+          node({ name: "wheel_fl", kind: "cylinder", params: [0.3, 0.3, 0.2, 10], slot: "tires", position: [1, 0, 1], rotation: [0, 0, Math.PI / 2] }),
+          node({ name: "wheel_fr", kind: "cylinder", params: [0.3, 0.3, 0.2, 10], slot: "tires", position: [-1, 0, 1], rotation: [0, 0, Math.PI / 2] }),
+          node({
+            name: "roof",
+            kind: "cylinder",
+            params: [0.5, 0.5, 1, 8],
+            position: [0, 2, 0],
+            children: [node({ name: "post", params: [0.1, 1, 0.1], position: [0.4, -0.5, 0] })],
+          }),
+          node({
+            name: "turret",
+            kind: "cylinder",
+            params: [0.3, 0.3, 0.2, 8],
+            position: [0, 1, -0.5],
+            rotation: [0, 0.3, 0],
+            children: [
+              node({
+                name: "yoke",
+                params: [0.2, 0.2, 0.2],
+                position: [0, 0.2, 0.1],
+                rotation: [0.25, 0, 0.1],
+                scale: [1, 1.2, 1],
+                children: [
+                  node({
+                    name: "arm",
+                    slot: "barrel",
+                    params: [0.1, 0.1, 1],
+                    position: [0, 0, 0.5],
+                    children: [
+                      node({
+                        name: "tip",
+                        kind: "sphere",
+                        slot: "barrel",
+                        params: [0.1, 8, 6],
+                        position: [0, 0, 0.5],
+                        children: [
+                          node({ name: "head_a", slot: "tires", params: [0.2, 0.1, 0.1], position: [0, 0, 0.2] }),
+                          node({ name: "head_b", slot: "tires", params: [0.1, 0.2, 0.3], position: [0, 0.1, 0.3] }),
+                        ],
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              node({ name: "mantlet", params: [0.4, 0.3, 0.1], position: [0, 0, -0.3] }),
+            ],
+          }),
+        ],
+      }),
+      PARTS,
+    );
+
+  const FRAMES = { moving: ["turret", "arm", "head_a", "head_b"], anchors: ["tip"] } as const;
+
+  /** What is drawn, per slot: vertex count, the sum of world positions and their bounds. */
+  function drawn(root: THREE.Object3D): Map<string, { count: number; sum: THREE.Vector3; box: THREE.Box3 }> {
+    root.updateMatrixWorld(true);
+    const out = new Map<string, { count: number; sum: THREE.Vector3; box: THREE.Box3 }>();
+    const v = new THREE.Vector3();
+    root.traverseVisible((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const slot = (child.material as THREE.Material).name;
+      const entry = out.get(slot) ?? { count: 0, sum: new THREE.Vector3(), box: new THREE.Box3() };
+      const position = child.geometry.getAttribute("position");
+      for (let i = 0; i < position.count; i++) {
+        v.fromBufferAttribute(position, i).applyMatrix4(child.matrixWorld);
+        entry.sum.add(v);
+        entry.box.expandByPoint(v);
+      }
+      entry.count += position.count;
+      out.set(slot, entry);
+    });
+    return out;
+  }
+
+  function expectSameDrawing(merged: THREE.Object3D, reference: THREE.Object3D): void {
+    const a = drawn(merged);
+    const b = drawn(reference);
+    expect([...a.keys()].sort()).toEqual([...b.keys()].sort());
+    for (const [slot, want] of b) {
+      const got = a.get(slot)!;
+      expect(got.count, `${slot} vertices`).toBe(want.count);
+      for (const axis of ["x", "y", "z"] as const) {
+        expect(got.sum[axis], `${slot} sum ${axis}`).toBeCloseTo(want.sum[axis], 4);
+        expect(got.box.min[axis], `${slot} min ${axis}`).toBeCloseTo(want.box.min[axis], 5);
+        expect(got.box.max[axis], `${slot} max ${axis}`).toBeCloseTo(want.box.max[axis], 5);
+      }
+    }
+  }
+
+  /** The pose a renderer would set: yaw the turret, swing the arm, show one head. */
+  function pose(built: BuiltGraph, yaw: number, swing: number, head: "head_a" | "head_b"): void {
+    built.named.get("turret")!.rotation.y = yaw;
+    built.named.get("arm")!.rotation.x = swing;
+    built.named.get("head_a")!.visible = head === "head_a";
+    built.named.get("head_b")!.visible = head === "head_b";
+  }
+
+  it("draws one mesh per slot in each rigid part, where buildGraph draws one per node", () => {
+    const g = turretGraph();
+    const built = buildGraph(g);
+    const merged = mergeGraphBySlot(g, FRAMES);
+
+    expect(meshes(built.root).length).toBe(12);
+    // body: chassis (body, roof, post) and tires (two wheels). turret: chassis (turret, yoke,
+    // mantlet). arm: barrel (arm, tip). One each for the two heads.
+    expect(meshes(merged.root).length).toBe(6);
+    built.dispose();
+    merged.dispose();
+  });
+
+  it("keeps every vertex and triangle buildGraph would have drawn", () => {
+    const g = turretGraph();
+    const count = (root: THREE.Object3D): [number, number] => {
+      let vertices = 0;
+      let triangles = 0;
+      for (const mesh of meshes(root)) {
+        vertices += mesh.geometry.getAttribute("position").count;
+        triangles += mesh.geometry.getIndex()!.count / 3;
+      }
+      return [vertices, triangles];
+    };
+    const built = buildGraph(g);
+    const merged = mergeGraphBySlot(g, FRAMES);
+    expect(count(merged.root)).toEqual(count(built.root));
+    built.dispose();
+    merged.dispose();
+  });
+
+  it("draws the shape buildGraph draws, at rest and in any pose", () => {
+    const g = turretGraph();
+    const built = buildGraph(g);
+    const merged = mergeGraphBySlot(g, FRAMES);
+
+    expectSameDrawing(merged.root, built.root);
+    for (const [yaw, swing, head] of [
+      [1.1, -0.7, "head_a"],
+      [-2.4, 0.5, "head_b"],
+      [0, -1.75, "head_b"],
+    ] as const) {
+      pose(built, yaw, swing, head);
+      pose(merged, yaw, swing, head);
+      expectSameDrawing(merged.root, built.root);
+    }
+    built.dispose();
+    merged.dispose();
+  });
+
+  it("keeps the moving nodes, the anchors and the chain between them, posed as authored", () => {
+    // The yoke is kept though nothing names it: collapsing it into the arm would fold its tilt into
+    // the arm's own rotation, and a swing written to `rotation.x` would then overwrite the tilt.
+    const merged = mergeGraphBySlot(turretGraph(), FRAMES);
+    expect([...merged.named.keys()].sort()).toEqual(["arm", "body", "head_a", "head_b", "tip", "turret", "yoke"]);
+    const yoke = merged.named.get("yoke")!;
+    expect(yoke.rotation.x).toBeCloseTo(0.25, 9);
+    expect(yoke.rotation.z).toBeCloseTo(0.1, 9);
+    expect(yoke.scale.y).toBeCloseTo(1.2, 9);
+    expect(yoke.parent).toBe(merged.named.get("turret"));
+    expect(merged.named.get("tip")!.parent).toBe(merged.named.get("arm"));
+    merged.dispose();
+  });
+
+  it("hides a moving node's geometry with it", () => {
+    const merged = mergeGraphBySlot(turretGraph(), FRAMES);
+    const before = drawn(merged.root).get("tires")!.count;
+    merged.named.get("head_b")!.visible = false;
+    const after = drawn(merged.root).get("tires")!.count;
+    expect(after).toBe(before - 24); // a box is 24 vertices
+    merged.dispose();
+  });
+
+  it("repaints a slot in every part with one write, and leaves the others alone", () => {
+    const merged = mergeGraphBySlot(turretGraph(), FRAMES);
+    const chassis = new Set<THREE.Material>();
+    for (const mesh of meshes(merged.root)) {
+      if ((mesh.material as THREE.Material).name === "chassis") chassis.add(mesh.material as THREE.Material);
+    }
+    // body and turret both draw chassis, from the one material.
+    expect(chassis.size).toBe(1);
+
+    merged.setSlotColor("chassis", 0xff0000);
+    for (const mesh of meshes(merged.root)) {
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      if (material.name === "chassis") expect(material.color.getHex()).toBe(0xff0000);
+      else expect(material.color.getHex()).not.toBe(0xff0000);
+    }
+    merged.setSlotColor("no_such_slot", 0x00ff00);
+    merged.dispose();
+  });
+
+  it("takes slot overrides at build time, and keeps each build's paint its own", () => {
+    const g = turretGraph();
+    const red = mergeGraphBySlot(g, FRAMES, { chassis: 0xff0000 });
+    const plain = mergeGraphBySlot(g, FRAMES);
+    const colourOf = (built: BuiltGraph, slot: string): number =>
+      (meshes(built.root).find((m) => (m.material as THREE.Material).name === slot)!.material as THREE.MeshStandardMaterial).color.getHex();
+
+    expect(colourOf(red, "chassis")).toBe(0xff0000);
+    expect(colourOf(plain, "chassis")).toBe(PARTS.chassis!.color);
+    plain.setSlotColor("tires", 0x0000ff);
+    expect(colourOf(red, "tires")).toBe(PARTS.tires!.color);
+    red.dispose();
+    plain.dispose();
+  });
+
+  it("shares its geometry with every build of the same graph, and frees it with the last", () => {
+    const g = turretGraph();
+    const a = mergeGraphBySlot(g, FRAMES);
+    const b = mergeGraphBySlot(g, FRAMES);
+    const geometries = meshes(a.root).map((m) => m.geometry);
+    expect(meshes(b.root).map((m) => m.geometry)).toEqual(geometries);
+    geometries.forEach((geometry, i) => expect(geometry, `mesh ${i}`).toBe(meshes(b.root)[i]!.geometry));
+
+    let freed = 0;
+    for (const geometry of geometries) geometry.addEventListener("dispose", () => freed++);
+    a.dispose();
+    expect(freed, "while b still draws it").toBe(0);
+    b.dispose();
+    expect(freed).toBe(geometries.length);
+
+    // And a build after the last is freed makes its own, rather than drawing freed buffers.
+    const c = mergeGraphBySlot(g, FRAMES);
+    for (const mesh of meshes(c.root)) expect(geometries).not.toContain(mesh.geometry);
+    c.dispose();
+  });
+
+  it("frees each build's slot materials", () => {
+    const merged = mergeGraphBySlot(turretGraph(), FRAMES);
+    const materials = new Set(meshes(merged.root).map((m) => m.material as THREE.Material));
+    let freed = 0;
+    for (const material of materials) material.addEventListener("dispose", () => freed++);
+    merged.dispose();
+    expect(freed).toBe(3);
+  });
+
+  it("refuses a frame the graph does not have, so a rename in Blender is loud", () => {
+    expect(() => mergeGraphBySlot(turretGraph(), { moving: ["turret_pivot"] })).toThrow(
+      /frame "turret_pivot".*not in the graph/,
+    );
   });
 });

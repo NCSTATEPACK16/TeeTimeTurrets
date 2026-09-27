@@ -143,11 +143,11 @@ export interface MergedGraph {
  * props at roughly five nodes each, a dozen instances to a hole, is another ~60 draws before this
  * and about 12 after it.
  *
- * **It costs per-slot recolouring, and the cart must keep using `buildGraph`. That is a rule, not a
- * preference.** Merging bakes each node's colour into the vertices, so there is no material left to
- * `setSlotColor` on -- a merged cart would lose the clubhouse loadout with it (`UI-SPEC.md` S3).
- * Props do not need repainting, which is why the helper is proved on them first; the carts' own
- * draw-call problem wants an instanced or per-slot-material variant of this, not this.
+ * **It costs per-slot recolouring, so the cart must never be drawn with this. That is a rule, not
+ * a preference.** Merging bakes each node's colour into the vertices, so there is no material left
+ * to `setSlotColor` on -- a merged cart would lose the clubhouse loadout with it (`UI-SPEC.md` S3).
+ * Props do not need repainting, which is why this suits them; the cart's own draw-call fix is
+ * `mergeGraphBySlot`, which keeps a material per slot.
  *
  * Node names do not survive either, for the same reason: there is nothing left to address. A graph
  * with a pivot something poses by name belongs in `buildGraph`.
@@ -285,4 +285,223 @@ function geometryFor(node: PrimitiveNode, graphName: string): THREE.BufferGeomet
         `primitive graph "${graphName}": node "${node.name}" has unknown kind "${String(node.kind)}"`,
       );
   }
+}
+
+/** Which nodes of a graph `mergeGraphBySlot` must keep apart. */
+export interface SlotMergeFrames {
+  /**
+   * Nodes posed or hidden at runtime: the turret's yaw, the barrel's loft, the swing, the club
+   * heads toggled by `visible`. Each is a rigid part with meshes of its own, so moving it moves
+   * exactly what hangs off it.
+   */
+  readonly moving: readonly string[];
+  /**
+   * Nodes something is attached to at runtime but which never move against their parent -- the
+   * club head's socket the loaded ball rides in. Kept addressable; drawn with their part's meshes.
+   */
+  readonly anchors?: readonly string[];
+}
+
+/** One kept node of a merged graph: its authored local transform and where it hangs. */
+interface KeptNode {
+  readonly name: string;
+  /** Index of the kept parent in `kept`; -1 for the root. */
+  readonly parent: number;
+  readonly position: THREE.Vector3;
+  readonly quaternion: THREE.Quaternion;
+  readonly scale: THREE.Vector3;
+}
+
+/** The geometry every build of one graph with one set of frames shares. */
+interface SlotMergeTemplate {
+  readonly kept: readonly KeptNode[];
+  /** One merged mesh per (part, slot): `part` indexes `kept`. */
+  readonly parts: readonly { readonly part: number; readonly slot: string; readonly geometry: THREE.BufferGeometry }[];
+  users: number;
+}
+
+const slotMergeTemplates = new WeakMap<PrimitiveGraph, Map<string, SlotMergeTemplate>>();
+
+/**
+ * The graph with its rigid parts merged: **one mesh per material slot per rigid part**, where
+ * `buildGraph` makes one per node. This is the cart's draw-call fix (`REVAMP-PLAN.md` Stage 3).
+ *
+ * A rigid part is the root or a node named in `frames.moving`, together with every descendant that
+ * does not start a part of its own. Everything in a part is merged, per slot, into that part's own
+ * space, so posing a moving node moves its meshes exactly as it moved its nodes.
+ *
+ * What survives, and why:
+ *
+ * - **Per-slot materials.** One material per slot per build, shared by every part that draws the
+ *   slot, so `setSlotColor` is the same single write it is on `buildGraph` and the clubhouse loadout
+ *   keeps working. This is what `mergeGraph` cannot offer.
+ * - **The moving nodes, the anchors, and every node between them and the root**, as plain
+ *   `Object3D`s carrying their authored local transform. The chain matters: the cart's swing arm
+ *   hangs off a tilted yoke nothing poses, and folding the yoke into the arm would fold its tilt
+ *   into the arm's own rotation, where a swing written to `rotation.x` overwrites it. Kept as it
+ *   was authored, `rotation.x` on the arm means what it meant unmerged. `named` holds these nodes
+ *   and no others.
+ *
+ * The geometry is built once per graph and set of frames and **shared by every build**, reference
+ * counted: eight carts draw one set of buffers, and the last build's `dispose` frees them. Each
+ * build owns only its materials.
+ */
+export function mergeGraphBySlot(
+  graph: PrimitiveGraph,
+  frames: SlotMergeFrames,
+  slotOverrides: SlotColors = {},
+): BuiltGraph {
+  const template = acquireSlotMergeTemplate(graph, frames);
+  const materials = new Map<string, THREE.MeshStandardMaterial>();
+  const named = new Map<string, THREE.Object3D>();
+
+  const objects = template.kept.map((spec) => {
+    const object = new THREE.Object3D();
+    object.name = spec.name;
+    object.position.copy(spec.position);
+    object.quaternion.copy(spec.quaternion);
+    object.scale.copy(spec.scale);
+    named.set(spec.name, object);
+    return object;
+  });
+  template.kept.forEach((spec, i) => {
+    if (spec.parent >= 0) objects[spec.parent]!.add(objects[i]!);
+  });
+
+  for (const { part, slot, geometry } of template.parts) {
+    let material = materials.get(slot);
+    if (!material) {
+      const spec = graph.slots[slot]!;
+      material = new THREE.MeshStandardMaterial({
+        color: slotOverrides[slot] ?? spec.color,
+        roughness: spec.roughness,
+        metalness: spec.metalness,
+      });
+      material.name = slot;
+      materials.set(slot, material);
+    }
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = `${template.kept[part]!.name}:${slot}`;
+    objects[part]!.add(mesh);
+  }
+
+  let disposed = false;
+  return {
+    root: objects[0]!,
+    named,
+    setSlotColor(slot: string, color: number): void {
+      materials.get(slot)?.color.setHex(color);
+    },
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      for (const material of materials.values()) material.dispose();
+      releaseSlotMergeTemplate(graph, frames, template);
+    },
+  };
+}
+
+function slotMergeKey(frames: SlotMergeFrames): string {
+  return `${[...frames.moving].sort().join(",")}|${[...(frames.anchors ?? [])].sort().join(",")}`;
+}
+
+function acquireSlotMergeTemplate(graph: PrimitiveGraph, frames: SlotMergeFrames): SlotMergeTemplate {
+  let byFrames = slotMergeTemplates.get(graph);
+  if (!byFrames) {
+    byFrames = new Map();
+    slotMergeTemplates.set(graph, byFrames);
+  }
+  const key = slotMergeKey(frames);
+  let template = byFrames.get(key);
+  if (!template) {
+    template = buildSlotMergeTemplate(graph, frames);
+    byFrames.set(key, template);
+  }
+  template.users++;
+  return template;
+}
+
+function releaseSlotMergeTemplate(graph: PrimitiveGraph, frames: SlotMergeFrames, template: SlotMergeTemplate): void {
+  template.users--;
+  if (template.users > 0) return;
+  for (const { geometry } of template.parts) geometry.dispose();
+  slotMergeTemplates.get(graph)?.delete(slotMergeKey(frames));
+}
+
+function buildSlotMergeTemplate(graph: PrimitiveGraph, frames: SlotMergeFrames): SlotMergeTemplate {
+  // Built with `buildGraph`, as `mergeGraph` is, so the transforms, the slot lookup and the
+  // parameter mapping are the same code the unmerged cart ran.
+  const built = buildGraph(graph);
+  const moving = new Set(frames.moving);
+  const anchors = new Set(frames.anchors ?? []);
+  for (const name of [...moving, ...anchors]) {
+    if (!built.named.has(name)) {
+      built.dispose();
+      throw new Error(
+        `primitive graph "${graph.name}": frame "${name}" is not in the graph. Re-export from Blender ` +
+          `with that node present, or update the frames if it was deliberately renamed.`,
+      );
+    }
+  }
+
+  // Kept: the root, every moving node and anchor, and every ancestor of one.
+  const keep = new Set<THREE.Object3D>([built.root]);
+  for (const name of [...moving, ...anchors]) {
+    for (let node: THREE.Object3D | null = built.named.get(name)!; node !== null && !keep.has(node); node = node.parent) {
+      keep.add(node);
+    }
+  }
+
+  built.root.updateMatrixWorld(true);
+  const kept: KeptNode[] = [];
+  /** The unmerged node each entry of `kept` came from, for its world matrix. */
+  const keptNodes: THREE.Object3D[] = [];
+  const keptIndex = new Map<THREE.Object3D, number>();
+  // Per part, per slot: the part-space geometries to merge. Insertion order is walk order, so two
+  // builds of one graph lay their meshes out identically.
+  const pending = new Map<number, Map<string, THREE.BufferGeometry[]>>();
+  const toPart = new THREE.Matrix4();
+
+  const walk = (node: THREE.Object3D, part: number): void => {
+    let own = part;
+    if (keep.has(node)) {
+      keptIndex.set(node, kept.length);
+      keptNodes.push(node);
+      kept.push({
+        name: node.name,
+        parent: node === built.root ? -1 : keptIndex.get(node.parent!)!,
+        position: node.position.clone(),
+        quaternion: node.quaternion.clone(),
+        scale: node.scale.clone(),
+      });
+      // Only a moving node (or the root) starts a part: an anchor or a link in the chain never moves
+      // against its parent, so its geometry is drawn with the part it rides in.
+      if (node === built.root || moving.has(node.name)) own = kept.length - 1;
+    }
+
+    const mesh = node as THREE.Mesh;
+    const slot = (mesh.material as THREE.Material).name;
+    // The node's vertices in its part's space: the node's world matrix, then the part's undone.
+    toPart.copy(keptNodes[own]!.matrixWorld).invert().multiply(node.matrixWorld);
+    let slots = pending.get(own);
+    if (!slots) pending.set(own, (slots = new Map()));
+    let list = slots.get(slot);
+    if (!list) slots.set(slot, (list = []));
+    list.push(mesh.geometry.clone().applyMatrix4(toPart));
+
+    for (const child of node.children) walk(child, own);
+  };
+  walk(built.root, 0);
+
+  const parts: { part: number; slot: string; geometry: THREE.BufferGeometry }[] = [];
+  for (const [part, slots] of pending) {
+    for (const [slot, list] of slots) {
+      const merged = list.length === 1 ? list[0]! : mergeGeometries(list, false);
+      if (list.length > 1) for (const g of list) g.dispose();
+      if (merged === null) throw new Error(`primitive graph "${graph.name}": geometries failed to merge`);
+      parts.push({ part, slot, geometry: merged });
+    }
+  }
+  built.dispose();
+  return { kept, parts, users: 0 };
 }

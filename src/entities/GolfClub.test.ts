@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { GolfClub, SWING, placeCart, swingAngle } from "./GolfClub";
 import { CLUB_STATS, ClubType } from "../physics/Ballistics";
 import { Cart, CART_COLLIDER, TURRET_GEOMETRY, computeMuzzle } from "../sim/entities/Cart";
+import { CART_GRAPH } from "./cartGraph";
+import { DRIVER_GRAPH } from "./driverGraph";
+import { buildGraph } from "./primitiveGraph";
 
 /**
  * The swing is a render-only animation over a rig the *simulation* owns the ends of:
@@ -258,22 +261,33 @@ describe("the club never swings through the cart it is bolted to", () => {
     return out;
   }
 
-  function solidBoxes(cart: GolfClub): { name: string; box: THREE.Box3 }[] {
-    cart.updateMatrixWorld(true);
+  /**
+   * The canopy and the rider, node by node, from the unmerged graphs. The cart draws them merged,
+   * where no single node survives to take a box of; "draws the shape the unmerged graphs draw"
+   * below is what makes these boxes the ones on screen. Both graphs hang from the cart's origin,
+   * as `GolfClub` hangs them, and every cart here stands at the world origin.
+   */
+  function solidBoxes(): { name: string; box: THREE.Box3 }[] {
+    const cart = buildGraph(CART_GRAPH);
+    const rider = buildGraph(DRIVER_GRAPH);
+    cart.root.updateMatrixWorld(true);
+    rider.root.updateMatrixWorld(true);
     const boxes: { name: string; box: THREE.Box3 }[] = [];
     for (const name of ["canopy", "driver_torso", "driver_head", "driver_cap"]) {
-      const node = cart.getObjectByName(name);
+      const node = cart.named.get(name) ?? rider.named.get(name);
       if (!node) continue;
       const mesh = node as THREE.Mesh;
       mesh.geometry.computeBoundingBox();
       boxes.push({ name, box: mesh.geometry.boundingBox!.clone().applyMatrix4(mesh.matrixWorld) });
     }
+    cart.dispose();
+    rider.dispose();
     return boxes;
   }
 
   it.each(CLUBS)("keeps the %s out of the canopy and off the rider through the whole swing", (club) => {
     const cart = new GolfClub(club);
-    const boxes = solidBoxes(cart);
+    const boxes = solidBoxes();
     expect(boxes.map((b) => b.name)).toContain("canopy");
     expect(boxes.map((b) => b.name)).toContain("driver_head");
 
@@ -340,11 +354,23 @@ describe("the turret housing tips with the swing without carrying the muzzle", (
   });
 });
 
+const RIDER_SLOTS = ["cap", "shirt", "skin", "trousers"];
+
+/** Slot names of every mesh drawn, the loaded ball (which has no slot) aside. */
+function drawnSlots(root: THREE.Object3D): Set<string> {
+  const out = new Set<string>();
+  root.traverseVisible((child) => {
+    const name = ((child as THREE.Mesh).material as THREE.Material | undefined)?.name;
+    if (name) out.add(name);
+  });
+  return out;
+}
+
 describe("the rider", () => {
   it("rides the cart by default and is disposed with it", () => {
     const cart = new GolfClub(ClubType.Driver);
     expect(cart.getObjectByName("driver_pelvis")).toBeDefined();
-    expect(cart.getObjectByName("driver_cap")).toBeDefined();
+    expect([...drawnSlots(cart)].filter((slot) => RIDER_SLOTS.includes(slot)).sort()).toEqual(RIDER_SLOTS);
     cart.dispose();
   });
 
@@ -357,9 +383,156 @@ describe("the rider", () => {
   it("is not painted by the cart's cosmetics", () => {
     const cart = new GolfClub(ClubType.Driver);
     cart.setSlotColor("chassis", 0xff0000);
-    const shirt = cart.getObjectByName("driver_torso") as THREE.Mesh | undefined;
-    expect(shirt).toBeDefined();
-    expect((shirt!.material as THREE.MeshStandardMaterial).color.getHex()).not.toBe(0xff0000);
+    const rider: THREE.MeshStandardMaterial[] = [];
+    cart.traverse((child) => {
+      const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (material && RIDER_SLOTS.includes(material.name)) rider.push(material);
+    });
+    expect(rider.map((m) => m.name)).toContain("shirt");
+    for (const material of rider) expect(material.color.getHex(), material.name).not.toBe(0xff0000);
     cart.dispose();
+  });
+});
+
+/**
+ * `REVAMP-PLAN.md` Stage 3 budgets about 150 draw calls for eight carts. Unmerged, a cart was a
+ * mesh per node -- 50 drawn of its 52, 26 for the rider and one for the loaded ball -- so a round
+ * of eight drew over six hundred. The cart and rider now draw one mesh per slot per rigid part.
+ *
+ * What the merge must not cost is the look, in any pose, and the paint: both are asserted here
+ * against the unmerged graphs, which are what the gate subjects and the Blender scene describe.
+ */
+describe("the cart's draw calls", () => {
+  const POSED = ["turret_pivot", "barrel_pitch", "swing_arm", "housing_pitch", "head_putter", "head_iron", "head_driver"];
+
+  function visibleMeshes(root: THREE.Object3D): THREE.Mesh[] {
+    const out: THREE.Mesh[] = [];
+    root.traverseVisible((child) => {
+      if (child instanceof THREE.Mesh) out.push(child);
+    });
+    return out;
+  }
+
+  /** Per slot: vertices drawn, the sum of their world positions and their bounds. */
+  function drawing(root: THREE.Object3D): Map<string, { count: number; sum: THREE.Vector3; box: THREE.Box3 }> {
+    root.updateMatrixWorld(true);
+    const out = new Map<string, { count: number; sum: THREE.Vector3; box: THREE.Box3 }>();
+    const v = new THREE.Vector3();
+    for (const mesh of visibleMeshes(root)) {
+      const slot = (mesh.material as THREE.Material).name;
+      if (!slot) continue; // the loaded ball
+      const entry = out.get(slot) ?? { count: 0, sum: new THREE.Vector3(), box: new THREE.Box3() };
+      const position = mesh.geometry.getAttribute("position");
+      for (let i = 0; i < position.count; i++) {
+        v.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+        entry.sum.add(v);
+        entry.box.expandByPoint(v);
+      }
+      entry.count += position.count;
+      out.set(slot, entry);
+    }
+    return out;
+  }
+
+  it("draws a cart, its rider and its loaded ball in at most 18 meshes", () => {
+    const cart = new GolfClub(ClubType.Driver);
+    cart.setBallLoaded(true);
+    const drawn = visibleMeshes(cart).length;
+    expect(drawn, `${drawn} meshes; eight carts draw ${drawn * 8}`).toBeLessThanOrEqual(18);
+    cart.dispose();
+  });
+
+  it.each([ClubType.Putter, ClubType.Iron, ClubType.Driver])(
+    "draws the shape the unmerged graphs draw, through the %s's whole swing",
+    (club) => {
+      const cart = new GolfClub(club);
+      const reference = new THREE.Group();
+      const graph = buildGraph(CART_GRAPH);
+      const rider = buildGraph(DRIVER_GRAPH);
+      reference.add(graph.root, rider.root);
+
+      const compare = (label: string): void => {
+        // The reference takes the cart's pose node for node: whatever GolfClub wrote, it copies.
+        for (const name of POSED) {
+          const from = cart.getObjectByName(name)!;
+          const to = graph.named.get(name)!;
+          to.rotation.copy(from.rotation);
+          to.visible = from.visible;
+        }
+        const got = drawing(cart);
+        const want = drawing(reference);
+        expect([...got.keys()].sort(), label).toEqual([...want.keys()].sort());
+        for (const [slot, w] of want) {
+          const g = got.get(slot)!;
+          expect(g.count, `${label} ${slot} vertices`).toBe(w.count);
+          for (const axis of ["x", "y", "z"] as const) {
+            expect(g.sum[axis], `${label} ${slot} sum ${axis}`).toBeCloseTo(w.sum[axis], 3);
+            expect(g.box.min[axis], `${label} ${slot} min ${axis}`).toBeCloseTo(w.box.min[axis], 5);
+            expect(g.box.max[axis], `${label} ${slot} max ${axis}`).toBeCloseTo(w.box.max[axis], 5);
+          }
+        }
+      };
+
+      cart.setAimYaw(0.8);
+      cart.setSwing(0, 1);
+      compare("address");
+      cart.setSwing(1, 1);
+      compare("top of the backswing");
+      cart.setSwing(0, 0.12);
+      compare("follow-through");
+      cart.setAimYaw(-2.2);
+      cart.setSwing(0.5, 1);
+      compare("half backswing, turret slewed");
+
+      cart.dispose();
+      graph.dispose();
+      rider.dispose();
+    },
+  );
+
+  it("shares one set of geometry between every cart", () => {
+    // Eight carts are one graph eight times; nothing about their shape differs, only their paint.
+    const a = new GolfClub(ClubType.Driver, { chassis: 0xff0000 });
+    const b = new GolfClub(ClubType.Iron, { chassis: 0x0000ff });
+    const geometries = (cart: GolfClub): Set<THREE.BufferGeometry> => {
+      const out = new Set<THREE.BufferGeometry>();
+      cart.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh && (mesh.material as THREE.Material).name) out.add(mesh.geometry);
+      });
+      return out;
+    };
+    const fromA = geometries(a);
+    const fromB = geometries(b);
+    expect(fromA.size).toBeGreaterThan(0);
+    expect([...fromA].filter((g) => fromB.has(g)).length).toBe(fromA.size);
+
+    // Freed with the last cart, which makes this a leak check for the whole file too: a test above
+    // that forgot `dispose()` holds the geometry, and the last assertion here goes red.
+    let freed = 0;
+    for (const geometry of fromA) geometry.addEventListener("dispose", () => freed++);
+    a.dispose();
+    expect(freed, "while the other cart still draws them").toBe(0);
+    b.dispose();
+    expect(freed).toBe(fromA.size);
+  });
+
+  it("still paints each cart on its own", () => {
+    const a = new GolfClub(ClubType.Driver);
+    const b = new GolfClub(ClubType.Driver);
+    a.setSlotColor("chassis", 0xff0000);
+    const chassisOf = (cart: GolfClub): number[] => {
+      const out: number[] = [];
+      cart.traverse((child) => {
+        const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+        if (material?.name === "chassis") out.push(material.color.getHex());
+      });
+      return out;
+    };
+    expect(chassisOf(a).length).toBeGreaterThan(0);
+    expect(new Set(chassisOf(a))).toEqual(new Set([0xff0000]));
+    expect(chassisOf(b)).not.toContain(0xff0000);
+    a.dispose();
+    b.dispose();
   });
 });
