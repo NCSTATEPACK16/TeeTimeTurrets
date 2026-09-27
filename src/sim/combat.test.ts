@@ -59,7 +59,7 @@ describe("combat contact resolution", () => {
       // `Sim.creditHit` is what decides whose accuracy a hit belongs to; here the raw shooter is
       // recorded and `stats.directHits` is credited unconditionally, so the existing tests that
       // assert on `directHits` keep asserting what they always did.
-      onBallHit: (shooter: number, x: number, y: number, z: number) => {
+      onBallHit: (shooter: number, _victim: number, _damage: number, x: number, y: number, z: number) => {
         hits.push(shooter);
         hitPositions.push({ x, y, z });
         stats.directHits += 1;

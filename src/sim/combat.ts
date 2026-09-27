@@ -81,15 +81,16 @@ export interface CollisionEventSource {
 export interface CombatContext {
   registry: CombatRegistry;
   /**
-   * A fired ball connected with something. `shooter` is the rig that fired it; `x`/`y`/`z` are the
-   * ball's position at impact, which is where a hit marker floats.
+   * A fired ball connected with a cart. `shooter` is the rig that fired it, `victim` the rig it hit
+   * and `damage` the health it took off; `x`/`y`/`z` are the ball's position at impact, which is
+   * where a hit marker floats.
    *
    * This replaces `ctx.stats.directHits += 1` written inline here, and the move is the fix for
    * `docs/TEST-AND-SPEC-PITFALLS.md` §4: `Stats` is the **player's**, and crediting it from a
    * module that could not tell whose ball it was meant a bot's hit inflated the player's
    * accuracy. `world.ts` now decides, and it decides by asking whether `shooter` is rig 0.
    */
-  onBallHit: (shooter: number, x: number, y: number, z: number) => void;
+  onBallHit: (shooter: number, victim: number, damage: number, x: number, y: number, z: number) => void;
   /**
    * Called once, on the contact that takes a cart from above zero HP to zero.
    *
@@ -150,7 +151,7 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
 
   ball.spent = true;
   const at = ball.body.translation();
-  ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
+  ctx.onBallHit(ball.firedBy, victim.index, ball.damage, at.x, at.y, at.z);
   if (applyDamage(cart.health, ball.damage)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
 }
 

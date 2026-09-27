@@ -77,15 +77,13 @@ describe("arena combat is winnable", () => {
     expect(minHp).toBeLessThan(startHp); // and its shots connected
   });
 
-  it("advances the hit-event epoch each step and resets the buffer", async () => {
+  it("logs nothing while nothing happens", async () => {
+    // The control for every event test: a lone cart sitting still for a second fires no shot,
+    // takes no hit and picks nothing up, so the log must not move.
     const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
-    let last = sim.hitEventEpoch;
-    for (let i = 0; i < 10; i++) {
-      sim.step(neutralIntent());
-      expect(sim.hitEventEpoch).toBe(last + 1); // exactly one bump per live step
-      last = sim.hitEventEpoch;
-      expect(sim.hitEventCount).toBe(0); // nothing hit anything, so the buffer is empty
-    }
+    const head = sim.events.head;
+    for (let i = 0; i < 60; i++) sim.step(neutralIntent());
+    expect(sim.events.head).toBe(head);
   });
 
   it("does not attribute a bot's hits on the player to the player's hit markers", async () => {
@@ -109,16 +107,24 @@ describe("arena combat is winnable", () => {
     botRig.body.setTranslation({ x: bx, y: by, z: player.position.z }, true);
 
     // Player never fires; the bot does all the shooting.
-    let playerEvents = 0;
+    const from = sim.events.head;
     let minHp = player.health.hp;
     for (let i = 0; i < seconds(15); i++) {
       sim.step(neutralIntent());
-      playerEvents += sim.hitEventCount;
       minHp = Math.min(minHp, player.health.hp);
+    }
+    let playerHits = 0;
+    let botHitsOnPlayer = 0;
+    for (let s = sim.events.firstUnread(from); s < sim.events.head; s++) {
+      const e = sim.events.at(s)!;
+      if (e.kind !== "hit") continue;
+      if (e.actor === 0) playerHits++;
+      if (e.actor === 1 && e.target === 0) botHitsOnPlayer++;
     }
 
     expect(minHp, "the bot never landed a hit, so the test proves nothing").toBeLessThan(player.health.max);
-    expect(playerEvents).toBe(0); // none of the bot's hits are the player's markers
+    expect(botHitsOnPlayer).toBeGreaterThan(0); // the hits are in the log, as the bot's
+    expect(playerHits).toBe(0); // and none of them is the player's, which is what the markers read
   });
 
   it("a bot 25 m off opens fire with the pistol instead of driving in to point-blank first", async () => {

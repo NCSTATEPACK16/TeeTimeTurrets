@@ -57,9 +57,9 @@ export class MatchScreen implements Screen {
   private lastBannerMs = 0;
   /** UI-SPEC H11. Optional like the banner; the match runs without #hit-markers. */
   private hitMarkers: HitMarkers | null = null;
-  /** The last `Sim.hitEventEpoch` consumed, so each tick's events spawn a marker exactly once
+  /** The next `Sim.events` seq the hit markers read, so each event spawns a marker exactly once
    *  however many frames render between steps. */
-  private lastHitEpoch = 0;
+  private hitMarkerCursor = 0;
   private readonly hitScreenScratch = { x: 0, y: 0 };
   private view: FrameView | null = null;
   /** Guards `onMatchOver`: called once. */
@@ -103,7 +103,7 @@ export class MatchScreen implements Screen {
     this.lastBannerMs = performance.now();
     const hitRoot = document.getElementById("hit-markers");
     this.hitMarkers = hitRoot ? new HitMarkers(hitRoot) : null;
-    this.lastHitEpoch = sim.hitEventEpoch;
+    this.hitMarkerCursor = sim.events.head;
     this.matchOverReported = false;
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
@@ -227,20 +227,22 @@ export class MatchScreen implements Screen {
   }
 
   /**
-   * Spawns a hit marker for each of the tick's player-attributed combat events, once per tick. The
-   * epoch gate is what makes it once: the sim advances at a fixed step while this renders at the
-   * display rate. Runs after `render.draw`, so the camera `projectToScreen` reads is this frame's.
+   * Spawns a hit marker for each of the player's hits and kills since the last frame, once each:
+   * the cursor is what makes it once, since the sim advances at a fixed step while this renders at
+   * the display rate. Only the player's -- bot-on-bot fire would bury the screen. Runs after
+   * `render.draw`, so the camera `projectToScreen` reads is this frame's.
    */
   private drawHitMarkers(sim: Sim): void {
     if (!this.hitMarkers || !this.render) return;
-    if (sim.hitEventEpoch === this.lastHitEpoch) return;
-    this.lastHitEpoch = sim.hitEventEpoch;
-    for (let i = 0; i < sim.hitEventCount; i++) {
-      const e = sim.hitEvents[i]!;
+    const log = sim.events;
+    for (let seq = log.firstUnread(this.hitMarkerCursor); seq < log.head; seq++) {
+      const e = log.at(seq)!;
+      if (e.actor !== 0 || (e.kind !== "hit" && e.kind !== "kill")) continue;
       // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
       const onScreen = this.render.projectToScreen(e.x, e.y + HIT_MARKER_LIFT, e.z, this.hitScreenScratch);
-      if (onScreen) this.hitMarkers.spawn(e.kind, this.hitScreenScratch.x, this.hitScreenScratch.y);
+      if (onScreen) this.hitMarkers.spawn(e.kind, e.amount, this.hitScreenScratch.x, this.hitScreenScratch.y);
     }
+    this.hitMarkerCursor = log.head;
   }
 
   private drawNameplates(): void {
