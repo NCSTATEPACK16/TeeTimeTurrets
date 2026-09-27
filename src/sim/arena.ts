@@ -38,6 +38,12 @@ export interface ArenaGround {
 }
 
 /**
+ * One playfield per course, for the page's life: its heightfield is about five seconds of sampling
+ * and its baked tiles only grow, and the course never changes under it.
+ */
+const playfields = new WeakMap<CourseWorld, Playfield>();
+
+/**
  * The shipped arena: all eighteen holes as one place.
  *
  * The seed is hole 1's. That is not a coincidence to tidy away -- it is the seed every arena match
@@ -47,8 +53,13 @@ export interface ArenaGround {
 export function arenaFromCourse(world: CourseWorld): ArenaGround {
   const first = world.holes.find((h) => h.spec.index === 0) ?? world.holes[0];
   if (!first) throw new Error("arenaFromCourse: the course has no holes");
+  let playfield = playfields.get(world);
+  if (!playfield) {
+    playfield = coursePlayfield(world.terrain, world.surfaces);
+    playfields.set(world, playfield);
+  }
   return {
-    playfield: coursePlayfield(world.terrain, world.surfaces),
+    playfield,
     holes: world.holes,
     southBoundary: world.southBoundary,
     clubhouse: AUTHORED_CLUBHOUSE,

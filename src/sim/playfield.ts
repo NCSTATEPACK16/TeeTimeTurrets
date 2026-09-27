@@ -13,6 +13,8 @@
  *
  * DOM-free, and the queries are the per-tick ones, so nothing here allocates.
  */
+import { BakedSurfaces, gridHeightAt, heightGridFrom } from "./bakedGround";
+import type { HeightGrid } from "./bakedGround";
 import type { Bounds } from "./courseLayout";
 import type { CourseTerrain } from "./courseTerrain";
 import type { Surfaces } from "./surfaces";
@@ -61,16 +63,29 @@ export function holePlayfield(terrain: Terrain, surfaces: Surfaces): Playfield {
   };
 }
 
-/** The whole course as one piece of ground: what arena stands on. */
+/**
+ * The whole course as one piece of ground: what arena stands on.
+ *
+ * Answered from the baked grids (`bakedGround.ts`), not the exact blend: heights by bilinear
+ * lookup on the heightfield Rapier collides with, surfaces and tuning from lazily baked tiles. The
+ * heightfield is sampled the first time anything asks for a height or for the collider, and kept.
+ * `arenaFromCourse` keeps one of these per course, so a second match reuses both.
+ */
 export function coursePlayfield(terrain: CourseTerrain, surfaces: Surfaces): Playfield {
+  let grid: HeightGrid | null = null;
+  const heights = (): HeightGrid => {
+    grid ??= heightGridFrom(terrain.bounds, terrain.cols, terrain.rows, terrain.buildHeightfield());
+    return grid;
+  };
+  const baked = new BakedSurfaces(surfaces, terrain.bounds, terrain.cellM);
   return {
-    heightAt: (x, z) => terrain.heightAt(x, z),
-    surfaces,
+    heightAt: (x, z) => gridHeightAt(heights(), x, z),
+    surfaces: baked,
     bounds: terrain.bounds,
     buildHeightfield: () => ({
       rows: terrain.rows,
       cols: terrain.cols,
-      heights: terrain.buildHeightfield(),
+      heights: heights().heights,
       extentX: terrain.bounds.maxX - terrain.bounds.minX,
       extentZ: terrain.bounds.maxZ - terrain.bounds.minZ,
       centreX: (terrain.bounds.minX + terrain.bounds.maxX) / 2,
