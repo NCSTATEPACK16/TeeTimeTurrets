@@ -47,6 +47,41 @@ describe("BallPool", () => {
     expect(pool.acquire(0)).toBeNull();
   });
 
+  /** Every body in flight, fired 0.1 s apart, all high in the air except `grounded` on the turf. */
+  function fillPoolInFlight(grounded: readonly number[]): ReturnType<BallPool["acquire"]>[] {
+    const balls = [];
+    for (let i = 0; i < POOL_SIZE; i++) {
+      pool.step(DT, i * 0.1);
+      const ball = pool.acquire(0);
+      // Into the air at once: left at the parked position, a ball reads as resting on the ground
+      // and the pool would call it landed before the fill is done.
+      ball!.body.setTranslation({ x: i, y: 50, z: 0 }, true);
+      balls.push(ball);
+    }
+    for (const i of grounded) balls[i]!.body.setTranslation({ x: i, y: 0.03, z: 0 }, true);
+    // One step, so the pool has looked at where each ball is.
+    pool.step(DT, POOL_SIZE * 0.1);
+    return balls;
+  }
+
+  it("with every body in flight, recycles the oldest ball already on the ground", () => {
+    // A 4v4 on the putter keeps all 32 balls in flight most of the time, mostly rolling out a shot
+    // on the turf. Refusing the next shot then is a trigger that silently does nothing. Ball 0 is
+    // the oldest of all but still in the air, so it is passed over. Of the two on the ground, 9 is
+    // made the older, so "the first one found" and "the oldest" give different answers.
+    const balls = fillPoolInFlight([5, 9]);
+    balls[9]!.firedAt = 0.05;
+    const recycled = pool.acquire(1);
+    expect(recycled?.body).toBe(balls[9]!.body);
+    expect(recycled!.firedBy).toBe(1);
+    expect(recycled!.state).toBe("flying");
+  });
+
+  it("with every body in the air, still refuses rather than take a ball out of its arc", () => {
+    fillPoolInFlight([]);
+    expect(pool.acquire(1)).toBeNull();
+  });
+
   it("a recycled body carries its new shooter, not the one who last fired it", () => {
     // The whole point of `firedBy`: arena scores a kill against whoever fired the ball, and a
     // pool of 32 bodies recycles. Asserted on the recycle path rather than on a fresh body,

@@ -35,6 +35,12 @@ export interface PooledBall {
   spent: boolean;
   /** Health points this ball takes off a cart: its club's `damage`, stamped when it is fired. */
   damage: number;
+  /**
+   * True while a `flying` ball is down on the turf -- rolling out its shot or bouncing low --
+   * rather than up in its arc. Written by `step`; false for a ball in any other state. What makes a
+   * ball fair game for `acquire` to recycle when the whole pool is in flight.
+   */
+  onGround: boolean;
 }
 
 export const POOL_SIZE = 32;
@@ -108,33 +114,53 @@ export class BallPool {
         .setEnabled(false);
       world.createCollider(colliderDesc, body);
 
-      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER, firedAt: 0, spent: false, damage: 1 });
+      this.balls.push({
+        body,
+        state: "idle",
+        landedAt: 0,
+        firedBy: NO_KILLER,
+        firedAt: 0,
+        spent: false,
+        damage: 1,
+        onGround: false,
+      });
       this.restTicks.set(body, 0);
     }
   }
 
   /**
-   * idle -> flying. Force-recycles the oldest `landed` ball if no `idle` body remains (never a
-   * `flying` one -- an in-flight shot must never vanish mid-arc). Returns null only when every
-   * pooled body is simultaneously `flying`; the caller must degrade to a blank shot in that case.
+   * idle -> flying. When no body is idle it recycles, in this order:
+   * 1. the oldest `landed` ball;
+   * 2. the oldest `flying` ball that is `onGround` -- rolling out a shot, not up in its arc. With
+   *    eight carts on the putter every body is in flight most of the time, nearly all of them
+   *    rolling, and refusing then made the trigger silently do nothing (Stage 1: half the player's
+   *    shots in a measured 4v4).
+   *
+   * Returns null only when every body is up in the air; an arc is never cut short. The caller
+   * must degrade to a blank shot in that case. Allocation-free: it runs on every shot.
    *
    * `firedBy` has **no default**, on purpose. Every call site has to answer "whose shot is this"
    * rather than inherit an answer, because the wrong answer here is a kill credited to the wrong
    * cart and nothing about it would look wrong at the call site.
    */
   acquire(firedBy: number): PooledBall | null {
-    const idle = this.balls.find((b) => b.state === "idle");
-    if (idle) return this.beginFlight(idle, firedBy);
-
-    const landed = this.balls.filter((b) => b.state === "landed");
-    if (landed.length === 0) return null;
-    let oldest = landed[0];
-    for (const b of landed) if (b.landedAt < oldest.landedAt) oldest = b;
-    return this.beginFlight(oldest, firedBy);
+    let oldestLanded: PooledBall | null = null;
+    let oldestRolling: PooledBall | null = null;
+    for (const b of this.balls) {
+      if (b.state === "idle") return this.beginFlight(b, firedBy);
+      if (b.state === "landed") {
+        if (oldestLanded === null || b.landedAt < oldestLanded.landedAt) oldestLanded = b;
+      } else if (b.onGround) {
+        if (oldestRolling === null || b.firedAt < oldestRolling.firedAt) oldestRolling = b;
+      }
+    }
+    const recycled = oldestLanded ?? oldestRolling;
+    return recycled === null ? null : this.beginFlight(recycled, firedBy);
   }
 
   private beginFlight(ball: PooledBall, firedBy: number): PooledBall {
     ball.state = "flying";
+    ball.onGround = false;
     ball.firedBy = firedBy;
     ball.firedAt = this.now;
     ball.spent = false;
@@ -149,6 +175,7 @@ export class BallPool {
    * gravity, so leaving it enabled would have it fall forever). */
   release(ball: PooledBall): void {
     ball.state = "idle";
+    ball.onGround = false;
     ball.firedBy = NO_KILLER;
     ball.body.setTranslation(PARKED_POSITION, true);
     ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -185,6 +212,7 @@ export class BallPool {
         }
         const t = ball.body.translation();
         const grounded = t.y - this.ground.heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
+        ball.onGround = grounded;
         if (grounded) this.applyRollingResistance(ball.body, t.x, t.z, dt);
         const v = ball.body.linvel();
         const slow = Math.hypot(v.x, v.y, v.z) < REST_SPEED_THRESHOLD;
@@ -192,6 +220,7 @@ export class BallPool {
         this.restTicks.set(ball.body, ticks);
         if (ticks >= REST_HOLD_TICKS) {
           ball.state = "landed";
+          ball.onGround = false;
           ball.landedAt = simTime;
         }
       } else if (ball.state === "landed") {
