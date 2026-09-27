@@ -252,7 +252,12 @@ reason rather than fixed:
   never passes through the branch that applies it. The bot's decision *not* to shoot is
   expressed as the action that shoots. The player labours under the same release-fires
   rule, so this is design, not asymmetry — but it is design nobody chose.
-- **`reset()` reproduces the RNG stream, not a bit-identical physics replay.** The Rapier
+- > **Resolved in Stage 1 (issue #30).** `reset()` now frees the Rapier world and builds a new
+  > one in `create()`'s order, and also clears the ball pool, bucket cooldowns, the pool clock
+  > and each cart's weapon. `arenaGolden.test.ts` checks that a rematch replays the first match
+  > to the bit. The original entry stays below.
+
+  **`reset()` reproduces the RNG stream, not a bit-identical physics replay.** The Rapier
   world carries step-count history. The code matches its stated promise; anyone building
   replay or spectator features will expect more than it gives.
 - > **Resolved in Stage 1 (issue #30).** The buzzer tick is simulated in full, and the world

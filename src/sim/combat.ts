@@ -66,6 +66,11 @@ export class CombatRegistry {
   get(handle: number): Actor | undefined {
     return this.actors.get(handle);
   }
+
+  /** Forgets every handle, for a world that is being rebuilt: its handles start over. */
+  clear(): void {
+    this.actors.clear();
+  }
 }
 
 /** The slice of RAPIER.EventQueue this module uses -- narrow so tests can script contacts. */

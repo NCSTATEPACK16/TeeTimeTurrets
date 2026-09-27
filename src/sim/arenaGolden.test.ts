@@ -60,31 +60,36 @@ function scriptedIntent(tick: number, out: PlayerIntent): PlayerIntent {
   return out;
 }
 
-async function playScriptedMatch(world: CourseWorld): Promise<number> {
-  const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+/** Plays the script on `sim` from wherever it stands and returns the fingerprint of the run. */
+function playScript(sim: Sim): number {
   const print = new Fingerprint();
   const intent = neutralIntent();
   const carts = [sim.cart, ...sim.bots];
+  for (let tick = 0; tick < TICKS; tick++) {
+    sim.step(scriptedIntent(tick, intent));
+    for (const cart of carts) {
+      print.add(cart.position.x);
+      print.add(cart.position.y);
+      print.add(cart.position.z);
+      print.add(cart.heading);
+      print.add(cart.health.hp);
+      print.add(cart.ammo);
+    }
+  }
+  for (let i = 0; i < carts.length; i++) {
+    print.add(sim.match.strokesFor(i));
+    print.add(sim.match.pointsFor(i));
+  }
+  return print.value;
+}
+
+async function playScriptedMatch(world: CourseWorld): Promise<number> {
+  const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
   try {
-    for (let tick = 0; tick < TICKS; tick++) {
-      sim.step(scriptedIntent(tick, intent));
-      for (const cart of carts) {
-        print.add(cart.position.x);
-        print.add(cart.position.y);
-        print.add(cart.position.z);
-        print.add(cart.heading);
-        print.add(cart.health.hp);
-        print.add(cart.ammo);
-      }
-    }
-    for (let i = 0; i < carts.length; i++) {
-      print.add(sim.match.strokesFor(i));
-      print.add(sim.match.pointsFor(i));
-    }
+    return playScript(sim);
   } finally {
     sim.dispose();
   }
-  return print.value;
 }
 
 describe("arena determinism fingerprint", () => {
@@ -95,7 +100,24 @@ describe("arena determinism fingerprint", () => {
 
   it("replays identically from the same seed", async () => {
     expect(await playScriptedMatch(world)).toBe(await playScriptedMatch(world));
-  });
+  }, 60_000);
+
+  it("plays a rematch identically to the match before it", async () => {
+    // What "play again" promises: after `reset()` the same script gives the same match, down to
+    // every cart's position on every tick. Anything the first match leaves behind -- a ball on the
+    // ground, a bucket on cooldown, a bot's memory, a half-charged shot, the physics world's own
+    // history -- shows up here as a different number. The clock is the script's length, so the
+    // first match runs to its buzzer and the reset comes where PLAY AGAIN does, after it.
+    const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS, matchDurationS: TICKS / 60 });
+    try {
+      const first = playScript(sim);
+      expect(sim.matchOver).toBe(true);
+      sim.reset();
+      expect(playScript(sim)).toBe(first);
+    } finally {
+      sim.dispose();
+    }
+  }, 60_000);
 
   it("matches the recorded fingerprint", async () => {
     expect(await playScriptedMatch(world)).toBe(3500461061);

@@ -17,7 +17,7 @@ import { clampToPlayable } from "./courseBarrier";
 import type { SouthBoundary } from "./courseBarrier";
 import { SurfaceId, createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
-import type { Playfield } from "./playfield";
+import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
 import { BOT_CHANNEL, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
@@ -192,6 +192,8 @@ export class Sim {
   private disposed = false;
   /** The ground under everything: heights, materials, bounds and the collider's heightfield. */
   private readonly playfield: Playfield;
+  /** The playfield's collider heights, built by the first `buildGround` and reused after it. */
+  private heightfield: PlayfieldHeightfield | null = null;
   /** Cart state from the previous fixed step, for render interpolation. */
   previousCart: CartTransform;
   /** Cart state from the most recent fixed step. */
@@ -305,50 +307,26 @@ export class Sim {
     await RAPIER.init();
     const sim = new Sim(ground, options.matchDurationS ?? MATCH_DURATION_S, options.tire ?? TireType.Street);
 
-    sim.world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
-    sim.world.timestep = FIXED_DT;
-    sim.buildGround();
+    const botCount = options.botCount ?? 1;
+    for (let i = 0; i < botCount; i++) {
+      // Bots fire the putter, not the default driver. A fired ball launches at its club's loft
+      // from a ~2.4 m muzzle, so a lofted club sails clean over a cart at any range a bot would
+      // stand off at. The putter is flat, so its shot lands on the target at `BOT_STANDOFF`.
+      sim.bots.push(new Cart({ maxHealth: ARENA_MAX_HEALTH, club: ClubType.Putter }));
+    }
+    sim.buildPhysics();
 
-    sim.controller = sim.world.createCharacterController(CHARACTER_OFFSET);
-    sim.controller.setUp({ x: 0, y: 1, z: 0 });
-    sim.controller.setMaxSlopeClimbAngle((CART_MAX_SLOPE_CLIMB_DEG * Math.PI) / 180);
-    sim.controller.setMinSlopeSlideAngle((CART_MIN_SLOPE_SLIDE_DEG * Math.PI) / 180);
-    sim.controller.enableAutostep(CART_AUTOSTEP_HEIGHT, CART_AUTOSTEP_MIN_WIDTH, true);
-    sim.controller.enableSnapToGround(CART_SNAP_TO_GROUND);
-    // A future flag-ball has to be shovable by the cart, and a KCC ignores dynamic bodies unless
-    // told otherwise. Nudging a landed ball by driving into it is correct behaviour anyway.
-    sim.controller.setApplyImpulsesToDynamicBodies(true);
-
-    sim.addCartRig(sim.cart, null);
-
-    sim.ballPool = new BallPool(sim.world, {
-      heightAt: (x, z) => sim.playfield.heightAt(x, z),
-      tuningAt: (x, z, out) => sim.playfield.surfaces.tuningAt(x, z, out),
-    });
     // KNOWN MISPLACEMENT, kept for one commit so the refactor around it can be shown to change
     // nothing: this is hole 1's *local* tee plus 10 m, read as a course coordinate, which is where
     // the arena has always put its bucket. The next change moves it and says so.
     const firstHole = ground.holes.find((h) => h.spec.index === 0) ?? ground.holes[0]!;
     sim.buckets.push(createBucket(firstHole.spec.tee.x + 10, firstHole.spec.tee.z));
 
-    sim.eventQueue = new RAPIER.EventQueue(true);
     sim.combatContext = {
       registry: sim.registry,
       onBallHit: (shooter, x, y, z) => sim.creditHit(shooter, x, y, z),
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
     };
-    for (const pooled of sim.ballPool.all) {
-      sim.registry.registerBall(pooled.body.collider(0).handle, pooled);
-    }
-    const botCount = options.botCount ?? 1;
-    for (let i = 0; i < botCount; i++) {
-      // Bots fire the putter, not the default driver. A fired ball launches at its club's loft
-      // from a ~2.4 m muzzle, so a lofted club sails clean over a cart at any range a bot would
-      // stand off at. The putter is flat, so its shot lands on the target at `BOT_STANDOFF`.
-      const bot = new Cart({ maxHealth: ARENA_MAX_HEALTH, club: ClubType.Putter });
-      sim.bots.push(bot);
-      sim.addCartRig(bot, i);
-    }
     // Now that every rig exists. The scoreboard is indexed by rig index.
     sim.match.setRoster(sim.rigs.length);
     for (const rig of sim.rigs) sim.placeRig(rig, sim.openingPoint(rig.index));
@@ -377,9 +355,60 @@ export class Sim {
     return mulberry32(hashChannel(this.seed, 0, BOT_SKILL_CHANNEL, botIndex))();
   }
 
-  /** Builds the heightfield collider for the ground. */
+  /**
+   * The Rapier world and everything in it: the ground, the character controller, a body per cart
+   * and the ball pool, each registered for contact dispatch, and a rig per cart with a fresh bot
+   * stream and mind. Every cart must already exist; `placeRig` puts them down afterwards.
+   *
+   * `create` and `reset` both build through here, in this order, so a rematch runs in a world
+   * with the same handles and no history -- exactly the world the first match had. Teleporting
+   * carts around the old world instead leaves its broadphase and contact state behind, and a
+   * rematch then drifts from the first match from its very first tick.
+   */
+  private buildPhysics(): void {
+    this.world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
+    this.world.timestep = FIXED_DT;
+    this.buildGround();
+
+    this.controller = this.world.createCharacterController(CHARACTER_OFFSET);
+    this.controller.setUp({ x: 0, y: 1, z: 0 });
+    this.controller.setMaxSlopeClimbAngle((CART_MAX_SLOPE_CLIMB_DEG * Math.PI) / 180);
+    this.controller.setMinSlopeSlideAngle((CART_MIN_SLOPE_SLIDE_DEG * Math.PI) / 180);
+    this.controller.enableAutostep(CART_AUTOSTEP_HEIGHT, CART_AUTOSTEP_MIN_WIDTH, true);
+    this.controller.enableSnapToGround(CART_SNAP_TO_GROUND);
+    // A future flag-ball has to be shovable by the cart, and a KCC ignores dynamic bodies unless
+    // told otherwise. Nudging a landed ball by driving into it is correct behaviour anyway.
+    this.controller.setApplyImpulsesToDynamicBodies(true);
+
+    this.rigs.length = 0;
+    this.registry.clear();
+    this.addCartRig(this.cart, null);
+
+    this.ballPool = new BallPool(this.world, {
+      heightAt: (x, z) => this.playfield.heightAt(x, z),
+      tuningAt: (x, z, out) => this.playfield.surfaces.tuningAt(x, z, out),
+    });
+    this.eventQueue = new RAPIER.EventQueue(true);
+    for (const pooled of this.ballPool.all) {
+      this.registry.registerBall(pooled.body.collider(0).handle, pooled);
+    }
+    for (let i = 0; i < this.bots.length; i++) this.addCartRig(this.bots[i]!, i);
+  }
+
+  /** Frees what `buildPhysics` made. Rapier's WASM heap is not garbage-collected. */
+  private freePhysics(): void {
+    this.world.removeCharacterController(this.controller);
+    this.eventQueue.free();
+    this.world.free();
+  }
+
+  /**
+   * Builds the heightfield collider for the ground. The heights are computed once per `Sim` and
+   * kept, so a rematch does not rebuild them.
+   */
   private buildGround(): void {
-    const field = this.playfield.buildHeightfield();
+    this.heightfield ??= this.playfield.buildHeightfield();
+    const field = this.heightfield;
     const groundDesc = RAPIER.ColliderDesc.heightfield(field.rows, field.cols, field.heights, {
       x: field.extentX,
       y: 1,
@@ -879,23 +908,36 @@ export class Sim {
   /**
    * "Play again": the same match from the top. Every cart back on its opening tee at full health,
    * the clock and scoreboard cleared, every seeded stream back at its start -- a rerun, not a
-   * continuation. Ammo survives; `stats` survives too, being the session's accuracy.
+   * continuation. `stats` survives, being the session's accuracy.
+   *
+   * The test of it is that the same inputs replay the first match exactly
+   * (`arenaGolden.test.ts`), so nothing the last match left behind may survive:
+   * - The physics world is rebuilt (`buildPhysics`), which also empties the ball pool and gives
+   *   each bot a fresh stream and mind with the same skill.
+   * - Every bucket is off cooldown, and the pool's despawn clock (`simTime`) starts from zero.
+   * - Every cart is rearmed as well as revived: starting club and ammo, no reload, no charge.
    */
   reset(): void {
     this.lastShotWasStrike = false;
     this.match.reset();
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
+    this.freePhysics();
+    this.buildPhysics();
+    for (const bucket of this.buckets) bucket.cooldownRemaining = 0;
+    this.simTime = 0;
+    this.hitEventCount = 0;
 
     for (const rig of this.rigs) {
       this.placeRig(rig, this.openingPoint(rig.index));
       rig.cart.revive();
-      if (rig.random !== null) rig.random = mulberry32(this.botStreamSeed(rig.index - 1));
-      rig.targetIndex = NO_TARGET;
+      rig.cart.rearm();
     }
 
     this.syncCurrentCart();
     this.previousCart = this.currentCart;
     this.previousBotCarts = this.currentBotCarts.slice();
+    this.syncCurrentPool();
+    this.previousPoolTransforms.set(this.currentPoolTransforms);
   }
 
   /**
@@ -905,9 +947,7 @@ export class Sim {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.world.removeCharacterController(this.controller);
-    this.eventQueue.free();
-    this.world.free();
+    this.freePhysics();
   }
 
   /**

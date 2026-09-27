@@ -505,6 +505,64 @@ describe("Cart ammo", () => {
   });
 });
 
+describe("Cart rearm", () => {
+  /** Everything the weapon carries between ticks, private state included. */
+  function weapon(cart: Cart): Record<string, unknown> {
+    const c = cart as unknown as Record<string, unknown>;
+    const keys = ["club", "ammo", "reload", "chargeHeld", "wasFiring", "cancelled", "shot"];
+    return Object.fromEntries(keys.map((k) => [k, structuredClone(c[k])]));
+  }
+
+  /**
+   * What a match can leave on a cart's weapon. No one cart can show all of it at once -- a charge
+   * only builds once the reload is done, and a cancel drops the charge -- so each scenario dirties
+   * part of it, and the last test checks that between them they dirty every field.
+   */
+  const scenarios: Record<string, (cart: Cart) => void> = {
+    // Clubs swapped, a full driver shot fired, ammo picked up, the reload still running.
+    fired: (cart) => {
+      cart.selectClub(ClubType.Driver);
+      run(cart, 2, idle({ fire: true }));
+      run(cart, 1 / 60, idle());
+      cart.addAmmo(40);
+    },
+    // The trigger held down on a charge when the buzzer went.
+    charging: (cart) => run(cart, 0.25, idle({ fire: true })),
+    // The trigger held down after a cancel, which latches until it is let go.
+    cancelled: (cart) => run(cart, 0.25, idle({ fire: true, cancelCharge: true })),
+  };
+
+  function usedCart(scenario: string): Cart {
+    const cart = new Cart({ club: ClubType.Iron });
+    scenarios[scenario]!(cart);
+    return cart;
+  }
+
+  for (const scenario of Object.keys(scenarios)) {
+    it(`leaves the weapon exactly as a new cart of the same loadout has it (${scenario})`, () => {
+      const fresh = new Cart({ club: ClubType.Iron });
+      const used = usedCart(scenario);
+      expect(weapon(used)).not.toEqual(weapon(fresh));
+
+      used.rearm();
+
+      expect(weapon(used)).toEqual(weapon(fresh));
+    });
+  }
+
+  it("is tested against every field of the weapon, not only some", () => {
+    const fresh = weapon(new Cart({ club: ClubType.Iron }));
+    const dirtied = new Set<string>();
+    for (const scenario of Object.keys(scenarios)) {
+      const used = weapon(usedCart(scenario));
+      for (const key of Object.keys(fresh)) {
+        if (JSON.stringify(used[key]) !== JSON.stringify(fresh[key])) dirtied.add(key);
+      }
+    }
+    expect([...dirtied].sort()).toEqual(Object.keys(fresh).sort());
+  });
+});
+
 describe("Cart health, death and shunting", () => {
   let cart: Cart;
   beforeEach(() => {

@@ -270,6 +270,8 @@ export class Cart {
   ammo: number;
 
   private club: ClubType;
+  /** The club this cart was built with, which a rematch goes back to. See `rearm`. */
+  private readonly startingClub: ClubType;
   private reload = 0;
   private chargeHeld = 0;
   private wasFiring = false;
@@ -284,6 +286,7 @@ export class Cart {
     this.speed = 0;
     this.tire = options.tire ?? TireType.Street;
     this.club = options.club ?? ClubType.Putter;
+    this.startingClub = this.club;
     this.recoil = { x: 0, z: 0 };
     this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
@@ -353,6 +356,27 @@ export class Cart {
     // A cart comes back able to fight. Topped up, not reset: dying never costs a cart the ammo it
     // had gathered above the starting load.
     this.ammo = Math.max(this.ammo, STARTING_AMMO);
+  }
+
+  /**
+   * The weapon back to how a new cart of this loadout has it: its starting club and load, no
+   * reload pending, nothing charged, the trigger up. `Sim.reset`'s half of a rematch for the cart.
+   *
+   * Not part of `revive()`, on purpose. Coming back from a death is not a new match: a cart keeps
+   * the club it chose and the ammo it gathered above the starting load (see `revive`).
+   */
+  rearm(): void {
+    this.club = this.startingClub;
+    this.ammo = STARTING_AMMO;
+    this.reload = 0;
+    this.chargeHeld = 0;
+    this.wasFiring = false;
+    this.cancelled = false;
+    this.shot.fired = false;
+    this.shot.hasBall = false;
+    this.shot.club = this.club;
+    this.shot.charge01 = 0;
+    this.shot.yaw = 0;
   }
 
   /** Resize the health bar -- an armour upgrade. Refills, so the change never leaves a half bar. */

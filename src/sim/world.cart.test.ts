@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
-import { BOT_ENGAGE_RANGE, BOT_FIRE_RANGE } from "./bot";
+import { BOT_ENGAGE_RANGE, BOT_FIRE_RANGE, createBotMind } from "./bot";
 import { fixedHoleSpec } from "./course";
 import type { HoleSpec } from "./course";
 import { arenaFromHole } from "./arena";
@@ -316,6 +316,52 @@ describe("damage and respawn", () => {
 
 });
 
+describe("a rematch", () => {
+  interface Leftovers {
+    simTime: number;
+    ballPool: BallPool;
+    rigs: { mind: { stuckFor: number; hasAmmoTarget: boolean; skill: number } | null }[];
+  }
+
+  it("reset() clears what the last match left on the ground and in every cart's hands", async () => {
+    const sim = await holeSim(fixedHoleSpec(), 1);
+    const inside = sim as unknown as Leftovers;
+    const skill = inside.rigs[1]!.mind!.skill;
+
+    // Leave something of each kind behind: balls in the air and on the ground, the bucket taken,
+    // the clock run on, a bot that thinks it is stuck and knows where ammo is, and carts with a
+    // swapped club, a spent magazine and a shot charging.
+    play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: seconds(4), intent: {} }]);
+    const bucket = sim.pickups[0]!;
+    bucket.cooldownRemaining = 45;
+    const mind = inside.rigs[1]!.mind!;
+    mind.stuckFor = 1.5;
+    mind.hasAmmoTarget = true;
+    for (const cart of [sim.cart, ...sim.bots]) {
+      cart.selectClub(ClubType.Iron);
+      cart.ammo = 3;
+    }
+    play(sim, [{ ticks: 10, intent: { fire: true } }]);
+    expect(inside.ballPool.all.some((b) => b.state !== "idle")).toBe(true);
+    expect(sim.cart.charge).toBeGreaterThan(0);
+
+    sim.reset();
+
+    expect(inside.ballPool.all.every((b) => b.state === "idle")).toBe(true);
+    expect(bucket.cooldownRemaining).toBe(0);
+    expect(inside.simTime).toBe(0);
+    expect(inside.rigs[1]!.mind).toEqual(createBotMind(skill));
+    const fresh = await holeSim(fixedHoleSpec(), 1);
+    for (const [i, cart] of [sim.cart, ...sim.bots].entries()) {
+      const want = [fresh.cart, ...fresh.bots][i]!;
+      expect(cart.equippedClub).toBe(want.equippedClub);
+      expect(cart.ammo).toBe(STARTING_AMMO);
+      expect(cart.charge).toBe(0);
+    }
+    fresh.dispose();
+  });
+});
+
 describe("bot carts", () => {
   it("creates one bot by default, on the terrain at the far end of the hole", async () => {
     const sim = await holeSim();
@@ -505,6 +551,9 @@ describe("bot carts", () => {
   /**
    * `CartRig.random` is private; reaching in here is the only way to observe the reseed
    * directly rather than through however many ticks of physics it takes a bot to draw from it.
+   * (Since Stage 1, `reset()` rebuilds the physics world, so the divergence described next no
+   * longer happens after a reset; `arenaGolden.test.ts`'s rematch check is the whole-match proof.
+   * This stays the direct check on the stream.)
    * Physics is the wrong instrument for this test: two `RAPIER.World`s with different
    * step-count histories are not bound to bit-identical floating point from identical body
    * positions, so a full post-reset turretYaw trace compared against a freshly created sim's
