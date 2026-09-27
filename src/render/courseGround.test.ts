@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { COURSE_GROUND_TUNING, createCourseGround } from "./courseGround";
+import { COURSE_GROUND_TUNING, courseGroundFor, createCourseGround } from "./courseGround";
+import { createSurfaceWeights } from "../sim/surfaces";
+import type { Surfaces } from "../sim/surfaces";
+import { SurfaceId } from "../sim/surfaces";
 import { generateCourse } from "../sim/course";
 import { solveCourseLayout } from "../sim/courseLayout";
 import { createCourseSurfaces } from "../sim/courseSurfaces";
@@ -178,11 +181,13 @@ describe("what the shader is handed", () => {
     for (let i = 0; i < biome.count; i++) {
       const sum = biome.getX(i) + biome.getY(i) + biome.getZ(i);
       expect(sum).toBeGreaterThanOrEqual(0);
-      expect(sum).toBeLessThanOrEqual(1 + 1e-6);
+      // Stored as 8-bit, so each weight is within half a step (1/510) of its value.
+      expect(sum).toBeLessThanOrEqual(1 + 3 / 510);
       if (sum > 0) claimed++;
       const length = Math.hypot(mow.getX(i), mow.getY(i));
-      // Either a unit direction or nothing at all -- the shader reads a zero as "unmown".
-      expect(length < 1e-6 || Math.abs(length - 1) < 1e-6).toBe(true);
+      // Either a unit direction or nothing at all -- the shader reads a zero as "unmown". Signed
+      // 8-bit, so a unit vector comes back within about 1/127 of unit length.
+      expect(length < 1e-6 || Math.abs(length - 1) < 0.02).toBe(true);
       if (length > 0.5) mown++;
     }
     // Both controls: some of this tile is a hole's ground and some of it is open rough, so
@@ -206,5 +211,118 @@ describe("what the shader is handed", () => {
     // the map slot exists to avoid.
     expect(keys.size).toBe(1);
     ground.dispose();
+  });
+});
+
+describe("what it costs", () => {
+  it("stores the shader's per-vertex biome and mow as 8-bit", () => {
+    const { ground } = build();
+    const geometry = meshes(ground)[0]!.geometry;
+    const biome = geometry.getAttribute("aBiome") as THREE.BufferAttribute;
+    const mow = geometry.getAttribute("aMow") as THREE.BufferAttribute;
+    expect(biome.array).toBeInstanceOf(Uint8Array);
+    expect(biome.normalized).toBe(true);
+    expect(mow.array).toBeInstanceOf(Int8Array);
+    expect(mow.normalized).toBe(true);
+    ground.dispose();
+  });
+
+  it("asks the course for a point's hole weights once per vertex, not once per attribute", () => {
+    const generated = build();
+    let calls = 0;
+    const counting: CourseTerrain = {
+      ...generated.terrain,
+      weightsInto: (x, z, out) => {
+        calls++;
+        return generated.terrain.weightsInto(x, z, out);
+      },
+    };
+    const ground = createCourseGround(counting, flatSurfaces());
+    let vertices = 0;
+    for (const mesh of meshes(ground)) vertices += positionsOf(mesh).length / 3;
+    // At most one call a vertex, skirts included (they copy their rim rather than asking). Two
+    // calls a grid vertex -- one for the biome, one for the mow -- is what this was.
+    expect(calls).toBeLessThan(vertices);
+    expect(calls).toBeGreaterThan(0);
+    ground.dispose();
+    generated.ground.dispose();
+  });
+
+  it("builds its heights from the height function it is given", () => {
+    const { terrain, ground: exact } = build();
+    exact.dispose();
+    const ground = createCourseGround(terrain, flatSurfaces(), () => 42);
+    const positions = positionsOf(meshes(ground)[0]!);
+    let onTop = 0;
+    for (let i = 1; i < positions.length; i += 3) if (positions[i] === 42) onTop++;
+    expect(onTop).toBeGreaterThan(100);
+    ground.dispose();
+  });
+});
+
+/** Open rough everywhere: a course whose surfaces cost nothing to sample. */
+function flatSurfaces(): Surfaces {
+  return {
+    surfaceAt: () => SurfaceId.Rough,
+    tuningAt: () => {},
+    weightsAt: (_x, _z, out) => Object.assign(out, createSurfaceWeights()),
+  };
+}
+
+/** A 3 km square with no holes: far bigger than NEAR_RADIUS_M, and cheap to build tiles on. */
+function bigEmptyCourse(): CourseTerrain {
+  return {
+    holes: [],
+    bounds: { minX: 0, minZ: 0, maxX: 3000, maxZ: 3000 },
+    cellM: 2,
+    cols: 1500,
+    rows: 1500,
+    heightAt: () => 0,
+    influenceAt: () => 0,
+    weightsInto: () => -1,
+    buildHeightfield: () => new Float32Array(1),
+  };
+}
+
+describe("near tiles over a long drive", () => {
+  function driveTo(ground: ReturnType<typeof createCourseGround>, x: number, z: number): void {
+    // Enough updates for every tile in range to finish its near build.
+    for (let i = 0; i < 400; i++) ground.update(x, z);
+  }
+
+  it("never keeps more near tiles than its cap, however far the camera goes", () => {
+    const ground = createCourseGround(bigEmptyCourse(), flatSurfaces());
+    let most = 0;
+    for (let x = 100; x <= 2900; x += 200) {
+      driveTo(ground, x, 1500);
+      most = Math.max(most, ground.builtNearTileCount);
+    }
+    expect(most).toBeGreaterThan(0);
+    expect(most).toBeLessThanOrEqual(COURSE_GROUND_TUNING.NEAR_TILE_CAP);
+    ground.dispose();
+  });
+
+  it("keeps the near tiles it has just left, inside the hysteresis band", () => {
+    const ground = createCourseGround(bigEmptyCourse(), flatSurfaces());
+    driveTo(ground, 1500, 1500);
+    // A step out, well inside the band: it may build what comes into range ahead...
+    driveTo(ground, 1500 + COURSE_GROUND_TUNING.NEAR_EVICT_MARGIN_M / 2, 1500);
+    const afterStepOut = ground.nearBuilds;
+    expect(afterStepOut).toBeGreaterThan(0);
+    // ...but stepping back rebuilds nothing: what it left behind was kept.
+    driveTo(ground, 1500, 1500);
+    expect(ground.nearBuilds).toBe(afterStepOut);
+    ground.dispose();
+  });
+});
+
+describe("one ground per course", () => {
+  it("builds a course's ground once and hands the same one back after", () => {
+    const { terrain, ground: first } = build();
+    first.dispose();
+    const arena = { course: terrain, surfaces: flatSurfaces() };
+    const a = courseGroundFor(arena);
+    expect(courseGroundFor(arena)).toBe(a);
+    expect(courseGroundFor({ ...arena })).not.toBe(a);
   });
 });

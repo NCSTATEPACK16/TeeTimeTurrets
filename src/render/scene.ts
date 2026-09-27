@@ -12,8 +12,8 @@ import { Trauma, traumaFor } from "./cameraShake";
 import type { ShakeOffset } from "./cameraShake";
 import { Effects } from "./effects";
 import type { SimEvent } from "../sim/events";
-import { createCourseGround } from "./courseGround";
-import { createTreeline } from "./treeline";
+import { courseGroundFor } from "./courseGround";
+import { treelineFor } from "./treeline";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
@@ -46,6 +46,11 @@ export interface ArenaSource {
    * its own seed, so it is passed beside it.
    */
   readonly seed?: number;
+  /**
+   * The heights the ground is drawn on: the playfield's, the heightfield the carts collide with.
+   * Without it, the course's exact blend.
+   */
+  readonly heightAt?: (x: number, z: number) => number;
 }
 
 /**
@@ -159,19 +164,13 @@ export class RenderScene {
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
-    this.courseGround = createCourseGround(arena.course, arena.surfaces);
+    // Borrowed, not built: one ground and one treeline per course for the page's life, so a
+    // second match does not rebuild either. `dispose` hands them back rather than freeing them.
+    this.courseGround = courseGroundFor(arena);
     this.scene.add(this.courseGround.group);
-    this.treeline =
-      arena.southBoundary === undefined
-        ? null
-        : createTreeline(
-            arena.southBoundary,
-            arena.course.bounds,
-            (x, z) => arena.course.heightAt(x, z),
-            arena.seed ?? 0,
-          );
+    this.treeline = treelineFor(arena);
     if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
-    this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
+    this.groundHeightAt = arena.heightAt ?? ((x, z) => arena.course.heightAt(x, z));
 
     this.cart = new GolfClub();
     this.scene.add(this.cart);
@@ -242,8 +241,9 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.aimArc.dispose();
     this.effects.dispose();
-    this.treeline?.dispose();
-    this.courseGround.dispose();
+    // The ground and treeline belong to the course, not to this match: taken out, not freed.
+    this.scene.remove(this.courseGround.group);
+    if (this.treeline?.mesh) this.scene.remove(this.treeline.mesh);
     this.scene.clear();
   }
 

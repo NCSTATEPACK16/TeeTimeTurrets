@@ -86,11 +86,13 @@ async function main(): Promise<void> {
   const startMatch = async (): Promise<void> => {
     if (courseWorld === null) {
       courseWorld = buildCourseWorld(course, COURSE_SEED);
+      const playfield = arenaFromCourse(courseWorld).playfield;
       arenaSource = {
         course: courseWorld.terrain,
         surfaces: courseWorld.surfaces,
         southBoundary: courseWorld.southBoundary,
         seed: COURSE_SEED,
+        heightAt: (x, z) => playfield.heightAt(x, z),
       };
     }
     // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
