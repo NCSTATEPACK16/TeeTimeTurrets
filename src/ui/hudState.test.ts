@@ -121,3 +121,24 @@ describe("the arena readout", () => {
     expect(state.pointsText).toBe("KILLS 0");
   });
 });
+
+describe("low-health vignette", () => {
+  function vignette(hp: number, dead = false): number {
+    return derive(source({ cart: { ...source().cart, dead, health: { hp, max: 8 } } })).vignette01;
+  }
+
+  it("is off at half health and above", () => {
+    expect(vignette(8)).toBe(0);
+    expect(vignette(4)).toBe(0);
+  });
+
+  it("closes in as health runs out", () => {
+    expect(vignette(2)).toBeCloseTo(0.5, 9);
+    expect(vignette(1)).toBeCloseTo(0.75, 9);
+    expect(vignette(1)).toBeGreaterThan(vignette(2));
+  });
+
+  it("is off once the cart is dead: the respawn screen is not a warning", () => {
+    expect(vignette(0, true)).toBe(0);
+  });
+});

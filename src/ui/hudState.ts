@@ -49,6 +49,8 @@ export interface HudState {
   teamScoreText: string;
   /** The player's own kills: `"KILLS 3"`. */
   pointsText: string;
+  /** How far the low-health vignette closes in, 0..1. */
+  vignette01: number;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -64,6 +66,7 @@ export function createHudStateScratch(): HudState {
     timerText: "",
     teamScoreText: "",
     pointsText: "",
+    vignette01: 0,
   };
 }
 
@@ -83,7 +86,14 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.timerText = formatClock(source.matchTimeRemaining);
   out.teamScoreText = `US ${source.match.teamStrokes(PLAYER_TEAM)} — THEM ${source.match.teamStrokes(ENEMY_TEAM)}`;
   out.pointsText = `KILLS ${source.match.pointsFor(PLAYER)}`;
+  out.vignette01 = cart.dead ? 0 : clamp01((LOW_HEALTH_FRACTION - out.healthFraction) / LOW_HEALTH_FRACTION);
 }
+
+/**
+ * Health fraction below which the screen's edges start to close in. Half, so on an 8 HP cart the
+ * warning starts at 3 HP and is strong at 1: two putter hits from dead.
+ */
+const LOW_HEALTH_FRACTION = 0.5;
 
 /**
  * One line, one message, most urgent first. Death outranks reloading because stepRespawn freezes

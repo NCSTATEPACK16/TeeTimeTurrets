@@ -122,6 +122,77 @@
         18% { transform: translateY(0) scale(1); opacity: 1; }
         100% { transform: translateY(-34px) scale(1); opacity: 0; }
       }
+      /* Stage 2 feedback. All overlays, no pointer events, and all siblings after #hud so they hide
+         with it (`#hud[hidden] ~`) without a line of JS each. The vignette and the damage flash sit
+         early in the DOM, below the HUD's text; the score strip and the kill feed sit after it. */
+      #lowhp-vignette, #damage-flash { position: fixed; inset: 0; pointer-events: none; }
+      #lowhp-vignette {
+        opacity: 0;
+        background: radial-gradient(ellipse at center, transparent 45%, rgba(170, 16, 12, 0.85) 100%);
+      }
+      #hud[hidden] ~ #score-strip, #hud[hidden] ~ #kill-feed { display: none; }
+      .damage-wedge {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 0;
+        height: 0;
+        opacity: 0;
+      }
+      /* A wedge at the edge of a circle round the screen's centre, pointing out toward the shooter.
+         The parent rotates; the child is pushed up along the rotated axis. */
+      .damage-wedge::before {
+        content: "";
+        position: absolute;
+        left: -90px;
+        top: calc(-1 * min(38vh, 38vw));
+        width: 180px;
+        height: 34px;
+        border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+        background: radial-gradient(ellipse at 50% 100%, rgba(255, 60, 40, 0.95), rgba(255, 60, 40, 0) 70%);
+      }
+      #score-strip {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 5px 16px;
+        border-radius: var(--radius-pill);
+        background: var(--panel);
+        font: 800 18px system-ui, sans-serif;
+        letter-spacing: 0.08em;
+        color: var(--ink);
+        pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      }
+      .score-strip--pulse { animation: score-pulse 0.6s ease-out; }
+      @keyframes score-pulse {
+        0% { transform: translateX(-50%) scale(1.25); background: rgba(232, 86, 74, 0.8); }
+        100% { transform: translateX(-50%) scale(1); }
+      }
+      #kill-feed {
+        position: fixed;
+        top: 12px;
+        right: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        font: var(--font);
+        letter-spacing: var(--track-letter);
+        pointer-events: none;
+      }
+      .kill-line {
+        padding: 3px 10px;
+        border-radius: var(--radius-pill);
+        background: var(--panel);
+        color: var(--ink-dim);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      }
+      .kill-line[hidden] { display: none; }
+      .kill-name--self { color: var(--status); }
+      .kill-name--ally { color: var(--team-ally); }
+      .kill-name--enemy { color: var(--team-enemy); }
       #power-track {
         margin-top: 6px;
         width: 100%;
@@ -486,6 +557,8 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="lowhp-vignette"></div>
+    <div id="damage-flash"></div>
     <div id="nameplates"></div>
     <!-- Screens mount their own markup here and strip it on exit. Empty by design. -->
     <div id="screens"></div>
@@ -507,7 +580,6 @@
         <!-- Empty by design, and it is not a stylistic choice: `docs/TEST-AND-SPEC-PITFALLS.md`
              §1 instances 5 and 6 are two smoke checks that passed against placeholder markup with
              the feature deleted. A blank element can only be filled by the code under test. -->
-        <span id="hud-team-score"></span>
         <span id="hud-points"></span>
       </div>
       <div id="power-track"><div id="power-fill"></div></div>
@@ -517,6 +589,9 @@
         hold to charge, release to shoot
       </div>
     </div>
+    <!-- Empty for the same reason as the HUD spans: only the code under test may fill them. -->
+    <div id="score-strip"><span id="hud-team-score"></span></div>
+    <div id="kill-feed"></div>
     <div id="event-banner" hidden>
       <div id="banner-headline"></div>
       <div id="banner-consequence"></div>

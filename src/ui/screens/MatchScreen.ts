@@ -13,6 +13,9 @@ import type { BannerDom } from "../banner";
 import { BannerFeed, createBannerView } from "../bannerFeed";
 import type { BannerSource } from "../bannerFeed";
 import { HitMarkers } from "../hitMarkers";
+import { KillFeed } from "../killFeed";
+import { DamageFlashes, damageBearing } from "../damageFlash";
+import { DamageFlashDom, KillFeedDom } from "../feedbackDom";
 import { Nameplates } from "../nameplates";
 import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
@@ -57,9 +60,16 @@ export class MatchScreen implements Screen {
   private lastBannerMs = 0;
   /** UI-SPEC H11. Optional like the banner; the match runs without #hit-markers. */
   private hitMarkers: HitMarkers | null = null;
-  /** The next `Sim.events` seq the hit markers read, so each event spawns a marker exactly once
-   *  however many frames render between steps. */
-  private hitMarkerCursor = 0;
+  /** The next `Sim.events` seq this screen reads, so each event is reacted to exactly once however
+   *  many frames render between steps. */
+  private eventCursor = 0;
+  private killFeed = new KillFeed();
+  private killFeedDom: KillFeedDom | null = null;
+  private damageFlashes = new DamageFlashes();
+  private damageFlashDom: DamageFlashDom | null = null;
+  private scoreStrip: HTMLElement | null = null;
+  /** Wall-clock ms of the last feedback update, for frame-rate-independent fades. */
+  private lastFeedbackMs = 0;
   private readonly hitScreenScratch = { x: 0, y: 0 };
   private view: FrameView | null = null;
   /** Guards `onMatchOver`: called once. */
@@ -103,7 +113,15 @@ export class MatchScreen implements Screen {
     this.lastBannerMs = performance.now();
     const hitRoot = document.getElementById("hit-markers");
     this.hitMarkers = hitRoot ? new HitMarkers(hitRoot) : null;
-    this.hitMarkerCursor = sim.events.head;
+    this.eventCursor = sim.events.head;
+    this.killFeed = new KillFeed();
+    this.damageFlashes = new DamageFlashes();
+    const feedRoot = document.getElementById("kill-feed");
+    this.killFeedDom = feedRoot ? new KillFeedDom(feedRoot) : null;
+    const flashRoot = document.getElementById("damage-flash");
+    this.damageFlashDom = flashRoot ? new DamageFlashDom(flashRoot) : null;
+    this.scoreStrip = document.getElementById("score-strip");
+    this.lastFeedbackMs = performance.now();
     this.matchOverReported = false;
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
@@ -120,6 +138,9 @@ export class MatchScreen implements Screen {
       frameSeconds: 0,
       aimArc: createPreviewBuffer(),
       aimArcCount: 0,
+      speed: 0,
+      playerDead: false,
+      botDead: sim.bots.map(() => false),
     };
     this.lastDrawMs = performance.now();
   }
@@ -152,6 +173,9 @@ export class MatchScreen implements Screen {
     // swap deliberately does not clear the reload, so read the club here too rather than caching it.
     view.reload01 = reloadFraction(sim.cart.reloadRemaining, sim.cart.equippedClub);
     view.turretLoaded = sim.cart.ammo > 0;
+    view.speed = sim.cart.speed;
+    view.playerDead = sim.cart.dead;
+    for (let i = 0; i < view.botDead.length; i++) view.botDead[i] = sim.bots[i]!.dead;
     view.elapsedSeconds = this.elapsedSeconds;
     const now = performance.now();
     // Capped, so a frame after the tab was hidden does not snap the camera across the course.
@@ -172,7 +196,8 @@ export class MatchScreen implements Screen {
 
     this.render.draw(view);
     this.drawNameplates();
-    this.drawHitMarkers(sim);
+    this.readEvents(sim, view.cart);
+    this.drawFeedback();
     drawHud(this.hud, sim);
     this.updateBanner(sim);
   }
@@ -197,6 +222,10 @@ export class MatchScreen implements Screen {
     if (this.banner) this.banner.root.hidden = true;
     this.hitMarkers?.dispose();
     this.hitMarkers = null;
+    this.killFeedDom?.dispose();
+    this.killFeedDom = null;
+    this.damageFlashDom?.dispose();
+    this.damageFlashDom = null;
     this.input?.dispose();
     this.input = null;
     this.nameplates?.dispose();
@@ -227,22 +256,72 @@ export class MatchScreen implements Screen {
   }
 
   /**
-   * Spawns a hit marker for each of the player's hits and kills since the last frame, once each:
-   * the cursor is what makes it once, since the sim advances at a fixed step while this renders at
-   * the display rate. Only the player's -- bot-on-bot fire would bury the screen. Runs after
-   * `render.draw`, so the camera `projectToScreen` reads is this frame's.
+   * Everything that reacts to what happened reads `Sim.events` here, once per event: the cursor is
+   * what makes it once, since the sim advances at a fixed step while this renders at the display
+   * rate. Runs after `render.draw`, so the camera `projectToScreen` reads is this frame's.
+   *
+   * - The player's hits and kills get a hit marker. Only the player's: bot-on-bot fire would bury
+   *   the screen.
+   * - Every kill goes in the kill feed.
+   * - A hit on the player flashes a wedge toward whoever fired it.
+   * - A stroke pulses the score strip.
    */
-  private drawHitMarkers(sim: Sim): void {
-    if (!this.hitMarkers || !this.render) return;
+  private readEvents(sim: Sim, player: CartTransform): void {
     const log = sim.events;
-    for (let seq = log.firstUnread(this.hitMarkerCursor); seq < log.head; seq++) {
+    for (let seq = log.firstUnread(this.eventCursor); seq < log.head; seq++) {
       const e = log.at(seq)!;
-      if (e.actor !== 0 || (e.kind !== "hit" && e.kind !== "kill")) continue;
-      // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
-      const onScreen = this.render.projectToScreen(e.x, e.y + HIT_MARKER_LIFT, e.z, this.hitScreenScratch);
-      if (onScreen) this.hitMarkers.spawn(e.kind, e.amount, this.hitScreenScratch.x, this.hitScreenScratch.y);
+      this.render?.react(e);
+      switch (e.kind) {
+        case "hit":
+          if (e.actor === 0) this.spawnHitMarker("hit", e.amount, e.x, e.y, e.z);
+          if (e.target === 0 && e.actor > 0) {
+            const shooter = sim.bots[e.actor - 1];
+            if (shooter) {
+              this.damageFlashes.push(
+                damageBearing(player.position.x, player.position.z, player.turretYaw, shooter.position.x, shooter.position.z),
+              );
+            }
+          }
+          break;
+        case "kill":
+          if (e.actor === 0) this.spawnHitMarker("kill", 0, e.x, e.y, e.z);
+          this.killFeed.push(e.actor, e.target);
+          break;
+        case "stroke":
+          this.pulseScoreStrip();
+          break;
+        default:
+          break;
+      }
     }
-    this.hitMarkerCursor = log.head;
+    this.eventCursor = log.head;
+  }
+
+  private spawnHitMarker(kind: "hit" | "kill", damage: number, x: number, y: number, z: number): void {
+    if (!this.hitMarkers || !this.render) return;
+    // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
+    if (this.render.projectToScreen(x, y + HIT_MARKER_LIFT, z, this.hitScreenScratch)) {
+      this.hitMarkers.spawn(kind, damage, this.hitScreenScratch.x, this.hitScreenScratch.y);
+    }
+  }
+
+  /** Restarts the strip's pulse animation, even if the last one is still running. */
+  private pulseScoreStrip(): void {
+    const strip = this.scoreStrip;
+    if (!strip) return;
+    strip.classList.remove("score-strip--pulse");
+    void strip.offsetWidth; // a reflow between the two, or the browser merges them into nothing
+    strip.classList.add("score-strip--pulse");
+  }
+
+  private drawFeedback(): void {
+    const now = performance.now();
+    const dt = Math.min(Math.max(0, (now - this.lastFeedbackMs) / 1000), MAX_FRAME_SECONDS);
+    this.lastFeedbackMs = now;
+    this.killFeed.update(dt);
+    this.damageFlashes.update(dt);
+    this.killFeedDom?.draw(this.killFeed.lines);
+    this.damageFlashDom?.draw(this.damageFlashes.active);
   }
 
   private drawNameplates(): void {

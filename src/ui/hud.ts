@@ -1,5 +1,6 @@
 import { createHudStateScratch, deriveHudState } from "./hudState";
 import type { HudSource } from "./hudState";
+import { setOpacity } from "./feedbackDom";
 
 /** Reused every call rather than allocated per frame -- see deriveHudState's docstring. */
 const stateScratch = createHudStateScratch();
@@ -26,6 +27,8 @@ export interface Hud {
   timer: HTMLElement;
   teamScore: HTMLElement;
   points: HTMLElement;
+  /** The low-health vignette over the whole screen. */
+  vignette: HTMLElement;
 }
 
 export function readHud(): Hud | null {
@@ -40,6 +43,7 @@ export function readHud(): Hud | null {
     "hud-timer",
     "hud-team-score",
     "hud-points",
+    "lowhp-vignette",
   ] as const;
 
   const found = ids.map((id) => document.getElementById(id));
@@ -55,6 +59,7 @@ export function readHud(): Hud | null {
     timer,
     teamScore,
     points,
+    vignette,
   ] = found as HTMLElement[];
 
   return {
@@ -68,6 +73,7 @@ export function readHud(): Hud | null {
     timer: timer!,
     teamScore: teamScore!,
     points: points!,
+    vignette: vignette!,
   };
 }
 
@@ -87,6 +93,7 @@ export function drawHud(hud: Hud, source: HudSource): void {
   setWidth(hud.healthFill, state.healthFraction);
   setText(hud.healthText, state.healthText);
   setText(hud.ammoCount, state.ammoText);
+  setOpacity(hud.vignette, state.vignette01);
 }
 
 /** Guarded so an unchanged string does not dirty the DOM every frame at 60fps. */
