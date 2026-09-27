@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
+import { FrameStats } from "./engine/frameStats";
 import { FIXED_DT } from "./sim/frame";
 import type { Sim } from "./sim/world";
 import { authoredCourse } from "./sim/authoredCourse";
@@ -248,12 +249,33 @@ async function main(): Promise<void> {
     // Exposed for the memory gate in tools/smoke.mjs: `renderer.info.memory` is the only honest way
     // to ask whether a screen gave its geometries and textures back.
     renderer,
+    /** The last four seconds of frames: `__teetimeturrets.perf` in the console. */
+    get perf() {
+      return frameStats.summary();
+    },
+    resetPerf: () => frameStats.reset(),
   };
 
+  // Frame time, CPU work and draw calls, for the dev hook below. Draw calls are counted over the
+  // whole frame rather than per `render()` call, so a composer's passes add up instead of the last
+  // one overwriting the rest.
+  const frameStats = new FrameStats();
+  renderer.info.autoReset = false;
+  let workStart = 0;
   const loop = new GameLoop({
     fixedDt: FIXED_DT,
-    step: () => screens.step(),
-    render: (alpha) => screens.draw(alpha),
+    step: () => {
+      if (workStart === 0) workStart = performance.now();
+      screens.step();
+    },
+    render: (alpha) => {
+      const start = workStart === 0 ? performance.now() : workStart;
+      renderer.info.reset();
+      screens.draw(alpha);
+      const end = performance.now();
+      frameStats.record(end, end - start, renderer.info.render.calls, renderer.info.render.triangles);
+      workStart = 0;
+    },
   });
 
   screens.show("title");

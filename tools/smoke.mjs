@@ -672,6 +672,24 @@ await page.keyboard.press("KeyM");
 const mapClosed = await page.evaluate(() => document.querySelector(".course-map")?.hidden === true);
 check("M cycles the map closed again", mapOpen.visible === true && mapClosed === true);
 
+console.log("=== FRAME READOUT (dev hook) ===");
+// Two seconds of the match as it is being played, read off the same readout a person would use in
+// the console. The numbers are printed for the PR; SwiftShader's frame time says nothing about a
+// GPU's, but its draw calls are the same as anyone's.
+await page.evaluate(() => window.__teetimeturrets.resetPerf());
+await waitForSimSeconds(2);
+const perf = await page.evaluate(() => window.__teetimeturrets.perf);
+console.log(
+  `  perf: ${perf.frames} frames, ${perf.fps.toFixed(1)} fps, frame ${perf.frameMs.median.toFixed(1)}/${perf.frameMs.p95.toFixed(1)} ms ` +
+    `(median/p95), work ${perf.workMs.median.toFixed(1)}/${perf.workMs.p95.toFixed(1)} ms, ` +
+    `draw calls ${perf.drawCalls.median}/${perf.drawCalls.max} (median/max), ${Math.round(perf.triangles.median)} triangles`,
+);
+check(
+  "the dev hook reads out frame time and draw calls",
+  perf.frames > 0 && perf.frameMs.median > 0 && perf.drawCalls.median > 0,
+  `${perf.frames} frames, ${perf.drawCalls.median} calls`,
+);
+
 console.log("=== MATCH OVER ===");
 await page.evaluate(() => clearInterval(window.__smokeKeepAlive));
 // The vignette follows health: off at full, closing in at one point left.
