@@ -2,6 +2,7 @@ import { applyAimSpread } from "../physics/Ballistics";
 import type { PlayerIntent } from "./intent";
 import type { Cart } from "./entities/Cart";
 import { teamOf } from "./matchConfig";
+import { solveShot } from "./aimSolver";
 
 /**
  * The AI opponent, as one pure function of exactly the state it needs: its own cart, and where
@@ -50,14 +51,55 @@ export const BOT_AIM_RATE = 1.2;
 export const BOT_FIRE_TOLERANCE = 0.12;
 /** Radians of heading error at which the bot asks for full steering lock. */
 export const BOT_STEER_FULL = 0.6;
-/** Charge fraction at which the bot lets go of the trigger. */
-export const BOT_CHARGE_RELEASE = 0.8;
 /**
  * Channel index for a bot's RNG, alongside terrain (0), surfaces (1) and course layout (2).
  * `hashChannel(seed, index, BOT_CHANNEL, botIndex)` gives each bot its own independent stream,
  * so bot behaviour is reproducible per seed and no bot's draws shift another's.
  */
 export const BOT_CHANNEL = 3;
+
+/** Seconds of driving without making `BOT_PROGRESS_M` of headway before the bot calls itself stuck. */
+export const BOT_STUCK_S = 2;
+/** Seconds the bot reverses on full lock to get off whatever it was wedged against. */
+export const BOT_UNSTICK_S = 1;
+/** Metres a driving bot has to cover for it to count as getting somewhere. */
+export const BOT_PROGRESS_M = 1;
+/** The lowest charge a bot lets go at: `Cart` only fires a release with some charge on it. */
+const MIN_RELEASE_CHARGE = 0.01;
+
+/**
+ * The little a bot remembers between ticks, owned by its rig in `world.ts`. The intent function
+ * stays a function of its inputs; this is one of them.
+ *
+ * - `skill`, 0..1, fixed for the bot's life and drawn from its own seeded stream: how tight its
+ *   shots are and how fast it slews. 0.5 is the untuned bot.
+ * - `stuckFor`/`unstickFor`/`anchor*`: progress tracking, for backing off an obstacle it has been
+ *   driving into. Driving is a straight line with no pathfinding (see `BOT_ENGAGE_RANGE`), so a
+ *   tree between a bot and its target used to hold it there for the rest of the match.
+ * - `hasAmmoTarget`/`ammoX`/`ammoZ`: the nearest ammo, written by `world.ts` each tick, which a
+ *   bot with an empty magazine drives to instead of at the enemy.
+ */
+export interface BotMind {
+  skill: number;
+  stuckFor: number;
+  unstickFor: number;
+  anchorX: number;
+  anchorZ: number;
+  hasAmmoTarget: boolean;
+  ammoX: number;
+  ammoZ: number;
+}
+
+export function createBotMind(skill: number): BotMind {
+  return { skill, stuckFor: 0, unstickFor: 0, anchorX: 0, anchorZ: 0, hasAmmoTarget: false, ammoX: 0, ammoZ: 0 };
+}
+
+/**
+ * Channel index for a bot's skill draw, alongside `BOT_CHANNEL` and `SPAWN_CHANNEL`. Its own
+ * stream rather than a draw from the bot's, so giving bots a skill shifts none of their other
+ * draws.
+ */
+export const BOT_SKILL_CHANNEL = 5;
 
 /**
  * What the bot is engaging. Not a `Cart`, because the bot must not be able to read its target's
@@ -132,6 +174,7 @@ export function computeBotIntent(
   dt: number,
   random: () => number,
   out: PlayerIntent,
+  mind: BotMind | null = null,
 ): void {
   out.throttle = 0;
   out.steer = 0;
@@ -141,10 +184,36 @@ export function computeBotIntent(
   out.cancelCharge = false;
   out.selectClub = null;
 
+  // Backing off an obstacle overrides everything else until it is done.
+  if (mind !== null && mind.unstickFor > 0) {
+    mind.unstickFor -= dt;
+    out.throttle = -1;
+    out.steer = 1;
+    if (mind.unstickFor <= 1e-9) {
+      mind.unstickFor = 0;
+      resetProgress(bot, mind);
+    }
+    return;
+  }
+
+  // An empty magazine sends the bot to the nearest ammo, all the way onto it: a bot that holds
+  // station at its enemy with nothing to shoot is a target, not an opponent.
+  if (mind !== null && bot.ammo <= 0 && mind.hasAmmoTarget) {
+    const ax = mind.ammoX - bot.position.x;
+    const az = mind.ammoZ - bot.position.z;
+    out.steer = clampSigned(wrapAngle(Math.atan2(az, ax) - bot.heading) / BOT_STEER_FULL);
+    out.throttle = 1;
+    trackProgress(bot, mind, dt, out);
+    return;
+  }
+
   const dx = target.x - bot.position.x;
   const dz = target.z - bot.position.z;
   const distance = Math.hypot(dx, dz);
-  if (target.dead || distance < 1e-6) return;
+  if (target.dead || distance < 1e-6) {
+    if (mind !== null) resetProgress(bot, mind);
+    return;
+  }
 
   const bearing = Math.atan2(dz, dx);
 
@@ -154,29 +223,66 @@ export function computeBotIntent(
   out.steer = clampSigned(headingError / BOT_STEER_FULL);
   out.throttle = distance > BOT_STANDOFF ? 1 : 0;
   out.brake = distance < BOT_STANDOFF * 0.5;
+  if (mind !== null && trackProgress(bot, mind, dt, out)) return;
 
   // Beyond the tracking range the bot only drives -- no aim, no fire. Closing changed where the
   // bot goes (see `BOT_ENGAGE_RANGE`), not what it can hit.
   if (distance > BOT_ENGAGE_RANGE) return;
 
+  // Skill 0.5 is exactly the untuned bot: both scales are 1 there.
+  const skill = mind === null ? 0.5 : mind.skill;
+  const aimRate = BOT_AIM_RATE * (0.75 + 0.5 * skill);
+  const spreadScale = 1.6 - 1.2 * skill;
+
   // Aim: ease the turret toward the bearing at a bounded rate. Done from the full tracking range
   // so the turret is lined up before the target is close enough to shoot.
   const aimError = wrapAngle(bearing - bot.turretYaw);
-  const maxSlew = BOT_AIM_RATE * dt;
+  const maxSlew = aimRate * dt;
   out.aimDelta = Math.min(maxSlew, Math.max(-maxSlew, aimError));
 
   // Fire only within the putter's actual reach, on top of being aimed and having ammo -- see
-  // `BOT_FIRE_RANGE` for why a bot that shot the moment it had a bearing would just waste its magazine.
+  // `BOT_FIRE_RANGE` for why a bot that shot the moment it had a bearing would just waste its
+  // magazine. It lets go at the charge `solveShot` gives for this range.
   const wantsToFire =
     distance <= BOT_FIRE_RANGE && Math.abs(aimError) < BOT_FIRE_TOLERANCE && bot.ammo > 0;
-  out.fire = wantsToFire && bot.charge < BOT_CHARGE_RELEASE;
+  const release = Math.max(MIN_RELEASE_CHARGE, solveShot(bot.equippedClub, distance));
+  out.fire = wantsToFire && bot.charge < release;
 
-  // On the release tick, offset the turret inside the club's own accuracy cone. This is the
-  // per-shot spread channel `applyAimSpread` was written for and never had a caller for; the
-  // player's shots are deliberately unaffected.
+  // On the release tick, offset the turret inside the club's own accuracy cone, widened or
+  // tightened by skill. The player's shots are deliberately unaffected.
   if (wantsToFire && !out.fire) {
-    out.aimDelta += applyAimSpread(0, bot.equippedClub, random);
+    out.aimDelta += applyAimSpread(0, bot.equippedClub, random) * spreadScale;
   }
+}
+
+/**
+ * Counts time spent driving without headway, and starts backing off once it reaches
+ * `BOT_STUCK_S`. Returns true when it has taken over `out` for that. Holding station is not
+ * driving, so it never counts.
+ */
+function trackProgress(bot: Cart, mind: BotMind, dt: number, out: PlayerIntent): boolean {
+  if (out.throttle <= 0) {
+    resetProgress(bot, mind);
+    return false;
+  }
+  if (Math.hypot(bot.position.x - mind.anchorX, bot.position.z - mind.anchorZ) > BOT_PROGRESS_M) {
+    resetProgress(bot, mind);
+    return false;
+  }
+  mind.stuckFor += dt;
+  if (mind.stuckFor < BOT_STUCK_S - 1e-9) return false;
+  mind.stuckFor = 0;
+  mind.unstickFor = BOT_UNSTICK_S;
+  out.throttle = -1;
+  out.steer = 1;
+  out.brake = false;
+  return true;
+}
+
+function resetProgress(bot: Cart, mind: BotMind): void {
+  mind.stuckFor = 0;
+  mind.anchorX = bot.position.x;
+  mind.anchorZ = bot.position.z;
 }
 
 /** Folds an angle into [-PI, PI], so an error either side of the wrap turns the short way. */

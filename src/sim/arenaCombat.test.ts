@@ -3,7 +3,8 @@ import { CLUB_STATS, ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { neutralIntent } from "./intent";
-import { BOT_CHARGE_RELEASE, BOT_FIRE_RANGE, BOT_STANDOFF } from "./bot";
+import { BOT_FIRE_RANGE, BOT_STANDOFF } from "./bot";
+import { solveShot } from "./aimSolver";
 import { fixedHoleSpec } from "./course";
 import { arenaFromHole } from "./arena";
 import { CART_COLLIDER, CART_HULL } from "./entities/Cart";
@@ -146,44 +147,56 @@ describe("arena combat is winnable", () => {
     expect(firedFrom).toBeGreaterThan(15);
   });
 
-  it("the putter's shot is at cart height across the whole range a bot fires from", async () => {
-    // Guards the club-and-range pairing directly: a regression that re-armed bots with a lofted
-    // club, or lobbed the putter again, leaves the ball above a cart or in the dirt somewhere in
-    // this band, and fails this without a live bot.
-    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
+});
 
-    // Fire the putter over the bonnet at the bot's release charge.
-    const releaseTicks = Math.ceil((BOT_CHARGE_RELEASE * CLUB_STATS[ClubType.Putter].chargeSeconds) / (1 / TPS));
-    const script: ScriptedStep[] = [
-      { ticks: 2, intent: { selectClub: ClubType.Putter } },
-      { ticks: releaseTicks, intent: { fire: true } },
-      { ticks: 1, intent: {} },
-    ];
-    const src = new ScriptedInputSource(script);
-    const warm = script.reduce((a, b) => a + b.ticks, 0);
-    for (let i = 0; i < warm; i++) {
-      sim.step(src.sample());
-      src.endTick();
-    }
+/** Fires `club` over the bonnet at `charge` and reports its height above the ground `range` out. */
+async function heightAtRange(club: ClubType, charge: number, range: number): Promise<number> {
+  const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
+  const chargeTicks = Math.max(1, Math.round(charge * CLUB_STATS[club].chargeSeconds * TPS));
+  const script: ScriptedStep[] = [
+    { ticks: 2, intent: { selectClub: club } },
+    { ticks: chargeTicks, intent: { fire: true } },
+    { ticks: 1, intent: {} },
+  ];
+  const src = new ScriptedInputSource(script);
+  const warm = script.reduce((a, b) => a + b.ticks, 0);
+  for (let i = 0; i < warm; i++) {
+    sim.step(src.sample());
+    src.endTick();
+  }
 
-    const from = { ...sim.cart.position };
-    let samples = 0;
-    for (let tick = 0; tick < seconds(3); tick++) {
-      sim.step();
-      for (let i = 0; i < POOL_SIZE; i++) {
-        const flat = i * POOL_TRANSFORM_STRIDE;
-        if (sim.currentPoolTransforms[flat + 7] !== 1) continue;
-        const x = sim.currentPoolTransforms[flat]!;
-        const y = sim.currentPoolTransforms[flat + 1]!;
-        const z = sim.currentPoolTransforms[flat + 2]!;
-        const d = Math.hypot(x - from.x, z - from.z);
-        if (d < BOT_STANDOFF || d > BOT_FIRE_RANGE) continue;
-        const h = y - sim.heightAt(x, z);
-        expect(h, `${d.toFixed(1)} m out`).toBeGreaterThan(0.2);
-        expect(h, `${d.toFixed(1)} m out`).toBeLessThan(CART_HULL.height);
-        samples++;
-      }
+  const from = { ...sim.cart.position };
+  for (let tick = 0; tick < seconds(4); tick++) {
+    sim.step();
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const flat = i * POOL_TRANSFORM_STRIDE;
+      if (sim.currentPoolTransforms[flat + 7] !== 1) continue;
+      const x = sim.currentPoolTransforms[flat]!;
+      const z = sim.currentPoolTransforms[flat + 2]!;
+      if (Math.hypot(x - from.x, z - from.z) >= range) return sim.currentPoolTransforms[flat + 1]! - sim.heightAt(x, z);
     }
-    expect(samples, "the ball never crossed the fire band").toBeGreaterThan(5);
+  }
+  return Number.NaN;
+}
+
+describe("the shot solver against the real world", () => {
+  it.each([BOT_STANDOFF, 25, BOT_FIRE_RANGE])(
+    "any putter shot a bot takes from %s m is at cart height there",
+    async (range) => {
+      // A flatness guard more than a solver test: the putter is flat enough that almost any charge
+      // hits across the whole fire band, which is what makes it a pistol.
+      const h = await heightAtRange(ClubType.Putter, solveShot(ClubType.Putter, range), range);
+      expect(h, "the ball never got that far").not.toBeNaN();
+      expect(h).toBeGreaterThan(0.2);
+      expect(h).toBeLessThan(CART_HULL.height);
+    },
+  );
+
+  it.each([20, 30])("an iron at the charge solved for %s m arrives at mid-hull height there", async (range) => {
+    // The iron is where charge decides range, so this is the test the table is right. It is
+    // integrated over flat ground with constants copied from world.ts; this checks the copy flies.
+    const h = await heightAtRange(ClubType.Iron, solveShot(ClubType.Iron, range), range);
+    expect(h, "the ball never got that far").not.toBeNaN();
+    expect(Math.abs(h - CART_HULL.height / 2)).toBeLessThan(0.7);
   });
 });
