@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Rewritten 2026-09-27, at the end of the cloud session that finished Stage 1. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and built Stage 2. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
@@ -24,9 +24,9 @@ Rewritten 2026-09-27, at the end of the cloud session that finished Stage 1. Rew
 
 | # | Stage | Branch | Status |
 |---|---|---|---|
-| 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only` (draft PR #28 → `main`) | **done; waiting on the user** (below) |
-| 2 | Juice and audio | `stage-2-juice` | next, once the user says so |
-| 3 | Foundations: performance and render base | `stage-3-foundations` | — |
+| 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only`, merged in PR #28 | **done** |
+| 2 | Juice and audio (#32–#39) | `stage-2-juice` (draft PR #69 → `main`) | **done; waiting on the user's play-test** |
+| 3 | Foundations: performance and render base | `stage-3-foundations` | next, once the user says so |
 | 4 | Handling feel and arena zone | `stage-4-handling-zone` | — |
 | 5 | Environment | `stage-5-environment` | — |
 | 6 | navGraph | `stage-6-navgraph` | — |
@@ -39,44 +39,64 @@ Rewritten 2026-09-27, at the end of the cloud session that finished Stage 1. Rew
 - **Branching.** Each later stage branches from `main` once the previous PR has merged. If it hasn't merged, branch from the previous stage's branch and say so in the PR.
 - **Archived work.** Tag `archive/wonderful-edison` keeps an old branch's `courseTrees.ts` (`cbfedd5`), `courseProps.ts` (`1c49b15`) and clubhouse-in-arena (`cb039b6`) commits. Stages 5 and 7 start from them (see `REVAMP-PLAN.md`). **Do not merge the tag.** Lift files from it with `git show <sha>:<path>`.
 
-### Stage 1 checkpoint, at `f4332ef` (outputs are in PR #28's description)
+### Stage 1 close-out (2026-09-27, after the user's play-test)
 
-- `tsc` clean. **912 tests pass** on a bare `vitest run`; CI's `test` job is green.
-- **Smoke passes**, including new mouse-fire, pointer-lock and turret-camera checks.
-- **Gate: 17 of 18 pass.** `cart-putter` drifts, and a re-baseline is proposed in the PR, **not committed**.
-- **Probe: runs again, and fails one check** (driver distance, below). The tunnelling check passes.
+- **Gate:** `cart-putter` re-baselined with the user's approval (`ff2832b`).
+- **Probe:** now holds the driver to the arena's own reference, 103.8 m total and 75.3 m carry (`74c44f8`). Carry is checked too, because the total alone passed a driver made 20% faster (pitfall #13).
+- **Merged:** PR #28 into `main` as `e9fbd21`.
+
+### Stage 2 checkpoint, at `755e34d` (outputs are in PR #69's description)
+
+- `tsc` clean.
+- **978 of 979 tests pass on the Mac.** The one failure is the golden fingerprint, which is Linux x64's by design. The Mac's value is unchanged since the pool commit, so no later commit moved the sim.
+- **Smoke passes**, including the new controls card, pause and resume checks.
+- **Gate passes**, 18 of 18.
+- **Probe passes**, 4 of 4.
 
 ### Waiting on the user
 
-1. **The play-test.**
-2. **Approve the gate re-baseline for `cart-putter`, or not.** Its bbox height is 3.0038 m against a baseline of 3.0710 m, 2.2% over a 0.5% band; the signature passes. The cause is the putter's loft going from 3° to 1° in `62387bb` (Stage 1.5): the barrel's pitch is the club's loft, and about 2 m of barrel × (sin 3° − sin 1°) ≈ 0.07 m. Once approved: `npm run gate -- --update-baseline`, then commit **only** `tools/gate-baseline/cart-putter.png`, `metrics.json` and `signatures.json`, and check the diff touches only `cart-putter`.
-3. **The ball pool runs dry in a 4v4, and the player's shots silently don't fire.** Measured headlessly over 60 s of the arena with the player firing every 0.75 s: all 32 pooled balls are in flight on 64% of ticks, from 2.3 s in, and the player's shots were refused 32 times out of 64. `Sim.resolveShot` refunds the round when `BallPool.acquire` returns null, so nothing is shown. This predates this session: at `90bfe6c` it was 56% of ticks and 25 refused out of 58. The options are a bigger pool (render buffers and Stage 3's budgets), balls that count as landed sooner, a slower bot fire rate, or reclaiming the oldest flying ball. That is a design call.
-4. **The driver falls short of the course's reference distance.** Now that the probe runs, it measures the driver at 103.8 m total (75.3 carry + 28.5 roll) against the 129 m `REFERENCE_CARRY_M`, 19.5% short against a 15% band. That constant was the stroke-play ball's, launched from the tee with no pool drag. Either the driver is retuned or the check gets a new reference; left failing on purpose.
+1. **The play-test.** How the effects, shake, sound and pause feel is the thing only a person can judge. Everything else is measured.
 
-## What Stage 1 did this session
+## What Stage 2 did
 
-- **CI settled first.**
-  - `vitest.config.ts` has `testTimeout: 30_000`, so `--testTimeout` is no longer needed.
-  - **The golden fingerprint is recorded on Linux x64**, the platform CI runs. An Apple Silicon Mac computes a different one because V8's `Math.sin`, `Math.cos` and `Math.atan2` round a few inputs one ulp apart on arm64. That was measured, not guessed: an emulated arm64 Node reproduced the Mac's exact number, and swapping 361 `Math` results for x64's made it match x64 on every tick. See `DECISIONS.md`. **Expect `matches the recorded fingerprint` to fail on the user's Mac; that is by design.**
-- **#29 Bots use their minds.** `CartRig.mind`, a skill per bot from `BOT_SKILL_CHANNEL`, and the nearest off-cooldown bucket or landed ball written in when a bot is empty.
-  - `botMind.test.ts`'s refill test had the bot shove the player onto the bucket, so the bot now starts off to the player's side.
-  - A third test covers "a landed ball, not a bucket on cooldown".
-- **#30 Rematch.**
-  - The buzzer tick is simulated in full.
-  - `Sim.reset()` rebuilds the Rapier world through `buildPhysics()`, in `create()`'s order; the heights are kept, so a reset takes 2–8 ms.
-  - `reset()` also clears bucket cooldowns and `simTime`, and calls `Cart.rearm()` for each cart. Ammo no longer survives a rematch.
-  - A rematch now replays the first match bit for bit (`arenaGolden.test.ts`).
-- **#31 Checkpoint.**
-  - Smoke checks mouse fire (the click that takes the pointer lock does not fire, the left button fires, a right-click drops the charge), the turret camera, and that the results screen leaves the pointer free.
-  - Smoke and the gate no longer leave orphaned `vite preview` servers behind, and they refuse a port something else is already serving.
-  - The probe was ported to fire through the cart and the ball pool.
+- **#32 `Sim.events`.**
+  - One event log for the match: shots, dry pulls, hits, rams, kills, pickups, splashes and respawns.
+  - Each reader drains it at its own pace through a cursor. The old per-tick buffer lost every tick's markers but the last whenever a frame ran several ticks.
+  - A kill feed reads the log.
+- **Ball pool** (the user's decision at the Stage 1 play-test).
+  - `BallPool.acquire` falls back in order: idle, oldest landed, oldest ball that has touched down, then, for the player only, the oldest airborne ball that belongs to someone else.
+  - Measured: 54 shots, 0 refused, in 60 s of a full 4v4 (before, 25 got off).
+  - The golden was re-recorded from CI (`c7fa20a`).
+- **#33 Hit feedback.**
+  - A damage-direction arc.
+  - A low-HP vignette.
+  - Real marker values from `sim/scoring.ts` (10 per HP of damage, 100 per kill). Stage 8 builds on those numbers.
+- **#34 Effects.**
+  - Shards: one `InstancedMesh`, 384 of them, recycled.
+  - Splash rings.
+  - Dead carts are hidden until they respawn.
+- **#35 Camera.**
+  - Trauma shake, drawn on top of the smoothed chase pose, never fed back into it.
+  - FOV goes from 60 to 69 degrees with speed.
+- **#36 Audio.**
+  - Synthesised WebAudio; no files ship.
+  - Master, SFX and music buses. Music has no content yet.
+  - `audioDirector` maps events to cues by distance and bearing.
+  - A motor hum, and a heartbeat at low HP.
+- **#37 Settings and pause.**
+  - Settings live in localStorage inside try/catch and are schema-guarded.
+  - Esc pauses, and so does losing the pointer lock mid-match.
+  - A controls card appears on first play. GOT IT only dismisses; clicking the canvas takes the lock, as before.
+- **#38 The M map is back.** All 18 holes, with team blips.
+  - The holes are sampled per hole: 0.5 s, against 3.9 s for sampling the blended course.
+  - They are built during PLAY's loading step, so opening the map mid-match does not stall.
 
-## Next session: Stage 2, only when the user says so
+## Next session: Stage 3, only when the user says so
 
-`REVAMP-PLAN.md` "Stage 2: juice, audio and feedback". Branch `stage-2-juice` from `main` if #28 has merged, otherwise from `arena-only`, and say which in the PR. Three things in this repo bear on it:
-- **`Sim.events` replaces `hitEvents`.** The hit-marker pool, `hitEventEpoch`, and `killCart`/`creditHit` in `world.ts` are the current producers.
-- **Hit markers show a fake "+50".**
-- **The pool refusal above is the most audible silent failure in the game.** If it stays, Stage 2's "click" sound for a refused shot is worth asking about.
+`REVAMP-PLAN.md` "Stage 3: foundations". Branch `stage-3-foundations` from `main` once #69 has merged. Three things in this repo bear on it:
+- **The golden is Linux-only.** A sim change needs its new value from CI: push, read the `expected N to be M` line from the failing CI run, record N in a follow-up commit, and say so in both commit messages.
+- **Baked grids unblock two things.** The map samples each hole's own surfaces because blended `surfaceAt` is slow (3.9 s for the map). Nameplate line of sight has the same cost.
+- **Measure the frame after Stage 2.** The effects layer adds one draw call. The motor and synth nodes are cheap, but take numbers rather than assuming.
 
 ## Audit findings still open (from 2026-09-26)
 
@@ -94,6 +114,8 @@ Rewritten 2026-09-27, at the end of the cloud session that finished Stage 1. Rew
 
 ## Traps
 
+- **A fresh browser profile opens the first match on the controls card, with the sim frozen.** Any headless tool that plays a match must click GOT IT (smoke does) or pre-seed `localStorage["teetimeturrets.settings"]` with `{"version":1,"seenControls":true}`.
+- **Losing the pointer lock mid-match pauses it.** A browser tool that calls `document.exitPointerLock()` during a match is pausing the game, and must press RESUME.
 - **See every new test fail before trusting it, and read the red.** This session caught three inert checks by mutation, each green with the thing it guarded removed:
   - The smoke's "a pooled ball is in flight" passed on a bot's ball.
   - "The click that takes the lock does not fire" passed because a full pool refused the shot.
