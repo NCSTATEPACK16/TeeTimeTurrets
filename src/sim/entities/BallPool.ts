@@ -33,6 +33,8 @@ export interface PooledBall {
    * ball can graze both or bounce back into one; a shot is one hit however many contacts it makes.
    */
   spent: boolean;
+  /** Health points this ball takes off a cart: its club's `damage`, stamped when it is fired. */
+  damage: number;
 }
 
 export const POOL_SIZE = 32;
@@ -106,7 +108,7 @@ export class BallPool {
         .setEnabled(false);
       world.createCollider(colliderDesc, body);
 
-      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER, firedAt: 0, spent: false });
+      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER, firedAt: 0, spent: false, damage: 1 });
       this.restTicks.set(body, 0);
     }
   }

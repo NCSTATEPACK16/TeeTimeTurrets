@@ -18,7 +18,10 @@ import type { PooledBall } from "./entities/BallPool";
  * See docs/superpowers/specs/2026-09-02-targets-health-combat-design.md §4.
  */
 
-/** One ball hit is one point of health. A bar is `ARENA_MAX_HEALTH` points tall. */
+/**
+ * One stroke of damage: what the water costs. A ball does its club's `damage` instead
+ * (`CLUB_STATS`), which for the putter and iron is this same one point.
+ */
 export const STROKE_DAMAGE = 1;
 
 /**
@@ -143,7 +146,7 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
   ball.spent = true;
   const at = ball.body.translation();
   ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
-  if (applyDamage(cart.health, STROKE_DAMAGE)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
+  if (applyDamage(cart.health, ball.damage)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
 }
 
 /**

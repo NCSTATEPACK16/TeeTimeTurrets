@@ -173,8 +173,6 @@ export const CART_TUNING = {
   steerFullSpeed: 8,
   /** Steering authority floor, so a stopped cart can still pivot instead of locking up. */
   pivotAuthority: 0.25,
-  /** Recoil speed per m/s of launch speed. Driver at full charge kicks ~6 m/s. */
-  recoilCoefficient: 0.15,
   /** Exponential decay rate of the recoil velocity, per second (~0.3 s half-life). */
   recoilDecay: 2.2,
   /** Lowest surface multiplier a tire choice can drag the cart down to. */
@@ -278,7 +276,7 @@ export class Cart {
     this.turretOffset = options.turretOffset ?? 0;
     this.speed = 0;
     this.tire = options.tire ?? TireType.Street;
-    this.club = options.club ?? ClubType.Driver;
+    this.club = options.club ?? ClubType.Putter;
     this.recoil = { x: 0, z: 0 };
     this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
@@ -378,16 +376,19 @@ export class Cart {
     const stats = CLUB_STATS[this.club];
     const charge = clamp01(charge01);
     const launchSpeed = stats.minSpeed + (stats.maxSpeed - stats.minSpeed) * charge;
-    const kick = launchSpeed * CART_TUNING.recoilCoefficient;
-
-    this.recoil.x -= Math.cos(this.turretYaw) * kick;
-    this.recoil.z -= Math.sin(this.turretYaw) * kick;
 
     this.reload = stats.reloadSeconds;
     this.chargeHeld = 0;
 
     const hasBall = this.ammo > 0;
-    if (hasBall) this.ammo -= 1;
+    if (hasBall) {
+      this.ammo -= 1;
+      // The club's own kick, scaled by how hard the ball left. A blank throws nothing, so it
+      // pushes against nothing.
+      const kick = (stats.recoil * launchSpeed) / stats.maxSpeed;
+      this.recoil.x -= Math.cos(this.turretYaw) * kick;
+      this.recoil.z -= Math.sin(this.turretYaw) * kick;
+    }
 
     this.shot.fired = true;
     this.shot.hasBall = hasBall;

@@ -36,6 +36,12 @@ function run(cart: Cart, seconds: number, intent: CartIntent, surface: SurfaceTu
   for (let i = 0; i < ticks; i++) cart.step(intent, DT, surface);
 }
 
+describe("Cart loadout", () => {
+  it("starts holding the putter, the arena's close-range sidearm", () => {
+    expect(new Cart().equippedClub).toBe(ClubType.Putter);
+  });
+});
+
 describe("Cart reload gating", () => {
   let cart: Cart;
   beforeEach(() => {
@@ -176,6 +182,20 @@ describe("Cart recoil as self-propulsion", () => {
     expect(Math.hypot(driver.recoil.x, driver.recoil.z)).toBeGreaterThan(
       Math.hypot(putter.recoil.x, putter.recoil.z) * 2,
     );
+  });
+
+  it("kicks the club's own recoil at full charge", () => {
+    for (const club of [ClubType.Putter, ClubType.Iron, ClubType.Driver]) {
+      const c = new Cart({ club });
+      c.fire(1);
+      expect(Math.hypot(c.recoil.x, c.recoil.z), club).toBeCloseTo(CLUB_STATS[club].recoil, 9);
+    }
+  });
+
+  it("barely moves the cart with a full-charge putter shot, so the pistol can be fired on the move", () => {
+    const c = new Cart({ club: ClubType.Putter });
+    c.fire(1);
+    expect(Math.hypot(c.recoil.x, c.recoil.z)).toBeLessThanOrEqual(1);
   });
 
   it("kicks harder at full charge than at no charge", () => {
@@ -444,13 +464,14 @@ describe("Cart ammo", () => {
     expect(cart.shot.hasBall).toBe(true);
   });
 
-  it("fire() at 0 ammo leaves ammo at 0, sets hasBall false, and still recoils", () => {
+  it("fire() at 0 ammo leaves ammo at 0, sets hasBall false, and does not kick", () => {
+    // A blank throws nothing, so there is nothing to push back against. It used to kick like a
+    // real shot, which made an empty putter a free, silent way to skate the cart around.
     cart.ammo = 0;
-    const before = { x: cart.recoil.x, z: cart.recoil.z };
     cart.fire(1);
     expect(cart.ammo).toBe(0);
     expect(cart.shot.hasBall).toBe(false);
-    expect(cart.recoil.x).not.toBeCloseTo(before.x, 9);
+    expect(Math.hypot(cart.recoil.x, cart.recoil.z)).toBe(0);
   });
 
   it("fire() while reloading does not touch ammo or hasBall", () => {

@@ -78,7 +78,7 @@ describe("combat contact resolution", () => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(0.15).setDensity(1130), body);
     body.setLinvel({ x: vx, y: 0, z: 0 }, true);
-    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false }, handle: collider.handle };
+    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false, damage: STROKE_DAMAGE }, handle: collider.handle };
   }
 
   beforeEach(() => {
@@ -368,6 +368,12 @@ describe("combat contact resolution", () => {
 
       expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
       expect(stats.directHits).toBe(1);
+    });
+
+    it("does the damage the ball carries: a driver ball hits for its club's damage", () => {
+      ball.damage = 2;
+      processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - 2);
     });
 
     it("a ball that has landed does no damage when a cart drives into it", () => {

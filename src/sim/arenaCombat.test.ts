@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ClubType } from "../physics/Ballistics";
+import { CLUB_STATS, ClubType } from "../physics/Ballistics";
 import { ScriptedInputSource } from "../input/ScriptedInputSource";
 import type { ScriptedStep } from "../input/ScriptedInputSource";
 import { neutralIntent } from "./intent";
-import { BOT_STANDOFF } from "./bot";
+import { BOT_CHARGE_RELEASE, BOT_FIRE_RANGE, BOT_STANDOFF } from "./bot";
 import { fixedHoleSpec } from "./course";
 import { arenaFromHole } from "./arena";
-import { CART_COLLIDER } from "./entities/Cart";
+import { CART_COLLIDER, CART_HULL } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import { POOL_SIZE } from "./entities/BallPool";
 import { POOL_TRANSFORM_STRIDE, Sim } from "./world";
@@ -120,17 +120,44 @@ describe("arena combat is winnable", () => {
     expect(playerEvents).toBe(0); // none of the bot's hits are the player's markers
   });
 
-  it("the putter's shot comes back to cart height around the standoff distance", async () => {
-    // Guards the club-and-standoff pairing directly: a driver's shot is still 5 m up here, so a
-    // regression that re-armed bots with a lofted club fails this even without a live bot.
+  it("a bot 25 m off opens fire with the pistol instead of driving in to point-blank first", async () => {
+    const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 1 });
+    for (let i = 0; i < seconds(1); i++) sim.step(neutralIntent());
+
+    const player = sim.cart;
+    const bot = sim.bots[0]!;
+    const rigs = (sim as unknown as { rigs: RigLike[] }).rigs;
+    const botRig = rigs.find((r) => r.cart === bot)!;
+    const bx = player.position.x + 25;
+    const by = sim.heightAt(bx, player.position.z) + CART_COLLIDER.groundOffset;
+    bot.position.x = bx;
+    bot.position.y = by;
+    bot.position.z = player.position.z;
+    bot.heading = Math.PI;
+    botRig.body.setTranslation({ x: bx, y: by, z: player.position.z }, true);
+
+    const startAmmo = bot.ammo;
+    let firedFrom = -1;
+    for (let i = 0; i < seconds(1.5) && firedFrom < 0; i++) {
+      sim.step(neutralIntent());
+      if (bot.ammo < startAmmo) firedFrom = Math.hypot(bot.position.x - player.position.x, bot.position.z - player.position.z);
+    }
+    expect(firedFrom, "the bot never fired").toBeGreaterThan(0);
+    expect(firedFrom).toBeGreaterThan(15);
+  });
+
+  it("the putter's shot is at cart height across the whole range a bot fires from", async () => {
+    // Guards the club-and-range pairing directly: a regression that re-armed bots with a lofted
+    // club, or lobbed the putter again, leaves the ball above a cart or in the dirt somewhere in
+    // this band, and fails this without a live bot.
     const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
 
-    // Fire the putter over the bonnet at roughly the bot's release charge (putter charges in 0.5 s;
-    // 0.4 s of hold is ~0.8, which is `BOT_CHARGE_RELEASE`).
+    // Fire the putter over the bonnet at the bot's release charge.
+    const releaseTicks = Math.ceil((BOT_CHARGE_RELEASE * CLUB_STATS[ClubType.Putter].chargeSeconds) / (1 / TPS));
     const script: ScriptedStep[] = [
       { ticks: 2, intent: { selectClub: ClubType.Putter } },
-      { ticks: seconds(0.4), intent: { fire: true } },
-      { ticks: 2, intent: {} },
+      { ticks: releaseTicks, intent: { fire: true } },
+      { ticks: 1, intent: {} },
     ];
     const src = new ScriptedInputSource(script);
     const warm = script.reduce((a, b) => a + b.ticks, 0);
@@ -140,8 +167,8 @@ describe("arena combat is winnable", () => {
     }
 
     const from = { ...sim.cart.position };
-    let hitAtStandoff = false;
-    for (let tick = 0; tick < seconds(6); tick++) {
+    let samples = 0;
+    for (let tick = 0; tick < seconds(3); tick++) {
       sim.step();
       for (let i = 0; i < POOL_SIZE; i++) {
         const flat = i * POOL_TRANSFORM_STRIDE;
@@ -150,14 +177,13 @@ describe("arena combat is winnable", () => {
         const y = sim.currentPoolTransforms[flat + 1]!;
         const z = sim.currentPoolTransforms[flat + 2]!;
         const d = Math.hypot(x - from.x, z - from.z);
+        if (d < BOT_STANDOFF || d > BOT_FIRE_RANGE) continue;
         const h = y - sim.heightAt(x, z);
-        // Cart-height band, near the standoff: this is a shot that would strike a cart parked there.
-        if (h > 0.2 && h < 1.3 && d > BOT_STANDOFF - 1.5 && d < BOT_STANDOFF + 1.5) {
-          hitAtStandoff = true;
-        }
-        break;
+        expect(h, `${d.toFixed(1)} m out`).toBeGreaterThan(0.2);
+        expect(h, `${d.toFixed(1)} m out`).toBeLessThan(CART_HULL.height);
+        samples++;
       }
     }
-    expect(hitAtStandoff).toBe(true);
+    expect(samples, "the ball never crossed the fire band").toBeGreaterThan(5);
   });
 });

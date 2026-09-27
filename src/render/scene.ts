@@ -43,9 +43,9 @@ const CHASE_MIN_GROUND_CLEARANCE = 1.5;
  * publish one per bot today -- so every bot cart draws a fixed default club, never charged, never
  * showing a loaded round, regardless of what that bot is actually doing. That is a known gap, not
  * a guess dressed up as one: a bot mid-charge or holding a different club looks identical to one
- * standing idle with a driver.
+ * standing idle. It is the putter because that is the club every bot is built holding.
  */
-const BOT_DEFAULT_CLUB = ClubType.Driver;
+const BOT_DEFAULT_CLUB = ClubType.Putter;
 
 /** The course a match is fought on, as the renderer needs it. */
 export interface ArenaSource {

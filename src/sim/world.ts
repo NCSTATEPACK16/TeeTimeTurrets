@@ -1,5 +1,5 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
+import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
 import { BUCKET_REFILL_AMMO, CART_COLLIDER, CART_HULL, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
@@ -750,6 +750,10 @@ export class Sim {
     pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
     pooled.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     pooled.body.setLinvel(computeLaunchVelocity(cart.shot.club, cart.shot.charge01, cart.shot.yaw), true);
+    // Set on every shot: the pool recycles bodies, so a putter ball may last have been a driver's.
+    const stats = CLUB_STATS[cart.shot.club];
+    pooled.body.setGravityScale(stats.gravityScale, true);
+    pooled.damage = stats.damage;
   }
 
   /** Where a shot from the player's turret would leave from. */
@@ -763,7 +767,7 @@ export class Sim {
    * and returns how many it wrote.
    *
    * **It touches no Rapier state and advances nothing** -- `Sim` is byte-identical before and after.
-   * It mirrors the ball's own flight integration (gravity plus `LINEAR_DAMPING` at `FIXED_DT`)
+   * It mirrors the ball's own flight integration (the club's scaled gravity plus `LINEAR_DAMPING` at `FIXED_DT`)
    * rather than reading the live world, so it is a pure function of its inputs. It predicts the
    * carry, not the roll: the arc ends where the ball lands, because that is what a player aims with.
    *
@@ -781,6 +785,7 @@ export class Sim {
     let vy = v.y;
     let vz = v.z;
 
+    const gravity = GRAVITY * CLUB_STATS[this.cart.equippedClub].gravityScale;
     const damp = 1 / (1 + LINEAR_DAMPING * FIXED_DT);
     const bounds = this.playfield.bounds;
     const capacity = Math.min(out.length, PREVIEW_MAX_POINTS);
@@ -790,7 +795,7 @@ export class Sim {
 
     for (let tick = 1; tick <= PREVIEW_MAX_TICKS && n < capacity; tick++) {
       // Gravity then damping then integrate, the order Rapier applies to the real ball.
-      vy -= GRAVITY * FIXED_DT;
+      vy -= gravity * FIXED_DT;
       vx *= damp;
       vy *= damp;
       vz *= damp;

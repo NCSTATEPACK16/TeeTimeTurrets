@@ -31,27 +31,19 @@ export const BOT_ENGAGE_RANGE = 40;
 /**
  * Metres. Inside this the bot stops closing and holds station.
  *
- * This is not a comfort distance -- it is the range at which the bot's shot actually lands on a
- * cart. Bots fire the **putter** (see `world.ts`), and a fired ball leaves the muzzle (~2.4 m up)
- * at the club's own loft, so where it comes back down to cart height is fixed by club and charge,
- * not by aim. Measured against the real Rapier world (`_botspike`, since removed): a putter fired
- * at `BOT_CHARGE_RELEASE` passes through cart height (0.2-1.3 m above ground) at **6.4-7.6 m** and
- * lands at 7.8 m. Standing off at 7 m puts the target in that band.
- *
- * A lofted club is why the old value was wrong. The bot used to fire the driver from 12 m; a
- * driver (13 deg) does not come back to cart height until ~63 m, so every shot sailed clean over
- * the target -- five bots at ~10 m for eighty seconds left the player's health untouched across
- * 10,321 fire ticks. The fix is the club-and-standoff pairing, measured, not a bigger number.
+ * Bots fire the **putter**, which is a flat, fast pistol (`CLUB_STATS`): its ball is still at
+ * cart height 40 m out (`putterPistol.test.ts`), so the standoff is a fighting distance, not the
+ * one range a lobbed shot happens to come down at. It was 7 m when the putter was a 9 m/s lob.
+ * Far enough that a bot is not parked on its target's bonnet, close enough that the 0.4 deg spread
+ * still lands on a 1.8 m hull.
  */
-export const BOT_STANDOFF = 7;
+export const BOT_STANDOFF = 15;
 /**
- * Metres. The bot pulls the trigger only inside this -- just past the putter's ~7.8 m reach, with
- * room for a target closing onto the shot. Aiming still begins at `BOT_ENGAGE_RANGE`, so the
- * turret is already lined up by the time the target is in range; but firing while still closing
- * from 40 m would empty the bot's 30-ball magazine into the dirt short of the target. Every
- * trigger pull inside this range is a shot that can connect.
+ * Metres. The bot pulls the trigger only inside this. Aiming still begins at `BOT_ENGAGE_RANGE`,
+ * so the turret is lined up before the target is in range. Short of the 40 m the pistol is held
+ * to, so every trigger pull is a shot that can connect.
  */
-export const BOT_FIRE_RANGE = 9;
+export const BOT_FIRE_RANGE = 35;
 /** Radians per second of turret slew. Bounded so the bot's aim is not instant and omniscient. */
 export const BOT_AIM_RATE = 1.2;
 /** Radians. Inside this bearing error the bot considers itself on target and starts charging. */

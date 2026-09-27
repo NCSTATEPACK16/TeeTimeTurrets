@@ -139,8 +139,9 @@ describe("club stat cards", () => {
   it("ranks power by the table's own maxSpeed rather than a retyped number", () => {
     const cards = clubStatCards();
     const power = (c: ClubType): number => cards.find((x) => x.club === c)!.bars[0]!.value;
-    expect(power(ClubType.Driver)).toBeGreaterThan(power(ClubType.Iron));
-    expect(power(ClubType.Iron)).toBeGreaterThan(power(ClubType.Putter));
+    // The putter is a fast pistol, so it out-speeds the lofted iron; the driver is still top.
+    expect(power(ClubType.Driver)).toBeGreaterThan(power(ClubType.Putter));
+    expect(power(ClubType.Putter)).toBeGreaterThan(power(ClubType.Iron));
     // The driver is the maximum, so its bar is full -- which pins the scale to CLUB_STATS.
     expect(power(ClubType.Driver)).toBe(1);
   });
@@ -148,7 +149,7 @@ describe("club stat cards", () => {
   it("shows a faster reload as a FULLER bar, not a longer wait", () => {
     const cards = clubStatCards();
     const reload = (c: ClubType): number => cards.find((x) => x.club === c)!.bars[2]!.value;
-    // The putter reloads in 0.4s and the driver in 2.2s; a bar the player reads as "better"
+    // The putter reloads in 0.25s and the driver in 2.2s; a bar the player reads as "better"
     // must be longer for the putter, or the card says the opposite of what it means.
     expect(CLUB_STATS[ClubType.Putter].reloadSeconds).toBeLessThan(
       CLUB_STATS[ClubType.Driver].reloadSeconds,
@@ -164,8 +165,8 @@ describe("club stat cards", () => {
       expect(card.bars[1]!.detail).toBe("");
     }
     // The two that DO come straight off the table keep their real units.
-    expect(clubStatCards()[0]!.bars[0]!.detail).toBe("9 m/s");
-    expect(clubStatCards()[0]!.bars[2]!.detail).toBe("0.4 s");
+    expect(clubStatCards()[0]!.bars[0]!.detail).toBe("38 m/s");
+    expect(clubStatCards()[0]!.bars[2]!.detail).toBe("0.25 s");
   });
 
   it("derives range from the ballistics rather than from a range field", () => {

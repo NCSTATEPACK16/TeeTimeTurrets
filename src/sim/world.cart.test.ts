@@ -145,21 +145,22 @@ describe("striking the ball from the cart", () => {
   });
 
   it("equips the club the player selects and uses its stats for the shot", async () => {
-    play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Putter } }]);
-    expect(sim.cart.equippedClub).toBe(ClubType.Putter);
+    play(sim, [{ ticks: 1, intent: { selectClub: ClubType.Iron } }]);
+    expect(sim.cart.equippedClub).toBe(ClubType.Iron);
 
-    // Compared against a driver on an identical course rather than against a magic number: what
-    // needs proving is that selection reaches Ballistics at all, and relative carry shows it.
-    const putterDistance = fullShotDistance(sim);
-    const driverSim = await holeSim(fixedHoleSpec(), 0);
-    play(driverSim, [{ ticks: 1, intent: { selectClub: ClubType.Driver } }]);
-    const driverDistance = fullShotDistance(driverSim);
+    // Compared against the putter (the club a cart starts with) on an identical course rather than
+    // against a magic number: what needs proving is that selection reaches Ballistics at all, and
+    // relative distance shows it. If selecting the iron did nothing, both shots would be putts.
+    const ironDistance = fullShotDistance(sim);
+    const putterSim = await holeSim(fixedHoleSpec(), 0);
+    play(putterSim, [{ ticks: 1, intent: { selectClub: ClubType.Putter } }]);
+    const putterDistance = fullShotDistance(putterSim);
 
-    // Guard the asymmetric trivial pass: a putter shot that silently spawns no ball at all --
+    // Guard the asymmetric trivial pass: an iron shot that silently spawns no ball at all --
     // out of ammo, pool exhausted, a regression in the fire gate -- measures 0, and 0 is less
-    // than any driver distance. The comparison alone would call that a pass.
-    expect(putterDistance).toBeGreaterThan(0);
-    expect(putterDistance).toBeLessThan(driverDistance * 0.6);
+    // than any putter distance. The comparison alone would call that a pass.
+    expect(ironDistance).toBeGreaterThan(0);
+    expect(ironDistance).toBeLessThan(putterDistance * 0.6);
   });
 
   it("drives the whole gate through the input interface with no direct Sim calls", () => {
@@ -199,16 +200,15 @@ describe("cart-mode ammo-aware combat shots", () => {
     expect(sim.lastShotWasStrike).toBe(true);
   });
 
-  it("firing at 0 ammo produces a recoil-only blank: no strike, ammo stays at 0", () => {
+  it("firing at 0 ammo is a blank: no strike, no kick, ammo stays at 0", () => {
     play(sim, [{ ticks: 1, intent: {} }]);
     sim.cart.ammo = 0;
-    const recoilBefore = { x: sim.cart.recoil.x, z: sim.cart.recoil.z };
 
     play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: 2, intent: {} }]);
 
     expect(sim.cart.ammo).toBe(0);
     expect(sim.lastShotWasStrike).toBe(false);
-    expect(sim.cart.recoil.x).not.toBeCloseTo(recoilBefore.x, 9);
+    expect(Math.hypot(sim.cart.recoil.x, sim.cart.recoil.z)).toBe(0);
   });
 
   it("blocks a second shot until the fired club's reload elapses", () => {
