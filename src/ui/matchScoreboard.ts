@@ -89,7 +89,7 @@ function headlineFor(winner: number): string {
 }
 
 /** Rig 0 is the human; rig `n` is the `n`th bot, which is what `RoundScreen` labels its plates. */
-function nameOf(index: number): string {
+export function nameOf(index: number): string {
   return index === PLAYER ? "YOU" : `BOT ${index}`;
 }
 

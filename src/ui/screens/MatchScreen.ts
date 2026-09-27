@@ -14,6 +14,7 @@ import type { BannerDom } from "../banner";
 import { BannerFeed, createBannerView } from "../bannerFeed";
 import type { BannerSource } from "../bannerFeed";
 import { HitMarkers } from "../hitMarkers";
+import { KillFeed, drawKillFeed } from "../killFeed";
 import { Nameplates } from "../nameplates";
 import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
@@ -62,6 +63,10 @@ export class MatchScreen implements Screen {
    *  ticks ran since the last frame. Made on `enter`, which starts it at the present. */
   private eventCursor: SimEventCursor | null = null;
   private readonly hitScreenScratch = { x: 0, y: 0 };
+  /** Optional like the banner; the match runs without #kill-feed. */
+  private killFeedRoot: HTMLElement | null = null;
+  private killFeed = new KillFeed();
+  private killFeedDrawn = -1;
   private view: FrameView | null = null;
   /** Guards `onMatchOver`: called once. */
   private matchOverReported = false;
@@ -105,6 +110,9 @@ export class MatchScreen implements Screen {
     const hitRoot = document.getElementById("hit-markers");
     this.hitMarkers = hitRoot ? new HitMarkers(hitRoot) : null;
     this.eventCursor = sim.events.cursor();
+    this.killFeedRoot = document.getElementById("kill-feed");
+    this.killFeed = new KillFeed();
+    this.killFeedDrawn = -1;
     this.matchOverReported = false;
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
@@ -173,7 +181,7 @@ export class MatchScreen implements Screen {
 
     this.render.draw(view);
     this.drawNameplates();
-    this.drawHitMarkers(sim);
+    this.drainEvents(sim);
     drawHud(this.hud, sim);
     this.updateBanner(sim);
   }
@@ -196,6 +204,8 @@ export class MatchScreen implements Screen {
     // and ammo cards lit over whatever screen comes next.
     if (this.hud) this.hud.combat.hidden = true;
     if (this.banner) this.banner.root.hidden = true;
+    this.killFeedRoot?.replaceChildren();
+    this.killFeedRoot = null;
     this.hitMarkers?.dispose();
     this.hitMarkers = null;
     this.input?.dispose();
@@ -225,27 +235,35 @@ export class MatchScreen implements Screen {
     this.bannerFeed.update(source, dt);
     this.bannerFeed.view(this.bannerView);
     if (this.banner) drawBanner(this.banner, this.bannerView);
+
+    this.killFeed.update(dt);
+    if (this.killFeedRoot) this.killFeedDrawn = drawKillFeed(this.killFeedRoot, this.killFeed, this.killFeedDrawn);
   }
 
   /**
-   * Spawns a hit marker for each of the player's hits and kills since the last frame, once each.
-   * The cursor is what makes it once, and what keeps every tick's events when several ticks run
-   * between frames. Runs after `render.draw`, so the camera `projectToScreen` reads is this frame's.
+   * Everything that reacts to the match reads `Sim.events` here, once per frame: each event since
+   * the last frame, exactly once, however many ticks ran in between. Runs after `render.draw`, so
+   * the camera `projectToScreen` reads is this frame's.
    */
-  private drawHitMarkers(sim: Sim): void {
+  private drainEvents(sim: Sim): void {
     const cursor = this.eventCursor;
     if (!cursor) return;
     const log = sim.events;
     for (let s = cursor.begin(); s < log.total; s++) {
       const e = log.at(s)!;
+      if (e.kind === "kill") this.killFeed.onKill(e.actor, e.target);
       // Markers are the player's feedback: the player's own hits and kills, nobody else's.
-      if (e.actor !== 0 || (e.kind !== "hit" && e.kind !== "kill")) continue;
-      if (!this.hitMarkers || !this.render) continue;
-      // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
-      const onScreen = this.render.projectToScreen(e.x, e.y + HIT_MARKER_LIFT, e.z, this.hitScreenScratch);
-      if (onScreen) this.hitMarkers.spawn(e.kind, this.hitScreenScratch.x, this.hitScreenScratch.y);
+      if (e.actor === 0 && (e.kind === "hit" || e.kind === "kill")) this.spawnHitMarker(e.kind, e.x, e.y, e.z);
     }
     cursor.end();
+  }
+
+  private spawnHitMarker(kind: "hit" | "kill", x: number, y: number, z: number): void {
+    if (!this.hitMarkers || !this.render) return;
+    // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
+    if (this.render.projectToScreen(x, y + HIT_MARKER_LIFT, z, this.hitScreenScratch)) {
+      this.hitMarkers.spawn(kind, this.hitScreenScratch.x, this.hitScreenScratch.y);
+    }
   }
 
   private drawNameplates(): void {

@@ -105,6 +105,21 @@
          positions itself with left/top and animates transform + opacity, then removes itself on
          animationend. The container never scrolls. */
       #hit-markers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      /* Kill feed: top right, newest first, each line fading out after KILL_FEED_TTL_S. */
+      #kill-feed {
+        position: fixed; top: 14px; right: 16px; pointer-events: none;
+        display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+        font: 700 13px/1.2 system-ui, sans-serif; letter-spacing: 0.04em;
+      }
+      .kill-feed__line {
+        padding: 3px 8px; border-radius: 4px; background: rgba(12, 16, 22, 0.55); color: #e8edf2;
+        border-left: 3px solid transparent; animation: kill-feed-in 0.18s ease-out;
+      }
+      .kill-feed__line--ally { border-left-color: #4aa3ff; }
+      .kill-feed__line--enemy { border-left-color: #ff5a4a; }
+      .kill-feed__line--none { border-left-color: #8fa0b0; }
+      .kill-feed__line--you { background: rgba(12, 16, 22, 0.8); color: #fff; }
+      @keyframes kill-feed-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
       .hit-marker {
         position: absolute;
         font: 800 22px system-ui, sans-serif;
@@ -522,6 +537,8 @@
       <div id="banner-consequence"></div>
     </div>
     <div id="hit-markers"></div>
+    <!-- Filled by killFeed.ts from Sim.events; empty in markup for the same reason as #hud-team-score. -->
+    <div id="kill-feed" aria-live="polite"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
