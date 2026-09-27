@@ -2,12 +2,13 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
-import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO, CART_COLLIDER, CART_HULL, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
+import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
@@ -395,6 +396,7 @@ export class Sim {
     const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     const collider = this.world.createCollider(
       RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius)
+        .setCollisionGroups(CART_GROUPS)
         .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
         // Rapier computes no contacts between two kinematic bodies by default, and every cart
         // here is kinematic -- without this, cart-vs-cart shunting generates no events at all.
@@ -406,6 +408,16 @@ export class Sim {
     // Before the push, so it is the index this rig is about to occupy.
     const index = this.rigs.length;
     this.registry.registerCart(collider.handle, cart, index);
+    // What a shot hits. Same body, so it moves with the cart for free; ball-only, so the cart
+    // drives exactly as it did without it.
+    const hull = this.world.createCollider(
+      RAPIER.ColliderDesc.cylinder(CART_HULL.height / 2, CART_HULL.radius)
+        .setTranslation(0, CART_HULL.centreOffset, 0)
+        .setCollisionGroups(HULL_GROUPS)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+      body,
+    );
+    this.registry.registerCart(hull.handle, cart, index);
     this.rigs.push({
       index,
       cart,
@@ -649,7 +661,8 @@ export class Sim {
     this.moveScratch.y = rig.fallSpeed * FIXED_DT;
     this.moveScratch.z = rig.cart.desiredTranslation.z;
 
-    this.controller.computeColliderMovement(rig.collider, this.moveScratch);
+    // Filtered by the capsule's own groups, so the controller does not collide with hulls.
+    this.controller.computeColliderMovement(rig.collider, this.moveScratch, undefined, CART_GROUPS);
     const corrected = this.controller.computedMovement();
 
     const p = rig.cart.position;

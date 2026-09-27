@@ -3,6 +3,7 @@ import { NO_KILLER } from "../matchConfig";
 import { createSurfaceTuning } from "../surfaces";
 import type { MutableSurfaceTuning } from "../surfaces";
 import { BALL_RADIUS as POOLED_BALL_RADIUS } from "./ballShape";
+import { BALL_GROUPS } from "../collisionGroups";
 
 /** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
  * explicit out-of-scope list (docs/superpowers/specs/2026-09-02-cart-ammo-design.md §1). */
@@ -27,6 +28,11 @@ export interface PooledBall {
   firedBy: number;
   /** Sim time the ball left the muzzle, for `MAX_FLIGHT_S`. */
   firedAt: number;
+  /**
+   * True once this flight has done its damage. A cart has two colliders (capsule and hull), and a
+   * ball can graze both or bounce back into one; a shot is one hit however many contacts it makes.
+   */
+  spent: boolean;
 }
 
 export const POOL_SIZE = 32;
@@ -93,13 +99,14 @@ export class BallPool {
         .setDensity(POOLED_BALL_DENSITY)
         .setFriction(POOLED_BALL_FRICTION)
         .setRestitution(POOLED_BALL_RESTITUTION)
+        .setCollisionGroups(BALL_GROUPS)
         // Combat balls are the ones that hit things, so they carry the collision events
         // sim/combat.ts dispatches on.
         .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
         .setEnabled(false);
       world.createCollider(colliderDesc, body);
 
-      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER, firedAt: 0 });
+      this.balls.push({ body, state: "idle", landedAt: 0, firedBy: NO_KILLER, firedAt: 0, spent: false });
       this.restTicks.set(body, 0);
     }
   }
@@ -128,6 +135,7 @@ export class BallPool {
     ball.state = "flying";
     ball.firedBy = firedBy;
     ball.firedAt = this.now;
+    ball.spent = false;
     ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
     this.restTicks.set(ball.body, 0);

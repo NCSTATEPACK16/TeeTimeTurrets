@@ -98,6 +98,23 @@ export const CART_COLLIDER = {
 } as const;
 
 /**
+ * The hitbox a fired ball strikes: a cylinder from the ground to just over the turret pivot.
+ *
+ * The capsule above is the shape the cart *drives* with and tops out at 1.9 m, but the muzzle is
+ * 2.6 m up, so a flat shot at a nearby cart flew clean over it. The hull touches balls only (see
+ * `collisionGroups.ts`), so it changes what a shot can hit without changing how a cart drives.
+ * A cylinder rather than a box because the cart body is never rotated with its heading.
+ */
+export const CART_HULL = {
+  radius: 0.9,
+  height: 2.8,
+  /** Hull centre above the capsule centre, which is the body's origin. */
+  get centreOffset(): number {
+    return this.height / 2 - CART_COLLIDER.groundOffset;
+  },
+} as const;
+
+/**
  * The turret, from concept image 03: it sits on the cart's *roof*, and its barrel is literally a
  * golf club -- a shaft with the club head as the muzzle. The ball rides up there and is fired out
  * of the club head, which is why these numbers live in the sim rather than only in the renderer:

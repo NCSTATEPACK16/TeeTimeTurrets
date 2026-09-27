@@ -78,7 +78,7 @@ describe("combat contact resolution", () => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(0.15).setDensity(1130), body);
     body.setLinvel({ x: vx, y: 0, z: 0 }, true);
-    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0 }, handle: collider.handle };
+    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false }, handle: collider.handle };
   }
 
   beforeEach(() => {
@@ -356,6 +356,28 @@ describe("combat contact resolution", () => {
     expect(stats.directHits).toBe(0);
   });
 
+  describe("a ball damages once per flight", () => {
+    it("touching the hull and the capsule of one cart costs one point, not two", () => {
+      const hullHandle = world.createCollider(
+        RAPIER.ColliderDesc.cylinder(1.4, 0.9),
+        world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()),
+      ).handle;
+      registry.registerCart(hullHandle, cart, 0);
+
+      processContacts(queueOf([ballHandle, hullHandle, true], [ballHandle, cartHandle, true]), ctx());
+
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
+      expect(stats.directHits).toBe(1);
+    });
+
+    it("a ball that has landed does no damage when a cart drives into it", () => {
+      ball.state = "landed";
+      processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
+      expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+      expect(stats.directHits).toBe(0);
+    });
+  });
+
   describe("a ball hit is exactly one point", () => {
     it("costs one point of health, whatever the ball's speed", () => {
       const slow = makeBall(3);
@@ -389,7 +411,10 @@ describe("combat contact resolution", () => {
 
       processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
       expect(killed).toHaveLength(0);
-      processContacts(queueOf([ball.handle, collider.handle, true]), ctx());
+      // A second ball: one flight is one hit.
+      const second = makeBall(20, 0);
+      registry.registerBall(second.handle, second.ball);
+      processContacts(queueOf([second.handle, collider.handle, true]), ctx());
       expect(small.health.hp).toBe(0);
       expect(killed).toEqual([small]);
     });

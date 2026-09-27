@@ -125,6 +125,9 @@ export function processContacts(queue: CollisionEventSource, ctx: CombatContext)
 }
 
 function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, ctx: CombatContext): void {
+  // A shot hurts while it is in the air, once. A landed ball is ammo lying on the grass, and a
+  // spent one already hit something -- the hull and the capsule are two contacts, not two hits.
+  if (ball.state !== "flying" || ball.spent) return;
   const cart = victim.cart;
   // A cart awaiting respawn is out of the world: it takes no damage, no stroke, and generates
   // no accuracy credit for whoever shot at it. `world.ts` freezes it for the same reason.
@@ -137,6 +140,7 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
   // a teammate's shot passes through as if the cart were not there, and earns nothing.
   if (sameSide(ball.firedBy, victim.index)) return;
 
+  ball.spent = true;
   const at = ball.body.translation();
   ctx.onBallHit(ball.firedBy, at.x, at.y, at.z);
   if (applyDamage(cart.health, STROKE_DAMAGE)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
