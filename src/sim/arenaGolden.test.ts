@@ -20,6 +20,12 @@ import { Sim } from "./world";
  * When a change is *meant* to alter the match (tuning, a new rule), re-record the constant in the
  * same commit and say so in the message. Recording it in a commit that claims to change nothing is
  * exactly the lie this test exists to catch.
+ *
+ * **The recorded number is Linux x64's**, the platform CI runs on. An arm64 machine (an Apple
+ * Silicon Mac) computes a different one from the same code, because V8's `Math.sin`, `Math.cos`
+ * and `Math.atan2` round a few inputs one ulp apart between the two architectures. Only this
+ * test cares; the replay and rematch checks compare a machine against itself and hold anywhere.
+ * `docs/DECISIONS.md`, "The golden fingerprint is Linux x64's", has the measurement.
  */
 
 const COURSE_SEED = 2026;
@@ -92,6 +98,6 @@ describe("arena determinism fingerprint", () => {
   });
 
   it("matches the recorded fingerprint", async () => {
-    expect(await playScriptedMatch(world)).toBe(1107444919);
+    expect(await playScriptedMatch(world)).toBe(1424064728);
   });
 });

@@ -738,3 +738,42 @@ Nothing from CoT's Reserved Content is in this repository, and nothing may be ad
 ### Stage boundaries in cloud sessions
 
 A cloud session works through one stage on its own. At the end it runs the checkpoint, pushes, updates that stage's draft PR, and **stops**. The user then play-tests locally before anything merges or the next stage starts. Gate re-baselines still need the user's approval. Stage 7 (Blender) runs only in a local session.
+
+## The golden fingerprint is Linux x64's
+
+Settled 2026-09-27, when CI first ran the golden on PR #28 and got `1424064728` where the user's Mac had recorded `1107444919`.
+
+### Why the two machines disagree
+
+**The CPU architecture, not the OS and not the Node version.** V8's `Math.sin`, `Math.cos` and `Math.atan2` return a different double for a small number of inputs on arm64 than on x64, by one unit in the last place, from the same V8 build. Everything else the match computes -- JS arithmetic, `Math.sqrt`, `Math.hypot`, and Rapier's WASM -- came out identical.
+
+Measured in a Linux x64 cloud session, with a standalone bundle of the golden's scripted match:
+
+| Run | Result |
+|---|---|
+| Linux x64, Node 22.22.2 (V8 12.4) | `1424064728` |
+| Linux x64, Node 26.4.0 (V8 14.6) | `1424064728` |
+| CI: Linux x64, Node 22.23 | `1424064728` |
+| Linux **arm64**, Node 26.4.0, under qemu user emulation | **`1107444919`**, the Mac's number |
+| Linux arm64, the same, with 361 `Math` results swapped for x64's | `1424064728`, and all 2,400 per-tick hashes equal x64's |
+
+How the 361 were found: the x64 run logged every transcendental `Math` call (17.4 million calls, 647,940 distinct inputs), and arm64 recomputed each one. 361 inputs disagreed, all by one ulp: 191 `sin`, 100 `cos`, 70 `atan2`. `hypot`, `pow`, `tan`, `asin` and `exp` never did. Per tick, the arm64 match leaves x64's at tick 46.
+
+Two notes on the method:
+- **The arm64 runs are emulated.** Under qemu, Rapier's WASM traps (`unreachable`) around tick 70 when V8's optimizing WASM tier is on, with or without the swap. With `--liftoff-only` it runs to the end. The match itself is not at fault: the user's Mac finishes it natively.
+- **The mechanism is inferred, not confirmed.** V8 implements these three in C++ (a port of fdlibm). The likely cause is the C++ compiler fusing a multiply and an add into one FMA instruction on arm64, which rounds once where x64 rounds twice. JIT-compiled JS arithmetic is never fused, which fits only the library calls differing. The table above is the evidence; this paragraph is not.
+
+It is not iteration order. Object, `Map` and array iteration order is fixed by the language, and the swap experiment leaves no room for a second cause.
+
+### Decision: Linux x64 is canonical
+
+- **The golden constant is whatever Linux x64 computes.** That is what CI runs (`ubuntu-latest`), and what every cloud session runs, so it is the one platform every contributor shares.
+- **On an Apple Silicon Mac, `matches the recorded fingerprint` fails.** That is expected. Do not re-record the golden from a Mac. To check a golden change locally, run the test in a `linux/amd64` container, or push and read CI.
+- **The self-comparing checks hold everywhere:** `replays identically from the same seed`, and any check that compares a run with another run on the same machine.
+- **Re-record in the same commit as the change that moves it, from Linux x64,** and say why in the message, as the test's header already requires.
+
+### Open: a sim that computes the same bits everywhere
+
+The golden is only the first thing to notice. The same one-ulp drift splits any two machines that run the sim side by side: an x64 server and an arm64 client would disagree about a match by tick 46. `ARCHITECTURE.md` §1 plans for the server to run `src/sim/**` unmodified, so this has to be settled before lockstep, replays or server reconciliation.
+
+The fix is known in outline: route the sim's `sin`, `cos` and `atan2` through a pure-JS implementation, since JS arithmetic is IEEE-exact on every platform. That is 61 call sites across 13 files in `src/sim/**` and `src/physics/**`. A faithful fdlibm port should reproduce x64's current results bit for bit, so the golden might not move at all, but that is a claim to test, not to assume. It is not scheduled in `REVAMP-PLAN.md`.
