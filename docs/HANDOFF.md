@@ -22,11 +22,11 @@ Rewritten 2026-09-27, when this project moved to cloud sessions. Rewrite this fi
 
 ## Stages and GitHub
 
-The milestones "Stage 1" to "Stage 10" each hold that stage's issues. Close issues from the PR (`Closes #n`).
+The milestones "Stage 1" to "Stage 10" each hold that stage's issues (#29–#68, labelled `ready-for-agent`; each lists what blocks it). Close issues from the PR (`Closes #n`).
 
 | # | Stage | Branch | Status |
 |---|---|---|---|
-| 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint | `arena-only` (draft PR → `main`) | **in progress** |
+| 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only` (draft PR #28 → `main`) | **in progress** |
 | 2 | Juice and audio | `stage-2-juice` | — |
 | 3 | Foundations: performance and render base | `stage-3-foundations` | — |
 | 4 | Handling feel and arena zone | `stage-4-handling-zone` | — |
