@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Written 2026-09-26. Rewrite this file at the end of each session; it is a baton, not a log.
+Written 2026-09-26 (second session). Rewrite this file at the end of each session; it is a baton, not a log.
 
 ---
 
@@ -35,73 +35,53 @@ Written 2026-09-26. Rewrite this file at the end of each session; it is a baton,
 
 ## Branch and state
 
-- **Branch `arena-only`** is 8 commits over `origin/main`. It is not pushed and has no PR.
-- **Commits this session:**
-  1. `d208c44` **Stage 0.** `tools/smoke.mjs` is ported to the arena path. The gate runner dropped the stale `target` subject.
-     - Smoke: 52 checks, all PASS.
-     - Gate: 18 subjects, all PASS with no re-baseline.
-  2. `86dd6ec` **Stage 1.1, teams.**
-     - `bot.ts` has a new `pickTarget`: nearest living enemy by `teamOf`, with a 15 m switch margin, and `NO_TARGET` when none is left.
-     - `CartRig.targetIndex` holds each bot's target.
-     - `combat.ts` skips damage from a teammate's or the cart's own ball, and skips damage when teammates ram. Teammates still get shoved apart.
-     - `plateTeamOf` in `ui/plateState.ts` gives ally/enemy nameplates. Allies skip the line-of-sight walk.
-  3. `9a5488c` **Stage 1.2 + 1.3.**
-     - `ARENA_BOTS` = 7, so the match is 4v4.
-     - `ArenaGround.clubhouse` is set by `arenaFromCourse` to `AUTHORED_CLUBHOUSE`. `miniCourse` and `arenaFromHole` pass `null` and still deal carts onto the tees.
-     - `spawn.ts` has `createTeamPads` and `padSpawn`:
-       - team 0's pad is 25 m west of the clubhouse and team 1's 25 m east;
-       - each pad has 4 slots, 7 m apart, running north;
-       - carts face north.
-     - `Cart.revive()` tops ammo up to `STARTING_AMMO`.
-  4. `01590d5` **Stage 1.4 + 1.6.**
-     - `CART_TUNING`: topSpeed 20, accel 16, brake 24, reverse 7, steerRate 2.4, steerFullSpeed 8.
-     - Ram damage is now `min(RAM_MAX_DAMAGE=2, floor(closing/6))`. The rammer (more than 1 m/s more approach speed) takes half. A head-on is mutual.
-     - A 90 s probe with 8 carts across the whole course never put a cart under the ground.
-- **Verified at `01590d5`:**
+- **Branch `arena-only`** is 13 commits over `origin/main`. It is not pushed and has no PR. The PR is planned for after the Stage 1 checkpoint and the user's play-test.
+- **Earlier commits (Stage 0 and 1.1-1.4, 1.6):**
+  - `d208c44` Stage 0: smoke on the arena path; the gate dropped the stale `target` subject.
+  - `86dd6ec` 1.1: teams; friendly fire off.
+  - `9a5488c` 1.2 + 1.3: 4v4 with clubhouse pads.
+  - `01590d5` 1.4 + 1.6: faster carts; the ram is capped at 2.
+- **This session's commits:**
+  1. `45d0331` **1.5 hull.**
+     - Each cart has a ball-only cylinder hitbox (`CART_HULL`: r 0.9, 0-2.8 m) on its body, registered as the cart.
+     - Collision groups are in `sim/collisionGroups.ts`. The KCC queries with `CART_GROUPS`, so driving is unchanged.
+     - A ball damages once per flight (`PooledBall.spent`), and only while `flying`.
+  2. `62387bb` **1.5 clubs.**
+     - `CLUB_STATS` gains `damage` (driver 2), `gravityScale` (putter 0.4) and `recoil` (m/s at full charge; a blank no longer kicks).
+     - Putter: 30-38 m/s, 1 deg loft, 0.08 s charge, 0.25 s reload, 0.4 deg spread. Loft 0 makes the club clip the canopy (`GolfClub.test.ts`).
+     - Carts start holding the putter.
+     - Bots: `BOT_STANDOFF` 15, `BOT_FIRE_RANGE` 35.
+  3. `038cb6d` **1.7 controls.**
+     - Mouse0 fires. Mouse2 sets `cancelCharge`, and the trigger must then be let go before it charges again.
+     - The camera follows the turret (`render/chaseCamera.ts`), with exponential smoothing in wall-clock frame time.
+     - The aim arc is `entities/AimArc.ts`, fed by `previewTrajectory` in `MatchScreen.draw`.
+  4. `0db043e` **1.8 bots, part one.**
+     - `sim/aimSolver.ts` gives the range -> charge table, and bots release at the solved charge.
+     - `computeBotIntent(..., mind: BotMind | null)` handles skill, unstick and ammo seeking, all unit-tested in `bot.test.ts`.
+     - **`world.ts` does not pass a mind yet**, so none of that is live in a match.
+     - `botAcceptance.test.ts`: an idle player is hit within 30 s on the shipped course.
+- **Verified at `0db043e`:**
   - `tsc` is clean.
-  - `npx vitest run --testTimeout=30000` passes: 63 files, 864 tests.
-  - The golden fingerprint was re-recorded 3 times, each deliberately, with the reason in the commit message. It is now `2167757381`.
-  - Smoke and gate were **not** re-run after Stage 1.1; run them at the Stage 1 checkpoint.
-- **Leave alone:**
-  - `art/clubhouse-and-cart.blend` (unexplained modifications).
-  - `.scratch/` (untracked).
-  - Never `git add -A`.
+  - Vitest: 902 tests pass (excluding the uncommitted file below).
+  - The golden fingerprint is `1107444919`. It has been re-recorded each commit, deliberately.
+  - Smoke and gate have **not** been re-run since Stage 0.
+- **Uncommitted: `src/sim/botMind.test.ts`.** Its 2 tests are red and correct, waiting on the wiring below. It is not in git, so do not lose it.
+- **Leave alone:** the modified `art/clubhouse-and-cart.blend` and the untracked `.scratch/`. Never `git add -A`.
 
-## Pick up here: Stage 1.5, weapons (in progress, nothing written yet)
+## Pick up here: finish 1.8 (wire BotMind into world.ts), then 1.9 and the checkpoint
 
-**The blocker found:** the muzzle is at `TURRET_GEOMETRY.pivotHeight` 2.6 m, but the cart's only collider is a capsule topping out at 1.9 m (`CART_COLLIDER`: radius 0.6, halfHeight 0.35). A flat, fast putter shot flies over any nearby cart, and with real gravity a 40 m "pistol" shot drops about 7 m. The planned fix:
-
-1. **Hull hitbox.** Add a ball-only cylinder collider per cart: radius about 0.9, from the ground to about 2.8 m. Its local y offset is `1.4 - CART_COLLIDER.groundOffset`. Register it in `CombatRegistry` as the same cart and index.
-   - Use collision groups so only balls touch it:
-     - BALL membership bit;
-     - HULL membership bit with filter = BALL;
-     - the capsule's filter excludes HULL.
-   - Pass the capsule's groups as `filterGroups` to `controller.computeColliderMovement` (`world.ts`, `moveCartBody`), so KCC queries ignore hulls. Verify that Rapier 0.20 does not already exclude same-body colliders.
-   - A cylinder rather than a box, because cart bodies aren't rotated with heading.
-   - Guard against double hits: add `spent` to `PooledBall` (reset in `beginFlight`). A ball damages only while `state === "flying" && !spent`, and is marked spent when it deals damage. This also stops a slowly rolling ball from doing full damage.
-   - **Red test first:** fire the player's putter at a bot 4 m away on `arenaFromHole(fixedHoleSpec())`. The ball passes about 2.2 m up and misses the capsule today. Teleport the bot once, never every tick (see Traps).
-2. **Club retune** (`CLUB_STATS`, `Ballistics.ts`):
-   - Add per-club fields:
-     - `damage`: putter 1, iron 1, driver 2. `combat.ts` must use it instead of `STROKE_DAMAGE`.
-     - `gravityScale`: the putter around 0.3 for a flat pistol line. Apply it with `body.setGravityScale` in `resolveShot`, **and** mirror it in `Sim.previewTrajectory`.
-     - `recoil`: the m/s kick at full charge, replacing the `recoilCoefficient × launch speed` rule, so a putter burst doesn't skate the cart. A blank (no-ammo) shot gives no kick.
-   - Putter: charge about 0.08 s, 30–38 m/s, loft about 0–2°, spread 0.4°, reload 0.25 s.
-   - Iron: 0.7 s charge.
-   - Carts spawn holding the putter. `world.ts` builds the player's cart with no club, so the driver is the default.
-   - Test with a pure flight helper that mirrors `previewTrajectory`'s integration: the putter reaches 40 m in under 1.3 s and is still above the ground inside the hull height.
-   - Then retune the bot constants in `bot.ts`, which assume a 9 m/s putter: `BOT_STANDOFF` 7, `BOT_FIRE_RANGE` 9, `BOT_CHARGE_RELEASE`. `arenaCombat.test.ts` depends on them.
-3. **Then the rest of Stage 1:**
-   - 1.7 controls: left mouse to charge and fire, right-click `cancelCharge`, the camera follows turret yaw with time-based smoothing, and the preview arc is drawn from `Sim.previewTrajectory`.
-   - 1.8 bots:
-     - `solveShot` from a range table;
-     - seek ammo when empty;
-     - unstick after 2 s without progress;
-     - seeded skill;
-     - acceptance: at least one hit within 30 s on an idle player on the shipped course.
-   - 1.9 rematch correctness: `Sim.reset` calls `BallPool.releaseAll` and resets buckets and `simTime`; fix the discarded buzzer tick.
-   - **Then the Stage 1 checkpoint:** smoke, gate, build, and pause for the user to play-test.
-
-**Blender (Stage 4)** needs the user to start Blender with the MCP addon; it wasn't connected this session.
+1. **Wire the minds** (`world.ts`), to turn `botMind.test.ts` green:
+   - Add `mind: BotMind | null` to `CartRig`. In `addCartRig`, for a bot, the skill is `mulberry32(hashChannel(this.seed, 0, BOT_SKILL_CHANNEL, botIndex))()`. Pass the bot index in, because `rigs.length - 1` is only right after the player's rig is added.
+   - In `intentFor`, when `cart.ammo <= 0`, write the nearest ammo into `mind.ammoX/Z/hasAmmoTarget`: an off-cooldown bucket or a `landed` ball. Loop without allocating; do not use `ballsNear`.
+   - Pass `rig.mind` to `computeBotIntent`.
+   - Then re-record the golden fingerprint and re-run `botAcceptance`.
+2. **1.9 rematch correctness:**
+   - `Sim.reset` should call `BallPool.releaseAll`, reset the buckets' cooldowns and `simTime`, and reset each mind (`createBotMind` with the same skill, or zero its timers).
+   - Fix the discarded buzzer tick. `step()` returns right after `match.tick` sets `over`, so the final tick's movement and contacts never happen. Check what the handoff audit meant before changing it.
+3. **Stage 1 checkpoint:**
+   - Run `npm run smoke` and the gate. The smoke may need updating for mouse fire and the turret camera. The gate may need a re-baseline, but only with the user's approval.
+   - Run `npm run build` and `npm run probe`. The tunneling check applies because ball tuning changed.
+   - Then pause for the user's play-test. After it: the PR for Stage 1.
 
 ## Audit findings still to act on (from 2026-09-26)
 
