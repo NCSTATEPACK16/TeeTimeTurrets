@@ -36,3 +36,22 @@ export const REFERENCE_CARRY_M = 129;
  * constant is the failure AGENTS.md names.
  */
 export const DRIVER_CARRY_M = 69.5;
+
+/**
+ * The arena driver's full-power distance, in metres: 103.8 m TOTAL, 75.3 m carry plus 28.5 m
+ * roll-out, measured by `npm run probe` on 2026-09-27 with the shot fired from a cart through the
+ * ball pool.
+ *
+ * This is the number the probe now holds the driver to. `REFERENCE_CARRY_M` was the stroke-play
+ * tee shot, and stroke play is gone. It survives only because the course generator still derives
+ * par from it, and that goes when the generator is deleted (REVAMP-PLAN.md, Stage 9). The two
+ * differ because the arena driver was retuned for combat, not because either measurement is wrong.
+ */
+export const ARENA_DRIVER_TOTAL_M = 103.8;
+
+/**
+ * The same shot's carry, 75.3 m. The probe holds the driver to this as well as to the total,
+ * because the total alone is blind to some changes: on the probe's hole, a driver 20% faster
+ * carries 104 m into rising ground, stops dead, and comes out at almost exactly the same total.
+ */
+export const ARENA_DRIVER_CARRY_M = 75.3;

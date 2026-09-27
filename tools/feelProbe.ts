@@ -10,10 +10,9 @@ import { fixedHoleSpec } from "../src/sim/course";
 import { NOISE_MAX_GRADIENT, createTerrain } from "../src/sim/terrain";
 import { arenaFromHole } from "../src/sim/arena";
 import { neutralIntent } from "../src/sim/intent";
-// REFERENCE_CARRY_M lives in sim/carry.ts, not sim/course.ts: it was moved into a leaf module to
-// break a value import cycle (see that file's header). course.ts imports it but does not re-export
-// it, so this import had been dangling and `npm run probe` could not build.
-import { REFERENCE_CARRY_M } from "../src/sim/carry";
+// The driver's reference distance lives in sim/carry.ts, a leaf module (see that file's header),
+// not in course.ts, which does not re-export it.
+import { ARENA_DRIVER_CARRY_M, ARENA_DRIVER_TOTAL_M } from "../src/sim/carry";
 import {
   derivePar,
   draftHole,
@@ -277,18 +276,22 @@ function noiseGradientCheck(): void {
 }
 
 /**
- * 2. Closes the par-derivation loop. REFERENCE_CARRY_M is the driver's measured full-power
- *    TOTAL distance -- carry plus roll-out -- and is not a second copy of CLUB_STATS. A club
- *    rebalance that invalidates par fails here instead of silently mis-parring every hole.
+ * 2. Holds the driver to its measured arena distance: ARENA_DRIVER_TOTAL_M and ARENA_DRIVER_CARRY_M,
+ *    the full-power total and carry fired from a cart through the ball pool. Neither is a second
+ *    copy of CLUB_STATS. A club rebalance that changes the driver's reach fails here and has to update
+ *    that constant on purpose, rather than drifting unnoticed.
  */
 async function driverDistanceCheck(sim: Sim): Promise<void> {
   const r = await shoot(sim, ClubType.Driver);
-  const drift = Math.abs(r.totalM - REFERENCE_CARRY_M) / REFERENCE_CARRY_M;
+  // Carry and total are both held: on this hole's terrain a faster driver can carry into a bank,
+  // stop dead, and land on the same total, so the total alone misses it (see carry.ts).
+  const totalDrift = Math.abs(r.totalM - ARENA_DRIVER_TOTAL_M) / ARENA_DRIVER_TOTAL_M;
+  const carryDrift = Math.abs(r.carryM - ARENA_DRIVER_CARRY_M) / ARENA_DRIVER_CARRY_M;
   report(
     "driver distance",
-    drift <= 0.15,
-    `${r.totalM.toFixed(1)} m total (${r.carryM.toFixed(1)} carry + ${r.rollM.toFixed(1)} roll) ` +
-      `vs REFERENCE_CARRY_M ${REFERENCE_CARRY_M}, drift ${(drift * 100).toFixed(1)}% (limit 15%)`,
+    totalDrift <= 0.15 && carryDrift <= 0.15,
+    `${r.totalM.toFixed(1)} m total vs ${ARENA_DRIVER_TOTAL_M} (drift ${(totalDrift * 100).toFixed(1)}%), ` +
+      `${r.carryM.toFixed(1)} m carry vs ${ARENA_DRIVER_CARRY_M} (drift ${(carryDrift * 100).toFixed(1)}%), limit 15% each`,
   );
 }
 
