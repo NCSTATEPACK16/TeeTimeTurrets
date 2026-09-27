@@ -1,0 +1,35 @@
+import { describe, expect, it } from "vitest";
+import { CHASE_DISTANCE, CHASE_POSITION_LERP, chasePose, chaseSmoothing } from "./chaseCamera";
+import type { CartTransform } from "../sim/world";
+
+function cartAt(heading: number, turretYaw: number): CartTransform {
+  return { position: { x: 0, y: 0, z: 0 }, heading, turretYaw };
+}
+
+describe("chase camera", () => {
+  it("sits behind the turret, not the chassis, so the player sees what they are aiming at", () => {
+    // Chassis facing +X, turret swung round to +Z.
+    const eye = { x: 0, y: 0, z: 0 };
+    const look = { x: 0, y: 0, z: 0 };
+    chasePose(cartAt(0, Math.PI / 2), eye, look);
+    expect(eye.x).toBeCloseTo(0, 9);
+    expect(eye.z).toBeCloseTo(-CHASE_DISTANCE, 9);
+    expect(look.z).toBeGreaterThan(0);
+  });
+
+  it("closes the same distance in two half-length frames as in one full frame", () => {
+    // Per-frame lerp factors make a 144 Hz monitor's camera three times as stiff as a 48 Hz one.
+    const oneFrame = chaseSmoothing(CHASE_POSITION_LERP, 1 / 60);
+    const half = chaseSmoothing(CHASE_POSITION_LERP, 1 / 120);
+    const twoHalves = 1 - (1 - half) * (1 - half);
+    expect(twoHalves).toBeCloseTo(oneFrame, 9);
+  });
+
+  it("keeps the 60 Hz feel it was tuned at", () => {
+    expect(chaseSmoothing(CHASE_POSITION_LERP, 1 / 60)).toBeCloseTo(CHASE_POSITION_LERP, 9);
+  });
+
+  it("does not move at all in a zero-length frame", () => {
+    expect(chaseSmoothing(CHASE_POSITION_LERP, 0)).toBe(0);
+  });
+});

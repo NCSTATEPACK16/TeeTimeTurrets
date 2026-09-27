@@ -4,7 +4,7 @@ import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
 import { CLUB_STATS } from "../../physics/Ballistics";
 import type { ClubType } from "../../physics/Ballistics";
-import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE } from "../../sim/world";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE, createPreviewBuffer } from "../../sim/world";
 import type { CartTransform } from "../../sim/world";
 import { drawHud, readHud } from "../hud";
 import type { Hud } from "../hud";
@@ -75,6 +75,8 @@ export class MatchScreen implements Screen {
    * purpose: this is a presentation fade and need not be reproducible frame-for-frame.
    */
   private readonly lastSeenAtMs: number[] = [];
+  /** Wall-clock time of the last drawn frame, for `FrameView.frameSeconds`. */
+  private lastDrawMs = 0;
 
   constructor(options: MatchScreenOptions) {
     this.options = options;
@@ -115,7 +117,11 @@ export class MatchScreen implements Screen {
       poolTransforms: new Float32Array(sim.currentPoolTransforms.length),
       botCarts: sim.currentBotCarts.map(cloneCart),
       elapsedSeconds: 0,
+      frameSeconds: 0,
+      aimArc: createPreviewBuffer(),
+      aimArcCount: 0,
     };
+    this.lastDrawMs = performance.now();
   }
 
   step(): void {
@@ -147,6 +153,15 @@ export class MatchScreen implements Screen {
     view.reload01 = reloadFraction(sim.cart.reloadRemaining, sim.cart.equippedClub);
     view.turretLoaded = sim.cart.ammo > 0;
     view.elapsedSeconds = this.elapsedSeconds;
+    const now = performance.now();
+    // Capped, so a frame after the tab was hidden does not snap the camera across the course.
+    view.frameSeconds = Math.min((now - this.lastDrawMs) / 1000, MAX_FRAME_SECONDS);
+    this.lastDrawMs = now;
+    // The arc for the shot being charged, or a full-power one while the trigger is up, so the
+    // player can aim before committing. Nothing while dead: there is no turret to aim.
+    view.aimArcCount = sim.cart.dead
+      ? 0
+      : sim.previewTrajectory(sim.cart.charge > 0 ? sim.cart.charge : 1, sim.cart.turretYaw, view.aimArc);
     interpolateTransforms(
       sim.previousPoolTransforms,
       sim.currentPoolTransforms,
@@ -169,7 +184,9 @@ export class MatchScreen implements Screen {
 
   /** Renders one frame without advancing anything -- the results screen's backdrop. */
   drawStill(): void {
-    if (this.view && this.render) this.render.draw(this.view);
+    if (!this.view || !this.render) return;
+    this.view.frameSeconds = 0;
+    this.render.draw(this.view);
   }
 
   exit(): void {
@@ -248,6 +265,9 @@ export class MatchScreen implements Screen {
     }
   }
 }
+
+/** Longest frame the camera smoothing is given: a frame after a hidden tab is not 30 s long. */
+const MAX_FRAME_SECONDS = 0.1;
 
 /** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
 const NAMEPLATE_HEIGHT = 2.6;

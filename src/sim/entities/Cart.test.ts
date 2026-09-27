@@ -27,7 +27,7 @@ const FAIRWAY = SURFACES[SurfaceId.Fairway];
 const DT = 1 / 60;
 
 function idle(overrides: Partial<CartIntent> = {}): CartIntent {
-  return { throttle: 0, steer: 0, brake: false, aimDelta: 0, fire: false, ...overrides };
+  return { throttle: 0, steer: 0, brake: false, aimDelta: 0, fire: false, cancelCharge: false, ...overrides };
 }
 
 /** Advance `seconds` of simulated time at the fixed rate, holding one intent throughout. */
@@ -137,6 +137,28 @@ describe("Cart swing charge", () => {
     run(cart, 0.3, idle({ fire: true }));
     cart.step(idle({ fire: false }), DT, FAIRWAY);
     expect(cart.charge).toBe(0);
+  });
+
+  it("cancelling drops the charge, and letting go afterwards fires nothing", () => {
+    run(cart, 0.3, idle({ fire: true }));
+    const ammo = cart.ammo;
+    cart.step(idle({ fire: true, cancelCharge: true }), DT, FAIRWAY);
+    expect(cart.charge).toBe(0);
+
+    cart.step(idle({ fire: false }), DT, FAIRWAY);
+    expect(cart.shot.fired).toBe(false);
+    expect(cart.ammo).toBe(ammo);
+  });
+
+  it("after a cancel, the trigger has to be let go before it charges again", () => {
+    run(cart, 0.3, idle({ fire: true }));
+    cart.step(idle({ fire: true, cancelCharge: true }), DT, FAIRWAY);
+    run(cart, 0.3, idle({ fire: true }));
+    expect(cart.charge).toBe(0);
+
+    cart.step(idle({ fire: false }), DT, FAIRWAY);
+    run(cart, 0.3, idle({ fire: true }));
+    expect(cart.charge).toBeGreaterThan(0);
   });
 
   it("does not accumulate charge while reloading", () => {

@@ -1,40 +1,19 @@
 import * as THREE from "three";
 import { BallSwarm } from "../entities/BallSwarm";
+import { AimArc } from "../entities/AimArc";
 import { GolfClub, placeCart } from "../entities/GolfClub";
 import { ClubType } from "../physics/Ballistics";
 import type { Surfaces } from "../sim/surfaces";
-import type { CartTransform } from "../sim/world";
+import type { CartTransform, Vec3 } from "../sim/world";
 import type { CourseTerrain } from "../sim/courseTerrain";
 import { BIOMES } from "./biomes";
+import { CHASE_POSITION_LERP, CHASE_TARGET_LERP, chasePose, chaseSmoothing } from "./chaseCamera";
 import { createCourseGround } from "./courseGround";
 import { createTreeline } from "./treeline";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
 
-/**
- * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
- * hazard.
- *
- * The camera tracks the **chassis**, not the turret. Tracking the turret is the usual choice for
- * a tank game, but here it hides the thing the game is about: the barrel is a golf club, and a
- * camera welded behind the turret keeps that club permanently foreshortened to a stub pointing
- * away from the viewer. Behind the chassis instead, swinging the turret sweeps the club across
- * frame -- image 03 exactly, and the reason that shot reads as golf rather than as artillery.
- * Aiming costs nothing in orientation either, since the turret defaults to the chassis heading.
- */
-const CHASE_DISTANCE = 6.5;
-const CHASE_HEIGHT = 3.6;
-const CHASE_LOOK_AHEAD = 8;
-/**
- * The look target sits *below* the cart, not above it. That pitches the camera down, which is
- * what pushes the cart into the lower third of the frame and leaves the horizon high -- image
- * 03's framing. Aiming at or above the cart pitches up and centres it instead.
- */
-const CHASE_LOOK_DROP = 0.3;
-/** Per-frame lerp factors. Position lags further than the look target so turns read as weight. */
-const CHASE_POSITION_LERP = 0.12;
-const CHASE_TARGET_LERP = 0.2;
 /** Keeps the chase eye out of the terrain when the cart backs toward a slope. */
 const CHASE_MIN_GROUND_CLEARANCE = 1.5;
 
@@ -93,6 +72,12 @@ export interface FrameView {
    * the fixed step rather than read off a wall clock, so a scene-gate render is reproducible.
    */
   elapsedSeconds: number;
+  /** Wall-clock seconds since the last drawn frame, for the camera's frame-rate-independent
+   *  smoothing. Zero holds the camera still. */
+  frameSeconds: number;
+  /** The player's aim arc from `Sim.previewTrajectory`: the first `aimArcCount` points. */
+  aimArc: Vec3[];
+  aimArcCount: number;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -103,6 +88,7 @@ export class RenderScene {
   private readonly cart: GolfClub;
   private readonly botCarts: GolfClub[] = [];
   private readonly pooledBalls: BallSwarm;
+  private readonly aimArc: AimArc;
   private readonly courseGround: CourseGround;
   /** The band of trees beyond the road, on a course that has one. */
   private readonly treeline: Treeline | null;
@@ -178,6 +164,9 @@ export class RenderScene {
     this.pooledBalls = new BallSwarm();
     this.scene.add(this.pooledBalls);
 
+    this.aimArc = new AimArc();
+    this.scene.add(this.aimArc);
+
     this.cameraTarget.set(0, 0, 0);
     this.onResize();
     // Kept as a field so `dispose` can detach it. An anonymous listener here would outlive every
@@ -197,6 +186,7 @@ export class RenderScene {
       this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, 1, false);
     }
     this.pooledBalls.setFromTransforms(view.poolTransforms);
+    this.aimArc.setPoints(view.aimArc, view.aimArcCount);
 
     this.frameChase(view);
 
@@ -219,6 +209,7 @@ export class RenderScene {
     this.cart.dispose();
     for (const bot of this.botCarts) bot.dispose();
     this.pooledBalls.dispose();
+    this.aimArc.dispose();
     this.treeline?.dispose();
     this.courseGround.dispose();
     this.scene.clear();
@@ -261,28 +252,15 @@ export class RenderScene {
   }
 
   private frameChase(view: FrameView): void {
-    const c = view.cart;
-    const forwardX = Math.cos(c.heading);
-    const forwardZ = Math.sin(c.heading);
-
-    this.chaseEyeScratch.set(
-      c.position.x - forwardX * CHASE_DISTANCE,
-      c.position.y + CHASE_HEIGHT,
-      c.position.z - forwardZ * CHASE_DISTANCE,
-    );
-    this.chaseLookScratch.set(
-      c.position.x + forwardX * CHASE_LOOK_AHEAD,
-      c.position.y - CHASE_LOOK_DROP,
-      c.position.z + forwardZ * CHASE_LOOK_AHEAD,
-    );
+    chasePose(view.cart, this.chaseEyeScratch, this.chaseLookScratch);
 
     // Keep the eye above the terrain it is flying over, or a chase camera reversing into a
     // hillside ends up underground looking at the inside of the heightfield.
     const groundAtEye = this.groundHeightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
     this.chaseEyeScratch.y = Math.max(this.chaseEyeScratch.y, groundAtEye + CHASE_MIN_GROUND_CLEARANCE);
 
-    this.camera.position.lerp(this.chaseEyeScratch, CHASE_POSITION_LERP);
-    this.cameraTarget.lerp(this.chaseLookScratch, CHASE_TARGET_LERP);
+    this.camera.position.lerp(this.chaseEyeScratch, chaseSmoothing(CHASE_POSITION_LERP, view.frameSeconds));
+    this.cameraTarget.lerp(this.chaseLookScratch, chaseSmoothing(CHASE_TARGET_LERP, view.frameSeconds));
     this.camera.lookAt(this.cameraTarget);
   }
 

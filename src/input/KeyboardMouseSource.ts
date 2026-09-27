@@ -4,7 +4,8 @@ import { intentFromKeys } from "./mapping";
 
 /**
  * The desktop InputSource: a thin DOM shell with no binding logic of its own. It collects the
- * three things `intentFromKeys` needs -- held keys, keys pressed this tick, pointer movement --
+ * three things `intentFromKeys` needs -- held keys and mouse buttons, those pressed this tick,
+ * pointer movement --
  * and delegates. Everything worth testing lives in mapping.ts, which is why this file has no
  * test of its own: there is nothing here but listener bookkeeping.
  */
@@ -55,6 +56,24 @@ export class KeyboardMouseSource implements InputSource {
     this.pointerAimDelta += event.movementX * POINTER_SENSITIVITY;
   };
 
+  // Mouse buttons join the key sets as `Mouse<button>`, so `intentFromKeys` binds them from the
+  // same table. Only while pointer-locked: the click that takes the lock must not also fire.
+  private readonly onMouseDown = (event: MouseEvent): void => {
+    if (document.pointerLockElement !== this.canvas) return;
+    const code = `Mouse${event.button}`;
+    this.keysDown.add(code);
+    this.pressedThisTick.add(code);
+  };
+
+  private readonly onMouseUp = (event: MouseEvent): void => {
+    this.keysDown.delete(`Mouse${event.button}`);
+  };
+
+  // Right-click cancels a charge; the browser's own menu would steal the pointer lock.
+  private readonly onContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+  };
+
   private readonly onCanvasClick = (): void => {
     if (document.pointerLockElement !== this.canvas) void this.canvas.requestPointerLock();
   };
@@ -74,6 +93,9 @@ export class KeyboardMouseSource implements InputSource {
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("mousemove", this.onMouseMove);
     window.addEventListener("blur", this.onBlur);
+    window.addEventListener("mousedown", this.onMouseDown);
+    window.addEventListener("mouseup", this.onMouseUp);
+    canvas.addEventListener("contextmenu", this.onContextMenu);
     canvas.addEventListener("click", this.onCanvasClick);
   }
 
@@ -91,6 +113,9 @@ export class KeyboardMouseSource implements InputSource {
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("mousemove", this.onMouseMove);
     window.removeEventListener("blur", this.onBlur);
+    window.removeEventListener("mousedown", this.onMouseDown);
+    window.removeEventListener("mouseup", this.onMouseUp);
+    this.canvas.removeEventListener("contextmenu", this.onContextMenu);
     this.canvas.removeEventListener("click", this.onCanvasClick);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
   }

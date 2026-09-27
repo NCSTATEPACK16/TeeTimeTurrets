@@ -138,6 +138,7 @@ export function computeBotIntent(
   out.brake = false;
   out.aimDelta = 0;
   out.fire = false;
+  out.cancelCharge = false;
   out.selectClub = null;
 
   const dx = target.x - bot.position.x;

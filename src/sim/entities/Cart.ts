@@ -41,6 +41,11 @@ export interface CartIntent {
   aimDelta: number;
   /** True while the swing button is held; the release edge is what fires. */
   fire: boolean;
+  /**
+   * Drop the charge without firing. The trigger then has to be let go before it charges again,
+   * so a cancel with the fire button still down is not immediately a fresh swing.
+   */
+  cancelCharge: boolean;
 }
 
 export enum TireType {
@@ -268,6 +273,8 @@ export class Cart {
   private reload = 0;
   private chargeHeld = 0;
   private wasFiring = false;
+  /** Set by a cancel; cleared when the trigger is let go. See `CartIntent.cancelCharge`. */
+  private cancelled = false;
 
   constructor(options: CartOptions = {}) {
     const start = options.position ?? { x: 0, y: 0, z: 0 };
@@ -425,6 +432,15 @@ export class Cart {
 
   /** Charge on hold, fire on the release edge. Charging is blocked while reloading. */
   private stepSwing(intent: CartIntent, dt: number): void {
+    if (intent.cancelCharge) {
+      this.chargeHeld = 0;
+      this.cancelled = true;
+    }
+    if (this.cancelled) {
+      if (!intent.fire) this.cancelled = false;
+      this.wasFiring = intent.fire;
+      return;
+    }
     if (intent.fire) {
       if (this.canFire) {
         this.chargeHeld = clamp01(this.chargeHeld + dt / CLUB_STATS[this.club].chargeSeconds);

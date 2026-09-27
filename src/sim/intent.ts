@@ -22,6 +22,7 @@ export function neutralIntent(): PlayerIntent {
     brake: false,
     aimDelta: 0,
     fire: false,
+    cancelCharge: false,
     selectClub: null,
   };
 }
