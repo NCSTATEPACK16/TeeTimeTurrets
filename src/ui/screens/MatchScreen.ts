@@ -2,7 +2,8 @@ import * as THREE from "three";
 import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
 import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
-import { CLUB_STATS } from "../../physics/Ballistics";
+import { CLUB_STATS, ClubType as Club } from "../../physics/Ballistics";
+import { CART_TUNING } from "../../sim/entities/Cart";
 import type { ClubType } from "../../physics/Ballistics";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE, createPreviewBuffer } from "../../sim/world";
 import type { CartTransform } from "../../sim/world";
@@ -139,6 +140,7 @@ export class MatchScreen implements Screen {
       aimArcCount: 0,
       playerDead: sim.cart.dead,
       botDead: sim.bots.map((b) => b.dead),
+      speed01: 0,
     };
     this.lastDrawMs = performance.now();
   }
@@ -172,6 +174,7 @@ export class MatchScreen implements Screen {
     view.reload01 = reloadFraction(sim.cart.reloadRemaining, sim.cart.equippedClub);
     view.turretLoaded = sim.cart.ammo > 0;
     view.playerDead = sim.cart.dead;
+    view.speed01 = sim.cart.speed / CART_TUNING.topSpeed;
     for (let i = 0; i < view.botDead.length; i++) view.botDead[i] = sim.bots[i]!.dead;
     view.elapsedSeconds = this.elapsedSeconds;
     const now = performance.now();
@@ -276,6 +279,7 @@ export class MatchScreen implements Screen {
       const e = log.at(s)!;
       if (e.kind === "kill") this.killFeed.onKill(e.actor, e.target);
       this.playEffect(e.kind, e.x, e.y, e.z);
+      this.addTrauma(sim, e.kind, e.actor, e.target, e.club, e.x, e.z);
       // Markers are the player's feedback: the player's own hits, rams and kills, nobody else's.
       if (e.actor === 0) {
         if (e.kind === "hit" || e.kind === "ram") this.spawnHitMarker("hit", markerLabel("hit", e.amount), e.x, e.y, e.z);
@@ -291,6 +295,28 @@ export class MatchScreen implements Screen {
       }
     }
     cursor.end();
+  }
+
+  /**
+   * How hard an event shakes the player's camera: firing the heavy clubs, taking a hit, making a
+   * kill, dying, and a kill going off close by.
+   */
+  private addTrauma(sim: Sim, kind: SimEventKind, actor: number, target: number, club: ClubType | null, x: number, z: number): void {
+    const trauma = this.render?.trauma;
+    if (!trauma) return;
+    if (kind === "shot" && actor === 0) {
+      if (club === Club.Driver) trauma.add(TRAUMA_DRIVER);
+      else if (club === Club.Iron) trauma.add(TRAUMA_IRON);
+    } else if ((kind === "hit" || kind === "ram") && target === 0) {
+      trauma.add(TRAUMA_HURT);
+    } else if (kind === "kill") {
+      if (target === 0) trauma.add(TRAUMA_DEATH);
+      else if (actor === 0) trauma.add(TRAUMA_KILL);
+      else {
+        const d = Math.hypot(x - sim.cart.position.x, z - sim.cart.position.z);
+        if (d < NEAR_BLAST_M) trauma.add(TRAUMA_NEAR_BLAST * (1 - d / NEAR_BLAST_M));
+      }
+    }
   }
 
   /** The world effect for an event, if it has one. */
@@ -337,6 +363,16 @@ export class MatchScreen implements Screen {
 }
 
 /** Longest frame the camera smoothing is given: a frame after a hidden tab is not 30 s long. */
+/** Camera trauma per event (0..1; shake is its square). See `addTrauma`. */
+const TRAUMA_DRIVER = 0.35;
+const TRAUMA_IRON = 0.15;
+const TRAUMA_HURT = 0.45;
+const TRAUMA_KILL = 0.3;
+const TRAUMA_DEATH = 0.9;
+const TRAUMA_NEAR_BLAST = 0.35;
+/** A kill closer to the player than this shakes the camera, less with distance. */
+const NEAR_BLAST_M = 25;
+
 const MAX_FRAME_SECONDS = 0.1;
 
 /** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
