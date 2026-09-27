@@ -20,8 +20,8 @@ import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
-import { BOT_CHANNEL, NO_TARGET, computeBotIntent, pickTarget } from "./bot";
-import type { BotTarget } from "./bot";
+import { BOT_CHANNEL, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
+import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
 import {
   ARENA_MAX_HEALTH,
@@ -157,6 +157,11 @@ interface CartRig {
   readonly intentScratch: PlayerIntent | null;
   /** The rig this bot is fighting, per `pickTarget`, or `NO_TARGET`. Unused by the player's rig. */
   targetIndex: number;
+  /**
+   * What the bot remembers between ticks (`sim/bot.ts`): its skill, its progress tracking and the
+   * ammo it is heading for. `null` for the player's rig. Written in place every tick.
+   */
+  readonly mind: BotMind | null;
 }
 
 export interface SimOptions {
@@ -342,7 +347,7 @@ export class Sim {
       // stand off at. The putter is flat, so its shot lands on the target at `BOT_STANDOFF`.
       const bot = new Cart({ maxHealth: ARENA_MAX_HEALTH, club: ClubType.Putter });
       sim.bots.push(bot);
-      sim.addCartRig(bot, mulberry32(sim.botStreamSeed(i)));
+      sim.addCartRig(bot, i);
     }
     // Now that every rig exists. The scoreboard is indexed by rig index.
     sim.match.setRoster(sim.rigs.length);
@@ -362,6 +367,14 @@ export class Sim {
    */
   private botStreamSeed(botIndex: number): number {
     return hashChannel(this.seed, 0, BOT_CHANNEL, botIndex);
+  }
+
+  /**
+   * Bot `i`'s skill, 0..1: the first draw of its own `BOT_SKILL_CHANNEL` stream, so it is fixed
+   * per seed and giving bots a skill moves none of their `BOT_CHANNEL` draws.
+   */
+  private botSkill(botIndex: number): number {
+    return mulberry32(hashChannel(this.seed, 0, BOT_SKILL_CHANNEL, botIndex))();
   }
 
   /** Builds the heightfield collider for the ground. */
@@ -391,8 +404,11 @@ export class Sim {
    * Creates one cart's body and collider, registers it for contact dispatch, and files the rig.
    * Every cart -- the player's and every bot's -- goes through here, so a bot is physically
    * identical to the player rather than a cheaper approximation of one. `placeRig` puts it down.
+   *
+   * `botIndex` is the cart's place in `bots`, or `null` for the player. It is passed in rather than
+   * read off `rigs.length`, which only equals it while the player's rig is the one already filed.
    */
-  private addCartRig(cart: Cart, random: (() => number) | null): void {
+  private addCartRig(cart: Cart, botIndex: number | null): void {
     const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     const collider = this.world.createCollider(
       RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius)
@@ -424,9 +440,10 @@ export class Sim {
       body,
       collider,
       fallSpeed: 0,
-      random,
-      intentScratch: random === null ? null : neutralIntent(),
+      random: botIndex === null ? null : mulberry32(this.botStreamSeed(botIndex)),
+      intentScratch: botIndex === null ? null : neutralIntent(),
       targetIndex: NO_TARGET,
+      mind: botIndex === null ? null : createBotMind(this.botSkill(botIndex)),
     });
   }
 
@@ -559,8 +576,51 @@ export class Sim {
     // bot's RNG stream on a throwaway draw and make the draw count depend on death timing.
     if (rig.cart.dead) return IDLE_INTENT;
     rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
-    computeBotIntent(rig.cart, this.botTargetScratch(rig.targetIndex), FIXED_DT, rig.random, rig.intentScratch);
+    if (rig.mind !== null) this.findAmmoFor(rig.cart, rig.mind);
+    computeBotIntent(
+      rig.cart,
+      this.botTargetScratch(rig.targetIndex),
+      FIXED_DT,
+      rig.random,
+      rig.intentScratch,
+      rig.mind,
+    );
     return rig.intentScratch;
+  }
+
+  /**
+   * Writes the nearest ammo a cart could collect right now into `mind`: a bucket off cooldown or a
+   * landed ball, whoever fired it -- the same two things `stepRig` refills from. Only while the
+   * magazine is empty, since that is the only time the bot reads it. Loops the pool directly rather
+   * than through `ballsNear`, which builds an array per call. Rapier's `translation()` still hands
+   * back a fresh vector per landed ball; that is the pool's own per-tick cost too, and Stage 3's.
+   */
+  private findAmmoFor(cart: Cart, mind: BotMind): void {
+    mind.hasAmmoTarget = false;
+    if (cart.ammo > 0) return;
+    const px = cart.position.x;
+    const pz = cart.position.z;
+    let best = Infinity;
+    for (const bucket of this.buckets) {
+      if (bucket.cooldownRemaining > 0) continue;
+      const d = Math.hypot(bucket.position.x - px, bucket.position.z - pz);
+      if (d < best) {
+        best = d;
+        mind.ammoX = bucket.position.x;
+        mind.ammoZ = bucket.position.z;
+      }
+    }
+    for (const ball of this.ballPool.all) {
+      if (ball.state !== "landed") continue;
+      const t = ball.body.translation();
+      const d = Math.hypot(t.x - px, t.z - pz);
+      if (d < best) {
+        best = d;
+        mind.ammoX = t.x;
+        mind.ammoZ = t.z;
+      }
+    }
+    mind.hasAmmoTarget = best < Infinity;
   }
 
   /**
