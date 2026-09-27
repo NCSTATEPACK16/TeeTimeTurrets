@@ -25,11 +25,32 @@ const OWNS_SERVER = process.argv[2] === undefined;
 
 let server = null;
 if (OWNS_SERVER) {
-  server = spawn("npx", ["vite", "preview", "--port", String(PORT)], { stdio: "ignore" });
+  // A server already answering here would be tested in place of this build: see sceneGate.mjs.
+  if (await isServing(URL)) throw new Error(`something is already serving ${URL}; stop it and rerun`);
+  server = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort"], { stdio: "ignore", detached: true });
   await waitForServer(URL, 20000);
 }
 
-process.on("exit", () => server?.kill());
+/** The whole process group: `npx` -> `sh` -> `vite`, and killing `npx` alone orphans `vite`. */
+function stopServer() {
+  if (server === null) return;
+  try {
+    process.kill(-server.pid);
+  } catch {
+    /* already gone */
+  }
+  server = null;
+}
+
+process.on("exit", stopServer);
+
+async function isServing(url) {
+  try {
+    return (await fetch(url)).ok;
+  } catch {
+    return false;
+  }
+}
 
 async function waitForServer(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -708,7 +729,7 @@ check(
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 
 await browser.close();
-server?.kill();
+stopServer();
 
 console.log(`\n${failures.length === 0 ? "SMOKE PASS" : `SMOKE FAIL (${failures.length}): ${failures.join(", ")}`}`);
 process.exit(failures.length === 0 ? 0 : 1);
