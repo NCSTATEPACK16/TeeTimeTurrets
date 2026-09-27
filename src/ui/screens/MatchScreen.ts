@@ -6,7 +6,7 @@ import { CLUB_STATS } from "../../physics/Ballistics";
 import type { ClubType } from "../../physics/Ballistics";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE, createPreviewBuffer } from "../../sim/world";
 import type { CartTransform } from "../../sim/world";
-import type { SimEventCursor } from "../../sim/events";
+import type { SimEventCursor, SimEventKind } from "../../sim/events";
 import { drawHud, readHud } from "../hud";
 import type { Hud } from "../hud";
 import { drawBanner, readBanner } from "../banner";
@@ -137,6 +137,8 @@ export class MatchScreen implements Screen {
       frameSeconds: 0,
       aimArc: createPreviewBuffer(),
       aimArcCount: 0,
+      playerDead: sim.cart.dead,
+      botDead: sim.bots.map((b) => b.dead),
     };
     this.lastDrawMs = performance.now();
   }
@@ -169,6 +171,8 @@ export class MatchScreen implements Screen {
     // swap deliberately does not clear the reload, so read the club here too rather than caching it.
     view.reload01 = reloadFraction(sim.cart.reloadRemaining, sim.cart.equippedClub);
     view.turretLoaded = sim.cart.ammo > 0;
+    view.playerDead = sim.cart.dead;
+    for (let i = 0; i < view.botDead.length; i++) view.botDead[i] = sim.bots[i]!.dead;
     view.elapsedSeconds = this.elapsedSeconds;
     const now = performance.now();
     // Capped, so a frame after the tab was hidden does not snap the camera across the course.
@@ -271,6 +275,7 @@ export class MatchScreen implements Screen {
     for (let s = cursor.begin(); s < log.total; s++) {
       const e = log.at(s)!;
       if (e.kind === "kill") this.killFeed.onKill(e.actor, e.target);
+      this.playEffect(e.kind, e.x, e.y, e.z);
       // Markers are the player's feedback: the player's own hits, rams and kills, nobody else's.
       if (e.actor === 0) {
         if (e.kind === "hit" || e.kind === "ram") this.spawnHitMarker("hit", markerLabel("hit", e.amount), e.x, e.y, e.z);
@@ -286,6 +291,18 @@ export class MatchScreen implements Screen {
       }
     }
     cursor.end();
+  }
+
+  /** The world effect for an event, if it has one. */
+  private playEffect(kind: SimEventKind, x: number, y: number, z: number): void {
+    const fx = this.render?.effects;
+    if (!fx) return;
+    if (kind === "shot") fx.muzzle(x, y, z);
+    else if (kind === "hit") fx.impact(x, y, z);
+    else if (kind === "ram") fx.ram(x, y, z);
+    else if (kind === "kill") fx.death(x, y, z);
+    // A splash event is at the cart's body centre; the water is drawn on the ground under it.
+    else if (kind === "splash") fx.splash(x, this.options.sim.heightAt(x, z), z);
   }
 
   private spawnHitMarker(kind: "hit" | "kill", label: string, x: number, y: number, z: number): void {

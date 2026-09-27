@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { BallSwarm } from "../entities/BallSwarm";
 import { AimArc } from "../entities/AimArc";
+import { EffectsLayer } from "./effects";
 import { GolfClub, placeCart } from "../entities/GolfClub";
 import { ClubType } from "../physics/Ballistics";
 import type { Surfaces } from "../sim/surfaces";
@@ -78,6 +79,10 @@ export interface FrameView {
   /** The player's aim arc from `Sim.previewTrajectory`: the first `aimArcCount` points. */
   aimArc: Vec3[];
   aimArcCount: number;
+  /** The player's cart is out of the world awaiting respawn, so it is not drawn. */
+  playerDead: boolean;
+  /** Per bot, as `botCarts`: out of the world awaiting respawn. */
+  botDead: boolean[];
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -89,6 +94,8 @@ export class RenderScene {
   private readonly botCarts: GolfClub[] = [];
   private readonly pooledBalls: BallSwarm;
   private readonly aimArc: AimArc;
+  /** Puffs, sparks, death bursts and splashes; triggered by `MatchScreen` from `Sim.events`. */
+  readonly effects: EffectsLayer;
   private readonly courseGround: CourseGround;
   /** The band of trees beyond the road, on a course that has one. */
   private readonly treeline: Treeline | null;
@@ -167,6 +174,9 @@ export class RenderScene {
     this.aimArc = new AimArc();
     this.scene.add(this.aimArc);
 
+    this.effects = new EffectsLayer();
+    this.scene.add(this.effects.group);
+
     this.cameraTarget.set(0, 0, 0);
     this.onResize();
     // Kept as a field so `dispose` can detach it. An anonymous listener here would outlive every
@@ -177,9 +187,12 @@ export class RenderScene {
 
   draw(view: FrameView): void {
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
+    // A dead cart has burst (`EffectsLayer.death`) and is out of the world until it respawns.
+    this.cart.visible = !view.playerDead;
     for (let i = 0; i < this.botCarts.length; i++) {
       const transform = view.botCarts[i];
       if (transform === undefined) continue;
+      this.botCarts[i]!.visible = !view.botDead[i];
       // reload01 = 1 is "loaded and idle", so a bot stands at address. Same reason as the club
       // and the charge above: Sim publishes no per-bot reload, and a guessed swing would be a
       // bot that looks like it is shooting when it is not.
@@ -187,6 +200,7 @@ export class RenderScene {
     }
     this.pooledBalls.setFromTransforms(view.poolTransforms);
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
+    this.effects.update(view.frameSeconds);
 
     this.frameChase(view);
 
@@ -210,6 +224,7 @@ export class RenderScene {
     for (const bot of this.botCarts) bot.dispose();
     this.pooledBalls.dispose();
     this.aimArc.dispose();
+    this.effects.dispose();
     this.treeline?.dispose();
     this.courseGround.dispose();
     this.scene.clear();
