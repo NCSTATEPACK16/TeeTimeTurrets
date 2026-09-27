@@ -19,6 +19,10 @@ import { KillFeed, drawKillFeed } from "../killFeed";
 import { DamageIndicators, damageScreenAngle, lowHpIntensity, markerLabel } from "../hitFeedback";
 import { gameAudio } from "../../audio/audioEngine";
 import { cueFor, heartbeatInterval } from "../../audio/audioDirector";
+import { PauseState } from "../pauseState";
+import type { Settings } from "../../app/settings";
+import { buildSettingsPanel } from "../settingsPanel";
+import { el } from "../dom";
 import { Nameplates } from "../nameplates";
 import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
@@ -41,6 +45,13 @@ export interface MatchScreenOptions {
   readonly nameplateRoot: HTMLElement;
   /** Called once, when the match clock runs out. Drives the transition to `MatchResultsScreen`. */
   readonly onMatchOver: () => void;
+  /** Where the pause menu and the controls card are mounted. */
+  readonly overlayRoot: HTMLElement;
+  readonly settings: Settings;
+  /** A setting changed in the pause menu, or the controls card was dismissed: apply and save. */
+  readonly onSettingsChange: (next: Settings) => void;
+  /** MAIN MENU from the pause menu. */
+  readonly onQuit: () => void;
 }
 
 export class MatchScreen implements Screen {
@@ -77,6 +88,21 @@ export class MatchScreen implements Screen {
   private readonly listener = { x: 0, z: 0, yaw: 0 };
   /** Seconds since the last low-health heartbeat. */
   private sinceHeartbeat = 0;
+  /** Frozen or running, and which card is up. The sim is not stepped while paused. */
+  private pause = new PauseState({ showControls: false });
+  private settings: Settings | null = null;
+  private overlay: HTMLElement | null = null;
+  private overlayPanel = "";
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.code !== "Escape" || event.repeat) return;
+    this.pause.escape(this.options.sim.matchOver);
+    this.syncPause();
+  };
+  private readonly onPointerLockChange = (): void => {
+    if (document.pointerLockElement !== null) return;
+    this.pause.pointerLockLost(this.options.sim.matchOver);
+    this.syncPause();
+  };
   private damageRoot: HTMLElement | null = null;
   private lowHp: HTMLElement | null = null;
   private view: FrameView | null = null;
@@ -112,6 +138,13 @@ export class MatchScreen implements Screen {
     );
     this.lastSeenAtMs.length = 0;
     this.input = new KeyboardMouseSource(renderer.domElement);
+    this.settings = { ...this.options.settings };
+    this.input.sensitivity = this.settings.sensitivity;
+    this.pause = new PauseState({ showControls: !this.settings.seenControls });
+    this.overlayPanel = "";
+    window.addEventListener("keydown", this.onKeyDown);
+    document.addEventListener("pointerlockchange", this.onPointerLockChange);
+    this.syncPause();
     this.hud = readHud();
     if (!this.hud) throw new Error("expected the #hud elements in index.html");
     hudRoot.hidden = false;
@@ -154,6 +187,11 @@ export class MatchScreen implements Screen {
   step(): void {
     const { sim } = this.options;
     if (!this.input) return;
+    if (this.pause.paused) {
+      // Frozen: nothing advances, and keys pressed meanwhile are not replayed on resume.
+      this.input.endTick();
+      return;
+    }
     sim.step(this.input.sample());
     this.input.endTick();
     this.elapsedSeconds += FIXED_DT;
@@ -226,6 +264,10 @@ export class MatchScreen implements Screen {
     if (this.hud) this.hud.combat.hidden = true;
     if (this.banner) this.banner.root.hidden = true;
     gameAudio.engineStop();
+    window.removeEventListener("keydown", this.onKeyDown);
+    document.removeEventListener("pointerlockchange", this.onPointerLockChange);
+    this.overlay?.remove();
+    this.overlay = null;
     this.killFeedRoot?.replaceChildren();
     this.killFeedRoot = null;
     this.damageRoot?.replaceChildren();
@@ -274,10 +316,10 @@ export class MatchScreen implements Screen {
     }
 
     // Sound that follows state rather than events: the motor, and the heartbeat at low health.
-    if (sim.matchOver || sim.cart.dead) gameAudio.engineStop();
+    if (sim.matchOver || sim.cart.dead || this.pause.paused) gameAudio.engineStop();
     else gameAudio.engine(sim.cart.speed / CART_TUNING.topSpeed);
-    this.sinceHeartbeat += dt;
-    if (!sim.matchOver && this.sinceHeartbeat >= heartbeatInterval(lowHp)) {
+    if (!this.pause.paused) this.sinceHeartbeat += dt;
+    if (!sim.matchOver && !this.pause.paused && this.sinceHeartbeat >= heartbeatInterval(lowHp)) {
       this.sinceHeartbeat = 0;
       gameAudio.heartbeat(lowHp);
     }
@@ -339,6 +381,78 @@ export class MatchScreen implements Screen {
         if (d < NEAR_BLAST_M) trauma.add(TRAUMA_NEAR_BLAST * (1 - d / NEAR_BLAST_M));
       }
     }
+  }
+
+  /** Shows the card `PauseState` asks for, rebuilding it only when that changes. */
+  private syncPause(): void {
+    const panel = this.pause.panel;
+    if (panel === this.overlayPanel) return;
+    this.overlayPanel = panel;
+    this.overlay?.remove();
+    this.overlay = null;
+    if (panel === "none" || !this.settings) return;
+    // The lock is released while a card is up, so its buttons can be clicked.
+    if (document.pointerLockElement !== null) document.exitPointerLock();
+    this.overlay = panel === "controls" ? this.buildControlsCard() : this.buildPauseMenu();
+    this.options.overlayRoot.appendChild(this.overlay);
+  }
+
+  private resumePlay(): void {
+    this.input?.lockPointer();
+    this.syncPause();
+  }
+
+  private buildControlsCard(): HTMLElement {
+    const go = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "GOT IT — CLICK TO DRIVE" });
+    go.addEventListener("click", () => {
+      this.pause.dismissControls();
+      if (this.settings) {
+        this.settings.seenControls = true;
+        this.options.onSettingsChange({ ...this.settings });
+      }
+      this.resumePlay();
+    });
+    const row = (keys: string, action: string): HTMLElement =>
+      el("div", { class: "controls__row" }, [el("span", { class: "controls__keys", text: keys }), el("span", { text: action })]);
+    return el("div", { class: "screen screen--scrim match-overlay" }, [
+      el("div", { class: "panel match-overlay__panel" }, [
+        el("h1", { class: "match-overlay__title", text: "CONTROLS" }),
+        el("div", { class: "controls" }, [
+          row("W A S D", "Drive"),
+          row("MOUSE", "Aim the turret"),
+          row("LEFT CLICK", "Hold to charge, release to fire"),
+          row("RIGHT CLICK", "Cancel a charge"),
+          row("1  2  3", "Putter · iron · driver"),
+          row("SHIFT", "Brake"),
+          row("M", "Course map"),
+          row("ESC", "Pause"),
+        ]),
+        el("p", { class: "match-overlay__note", text: "Knock the other team out. Every time you drop to zero, your team takes a stroke. Fewest strokes wins." }),
+        go,
+      ]),
+    ]);
+  }
+
+  private buildPauseMenu(): HTMLElement {
+    const resume = el("button", { class: "btn btn--primary", type: "button", text: "RESUME" });
+    resume.addEventListener("click", () => {
+      this.pause.resume();
+      this.resumePlay();
+    });
+    const quit = el("button", { class: "btn", type: "button", text: "MAIN MENU" });
+    quit.addEventListener("click", () => this.options.onQuit());
+    const panel = buildSettingsPanel(this.settings!, (next) => {
+      this.settings = next;
+      if (this.input) this.input.sensitivity = next.sensitivity;
+      this.options.onSettingsChange({ ...next });
+    });
+    return el("div", { class: "screen screen--scrim match-overlay" }, [
+      el("div", { class: "panel match-overlay__panel" }, [
+        el("h1", { class: "match-overlay__title", text: "PAUSED" }),
+        panel,
+        el("div", { class: "match-overlay__actions" }, [resume, quit]),
+      ]),
+    ]);
   }
 
   /** The world effect for an event, if it has one. */

@@ -123,6 +123,22 @@
         border-radius: 50% 50% 0 0 / 100% 100% 0 0;
         background: radial-gradient(ellipse at 50% 100%, rgba(255, 60, 40, 0.95), rgba(255, 60, 40, 0) 70%);
       }
+      /* Settings form (settingsPanel.ts), on the SETTINGS screen and in the pause menu. */
+      .settings { display: flex; flex-direction: column; gap: 12px; margin: 14px 0 18px; }
+      .settings__row { display: grid; grid-template-columns: 90px 1fr 56px; align-items: center; gap: 12px; }
+      .settings__label { font-size: 13px; opacity: 0.8; }
+      .settings__value { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+      .settings__slider { width: 100%; accent-color: var(--accent); }
+      .settings-screen, .match-overlay { align-items: center; justify-content: center; z-index: 30; }
+      .settings-screen__panel, .match-overlay__panel { width: min(440px, calc(100vw - 32px)); }
+      .settings-screen__title, .match-overlay__title { margin: 0 0 4px; font-size: 26px; letter-spacing: 0.12em; }
+      .match-overlay__actions { display: flex; gap: 10px; }
+      .match-overlay__actions .btn { flex: 1; }
+      .match-overlay__actions .btn:not(.btn--primary) { background: rgba(255, 255, 255, 0.1); }
+      .match-overlay__note { font-size: 13px; opacity: 0.8; line-height: 1.45; margin: 14px 0 18px; }
+      .controls { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; font-size: 14px; }
+      .controls__row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; }
+      .controls__keys { color: var(--accent); font-weight: 700; }
       /* Kill feed: top right, newest first, each line fading out after KILL_FEED_TTL_S. */
       #kill-feed {
         position: fixed; top: 14px; right: 16px; pointer-events: none;

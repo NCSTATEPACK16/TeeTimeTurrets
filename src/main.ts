@@ -14,6 +14,9 @@ import { MatchScreen } from "./ui/screens/MatchScreen";
 import { MatchResultsScreen } from "./ui/screens/MatchResultsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 import { gameAudio } from "./audio/audioEngine";
+import { loadSettings, pageStorage, saveSettings } from "./app/settings";
+import type { Settings } from "./app/settings";
+import { SettingsScreen } from "./ui/screens/SettingsScreen";
 
 /**
  * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
@@ -29,7 +32,7 @@ const VERSION = "v0.1.0";
 /** Coins a new player starts with, until progression pays out per match. */
 const STARTING_COINS = 6000;
 
-type ScreenName = "title" | "match" | "matchResults" | "clubhouse";
+type ScreenName = "title" | "match" | "matchResults" | "clubhouse" | "settings";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
@@ -49,14 +52,24 @@ async function main(): Promise<void> {
   window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
+  let settings: Settings = loadSettings(pageStorage());
+  const applySettings = (next: Settings): void => {
+    settings = next;
+    gameAudio.setLevels(settings);
+    saveSettings(pageStorage(), settings);
+  };
   // Browsers only start audio from a user gesture. Every gesture calls it, because a context can
   // also be suspended later (a hidden tab), and `unlock` resumes it.
-  const unlockAudio = (): void => gameAudio.unlock();
+  const unlockAudio = (): void => {
+    gameAudio.unlock();
+    gameAudio.setLevels(settings);
+  };
   window.addEventListener("pointerdown", unlockAudio, { capture: true });
   window.addEventListener("keydown", unlockAudio, { capture: true });
 
   const course = authoredCourse(COURSE_SEED);
   const screens = new ScreenManager<ScreenName>();
+
 
   let sim: Sim | null = null;
   let matchScreen: MatchScreen | null = null;
@@ -102,9 +115,9 @@ async function main(): Promise<void> {
       actions: {
         play: () => void startMatch(),
         clubhouse: () => screens.show("clubhouse"),
-        // Still undefined, so these render visibly disabled rather than absent.
+        // Still undefined, so it renders visibly disabled rather than absent.
         multiplayer: undefined,
-        settings: undefined,
+        settings: () => screens.show("settings"),
       },
     });
   });
@@ -120,6 +133,10 @@ async function main(): Promise<void> {
       hudRoot,
       nameplateRoot,
       onMatchOver: () => screens.show("matchResults"),
+      overlayRoot: screensRoot,
+      settings,
+      onSettingsChange: applySettings,
+      onQuit: () => screens.show("title"),
     });
     return matchScreen;
   });
@@ -142,6 +159,15 @@ async function main(): Promise<void> {
         },
         mainMenu: () => screens.show("title"),
       },
+    });
+  });
+
+  screens.register("settings", () => {
+    return new SettingsScreen({
+      root: screensRoot,
+      settings,
+      onChange: applySettings,
+      onBack: () => screens.show("title"),
     });
   });
 
