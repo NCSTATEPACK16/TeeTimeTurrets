@@ -699,3 +699,42 @@ This is not a regression from the authored routing — `bot.ts`'s ballistics, `B
 enough to demonstrate it. Now that bots arrive, it is the next thing between the arena and a match
 that can be won or lost. Recorded rather than fixed: the fix is a standoff-versus-loft question,
 possibly a club choice for bots, and it wants its own measurement pass.
+
+## The 2026-09-27 revamp: a smaller arena, a feel layer, and what may come from Claude of Tanks
+
+Set by the user on 2026-09-27. `docs/REVAMP-PLAN.md` has the stages that carry these out.
+
+### The match is played on six holes, not eighteen
+
+The arena is **holes 1, 9, 10, 14, 15 and 18** (indices 0, 8, 9, 13, 14, 17). Their centres are all within about 340 m of `AUTHORED_CLUBHOUSE`. The other twelve holes stay in the world as dressed backdrop.
+
+At 20 m/s a cart takes about 80 s to cross the full 1,590 × 1,290 m course. That is nearly half of a 3-minute match spent driving, and it is why bots had to close from 700–1,000 m (see "Bots close on their target" above). The six-hole zone is about 600 × 350 m, which is 25–30 s end to end.
+
+The edge is marked by white stakes and a rope. Crossing it shows an OUT OF BOUNDS warning, then drains 1 HP every 2 s. A hard clamp sits 30 m past the stakes, alongside the road clamp, which does not change. Bot navigation never leaves the zone.
+
+### Handling: the character controller stays, and a feel layer goes on top
+
+The cart remains a KCC-driven kinematic body, as "Physics: hybrid" above decides. The feel comes from four things:
+- **A mobility table.** Per-surface resistance and grip come from the vendored `terrainMobility.ts`, and the maximum climbable grade is derived from them rather than fixed. Bot navigation queries the same table, so bots only plan routes a cart can actually drive.
+- **Throttle spool.**
+- **Turn speed-bleed.**
+- **Render-only spring suspension.** Pitch, roll and heave are fitted from four wheel samples and drawn on the cart. The sim transform is not changed, so none of this reaches the sim or the golden fingerprint.
+
+A dynamic raycast vehicle was considered and rejected. It would reverse this file's physics decision and force a rewrite of recoil and the ram.
+
+### Quality presets, desktop first
+
+Rendering cost is controlled by Low, Medium and High presets, and each is plain data. Medium on a desktop is the design target. Low is kept working for a later iPhone build. Gameplay is never different between presets.
+
+### Claude of Tanks: what came in, and the rule for anything more
+
+- **Code.** `src/vendor/cot/` holds three MIT files: `terrainMobility.ts`, `botRoutePlanner.ts` and `shadowStability.ts`.
+- **Reading material.** `reference/claude-of-tanks/` holds five MIT engine files, stored as `.ts.txt` so they are never compiled.
+- **Textures.** `public/textures/terrain/` holds CC0 texture sets.
+- **Attribution.** Every entry is recorded in `NOTICE` or `LICENSES.md`.
+
+Nothing from CoT's Reserved Content is in this repository, and nothing may be added. Where the revamp borrows a technique from CoT's world code (for example anti-tiling, a grass carpet, or dithering trees out of the sight line), `REVAMP-PLAN.md` names it and it is written from scratch. This extends "What is reusable from Claude of Tanks" above; it does not replace it.
+
+### Stage boundaries in cloud sessions
+
+A cloud session works through one stage on its own. At the end it runs the checkpoint, pushes, updates that stage's draft PR, and **stops**. The user then play-tests locally before anything merges or the next stage starts. Gate re-baselines still need the user's approval. Stage 7 (Blender) runs only in a local session.
