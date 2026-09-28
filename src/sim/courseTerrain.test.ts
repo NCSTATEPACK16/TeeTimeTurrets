@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { COURSE_BLEND_M, COURSE_CELL_M, createCourseTerrain } from "./courseTerrain";
 import type { PlacedHole } from "./courseTerrain";
-import { fixedHoleSpec, generateCourse } from "./course";
+import { fixedHoleSpec } from "./course";
+import { authoredCourse } from "./authoredCourse";
+import { AUTHORED_PLACEMENTS } from "./authoredLayout";
 import type { HoleSpec } from "./course";
 import { BLEND_WIDTH, createTerrain, halfWidthAt } from "./terrain";
 import { CART_MAX_SLOPE_CLIMB_DEG, CART_MIN_SLOPE_SLIDE_DEG } from "./world";
-import { solveCourseLayout, toCourseFrame, toHoleFrame } from "./courseLayout";
-import type { HolePlacement, LayoutHole } from "./courseLayout";
+import { toCourseFrame, toHoleFrame } from "./courseLayout";
+import type { HolePlacement } from "./courseLayout";
 import { mulberry32 } from "./rng";
+import { SurfaceId, createSurfaces } from "./surfaces";
 import { createSpline } from "./spline";
 
 /** The seed main.ts ships, as courseLayout.test.ts duplicates it and for the same reason. */
@@ -162,8 +165,8 @@ describe("two holes over the same ground", () => {
     // centreline away from its own origin, so the origin stops being a point on the corridor and
     // `influenceAt` there stops being 1 -- which is what happened to holes 1 and 2 when the briefs
     // were re-authored against the real card and hole 1 became a bending par 5.
-    const generated = generateCourse(COURSE_SEED, 4);
-    const holes: PlacedHole[] = generated.holes.slice(2, 4).map((spec, i) => ({
+    const authored = authoredCourse(COURSE_SEED);
+    const holes: PlacedHole[] = authored.holes.slice(2, 4).map((spec, i) => ({
       spec,
       terrain: createTerrain(spec),
       placement: { index: i, offsetX: 0, offsetZ: 0, rotation: (i * Math.PI) / 2 },
@@ -194,8 +197,8 @@ describe("a hazard out beyond the corridor", () => {
     // A bunker or a pond is a placed thing with a floor. Fading one into the course rough leaves
     // a dish half dug -- and, for water, ground standing above the level the renderer draws the
     // surface at, which is a pond a cart drives across.
-    const generated = generateCourse(COURSE_SEED, 18);
-    const wide = generated.holes.find((h) => h.fieldSize === 300)!;
+    // The widest field on the card, so 80 m off the centreline is still inside it.
+    const wide = authoredCourse(COURSE_SEED).holes.reduce((a, b) => (b.fieldSize > a.fieldSize ? b : a));
     const centre = createSpline(wide.control).pointAt(0.5);
     const tangent = { x: 0, z: 0 };
     createSpline(wide.control).tangentInto(0.5, tangent);
@@ -269,17 +272,10 @@ describe("the heightfield", () => {
   });
 });
 
-describe("the course the game actually generates", () => {
+describe("the course the game actually ships", () => {
   function realCourse() {
-    const course = generateCourse(COURSE_SEED, 18);
-    const layoutHoles: LayoutHole[] = course.holes.map((h) => ({
-      index: h.index,
-      tee: h.tee,
-      cup: h.cup,
-      control: h.control,
-    }));
-    const layout = solveCourseLayout(layoutHoles);
-    const holes: PlacedHole[] = layout.placements.map((placement) => {
+    const course = authoredCourse(COURSE_SEED);
+    const holes: PlacedHole[] = AUTHORED_PLACEMENTS.map((placement) => {
       const spec = course.holes[placement.index]!;
       return { placement, spec, terrain: createTerrain(spec) };
     });
@@ -323,11 +319,25 @@ describe("the course the game actually generates", () => {
     // property of that specific layout, not a law. What must still hold, on any layout, is the
     // real gameplay limit: a corridor's blended slope must stay under the angle a cart starts
     // sliding on, even where the hole's own unblended ground already climbs closer to it.
+    //
+    // **Water is exempt, on any hole's side.** On the shipped course hole 14's centreline runs
+    // onto the bank of hole 18's pond near (-297, -101), and the bank of a pond is a cliff by
+    // design (see `validateHole`, which skips wet samples for the same reason). Only the hole's
+    // own water used to be visible here; the placed course makes a neighbour's visible too.
     const { holes, terrain } = realCourse();
+    const perHole = holes.map((h) => createSurfaces(h.spec, h.terrain));
+    const local = { x: 0, z: 0 };
+    const wetHere = (x: number, z: number): boolean =>
+      holes.some((h, i) => {
+        if (terrain.influenceAt(i, x, z) <= 0) return false;
+        toHoleFrame(h.placement, x, z, local);
+        return perHole[i]!.surfaceAt(local.x, local.z) === SurfaceId.Water;
+      });
     let worstCourse = 0;
     let worstOwn = 0;
+    let wetSkipped = 0;
     for (const hole of holes) {
-      let previous: { course: number; own: number; x: number; z: number } | null = null;
+      let previous: { course: number; own: number; x: number; z: number; wet: boolean } | null = null;
       for (let t = 0; t <= 1; t += 0.002) {
         const centre = hole.terrain.spline.pointAt(t);
         const p = courseOf(hole.placement, centre.x, centre.z);
@@ -336,8 +346,11 @@ describe("the course the game actually generates", () => {
           own: hole.terrain.heightAt(centre.x, centre.z),
           x: p.x,
           z: p.z,
+          wet: wetHere(p.x, p.z),
         };
-        if (previous !== null) {
+        if (previous !== null && (here.wet || previous.wet)) {
+          wetSkipped++;
+        } else if (previous !== null) {
           const run = Math.hypot(here.x - previous.x, here.z - previous.z);
           if (run > 0.05) {
             worstCourse = Math.max(worstCourse, Math.abs(here.course - previous.course) / run);
@@ -354,6 +367,9 @@ describe("the course the game actually generates", () => {
     // The control: those corridors have real steepness in them -- a causeway shoulder is the
     // steepest thing on the course -- so this is not two flat profiles agreeing with each other.
     expect(worstOwn).toBeGreaterThan(0.3);
+    // And the exemption is bounded: the crossings and banks, about a ninth of the samples, not whole corridors.
+    expect(wetSkipped).toBeGreaterThan(0);
+    expect(wetSkipped).toBeLessThan(holes.length * 500 * 0.15);
   });
 
   it("never puts a tee or a cup outside the ground of the holes that meet there", () => {

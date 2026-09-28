@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createCourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
 import type { PlacedHole } from "./courseTerrain";
-import { generateCourse } from "./course";
+import { authoredCourse } from "./authoredCourse";
 import type { HoleSpec } from "./course";
 import { createTerrain } from "./terrain";
 import { createSurfaces, SURFACES, SurfaceId, createSurfaceTuning, createSurfaceWeights } from "./surfaces";
@@ -15,7 +15,7 @@ import { createSpline } from "./spline";
 const COURSE_SEED = 2026;
 const PLACEMENT: HolePlacement = { index: 0, offsetX: 400, offsetZ: -250, rotation: 0.9 };
 
-/** One real hole, placed away from the origin and turned. A generated hole rather than the fixed
+/** One real hole, placed away from the origin and turned. An authored hole rather than the fixed
  *  one because these tests need a green, bunkers and -- for one of them -- water. */
 function fixture(pick: (spec: HoleSpec) => boolean = () => true): {
   hole: PlacedHole;
@@ -23,8 +23,8 @@ function fixture(pick: (spec: HoleSpec) => boolean = () => true): {
   course: ReturnType<typeof createCourseSurfaces>;
   terrain: ReturnType<typeof createCourseTerrain>;
 } {
-  const generated = generateCourse(COURSE_SEED, 18);
-  const spec = generated.holes.find(pick)!;
+  const authored = authoredCourse(COURSE_SEED);
+  const spec = authored.holes.find(pick)!;
   const holeTerrain = createTerrain(spec);
   const hole: PlacedHole = { placement: PLACEMENT, spec, terrain: holeTerrain };
   const surfaces = createSurfaces(spec, holeTerrain);
@@ -60,15 +60,15 @@ describe("classification", () => {
     // needs and the test went red for a reason that had nothing to do with classification. Which
     // two holes happen to cross is an accident of the card; that the rule holds when they do is
     // the property.
-    const generated = generateCourse(COURSE_SEED, 18);
+    const authored = authoredCourse(COURSE_SEED);
 
     let tested = 0;
     let usedPair = "";
     outer: for (let g = 0; g < 8; g++) {
       for (let n = 0; n < 8; n++) {
         if (g === n) continue;
-        const green = generated.holes[g]!;
-        const neighbour = generated.holes[n]!;
+        const green = authored.holes[g]!;
+        const neighbour = authored.holes[n]!;
         const holes: PlacedHole[] = [
           { placement: { index: 1, offsetX: 0, offsetZ: 0, rotation: Math.PI / 2 }, spec: neighbour, terrain: createTerrain(neighbour) },
           { placement: { index: 0, offsetX: 0, offsetZ: 0, rotation: 0 }, spec: green, terrain: createTerrain(green) },

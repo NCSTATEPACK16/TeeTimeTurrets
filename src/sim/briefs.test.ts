@@ -5,9 +5,9 @@ import {
   DRAFT_BAND,
   FIELD_FOR_PAR,
   biomeForIndex,
-  parForIndex,
 } from "./course";
 import { EDGE_MARGIN } from "./holeValidation";
+import { AUTHORED_HOLES } from "./authoredCourse";
 // From terrain, not course: course.ts imports BLEND_WIDTH but does not re-export it, and vitest
 // transpiles without type-checking. Importing it from the wrong module gives `undefined`, which
 // makes `half` NaN and every `NaN < min` comparison false -- so the room check below would pass
@@ -20,7 +20,7 @@ import { BLEND_WIDTH } from "./terrain";
  * docs/TEST-AND-SPEC-PITFALLS.md exists to catch.
  *
  * So every assertion here checks the briefs against something that was written independently:
- * the shipped `PAR_MIX` and `BIOME_ROUTING` in course.ts, the design rules stated in
+ * the authored card in authoredCourse.ts, `BIOME_ROUTING` in course.ts, the design rules stated in
  * docs/COURSE_PIPELINE.md section 4, or the geometry the generator actually has room for. A typo
  * in a brief fails one of these; a typo copied identically into both places is the only thing
  * that gets through, and there is no second place to copy it into.
@@ -35,11 +35,11 @@ describe("the course bible as data", () => {
   });
 
   it("matches the shipped par card hole for hole", () => {
-    // Against PAR_MIX in course.ts, not against a second copy of the card. If a brief's
-    // parTarget and the generator's par disagree, every plan for that hole is mis-parred.
+    // Against the authored card in authoredCourse.ts, not against a second copy of it. If a
+    // brief's parTarget and the shipped hole's par disagree, every plan for that hole is mis-parred.
     const mismatched = COURSE_BRIEFS.filter(
-      (b) => b.parTarget !== parForIndex(b.number - 1),
-    ).map((b) => `hole ${b.number}: brief ${b.parTarget}, card ${parForIndex(b.number - 1)}`);
+      (b) => b.parTarget !== AUTHORED_HOLES[b.number - 1]!.par,
+    ).map((b) => `hole ${b.number}: brief ${b.parTarget}, card ${AUTHORED_HOLES[b.number - 1]!.par}`);
     expect(mismatched).toEqual([]);
   });
 
