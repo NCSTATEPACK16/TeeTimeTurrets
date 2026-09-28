@@ -147,3 +147,15 @@ that number is the authority or a placeholder the layout later overrides is unse
 The **course-wide instanced prop path** is one of the two pieces
 `docs/superpowers/specs/2026-09-12-stage-d-pickups-design.md` builds deliberately as shared
 infrastructure. Eighteen tee signs are its second consumer. Stage E should not build its own.
+
+---
+
+## Superseded on 28 Sep 2026
+
+Stage 7 was re-specified in `docs/art/specs/`. Settled decisions 1–3 and 10 are **reversed**: the
+clubhouse is now a primitive graph with sim colliders, because arena spawns both teams around it.
+It is no longer a decorative GLB that carts drive through.
+
+- **Decisions 7–9** (the tee-sign CanvasTexture face and the tee-sign dimensions) still stand.
+- **Open item A** is closed: tee signs get their own course-wide pass, with no collider.
+- **Open item B** is closed: the footprint is 24×14 m, from REVAMP.
