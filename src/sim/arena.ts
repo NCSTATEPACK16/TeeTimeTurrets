@@ -1,4 +1,6 @@
 import { AUTHORED_CLUBHOUSE } from "./authoredLayout";
+import { createArenaZone } from "./arenaZone";
+import type { ArenaZone } from "./arenaZone";
 import type { CourseWorld } from "./courseWorld";
 import type { Vec2 } from "./mapGeometry";
 import type { HoleSpec } from "./course";
@@ -29,6 +31,8 @@ export interface ArenaGround {
    * (`createTeamPads`); without one -- a single-hole test arena -- carts are dealt onto the tees.
    */
   readonly clubhouse: Vec2 | null;
+  /** Where the match is played; none on a test ground, which is all playable. See arenaZone.ts. */
+  readonly zone?: ArenaZone | null;
   /**
    * Root of every seeded stream in the match -- each bot's and the respawn draw. Taken from the
    * ground rather than the clock, per the AGENTS.md no-`Math.random`-in-the-sim rule, so the same
@@ -42,6 +46,16 @@ export interface ArenaGround {
  * and its baked tiles only grow, and the course never changes under it.
  */
 const playfields = new WeakMap<CourseWorld, Playfield>();
+const zones = new WeakMap<CourseWorld, ArenaZone>();
+
+function zoneFor(world: CourseWorld): ArenaZone {
+  let zone = zones.get(world);
+  if (!zone) {
+    zone = createArenaZone(world.holes, AUTHORED_CLUBHOUSE);
+    zones.set(world, zone);
+  }
+  return zone;
+}
 
 /**
  * The shipped arena: all eighteen holes as one place.
@@ -63,6 +77,7 @@ export function arenaFromCourse(world: CourseWorld): ArenaGround {
     holes: world.holes,
     southBoundary: world.southBoundary,
     clubhouse: AUTHORED_CLUBHOUSE,
+    zone: zoneFor(world),
     seed: first.spec.seed,
   };
 }

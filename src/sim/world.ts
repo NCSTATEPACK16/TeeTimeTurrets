@@ -14,6 +14,9 @@ import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
+import { maxClimbRad } from "./mobility";
+import { ZONE_CLAMP_REACH_M, clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
+import type { ArenaZone } from "./arenaZone";
 import type { SouthBoundary } from "./courseBarrier";
 import { SurfaceId, createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
@@ -92,11 +95,15 @@ const PICKUP_RANGE = 3.0;
  * `computeColliderMovement` against its own controller settings is timing a different vehicle.
  */
 export const CHARACTER_OFFSET = 0.02;
+/** The controller's climb limit before any cart has moved; each cart then sets its own (mobility.ts). */
 export const CART_MAX_SLOPE_CLIMB_DEG = 45;
 export const CART_MIN_SLOPE_SLIDE_DEG = 32;
 export const CART_AUTOSTEP_HEIGHT = 0.45;
 export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
 export const CART_SNAP_TO_GROUND = 0.6;
+
+/** Half the span the cart's grade is measured over: about half a wheelbase. */
+const GRADE_HALF_BASE_M = 1.2;
 
 /**
  * Everything the world owns for one cart: the state machine, the kinematic body it drives, the
@@ -222,6 +229,8 @@ export class Sim {
   }
   /** The road carts are held north of, or null where the ground has none. */
   private readonly southBoundary: SouthBoundary | null;
+  /** Where the match is played, or null on a ground that is all playable. */
+  readonly zone: ArenaZone | null;
   /** One tee per spawn hole, in the course frame. */
   private readonly spawnSet: SpawnPoint[];
   /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
@@ -240,6 +249,7 @@ export class Sim {
   private constructor(ground: ArenaGround, matchDurationS: number, tire: TireType) {
     this.playfield = ground.playfield;
     this.southBoundary = ground.southBoundary;
+    this.zone = ground.zone ?? null;
     this.seed = ground.seed;
     this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
     this.teamPads =
@@ -573,6 +583,7 @@ export class Sim {
     let best = Infinity;
     for (const bucket of this.buckets) {
       if (bucket.cooldownRemaining > 0) continue;
+      if (this.zone !== null && zoneSignedDistance(this.zone, bucket.position.x, bucket.position.z) > 0) continue;
       const d = Math.hypot(bucket.position.x - px, bucket.position.z - pz);
       if (d < best) {
         best = d;
@@ -583,6 +594,7 @@ export class Sim {
     for (const ball of this.ballPool.all) {
       if (ball.state !== "landed") continue;
       const t = ball.body.translation();
+      if (this.zone !== null && zoneSignedDistance(this.zone, t.x, t.z) > 0) continue;
       const d = Math.hypot(t.x - px, t.z - pz);
       if (d < best) {
         best = d;
@@ -603,6 +615,8 @@ export class Sim {
     this.botTarget.x = target?.position.x ?? 0;
     this.botTarget.z = target?.position.z ?? 0;
     this.botTarget.dead = target === null || target.dead;
+    // A bot never chases out of the zone: an enemy past the stakes is hunted from the edge.
+    if (this.zone !== null) clampToZone(this.zone, this.botTarget.x, this.botTarget.z, 0, this.botTarget);
     return this.botTarget;
   }
 
@@ -618,9 +632,14 @@ export class Sim {
 
     const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
-    cart.step(intent, FIXED_DT, this.cartTuningScratch);
+    cart.step(intent, FIXED_DT, this.cartTuningScratch, this.gradeAlong(c.x, c.z, cart.heading));
+    // The controller is shared, so each cart sets its own climb limit before it moves: the ground
+    // under it and its tyres decide how steep a face it can drive up (see mobility.ts).
+    this.controller.setMaxSlopeClimbAngle(maxClimbRad(this.cartTuningScratch, cart.tire));
     this.moveCartBody(rig);
     this.checkCartWater(rig);
+    this.checkZone(rig);
+    if (cart.dead) return;
 
     const ammoBefore = cart.ammo;
     let collected = false;
@@ -643,6 +662,31 @@ export class Sim {
       cart.shot.fired = false;
       this.resolveShot(rig);
     }
+  }
+
+  /**
+   * Outside the zone a cart is warned at once and drains a point every two seconds; a drain that
+   * empties the bar is a death nobody caused, like a drowning.
+   */
+  private checkZone(rig: CartRig): void {
+    const cart = rig.cart;
+    if (this.zone === null || cart.dead) return;
+    const p = cart.position;
+    if (zoneSignedDistance(this.zone, p.x, p.z) <= 0) {
+      cart.outOfBoundsFor = 0;
+      return;
+    }
+    const before = cart.outOfBoundsFor;
+    cart.outOfBoundsFor += FIXED_DT;
+    const drain = outOfBoundsDrain(before, cart.outOfBoundsFor);
+    if (drain > 0 && applyDamage(cart.health, drain)) this.killCart(cart, rig.index, NO_KILLER);
+  }
+
+  /** The ground's rise over run along `heading` at (x, z), from two samples a wheelbase apart. */
+  private gradeAlong(x: number, z: number, heading: number): number {
+    const dx = Math.cos(heading) * GRADE_HALF_BASE_M;
+    const dz = Math.sin(heading) * GRADE_HALF_BASE_M;
+    return (this.playfield.heightAt(x + dx, z + dz) - this.playfield.heightAt(x - dx, z - dz)) / (2 * GRADE_HALF_BASE_M);
   }
 
   /**
@@ -718,6 +762,10 @@ export class Sim {
       p.z + corrected.z,
       this.clampScratch,
     );
+    // And no further than the reach past the zone's stakes.
+    if (this.zone !== null) {
+      clampToZone(this.zone, this.clampScratch.x, this.clampScratch.z, ZONE_CLAMP_REACH_M, this.clampScratch);
+    }
     p.x = this.clampScratch.x;
     p.y += corrected.y;
     p.z = this.clampScratch.z;

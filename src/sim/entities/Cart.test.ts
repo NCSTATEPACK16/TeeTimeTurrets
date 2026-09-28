@@ -643,3 +643,62 @@ describe("health bar sizing", () => {
     expect(cart.health.hp).toBe(10);
   });
 });
+
+describe("Cart feel", () => {
+  it("spools the throttle: a quarter of the drive at once, all of it by 0.6 s", () => {
+    const cart = new Cart();
+    cart.step(idle({ throttle: 1 }), DT, FAIRWAY);
+    const first = cart.speed;
+    expect(first).toBeGreaterThan(0.2 * CART_TUNING.accel * DT);
+    expect(first).toBeLessThan(0.35 * CART_TUNING.accel * DT);
+
+    run(cart, CART_TUNING.spoolSeconds, idle({ throttle: 1 }));
+    const before = cart.speed;
+    cart.step(idle({ throttle: 1 }), DT, FAIRWAY);
+    expect(cart.speed - before).toBeCloseTo(CART_TUNING.accel * DT, 6);
+  });
+
+  it("spools again after the throttle is let go", () => {
+    const cart = new Cart();
+    run(cart, 1, idle({ throttle: 1 }));
+    run(cart, 0.2, idle());
+    const before = cart.speed;
+    cart.step(idle({ throttle: 1 }), DT, FAIRWAY);
+    expect(cart.speed - before).toBeLessThan(0.35 * CART_TUNING.accel * DT);
+  });
+
+  it("bleeds speed in a hard turn, and more at full lock than at half", () => {
+    const straight = new Cart();
+    run(straight, 8, idle({ throttle: 1 }));
+    const half = new Cart();
+    run(half, 8, idle({ throttle: 1, steer: 0.5 }));
+    const full = new Cart();
+    run(full, 8, idle({ throttle: 1, steer: 1 }));
+    expect(full.speed).toBeLessThan(straight.speed * 0.9);
+    expect(half.speed).toBeLessThan(straight.speed);
+    expect(half.speed).toBeGreaterThan(full.speed);
+  });
+
+  it("runs faster downhill, never more than 1.15 times its top speed", () => {
+    const steep = new Cart();
+    run(steep, 10, idle({ throttle: 1 }));
+    for (let i = 0; i < 600; i++) steep.step(idle({ throttle: 1 }), DT, FAIRWAY, -0.4);
+    expect(steep.speed).toBeCloseTo(CART_TUNING.topSpeed * 1.15, 3);
+
+    const gentle = new Cart();
+    for (let i = 0; i < 600; i++) gentle.step(idle({ throttle: 1 }), DT, FAIRWAY, -0.05);
+    expect(gentle.speed).toBeGreaterThan(CART_TUNING.topSpeed + 0.1);
+    expect(gentle.speed).toBeLessThan(CART_TUNING.topSpeed * 1.15 - 0.1);
+
+    const uphill = new Cart();
+    for (let i = 0; i < 600; i++) uphill.step(idle({ throttle: 1 }), DT, FAIRWAY, 0.3);
+    expect(uphill.speed).toBeCloseTo(CART_TUNING.topSpeed, 3);
+  });
+
+  it("sheds speed over a moment on reaching sand rather than stopping dead", () => {
+    const cart = new Cart();
+    run(cart, 8, idle({ throttle: 1 }));
+    cart.step(idle({ throttle: 1 }), DT, SURFACES[SurfaceId.Sand]);
+    expect(cart.speed).toBeGreaterThan(CART_TUNING.topSpeed * 0.9);
+  });
+});
