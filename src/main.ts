@@ -9,7 +9,9 @@ import { buildCourseWorld } from "./sim/courseWorld";
 import type { CourseWorld } from "./sim/courseWorld";
 import { arenaFromCourse } from "./sim/arena";
 import { ARENA_BOTS } from "./sim/matchConfig";
-import { createLoadout, tireTypeFor } from "./sim/loadout";
+import { awardMatch, loadProfile, saveProfile } from "./app/profile";
+import type { Profile } from "./app/profile";
+import { teamOf } from "./sim/matchConfig";
 import type { ArenaSource } from "./render/scene";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import { MatchScreen } from "./ui/screens/MatchScreen";
@@ -36,7 +38,6 @@ const COURSE_SEED = 2026;
 const VERSION = "v0.1.0";
 
 /** Coins a new player starts with, until progression pays out per match. */
-const STARTING_COINS = 6000;
 
 type ScreenName = "title" | "match" | "matchResults" | "clubhouse" | "settings";
 
@@ -95,9 +96,12 @@ async function main(): Promise<void> {
   let courseWorld: CourseWorld | null = null;
   let arenaSource: ArenaSource | null = null;
 
-  // Page-scoped for now; persisting the player's profile is the progression work's job.
-  let loadout = createLoadout();
-  let coins = STARTING_COINS;
+  // Coins, level, what the player owns, wears and has upgraded: saved after every change.
+  let profile: Profile = loadProfile(store);
+  const commitProfile = (next: Profile): void => {
+    profile = next;
+    saveProfile(store, profile);
+  };
 
   /**
    * The sim and Rapier, loaded on the first PLAY rather than with the page: Rapier inlines its WASM
@@ -136,9 +140,9 @@ async function main(): Promise<void> {
     // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
     // match's has to be freed by hand or every rematch leaks a whole course.
     sim?.dispose();
-    // The tire the player bought is the tire the physics uses: the one purchase that is a stat.
+    // What the player bought is what the physics uses: the tyre and the upgrades, by applyLoadout.
     sim = await Sim.create(arenaFromCourse(courseWorld), {
-      tire: tireTypeFor(loadout),
+      player: { loadout: profile.loadout, upgrades: profile.upgrades, level: profile.level },
       botCount: ARENA_BOTS,
     });
     screens.show("match");
@@ -181,6 +185,7 @@ async function main(): Promise<void> {
       showControls: !hasSeenControls(store),
       onControlsSeen: () => markControlsSeen(store),
       quality,
+      loadout: profile.loadout,
     });
     return matchScreen;
   });
@@ -198,9 +203,13 @@ async function main(): Promise<void> {
     const live = sim;
     const behind = matchScreen;
     if (!live) throw new Error("results screen entered with no sim");
+    // The match pays into the profile once, as its results come up.
+    const { profile: paid, reward } = awardMatch(profile, { ...live.tally, won: live.match.winningTeam() === teamOf(0) });
+    commitProfile(paid);
     return new MatchResultsScreen({
       root: screensRoot,
       match: live.match,
+      reward: { ...reward, level: paid.level },
       // Keeps the finished match on screen under the scrim.
       drawBehind: behind ? () => behind.drawStill() : undefined,
       actions: {
@@ -219,12 +228,8 @@ async function main(): Promise<void> {
     return new ClubhouseScreen({
       root: screensRoot,
       renderer,
-      loadout,
-      coins,
-      onConfirm: (next, remaining) => {
-        loadout = next;
-        coins = remaining;
-      },
+      profile,
+      onChange: (next) => commitProfile(next),
       onBack: () => screens.show("title"),
     });
   });
@@ -238,8 +243,13 @@ async function main(): Promise<void> {
     get render() {
       return matchScreen?.scene ?? null;
     },
+    get profile() {
+      return profile;
+    },
+    /** For the smoke check and the console: replaces the saved profile. */
+    setProfile: (patch: Partial<Profile>) => commitProfile({ ...profile, ...patch }),
     get coins() {
-      return coins;
+      return profile.coins;
     },
     get screen() {
       return screens.activeName;

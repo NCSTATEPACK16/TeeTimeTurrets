@@ -490,6 +490,10 @@
       .arena-results__row-name--ally { color: var(--team-ally); }
       .arena-results__row-name--enemy { color: var(--team-enemy); }
       .arena-results__row-stat { color: var(--ink-dim); letter-spacing: 0.04em; }
+      .arena-results__reward { display: flex; flex-direction: column; gap: 3px; margin-bottom: 16px; }
+      .arena-results__reward-score { font-size: 20px; letter-spacing: 0.1em; color: var(--accent); }
+      .arena-results__reward-line { color: var(--ink-dim); letter-spacing: 0.05em; }
+      .arena-results__reward-level { color: var(--accent); letter-spacing: 0.12em; }
       .arena-results__actions { display: flex; gap: 11px; margin-top: 8px; }
       .arena-results__actions .btn { flex: 1; }
 
@@ -521,6 +525,22 @@
       .clubhouse__category-label { font-size: 12px; letter-spacing: 0.1em; }
 
       .clubhouse__coins { position: absolute; top: 30px; right: 34px; }
+
+      /* Upgrades sit top-left, above the categories: bought at once, no preview. */
+      .clubhouse__upgrades {
+        position: absolute;
+        left: 34px;
+        top: 30px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 250px;
+        padding: 11px 13px;
+        border-radius: var(--radius-card);
+        background: var(--panel-solid);
+      }
+      .clubhouse__upgrade { font-size: 12px; padding: 7px 10px; text-align: left; }
+      .clubhouse__note { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.06em; }
 
       .clubhouse__clubs {
         position: absolute;

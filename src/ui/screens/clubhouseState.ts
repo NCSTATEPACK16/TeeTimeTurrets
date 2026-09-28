@@ -8,6 +8,8 @@ import {
 import type { Loadout } from "../../sim/loadout";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../../physics/Ballistics";
 import type { TireType } from "../../sim/entities/Cart";
+import { createUpgradeLevels, upgradePrice } from "../../sim/upgrades";
+import type { UpgradeId, UpgradeLevels } from "../../sim/upgrades";
 
 /**
  * Every decision the clubhouse makes, with no DOM. `ClubhouseScreen.ts` is the writer; this is
@@ -27,10 +29,18 @@ export class ClubhouseState {
   private previewLoadout: Loadout;
   private balance: number;
 
-  constructor(equipped: Loadout, coins: number) {
+  private readonly levels: UpgradeLevels;
+
+  /**
+   * `owned` is everything the player has bought before (`Profile.owned`). Without it, ownership
+   * was rebuilt from what was equipped, so a paint bought and then taken off was lost on leaving.
+   */
+  constructor(equipped: Loadout, coins: number, owned: readonly string[] = [], upgrades: UpgradeLevels = createUpgradeLevels()) {
     this.equippedLoadout = { ...equipped };
     this.previewLoadout = { ...equipped };
     this.balance = coins;
+    this.levels = { ...upgrades };
+    for (const id of owned) this.owned.add(id);
     // Whatever the player arrives wearing is theirs, as is anything priced at zero.
     for (const option of [...CHASSIS_PAINTS, ...TURRET_SKINS, ...TIRE_OPTIONS]) {
       if (option.price === 0) this.owned.add(option.id);
@@ -42,6 +52,32 @@ export class ClubhouseState {
 
   get coins(): number {
     return this.balance;
+  }
+
+  /** Every id owned, for the profile to keep. */
+  get ownedIds(): string[] {
+    return [...this.owned];
+  }
+
+  get upgrades(): Readonly<UpgradeLevels> {
+    return this.levels;
+  }
+
+  upgradeLevel(id: UpgradeId): number {
+    return this.levels[id];
+  }
+
+  /**
+   * Buys the next level of an upgrade at once. Unlike a paint there is nothing to preview -- an
+   * upgrade has no look -- so it does not wait for CONFIRM. False, and nothing charged, when the
+   * upgrade is maxed or unaffordable.
+   */
+  buyUpgrade(id: UpgradeId): boolean {
+    const price = upgradePrice(id, this.levels[id]);
+    if (price > this.balance) return false;
+    this.balance -= price;
+    this.levels[id] += 1;
+    return true;
   }
 
   get equipped(): Readonly<Loadout> {

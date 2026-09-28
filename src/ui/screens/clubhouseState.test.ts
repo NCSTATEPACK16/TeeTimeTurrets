@@ -1,3 +1,4 @@
+import { upgradePrice } from "../../sim/upgrades";
 import { describe, expect, it } from "vitest";
 import { ClubhouseState, clubStatCards } from "./clubhouseState";
 import { CHASSIS_PAINTS, TIRE_OPTIONS, TURRET_SKINS, createLoadout } from "../../sim/loadout";
@@ -198,5 +199,47 @@ describe("tires are sold as a stat", () => {
     for (const tire of TIRE_OPTIONS) {
       expect(tire.note.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("ownership across visits", () => {
+  it("keeps a bought paint owned after it is taken off and the clubhouse is left", () => {
+    const first = new ClubhouseState(createLoadout(), 5000);
+    first.select("paint", "sunset");
+    expect(first.confirm()).toBe(true);
+    first.select("paint", "clubhouse");
+    expect(first.confirm()).toBe(true);
+    expect(first.ownedIds).toContain("sunset");
+
+    const second = new ClubhouseState(first.equipped, first.coins, first.ownedIds);
+    expect(second.owns("sunset")).toBe(true);
+    second.select("paint", "sunset");
+    expect(second.pendingCost).toBe(0);
+  });
+});
+
+describe("upgrades", () => {
+  it("buys the next level at its price, and not past the last", () => {
+    const state = new ClubhouseState(createLoadout(), 10000);
+    expect(state.upgradeLevel("armor")).toBe(0);
+    expect(state.buyUpgrade("armor")).toBe(true);
+    expect(state.upgradeLevel("armor")).toBe(1);
+    expect(state.coins).toBe(10000 - upgradePrice("armor", 0));
+    expect(state.buyUpgrade("armor")).toBe(true);
+    expect(state.buyUpgrade("armor")).toBe(true);
+    expect(state.buyUpgrade("armor")).toBe(false);
+    expect(state.upgradeLevel("armor")).toBe(3);
+  });
+
+  it("refuses an upgrade the player cannot afford, and charges nothing", () => {
+    const state = new ClubhouseState(createLoadout(), 100);
+    expect(state.buyUpgrade("reload")).toBe(false);
+    expect(state.coins).toBe(100);
+    expect(state.upgradeLevel("reload")).toBe(0);
+  });
+
+  it("starts from the levels the player already has", () => {
+    const state = new ClubhouseState(createLoadout(), 0, [], { armor: 2, ammo: 1, reload: 0 });
+    expect(state.upgrades).toEqual({ armor: 2, ammo: 1, reload: 0 });
   });
 });

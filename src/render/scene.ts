@@ -12,6 +12,8 @@ import type { SkyRig } from "./sky";
 import { LIGHT_LEVELS, createLighting } from "./lighting";
 import { createPost } from "./post";
 import { ZoneStakes } from "./zoneStakes";
+import { botLoadout, createLoadout, slotColorsFor } from "../sim/loadout";
+import type { Loadout } from "../sim/loadout";
 import { courseTreesFor } from "./courseTrees";
 import { coursePropsFor } from "./courseProps";
 import { createWater } from "./water";
@@ -189,6 +191,7 @@ export class RenderScene {
     arena: ArenaSource,
     botCount: number,
     quality: QualityPreset = QUALITY.medium,
+    playerLoadout: Loadout = createLoadout(),
   ) {
     // The draw distance the fog and far plane are cut to: the diagonal of the course's bounds, so
     // the far plane still reaches the horizon from any tee.
@@ -239,12 +242,14 @@ export class RenderScene {
     if (this.zoneStakes) this.scene.add(this.zoneStakes);
 
     this.cart = new GolfClub();
+    this.cart.setSlotColors(slotColorsFor(playerLoadout));
     this.scene.add(this.cart);
 
     // A bot is physically a cart, so it is visually one too -- the same procedural model, no
     // cheaper stand-in. Team colour is Phase 5's; today the nameplate is what tells them apart.
     for (let i = 0; i < botCount; i++) {
       const bot = new GolfClub();
+      bot.setSlotColors(slotColorsFor(botLoadout(i)));
       this.botCarts.push(bot);
       this.scene.add(bot);
     }

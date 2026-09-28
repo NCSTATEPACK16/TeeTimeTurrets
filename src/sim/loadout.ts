@@ -147,3 +147,15 @@ export function slotColorsFor(loadout: Loadout): Record<string, number> {
 export function tireTypeFor(loadout: Loadout): TireType {
   return (TIRE_OPTIONS.find((t) => t.id === loadout.tire) ?? TIRE_OPTIONS[0]!).tire;
 }
+
+/**
+ * A bot's look: a paint and a skin from the shop, stepped through by bot so no two neighbours in
+ * the roster match. Stock tyres; a bot's fighting stats are never upgraded.
+ */
+export function botLoadout(index: number): Loadout {
+  return {
+    paint: CHASSIS_PAINTS[(index + 1) % CHASSIS_PAINTS.length]!.id,
+    skin: TURRET_SKINS[(index * 2 + 1) % TURRET_SKINS.length]!.id,
+    tire: TIRE_OPTIONS[0]!.id,
+  };
+}

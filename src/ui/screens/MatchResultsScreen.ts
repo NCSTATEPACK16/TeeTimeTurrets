@@ -3,6 +3,7 @@ import type { ScoreboardRow } from "../matchScoreboard";
 import { el, on } from "../dom";
 import type { Screen } from "../../app/ScreenManager";
 import type { Match } from "../../sim/match";
+import type { MatchReward } from "../../app/profile";
 
 /**
  * Arena's ending: the winning side, both teams' strokes, the MVP with their kills, and the full
@@ -27,6 +28,8 @@ export interface MatchResultsScreenOptions {
   readonly root: HTMLElement;
   readonly match: Match;
   readonly actions: MatchResultsActions;
+  /** What the match paid into the profile, and the level it left the player at. */
+  readonly reward?: MatchReward & { readonly level: number };
   /** Painted behind the card so the course is still visible through the scrim. */
   readonly drawBehind?: () => void;
 }
@@ -69,6 +72,7 @@ export class MatchResultsScreen implements Screen {
           { class: "arena-results__rows" },
           state.rows.map(buildRow),
         ),
+        ...(this.options.reward ? [buildReward(this.options.reward)] : []),
         buttons,
       ]),
     ]);
@@ -91,6 +95,18 @@ export class MatchResultsScreen implements Screen {
     this.container?.remove();
     this.container = null;
   }
+}
+
+/** Score, coins and XP, and a level-up when there was one. */
+function buildReward(reward: MatchReward & { readonly level: number }): HTMLElement {
+  const lines = [
+    el("span", { class: "arena-results__reward-score", text: `SCORE ${reward.score}` }),
+    el("span", { class: "arena-results__reward-line", text: `+${reward.coins} COINS · +${reward.xp} XP` }),
+  ];
+  if (reward.levelsGained > 0) {
+    lines.push(el("span", { class: "arena-results__reward-level", text: `LEVEL UP — LEVEL ${reward.level}` }));
+  }
+  return el("div", { class: "arena-results__reward" }, lines);
 }
 
 /** Team colour on the name only, matching `Nameplates`' identical convention. */

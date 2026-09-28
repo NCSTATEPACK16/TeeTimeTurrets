@@ -3,6 +3,7 @@ import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
 import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
 import type { QualityPreset } from "../../render/quality";
+import type { Loadout } from "../../sim/loadout";
 import type { HolePlacement } from "../../sim/courseGeometry";
 import { CLUB_STATS } from "../../physics/Ballistics";
 import type { ClubType } from "../../physics/Ballistics";
@@ -66,6 +67,8 @@ export interface MatchScreenOptions {
   /** The controls card was dismissed. */
   readonly onControlsSeen: () => void;
   /** The graphics preset the match's scene is built with. Medium if not given. */
+  /** The player's look, so the cart in the match wears what was bought in the clubhouse. */
+  readonly loadout?: Loadout;
   readonly quality?: QualityPreset;
 }
 
@@ -137,7 +140,7 @@ export class MatchScreen implements Screen {
   enter(): void {
     const { renderer, sim, hudRoot, nameplateRoot, arena } = this.options;
 
-    this.render = new RenderScene(renderer, arena, sim.bots.length, this.options.quality);
+    this.render = new RenderScene(renderer, arena, sim.bots.length, this.options.quality, this.options.loadout);
     this.nameplates = new Nameplates(
       nameplateRoot,
       sim.bots.map((_, i) => `BOT ${i + 1}`),

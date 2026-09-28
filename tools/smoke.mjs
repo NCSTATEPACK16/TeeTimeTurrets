@@ -925,6 +925,11 @@ check(
 // The cosmetic/stat split from ROADMAP.md, asserted end to end rather than trusted: a tire is the
 // one purchase that reaches the physics.
 console.log("=== CLUBHOUSE ===");
+// A new profile starts with no coins (Stage 8); the purchases below need some.
+await page.evaluate(() => {
+  window.__teetimeturrets.setProfile({ coins: 6000 });
+  window.__teetimeturrets.screens.show("clubhouse");
+});
 const club = await page.evaluate(() => {
   const rows = [...document.querySelectorAll(".clubhouse__category")];
   const label = (r) => r.querySelector(".clubhouse__category-label").textContent;
