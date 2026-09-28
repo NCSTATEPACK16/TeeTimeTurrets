@@ -270,7 +270,7 @@ Techniques are named here; write the code from scratch.
   - `courseRelaxation.ts`
   - from `courseLayout.ts`: `solveCourseLayout` and its lobe/circle helpers
   - from `course.ts`: `generate*`, `draftHole` and `derivePar`
-- **Moves and renames:** `validateHole` goes to `sim/holeValidation.ts`, and `feelProbe` becomes `turretProbe`.
+- **Moves and renames:** `validateHole` goes to `sim/holeValidation.ts`, and `turretProbe` becomes `turretProbe`.
 - **Split `world.ts`** into physicsWorld, rigs, hazardRules, respawn, shots, botDriver, pickups and snapshot, leaving about 300 lines.
 - **Cleanup:** add `sim/vec.ts`, add an import-direction test, and remove dead members.
 

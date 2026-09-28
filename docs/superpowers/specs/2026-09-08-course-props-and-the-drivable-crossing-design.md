@@ -291,7 +291,7 @@ The phases are independent in that order and each leaves the game shippable.
    crossing must differ only around it. **Do not read the second as a regression and do not read the
    first as licence to skip looking.**
 9. **`npm run probe` unchanged.** Nothing here touches ballistics. Expect the same single known-red
-   driver-distance line, byte-identical. (`tools/feelProbe.ts` fires the free ball directly and
+   driver-distance line, byte-identical. (`tools/turretProbe.ts` fires the free ball directly and
    never calls `computeMuzzle`, so it is blind to most render-side work — see the turret spec's
    header for how that misled a previous session.)
 10. **`npm run gate` re-baselined after looking at the diffs**, with a subject per prop.

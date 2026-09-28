@@ -296,7 +296,7 @@ it back into collider properties.
 
 ## Self-tests over a test framework
 
-`tools/feelProbe.ts` is built with a Vite SSR pass and run under plain Node. Claude of
+`tools/turretProbe.ts` is built with a Vite SSR pass and run under plain Node. Claude of
 Tanks uses the same pattern at scale — `*.selftest.mjs` files run by
 `node tools/run-selftests.mjs`, with no test framework in its dependency tree.
 

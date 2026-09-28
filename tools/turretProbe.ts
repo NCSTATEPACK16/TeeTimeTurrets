@@ -1,7 +1,8 @@
 /**
- * Headless feel probe. Imports the REAL src/sim modules (no copies) and measures
- * carry / rollout / settle time / out-of-bounds for each club, plus terrain slope stats.
- * Run via a vite SSR build (see build-probe.config.ts) then `node out/probe.js`.
+ * Headless turret probe. Imports the REAL src/sim modules (no copies), fires each club from a cart
+ * through the ball pool, and measures carry / rollout / settle time / out-of-bounds, plus terrain
+ * slope stats. `npm run probe` bundles it with `tools/probe.vite.config.ts` and runs
+ * `tools/.probe-out/turretProbe.mjs`. Named `feelProbe.ts` until Stage 9 of the revamp.
  */
 import { createNoise2D } from "simplex-noise";
 import { Sim, FIXED_DT } from "../src/sim/world";
