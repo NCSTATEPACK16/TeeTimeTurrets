@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and built Stage 2. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and built Stage 2. Status updated 2026-09-28 when Stage 2 merged. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
@@ -25,8 +25,8 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 | # | Stage | Branch | Status |
 |---|---|---|---|
 | 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only`, merged in PR #28 | **done** |
-| 2 | Juice and audio (#32–#39) | `stage-2-juice` (draft PR #69 → `main`) | **done; waiting on the user's play-test** |
-| 3 | Foundations: performance and render base | `stage-3-foundations` | next, once the user says so |
+| 2 | Juice and audio (#32–#39) | `stage-2-juice`, merged in PR #69 | **done** |
+| 3 | Foundations: performance and render base (#40–#48) | `stage-3-foundations` | **next** |
 | 4 | Handling feel and arena zone | `stage-4-handling-zone` | — |
 | 5 | Environment | `stage-5-environment` | — |
 | 6 | navGraph | `stage-6-navgraph` | — |
@@ -53,9 +53,10 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 - **Gate passes**, 18 of 18.
 - **Probe passes**, 4 of 4.
 
-### Waiting on the user
+### Stage 2 close-out (2026-09-28)
 
-1. **The play-test.** How the effects, shake, sound and pause feel is the thing only a person can judge. Everything else is measured.
+- The user play-tested and approved.
+- **Merged:** PR #69 into `main` as `8d8365c`. Issues #32–#39 are closed.
 
 ## What Stage 2 did
 
@@ -91,9 +92,9 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
   - The holes are sampled per hole: 0.5 s, against 3.9 s for sampling the blended course.
   - They are built during PLAY's loading step, so opening the map mid-match does not stall.
 
-## Next session: Stage 3, only when the user says so
+## Next session: Stage 3
 
-`REVAMP-PLAN.md` "Stage 3: foundations". Branch `stage-3-foundations` from `main` once #69 has merged. Three things in this repo bear on it:
+`REVAMP-PLAN.md` "Stage 3: foundations". Branch `stage-3-foundations` from `main` (#69 has merged). Three things in this repo bear on it:
 - **The golden is Linux-only.** A sim change needs its new value from CI: push, read the `expected N to be M` line from the failing CI run, record N in a follow-up commit, and say so in both commit messages.
 - **Baked grids unblock two things.** The map samples each hole's own surfaces because blended `surfaceAt` is slow (3.9 s for the map). Nameplate line of sight has the same cost.
 - **Measure the frame after Stage 2.** The effects layer adds one draw call. The motor and synth nodes are cheap, but take numbers rather than assuming.
