@@ -20,6 +20,7 @@ import { browserStore, hasSeenControls, loadSettings, markControlsSeen, saveSett
 import type { Settings } from "./app/settings";
 import { AudioEngine } from "./audio/synth";
 import { pixelRatioFor, probeDeviceFacts, resolveQuality } from "./render/quality";
+import { loadGroundDetail } from "./render/terrainTextures";
 import { applyColourPipeline } from "./render/colour";
 import type { QualityPreset } from "./render/quality";
 
@@ -114,6 +115,11 @@ async function main(): Promise<void> {
 
   const startMatch = async (): Promise<void> => {
     const { Sim } = await loadSim();
+    // Photo detail on the ground from Medium up; Low draws the palette alone. Not awaited: the
+    // match starts plain and the detail fades in when the files arrive.
+    if (quality.name !== "low") {
+      void loadGroundDetail(new URL("textures/terrain/512/", document.baseURI).href, renderer.capabilities.getMaxAnisotropy());
+    }
     if (courseWorld === null) {
       courseWorld = buildCourseWorld(course, COURSE_SEED);
       const { playfield, zone } = arenaFromCourse(courseWorld);

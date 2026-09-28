@@ -6,6 +6,7 @@ import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
 import { BIOMES } from "./biomes";
 import { applyGroundShader } from "./groundShader";
+import { GROUND_DETAIL } from "./terrainTextures";
 
 /**
  * The whole course, drawn as tiles that get finer as you approach them.
@@ -148,6 +149,7 @@ export function createCourseGround(
     uRoughBiome: { value: paletteVector("rough") },
     uSandBiome: { value: paletteVector("sand") },
     uWaterBiome: { value: paletteVector("water") },
+    ...GROUND_DETAIL,
   };
 
   const weightScratch = new Float32Array(terrain.holes.length);
