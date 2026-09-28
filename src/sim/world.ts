@@ -1,10 +1,9 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../physics/Ballistics";
+import { ClubType } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
 import { BUCKET_REFILL_AMMO, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
-import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { CombatRegistry, processContacts } from "./combat";
@@ -32,14 +31,15 @@ import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
 import { ARENA_MAX_HEALTH, MATCH_DURATION_S, NO_KILLER, teamOf } from "./matchConfig";
 import { addCartRig, placeRig } from "./rigs";
-import { GRAVITY, createMoveScratch, createPhysicsWorld, freePhysicsWorld, gradeAlong, moveCartBody } from "./physicsWorld";
+import { createMoveScratch, createPhysicsWorld, freePhysicsWorld, gradeAlong, moveCartBody } from "./physicsWorld";
 import type { CartLimits, PhysicsWorld } from "./physicsWorld";
 import { checkCartWater, checkZone } from "./hazardRules";
 import type { HazardDeath } from "./hazardRules";
 import { SpawnPlan, stepRespawn } from "./respawn";
+import { previewTrajectory, resolveShot } from "./shots";
 import type { CartRig } from "./rigs";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
-import { FIXED_DT, POOL_TRANSFORM_STRIDE, PREVIEW_MAX_POINTS, PREVIEW_MAX_TICKS, PREVIEW_SAMPLE_STRIDE } from "./frame";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE } from "./frame";
 import type { CartTransform } from "./frame";
 
 export type { Vec3 } from "./course";
@@ -72,20 +72,6 @@ export {
   createPreviewBuffer,
 } from "./frame";
 export type { CartTransform } from "./frame";
-
-function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
-  const p = out[i]!;
-  p.x = x;
-  p.y = y;
-  p.z = z;
-}
-
-/**
- * Air drag on a fired ball, mirrored by `previewTrajectory` so the aim arc matches the flight.
- * Must equal `BallPool`'s own linear damping; `previewTrajectory.test.ts` holds the two together
- * by landing a real shot where the preview said it would.
- */
-const LINEAR_DAMPING = 0.05;
 
 /**
  * How close a cart has to be to a landed ball or a bucket to collect it. Ammo is the only thing a
@@ -623,47 +609,10 @@ export class Sim {
     return this.cartsScratch;
   }
 
-  /**
-   * A trigger pull. With ammo it spawns a pooled ball at the muzzle; at zero ammo it was a blank,
-   * whose recoil `Cart` has already applied. Only the player's shots count toward `Sim.stats`.
-   */
+  /** See `resolveShot` in shots.ts. A method, not an inline call, so tests can fire a rig directly. */
   private resolveShot(rig: CartRig): void {
-    const cart = rig.cart;
-    const isPlayer = rig.index === 0;
-    const muzzle = this.muzzleScratch;
-    computeMuzzle(cart, muzzle);
-    if (!cart.shot.hasBall) {
-      if (isPlayer) this.lastShotWasStrike = false;
-      this.events.push("dryfire", rig.index, NO_TARGET_RIG, muzzle.x, muzzle.y, muzzle.z, 0, cart.shot.club);
-      return;
-    }
-
-    const pooled = this.ballPool.acquire(rig.index);
-    if (!pooled) {
-      // Every pooled body is up in the air at once. `Cart.fire()` already spent the round on the
-      // assumption a ball would spawn; refund it so this degrades to a true no-op -- one that
-      // sounds like an empty trigger rather than like nothing.
-      cart.addAmmo(1);
-      if (isPlayer) this.lastShotWasStrike = false;
-      this.events.push("dryfire", rig.index, NO_TARGET_RIG, muzzle.x, muzzle.y, muzzle.z, 0, cart.shot.club);
-      return;
-    }
-
-    if (isPlayer) {
-      this.lastShotWasStrike = true;
-      // "A shot fired" for accuracy purposes is a ball actually leaving the muzzle -- distinct
-      // from ammo's own decrement, which a 0-ammo blank also triggers.
-      this.stats.shotsFired += 1;
-    }
-    this.events.push("shot", rig.index, NO_TARGET_RIG, muzzle.x, muzzle.y, muzzle.z, cart.shot.charge01, cart.shot.club);
-    pooled.body.setTranslation(muzzle, true);
-    pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
-    pooled.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    pooled.body.setLinvel(computeLaunchVelocity(cart.shot.club, cart.shot.charge01, cart.shot.yaw), true);
-    // Set on every shot: the pool recycles bodies, so a putter ball may last have been a driver's.
-    const stats = CLUB_STATS[cart.shot.club];
-    pooled.body.setGravityScale(stats.gravityScale, true);
-    pooled.damage = stats.damage;
+    const struck = resolveShot(rig, this.ballPool, this.events, this.stats, this.muzzleScratch);
+    if (rig.index === 0) this.lastShotWasStrike = struck;
   }
 
   /** Where a shot from the player's turret would leave from. */
@@ -685,45 +634,7 @@ export class Sim {
    * launch elevation. `out` is a caller-held buffer of at least `PREVIEW_MAX_POINTS` reused `Vec3`s.
    */
   previewTrajectory(charge01: number, yaw: number, out: Vec3[]): number {
-    computeMuzzle(this.cart, this.previewScratch);
-    let px = this.previewScratch.x;
-    let py = this.previewScratch.y;
-    let pz = this.previewScratch.z;
-
-    const v = computeLaunchVelocity(this.cart.equippedClub, charge01, yaw);
-    let vx = v.x;
-    let vy = v.y;
-    let vz = v.z;
-
-    const gravity = GRAVITY * CLUB_STATS[this.cart.equippedClub].gravityScale;
-    const damp = 1 / (1 + LINEAR_DAMPING * FIXED_DT);
-    const bounds = this.playfield.bounds;
-    const capacity = Math.min(out.length, PREVIEW_MAX_POINTS);
-
-    let n = 0;
-    writePreviewPoint(out, n++, px, py, pz); // the muzzle itself
-
-    for (let tick = 1; tick <= PREVIEW_MAX_TICKS && n < capacity; tick++) {
-      // Gravity then damping then integrate, the order Rapier applies to the real ball.
-      vy -= gravity * FIXED_DT;
-      vx *= damp;
-      vy *= damp;
-      vz *= damp;
-      px += vx * FIXED_DT;
-      py += vy * FIXED_DT;
-      pz += vz * FIXED_DT;
-
-      const ground = this.playfield.heightAt(px, pz) + BALL_RADIUS;
-      const landed = py <= ground;
-      const outside = px < bounds.minX || px > bounds.maxX || pz < bounds.minZ || pz > bounds.maxZ;
-
-      if (landed || outside || tick % PREVIEW_SAMPLE_STRIDE === 0) {
-        if (landed) py = ground; // the last point rests on the surface, not just under it
-        writePreviewPoint(out, n++, px, py, pz);
-      }
-      if (landed || outside) break;
-    }
-    return n;
+    return previewTrajectory(this.playfield, this.cart, charge01, yaw, out, this.previewScratch);
   }
 
   /**
