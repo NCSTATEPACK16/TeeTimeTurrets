@@ -10,8 +10,7 @@ import type { CartTransform, Vec3 } from "../sim/world";
 import type { CourseTerrain } from "../sim/courseTerrain";
 import { BIOMES } from "./biomes";
 import { CHASE_POSITION_LERP, CHASE_TARGET_LERP, chasePose, chaseSmoothing } from "./chaseCamera";
-import { createCourseGround } from "./courseGround";
-import { createTreeline } from "./treeline";
+import { courseDressingFor } from "./courseDressing";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
@@ -104,8 +103,9 @@ export class RenderScene {
   /** Where the smoothed chase eye is, before shake: the shake is drawn on top, never fed back. */
   private readonly chaseEye = new THREE.Vector3();
   private readonly shakeScratch = { x: 0, y: 0, roll: 0 };
+  /** Borrowed from `courseDressingFor`: shared by every match on this course, never disposed here. */
   private readonly courseGround: CourseGround;
-  /** The band of trees beyond the road, on a course that has one. */
+  /** The band of trees beyond the road, on a course that has one. Borrowed, like the ground. */
   private readonly treeline: Treeline | null;
   /** Ground height under the chase camera, so the eye never dips into a hillside. */
   private readonly groundHeightAt: (x: number, z: number) => number;
@@ -151,17 +151,10 @@ export class RenderScene {
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
-    this.courseGround = createCourseGround(arena.course, arena.surfaces);
+    const dressing = courseDressingFor(arena);
+    this.courseGround = dressing.ground;
     this.scene.add(this.courseGround.group);
-    this.treeline =
-      arena.southBoundary === undefined
-        ? null
-        : createTreeline(
-            arena.southBoundary,
-            arena.course.bounds,
-            (x, z) => arena.course.heightAt(x, z),
-            arena.seed ?? 0,
-          );
+    this.treeline = dressing.treeline;
     if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
     this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
@@ -233,8 +226,8 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.aimArc.dispose();
     this.effects.dispose();
-    this.treeline?.dispose();
-    this.courseGround.dispose();
+    // The ground and treeline are the course's, not this match's: taken out of the scene and kept.
+    // `scene.clear()` below only detaches, so they come out intact for the next match to add.
     this.scene.clear();
   }
 
