@@ -30,23 +30,14 @@ import type { ArenaGround } from "./arena";
 import { BOT_ENGAGE_RANGE, NO_TARGET, computeBotIntent, pickTarget } from "./bot";
 import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
-import {
-  ARENA_MAX_HEALTH,
-  MATCH_DURATION_S,
-  NO_KILLER,
-  SPAWN_CHANNEL,
-  SPAWN_PROTECTION_S,
-  teamOf,
-} from "./matchConfig";
-import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
-import type { SpawnPoint } from "./spawn";
+import { ARENA_MAX_HEALTH, MATCH_DURATION_S, NO_KILLER, teamOf } from "./matchConfig";
 import { addCartRig, placeRig } from "./rigs";
 import { GRAVITY, createMoveScratch, createPhysicsWorld, freePhysicsWorld, gradeAlong, moveCartBody } from "./physicsWorld";
 import type { CartLimits, PhysicsWorld } from "./physicsWorld";
 import { checkCartWater, checkZone } from "./hazardRules";
 import type { HazardDeath } from "./hazardRules";
+import { SpawnPlan, stepRespawn } from "./respawn";
 import type { CartRig } from "./rigs";
-import { hashChannel, mulberry32 } from "./rng";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, PREVIEW_MAX_POINTS, PREVIEW_MAX_TICKS, PREVIEW_SAMPLE_STRIDE } from "./frame";
 import type { CartTransform } from "./frame";
@@ -221,18 +212,10 @@ export class Sim {
   private readonly paths: readonly CartPath[];
   /** Where bots can drive, on a ground with a zone; built once per course. See navGraph.ts. */
   private readonly nav: NavGraph | null;
-  /** One tee per spawn hole, in the course frame. */
-  private readonly spawnSet: SpawnPoint[];
-  /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
-  private readonly teamPads: SpawnPoint[][] | null;
+  /** Where carts start and come back. See respawn.ts. */
+  private readonly spawns: SpawnPlan;
   /** Root of the match's seeded streams; see `ArenaGround.seed`. */
   private readonly seed: number;
-  /**
-   * The stream respawn tees are drawn from. Seeded from the ground rather than the clock, per the
-   * `AGENTS.md` no-`Math.random`-in-the-sim rule, and re-seeded by `reset()` so "play again" is a
-   * genuine rerun.
-   */
-  private spawnRandom: () => number;
   /** See `Sim.carts`. Grown once and reused, per the no-allocation-in-the-tick rule. */
   private readonly cartsScratch: Cart[] = [];
 
@@ -249,10 +232,7 @@ export class Sim {
             buildNavGraph(zone, (x, z) => ground.playfield.heightAt(x, z), ground.playfield.surfaces, this.paths),
           );
     this.seed = ground.seed;
-    this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
-    this.teamPads =
-      ground.clubhouse === null ? null : createTeamPads(ground.clubhouse, (x, z) => ground.playfield.heightAt(x, z));
-    this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
+    this.spawns = new SpawnPlan(ground, this.seed);
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
     this.currentCart = writeTransform(this.cart, this.cartBuffers[0]);
@@ -301,7 +281,7 @@ export class Sim {
     };
     // Now that every rig exists. The scoreboard is indexed by rig index.
     sim.match.setRoster(sim.rigs.length);
-    for (const rig of sim.rigs) placeRig(rig, sim.openingPoint(rig.index));
+    for (const rig of sim.rigs) placeRig(rig, sim.spawns.openingPoint(rig.index));
 
     sim.syncCurrentCart();
     sim.collapseRenderPairs();
@@ -589,7 +569,7 @@ export class Sim {
   private stepRig(rig: CartRig, intent: PlayerIntent): void {
     const cart = rig.cart;
     if (cart.dead) {
-      this.stepRespawn(rig);
+      stepRespawn(rig, this.spawns, this.carts, this.events);
       return;
     }
 
@@ -629,37 +609,6 @@ export class Sim {
       cart.shot.fired = false;
       this.resolveShot(rig);
     }
-  }
-
-  /**
-   * Counts one cart's respawn delay down and puts it back on a tee when it expires. Intent is not
-   * read at all while dead, so ammo, reload and position are frozen for the duration.
-   */
-  private stepRespawn(rig: CartRig): void {
-    rig.cart.respawnTimer -= FIXED_DT;
-    if (rig.cart.respawnTimer > 0) return;
-    placeRig(rig, this.respawnPointFor(rig.index));
-    rig.cart.revive();
-    const p = rig.cart.position;
-    this.events.push("respawn", NO_TARGET_RIG, rig.index, p.x, p.y, p.z, 0, null);
-    // After `revive`, which clears it: protection is a property of respawning, granted here and
-    // nowhere else, so `reset` starting a fresh match does not start it behind a shield.
-    rig.cart.protectedFor = SPAWN_PROTECTION_S;
-  }
-
-  /** Where rig `index` starts a match: its team's pad by the clubhouse, or its dealt tee. */
-  private openingPoint(index: number): SpawnPoint {
-    return this.teamPads === null ? openingSpawn(this.spawnSet, index) : padSpawn(this.teamPads, index);
-  }
-
-  /**
-   * Where rig `index` comes back: its own slot on its team's pad. With no clubhouse, a random tee
-   * avoiding whoever is alive and standing on one -- `index` is passed because the cart's own body
-   * is still lying where it died, and counting it would make its nearest tee unavailable to it.
-   */
-  private respawnPointFor(index: number): SpawnPoint {
-    if (this.teamPads !== null) return padSpawn(this.teamPads, index);
-    return respawnPoint(this.spawnSet, this.spawnRandom, this.carts, index);
   }
 
   /**
@@ -794,14 +743,14 @@ export class Sim {
     this.match.reset();
     Object.assign(this.tally, createTally());
     this.playerHitAt.length = 0;
-    this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
+    this.spawns.reset();
     this.freePhysics();
     this.buildPhysics();
     for (const bucket of this.buckets) bucket.cooldownRemaining = 0;
     this.simTime = 0;
 
     for (const rig of this.rigs) {
-      placeRig(rig, this.openingPoint(rig.index));
+      placeRig(rig, this.spawns.openingPoint(rig.index));
       rig.cart.revive();
       rig.cart.rearm();
     }
