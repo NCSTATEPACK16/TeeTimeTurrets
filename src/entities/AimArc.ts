@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { PREVIEW_MAX_POINTS } from "../sim/world";
-import type { Vec3 } from "../sim/world";
+import { PREVIEW_MAX_POINTS } from "../sim/frame";
+import type { Vec3 } from "../sim/course";
 
 /**
  * The aim arc (UI-SPEC H10): where the shot the player would fire now goes, from the muzzle to

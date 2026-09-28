@@ -1,4 +1,8 @@
 import { AUTHORED_CLUBHOUSE } from "./authoredLayout";
+import { createArenaZone } from "./arenaZone";
+import type { ArenaZone } from "./arenaZone";
+import { createCartPaths } from "./cartPaths";
+import type { CartPath } from "./cartPaths";
 import type { CourseWorld } from "./courseWorld";
 import type { Vec2 } from "./mapGeometry";
 import type { HoleSpec } from "./course";
@@ -29,12 +33,42 @@ export interface ArenaGround {
    * (`createTeamPads`); without one -- a single-hole test arena -- carts are dealt onto the tees.
    */
   readonly clubhouse: Vec2 | null;
+  /** Where the match is played; none on a test ground, which is all playable. See arenaZone.ts. */
+  readonly zone?: ArenaZone | null;
+  /** The course's cart paths; none on a test ground. See cartPaths.ts. */
+  readonly paths?: readonly CartPath[];
   /**
    * Root of every seeded stream in the match -- each bot's and the respawn draw. Taken from the
    * ground rather than the clock, per the AGENTS.md no-`Math.random`-in-the-sim rule, so the same
    * ground replays the same match.
    */
   readonly seed: number;
+}
+
+/**
+ * One playfield per course, for the page's life: its heightfield is about five seconds of sampling
+ * and its baked tiles only grow, and the course never changes under it.
+ */
+const playfields = new WeakMap<CourseWorld, Playfield>();
+const zones = new WeakMap<CourseWorld, ArenaZone>();
+const pathSets = new WeakMap<CourseWorld, readonly CartPath[]>();
+
+function pathsFor(world: CourseWorld): readonly CartPath[] {
+  let paths = pathSets.get(world);
+  if (!paths) {
+    paths = createCartPaths(world.holes, AUTHORED_CLUBHOUSE);
+    pathSets.set(world, paths);
+  }
+  return paths;
+}
+
+function zoneFor(world: CourseWorld): ArenaZone {
+  let zone = zones.get(world);
+  if (!zone) {
+    zone = createArenaZone(world.holes, AUTHORED_CLUBHOUSE);
+    zones.set(world, zone);
+  }
+  return zone;
 }
 
 /**
@@ -47,11 +81,18 @@ export interface ArenaGround {
 export function arenaFromCourse(world: CourseWorld): ArenaGround {
   const first = world.holes.find((h) => h.spec.index === 0) ?? world.holes[0];
   if (!first) throw new Error("arenaFromCourse: the course has no holes");
+  let playfield = playfields.get(world);
+  if (!playfield) {
+    playfield = coursePlayfield(world.terrain, world.surfaces);
+    playfields.set(world, playfield);
+  }
   return {
-    playfield: coursePlayfield(world.terrain, world.surfaces),
+    playfield,
     holes: world.holes,
     southBoundary: world.southBoundary,
     clubhouse: AUTHORED_CLUBHOUSE,
+    zone: zoneFor(world),
+    paths: pathsFor(world),
     seed: first.spec.seed,
   };
 }

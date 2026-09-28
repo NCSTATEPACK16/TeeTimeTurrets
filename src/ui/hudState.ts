@@ -1,4 +1,5 @@
 import type { ClubType } from "../physics/Ballistics";
+import { OOB_DRAIN_HP, OOB_DRAIN_INTERVAL_S } from "../sim/arenaZone";
 
 /**
  * The DOM-free half of the HUD: sim state in, display values out. Split from the writing half so
@@ -20,6 +21,8 @@ export interface HudSource {
     readonly ammo: number;
     readonly dead: boolean;
     readonly respawnTimer: number;
+    /** Seconds outside the arena zone; 0 inside it. */
+    readonly outOfBoundsFor: number;
     readonly health: { readonly hp: number; readonly max: number };
   };
   /**
@@ -49,6 +52,8 @@ export interface HudState {
   teamScoreText: string;
   /** The player's own kills: `"KILLS 3"`. */
   pointsText: string;
+  /** How far the low-health vignette closes in, 0..1. */
+  vignette01: number;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -64,6 +69,7 @@ export function createHudStateScratch(): HudState {
     timerText: "",
     teamScoreText: "",
     pointsText: "",
+    vignette01: 0,
   };
 }
 
@@ -83,7 +89,19 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.timerText = formatClock(source.matchTimeRemaining);
   out.teamScoreText = `US ${source.match.teamStrokes(PLAYER_TEAM)} — THEM ${source.match.teamStrokes(ENEMY_TEAM)}`;
   out.pointsText = `KILLS ${source.match.pointsFor(PLAYER)}`;
+  out.vignette01 = lowHealthVignette(out.healthFraction, cart.dead);
 }
+
+/** How far the low-health vignette closes in: shared by the HUD and the heartbeat. */
+export function lowHealthVignette(healthFraction: number, dead: boolean): number {
+  return dead ? 0 : clamp01((LOW_HEALTH_FRACTION - healthFraction) / LOW_HEALTH_FRACTION);
+}
+
+/**
+ * Health fraction below which the screen's edges start to close in. Half, so on an 8 HP cart the
+ * warning starts at 3 HP and is strong at 1: two putter hits from dead.
+ */
+const LOW_HEALTH_FRACTION = 0.5;
 
 /**
  * One line, one message, most urgent first. Death outranks reloading because stepRespawn freezes
@@ -99,6 +117,11 @@ export function deriveHudState(source: HudSource, out: HudState): void {
 function statusText(source: HudSource): string {
   const cart = source.cart;
   if (cart.dead) return `DESTROYED — RESPAWNING ${(Math.floor(cart.respawnTimer * 10) / 10).toFixed(1)}s`;
+  // Outside the stakes the bar is draining, which matters more than anything about the weapon.
+  if (cart.outOfBoundsFor > 0) {
+    const next = OOB_DRAIN_INTERVAL_S - (cart.outOfBoundsFor % OOB_DRAIN_INTERVAL_S);
+    return `OUT OF BOUNDS — ${OOB_DRAIN_HP} HP IN ${next.toFixed(1)}s`;
+  }
   if (!cart.canFire) return `RELOADING ${(Math.floor(cart.reloadRemaining * 10) / 10).toFixed(1)}s`;
   return cart.ammo > 0 ? "READY" : "NO AMMO — fire a blank to boost";
 }

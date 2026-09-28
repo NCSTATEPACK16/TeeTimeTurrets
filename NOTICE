@@ -68,6 +68,28 @@ Ported code
     Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
     Ported verbatim.
 
+  src/render/quality.ts
+    Derived from src/engine/quality.ts in Claude of Tanks.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Adapted: the device-tier heuristics in pickQuality and probeDeviceFacts, and
+    the quality-ladder-as-data pattern. The presets and their values are new.
+
+  src/render/sky.ts
+    Derived from src/engine/sky.ts in Claude of Tanks.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Adapted: baking the PMREM environment from a dome inside the camera's far
+    plane, reading the fog colour back from the drawn horizon facing away from
+    the sun, and probing the bake for a black or NaN result. The sky model and
+    its colours are new.
+
+  src/sim/navGraph.ts
+    Derived from src/sim/botRoutePlanner.ts in Claude of Tanks (vendored as
+    src/vendor/cot/botRoutePlanner.ts).
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Adapted: the binary min-heap A* over a height grid, the rule against
+    cutting a corner past a closed cell, and the nearest-open-cell fallback.
+    The zone-bounded grid, the costs and the route pulling are new.
+
   reference/claude-of-tanks/*.ts.txt
     Copied from src/engine/{sky,lighting,quality,cameraRig,post}.ts in Claude of
     Tanks as reading material; not compiled or shipped.

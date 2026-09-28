@@ -55,7 +55,34 @@ function paletteDeclaration(course: boolean): string {
          uniform vec3 uSandBiome[3];
          uniform vec3 uWaterBiome[3];
          varying vec2 vGroundMow;
-         varying vec3 vGroundBiome;`;
+         varying vec3 vGroundBiome;
+         varying float vGroundUp;
+         uniform sampler2D uDetailGrass;
+         uniform sampler2D uDetailRough;
+         uniform sampler2D uDetailSand;
+         uniform sampler2D uDetailRock;
+         uniform float uDetailOn;
+
+         float groundHash(vec2 p) {
+           return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+         }
+         float groundNoise(vec2 p) {
+           vec2 i = floor(p);
+           vec2 f = fract(p);
+           vec2 u = f * f * (3.0 - 2.0 * f);
+           return mix(mix(groundHash(i), groundHash(i + vec2(1.0, 0.0)), u.x),
+                      mix(groundHash(i + vec2(0.0, 1.0)), groundHash(i + vec2(1.0, 1.0)), u.x), u.y);
+         }
+         // A texture's colour relative to its own average, which its smallest mip is: 1 means
+         // "as the palette says". Sampled twice -- once as laid, once turned 40 degrees and
+         // scaled 1.15 -- and blended by \`mask\`, so no repeat lines up across a fairway.
+         vec3 detailSample(sampler2D tex, vec2 p, float scale, float mask) {
+           vec2 a = p / scale;
+           vec2 b = mat2(0.766, -0.643, 0.643, 0.766) * p / (scale * 1.15) + vec2(0.37, 0.71);
+           vec3 c = mix(texture2D(tex, a).rgb, texture2D(tex, b).rgb, mask);
+           vec3 mean = texture2D(tex, vec2(0.5), 12.0).rgb;
+           return clamp(c / max(mean, vec3(0.02)), 0.4, 1.8);
+         }`;
 }
 
 function paletteBody(course: boolean): string {
@@ -88,6 +115,30 @@ function paletteBody(course: boolean): string {
            vec2 greenDir = vec2(-fairwayDir.y, fairwayDir.x);`;
 }
 
+/** Rock takes the ground from about 35 degrees (cos 0.82) and has it all by about 39. */
+const ROCK_UP_START = 0.84;
+const ROCK_UP_FULL = 0.78;
+
+/**
+ * The course's photo detail and its rock. The detail fades out between 60 and 260 m, where a
+ * texture would only shimmer, leaving the palette's flat colour; the rock is palette-free, so it
+ * reads as rock at any distance.
+ */
+const COURSE_DETAIL = `
+           float groundDistance = length(vGroundWorldPos - cameraPosition);
+           float detailFade = (1.0 - smoothstep(60.0, 260.0, groundDistance)) * uDetailOn;
+           float tileMask = smoothstep(0.35, 0.65, groundNoise(vGroundWorldPos.xz / 23.0));
+           vec3 detail = mix(
+             detailSample(uDetailGrass, vGroundWorldPos.xz, 3.0, tileMask),
+             detailSample(uDetailRough, vGroundWorldPos.xz, 4.5, tileMask),
+             wCorridor);
+           detail = mix(detail, detailSample(uDetailSand, vGroundWorldPos.xz, 5.0, tileMask), wSand);
+           grass *= mix(vec3(1.0), detail, detailFade * 0.85);
+           float rockAmount = smoothstep(${ROCK_UP_START.toFixed(2)}, ${ROCK_UP_FULL.toFixed(2)}, vGroundUp) * (1.0 - wWater);
+           vec3 rock = vec3(0.42, 0.40, 0.35)
+             * mix(vec3(1.0), detailSample(uDetailRock, vGroundWorldPos.xz, 7.0, tileMask), 0.9 * uDetailOn);
+           grass = mix(grass, rock, rockAmount);`;
+
 /**
  * Rewrites a `MeshStandardMaterial`'s shader in `onBeforeCompile`.
  *
@@ -104,9 +155,12 @@ export function applyGroundShader(
          attribute vec2 aMow;
          attribute vec3 aBiome;
          varying vec2 vGroundMow;
-         varying vec3 vGroundBiome;`
+         varying vec3 vGroundBiome;
+         varying float vGroundUp;`
     : "";
-  const perVertexAssign = options.course ? "vGroundMow = aMow;\n         vGroundBiome = aBiome;" : "";
+  const perVertexAssign = options.course
+    ? "vGroundMow = aMow;\n         vGroundBiome = aBiome;\n         vGroundUp = normalize(mat3(modelMatrix) * objectNormal).y;"
+    : "";
   // The course reads the mask out of the material's own map slot; a hole reads it from a uniform.
   const sample = options.course
     ? "texture2D(map, vMapUv)"
@@ -173,6 +227,7 @@ ${paletteBody(options.course)}
            grass *= stripe;
 
            grass = mix(grass, cSand, wSand);
+${options.course ? COURSE_DETAIL : ""}
            grass = mix(grass, cWater, wWater);
            diffuseColor.rgb *= grass;
          }`,

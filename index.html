@@ -49,7 +49,10 @@
          to the DOM as well as to GPU resources -- markup parked in index.html would outlive the
          screen that owns it and quietly accumulate listeners. */
       #screens { position: fixed; inset: 0; z-index: 20; }
-      #screens:empty { pointer-events: none; }
+      /* Click-through except where a screen is actually showing: the match's pause overlay lives
+         here hidden for the whole match, and an :empty rule would let it block the canvas. */
+      #screens { pointer-events: none; }
+      #screens > :not([hidden]) { pointer-events: auto; }
 
       #hud[hidden] { display: none; }
       #hud {
@@ -122,6 +125,77 @@
         18% { transform: translateY(0) scale(1); opacity: 1; }
         100% { transform: translateY(-34px) scale(1); opacity: 0; }
       }
+      /* Stage 2 feedback. All overlays, no pointer events, and all siblings after #hud so they hide
+         with it (`#hud[hidden] ~`) without a line of JS each. The vignette and the damage flash sit
+         early in the DOM, below the HUD's text; the score strip and the kill feed sit after it. */
+      #lowhp-vignette, #damage-flash { position: fixed; inset: 0; pointer-events: none; }
+      #lowhp-vignette {
+        opacity: 0;
+        background: radial-gradient(ellipse at center, transparent 45%, rgba(170, 16, 12, 0.85) 100%);
+      }
+      #hud[hidden] ~ #score-strip, #hud[hidden] ~ #kill-feed { display: none; }
+      .damage-wedge {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 0;
+        height: 0;
+        opacity: 0;
+      }
+      /* A wedge at the edge of a circle round the screen's centre, pointing out toward the shooter.
+         The parent rotates; the child is pushed up along the rotated axis. */
+      .damage-wedge::before {
+        content: "";
+        position: absolute;
+        left: -90px;
+        top: calc(-1 * min(38vh, 38vw));
+        width: 180px;
+        height: 34px;
+        border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+        background: radial-gradient(ellipse at 50% 100%, rgba(255, 60, 40, 0.95), rgba(255, 60, 40, 0) 70%);
+      }
+      #score-strip {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 5px 16px;
+        border-radius: var(--radius-pill);
+        background: var(--panel);
+        font: 800 18px system-ui, sans-serif;
+        letter-spacing: 0.08em;
+        color: var(--ink);
+        pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      }
+      .score-strip--pulse { animation: score-pulse 0.6s ease-out; }
+      @keyframes score-pulse {
+        0% { transform: translateX(-50%) scale(1.25); background: rgba(232, 86, 74, 0.8); }
+        100% { transform: translateX(-50%) scale(1); }
+      }
+      #kill-feed {
+        position: fixed;
+        top: 12px;
+        right: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        font: var(--font);
+        letter-spacing: var(--track-letter);
+        pointer-events: none;
+      }
+      .kill-line {
+        padding: 3px 10px;
+        border-radius: var(--radius-pill);
+        background: var(--panel);
+        color: var(--ink-dim);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      }
+      .kill-line[hidden] { display: none; }
+      .kill-name--self { color: var(--status); }
+      .kill-name--ally { color: var(--team-ally); }
+      .kill-name--enemy { color: var(--team-enemy); }
       #power-track {
         margin-top: 6px;
         width: 100%;
@@ -281,6 +355,22 @@
       .btn--primary { background: var(--accent); color: var(--accent-ink); }
       .btn--wide { width: 100%; }
 
+      /* Settings panel, the Settings screen and the pause overlay (Stage 2). */
+      .settings { display: grid; gap: 10px; margin: 6px 0 16px; }
+      .settings__row { display: grid; grid-template-columns: 150px 1fr 56px; align-items: center; gap: 12px; }
+      .settings__label { color: var(--ink-dim); }
+      .settings__range { width: 100%; accent-color: var(--accent); }
+      .settings__value { text-align: right; font-variant-numeric: tabular-nums; }
+      .settings__select { background: rgba(0, 0, 0, 0.45); color: var(--ink); border: 1px solid var(--ink-dim); padding: 4px 6px; font: inherit; }
+      .settings__note { margin: 0; color: var(--ink-dim); font-size: 12px; }
+      .settings-screen, .pause { align-items: center; justify-content: center; }
+      .settings-screen__panel, .pause__panel { width: min(520px, 92vw); max-height: 92vh; overflow: auto; }
+      .settings-screen__title, .pause__title { margin: 0 0 14px; font: 800 28px system-ui, sans-serif; letter-spacing: 0.1em; }
+      .pause[hidden] { display: none; }
+      .pause__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+      .controls { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+      .controls dt { color: var(--status); }
+      .controls dd { margin: 0; color: var(--ink-dim); }
       .panel {
         background: var(--panel-solid);
         border-radius: var(--radius-modal);
@@ -400,6 +490,10 @@
       .arena-results__row-name--ally { color: var(--team-ally); }
       .arena-results__row-name--enemy { color: var(--team-enemy); }
       .arena-results__row-stat { color: var(--ink-dim); letter-spacing: 0.04em; }
+      .arena-results__reward { display: flex; flex-direction: column; gap: 3px; margin-bottom: 16px; }
+      .arena-results__reward-score { font-size: 20px; letter-spacing: 0.1em; color: var(--accent); }
+      .arena-results__reward-line { color: var(--ink-dim); letter-spacing: 0.05em; }
+      .arena-results__reward-level { color: var(--accent); letter-spacing: 0.12em; }
       .arena-results__actions { display: flex; gap: 11px; margin-top: 8px; }
       .arena-results__actions .btn { flex: 1; }
 
@@ -431,6 +525,22 @@
       .clubhouse__category-label { font-size: 12px; letter-spacing: 0.1em; }
 
       .clubhouse__coins { position: absolute; top: 30px; right: 34px; }
+
+      /* Upgrades sit top-left, above the categories: bought at once, no preview. */
+      .clubhouse__upgrades {
+        position: absolute;
+        left: 34px;
+        top: 30px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 250px;
+        padding: 11px 13px;
+        border-radius: var(--radius-card);
+        background: var(--panel-solid);
+      }
+      .clubhouse__upgrade { font-size: 12px; padding: 7px 10px; text-align: left; }
+      .clubhouse__note { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.06em; }
 
       .clubhouse__clubs {
         position: absolute;
@@ -486,6 +596,8 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="lowhp-vignette"></div>
+    <div id="damage-flash"></div>
     <div id="nameplates"></div>
     <!-- Screens mount their own markup here and strip it on exit. Empty by design. -->
     <div id="screens"></div>
@@ -507,7 +619,6 @@
         <!-- Empty by design, and it is not a stylistic choice: `docs/TEST-AND-SPEC-PITFALLS.md`
              §1 instances 5 and 6 are two smoke checks that passed against placeholder markup with
              the feature deleted. A blank element can only be filled by the code under test. -->
-        <span id="hud-team-score"></span>
         <span id="hud-points"></span>
       </div>
       <div id="power-track"><div id="power-fill"></div></div>
@@ -517,6 +628,9 @@
         hold to charge, release to shoot
       </div>
     </div>
+    <!-- Empty for the same reason as the HUD spans: only the code under test may fill them. -->
+    <div id="score-strip"><span id="hud-team-score"></span></div>
+    <div id="kill-feed"></div>
     <div id="event-banner" hidden>
       <div id="banner-headline"></div>
       <div id="banner-consequence"></div>

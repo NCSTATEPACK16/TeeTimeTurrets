@@ -23,6 +23,7 @@ function source(overrides: Partial<HudSource> = {}): HudSource {
       ammo: 10,
       dead: false,
       respawnTimer: 0,
+      outOfBoundsFor: 0,
       health: { hp: 100, max: 100 },
     },
     match: {
@@ -76,6 +77,13 @@ describe("status precedence", () => {
     expect(state.status).toBe("DESTROYED — RESPAWNING 2.4s");
   });
 
+  it("warns a cart out of bounds above everything but death, with the seconds to the next drain", () => {
+    const out = { ...source().cart, outOfBoundsFor: 0.5, canFire: false, reloadRemaining: 1.2 };
+    expect(derive(source({ cart: out })).status).toBe("OUT OF BOUNDS — 1 HP IN 1.5s");
+    expect(derive(source({ cart: { ...out, outOfBoundsFor: 2.9 } })).status).toBe("OUT OF BOUNDS — 1 HP IN 1.1s");
+    expect(derive(source({ cart: { ...out, dead: true, respawnTimer: 2 } })).status).toMatch(/^DESTROYED/);
+  });
+
   it("reports reloading when alive and not yet able to fire", () => {
     const state = derive(source({ cart: { ...source().cart, canFire: false, reloadRemaining: 1.25 } }));
     expect(state.status).toBe("RELOADING 1.2s");
@@ -119,5 +127,26 @@ describe("the arena readout", () => {
     );
     expect(state.teamScoreText).toBe("US 0 — THEM 0");
     expect(state.pointsText).toBe("KILLS 0");
+  });
+});
+
+describe("low-health vignette", () => {
+  function vignette(hp: number, dead = false): number {
+    return derive(source({ cart: { ...source().cart, dead, health: { hp, max: 8 } } })).vignette01;
+  }
+
+  it("is off at half health and above", () => {
+    expect(vignette(8)).toBe(0);
+    expect(vignette(4)).toBe(0);
+  });
+
+  it("closes in as health runs out", () => {
+    expect(vignette(2)).toBeCloseTo(0.5, 9);
+    expect(vignette(1)).toBeCloseTo(0.75, 9);
+    expect(vignette(1)).toBeGreaterThan(vignette(2));
+  });
+
+  it("is off once the cart is dead: the respawn screen is not a warning", () => {
+    expect(vignette(0, true)).toBe(0);
   });
 });

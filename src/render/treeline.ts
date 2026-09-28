@@ -130,3 +130,32 @@ export function createTreeline(
     },
   };
 }
+
+/**
+ * What a course's treeline is built from: the arena as the renderer is handed it. Keyed by that
+ * object, which is one per course for the page's life, so a second match finds the first's band.
+ */
+export interface TreelineSource {
+  readonly course: { readonly bounds: Bounds; heightAt(x: number, z: number): number };
+  readonly southBoundary?: SouthBoundary;
+  readonly seed?: number;
+  /** The heights the band stands on, when the arena has its own (the playfield's). */
+  readonly heightAt?: (x: number, z: number) => number;
+}
+
+const treelines = new WeakMap<TreelineSource, Treeline | null>();
+
+/**
+ * One treeline per course, for the page's life, like the ground: the match's scene borrows it and
+ * nothing disposes it. Null for a course with no road to line.
+ */
+export function treelineFor(source: TreelineSource): Treeline | null {
+  if (treelines.has(source)) return treelines.get(source)!;
+  const heightAt = source.heightAt ?? ((x: number, z: number) => source.course.heightAt(x, z));
+  const band =
+    source.southBoundary === undefined
+      ? null
+      : createTreeline(source.southBoundary, source.course.bounds, heightAt, source.seed ?? 0);
+  treelines.set(source, band);
+  return band;
+}

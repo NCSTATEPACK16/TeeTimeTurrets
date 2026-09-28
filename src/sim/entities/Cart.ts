@@ -182,6 +182,18 @@ export const CART_TUNING = {
   recoilDecay: 2.2,
   /** Lowest surface multiplier a tire choice can drag the cart down to. */
   minSurfaceScale: 0.05,
+  /** Share of the drive the throttle gives at once; the rest spools up. */
+  spoolInstant: 0.25,
+  /** Seconds of held throttle to full drive. */
+  spoolSeconds: 0.6,
+  /** Share of top speed a full-lock turn at full authority gives up. */
+  turnBleed: 0.2,
+  /** m/s^2 at which a cart over its top speed -- in a turn, on reaching sand -- sheds the excess. */
+  overSpeedDecel: 10,
+  /** Extra top speed per unit of downhill grade (rise/run) along the heading. */
+  downhillGain: 1.0,
+  /** The most a downhill run can raise the top speed by, as a multiple of it. */
+  downhillMaxScale: 1.15,
 } as const;
 
 export interface CartOptions {
@@ -262,17 +274,30 @@ export class Cart {
    * the cart it describes when carts are added or removed.
    */
   wasInWater: boolean;
+  /** Seconds this cart has been outside the arena zone; 0 inside it. The HUD warns while above 0. */
+  outOfBoundsFor: number;
   /** The last non-hazard spot this cart occupied: where it is dropped after driving into water. */
   readonly lastSafePosition: Vec3;
   /** Where the cart wants to move this tick. The controller decides where it actually goes. */
   readonly desiredTranslation: Vec3;
   readonly shot: CartShot;
   ammo: number;
+  /**
+   * The load a cart starts a match and every life with. `STARTING_AMMO` stock; the ammo upgrade
+   * raises it. Set by `applyLoadout` and nowhere else.
+   */
+  startingAmmo: number;
+  /** Multiplier on every club's reload. 1 stock; the reload upgrade lowers it. See `applyLoadout`. */
+  reloadScale: number;
+  /** Clubs this cart may not select -- the driver, below its unlock level. See `applyLoadout`. */
+  readonly lockedClubs = new Set<ClubType>();
 
   private club: ClubType;
   /** The club this cart was built with, which a rematch goes back to. See `rearm`. */
   private readonly startingClub: ClubType;
   private reload = 0;
+  /** 0..1: how far the throttle has spooled. See `CART_TUNING.spoolSeconds`. */
+  private spool = 0;
   private chargeHeld = 0;
   private wasFiring = false;
   /** Set by a cancel; cleared when the trigger is let go. See `CartIntent.cancelCharge`. */
@@ -291,11 +316,14 @@ export class Cart {
     this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
     this.ammo = STARTING_AMMO;
+    this.startingAmmo = STARTING_AMMO;
+    this.reloadScale = 1;
     this.health = createHealth(options.maxHealth ?? ARENA_MAX_HEALTH);
     this.dead = false;
     this.respawnTimer = 0;
     this.protectedFor = 0;
     this.wasInWater = false;
+    this.outOfBoundsFor = 0;
     this.lastSafePosition = { x: start.x, y: start.y, z: start.z };
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
   }
@@ -328,7 +356,7 @@ export class Cart {
    * charge does reset, because charge time is a per-club stat.
    */
   selectClub(club: ClubType): void {
-    if (club === this.club) return;
+    if (club === this.club || this.lockedClubs.has(club)) return;
     this.club = club;
     this.chargeHeld = 0;
   }
@@ -348,14 +376,16 @@ export class Cart {
     // Cleared, not granted. `Sim.stepRespawn` grants protection after calling this; `Sim.reset`
     // calls it too, and a fresh hole must not start behind a shield left over from a death.
     this.protectedFor = 0;
+    this.outOfBoundsFor = 0;
     this.speed = 0;
+    this.spool = 0;
     this.recoil.x = 0;
     this.recoil.z = 0;
     this.shuntVelocity.x = 0;
     this.shuntVelocity.z = 0;
     // A cart comes back able to fight. Topped up, not reset: dying never costs a cart the ammo it
     // had gathered above the starting load.
-    this.ammo = Math.max(this.ammo, STARTING_AMMO);
+    this.ammo = Math.max(this.ammo, this.startingAmmo);
   }
 
   /**
@@ -367,8 +397,9 @@ export class Cart {
    */
   rearm(): void {
     this.club = this.startingClub;
-    this.ammo = STARTING_AMMO;
+    this.ammo = this.startingAmmo;
     this.reload = 0;
+    this.spool = 0;
     this.chargeHeld = 0;
     this.wasFiring = false;
     this.cancelled = false;
@@ -408,7 +439,7 @@ export class Cart {
     const charge = clamp01(charge01);
     const launchSpeed = stats.minSpeed + (stats.maxSpeed - stats.minSpeed) * charge;
 
-    this.reload = stats.reloadSeconds;
+    this.reload = stats.reloadSeconds * this.reloadScale;
     this.chargeHeld = 0;
 
     const hasBall = this.ammo > 0;
@@ -429,14 +460,19 @@ export class Cart {
     return true;
   }
 
-  step(intent: CartIntent, dt: number, surface: SurfaceTuning): void {
+  /**
+   * `grade` is the ground's rise over run along the heading under the cart, negative downhill; it
+   * raises the top speed on a descent. The climb limit is the character controller's (see
+   * `mobility.ts`), so an uphill grade does nothing here.
+   */
+  step(intent: CartIntent, dt: number, surface: SurfaceTuning, grade = 0): void {
     if (this.reload > 0) this.reload = Math.max(0, this.reload - dt);
     if (this.protectedFor > 0) this.protectedFor = Math.max(0, this.protectedFor - dt);
 
     this.turretOffset += intent.aimDelta;
 
     this.stepSwing(intent, dt);
-    this.stepDrive(intent, dt, surface);
+    this.stepDrive(intent, dt, surface, grade);
 
     // Recoil decays exponentially rather than linearly: a linear ramp reads as the cart being
     // dragged to a stop, an exponential one as a shove that runs out. A shunt from another cart
@@ -475,7 +511,7 @@ export class Cart {
     this.wasFiring = intent.fire;
   }
 
-  private stepDrive(intent: CartIntent, dt: number, surface: SurfaceTuning): void {
+  private stepDrive(intent: CartIntent, dt: number, surface: SurfaceTuning, grade: number): void {
     const tire = TIRE_TUNING[this.tire];
 
     // A tire does not change the surface, it changes how much of the surface's penalty reaches
@@ -485,29 +521,48 @@ export class Cart {
       CART_TUNING.minSurfaceScale,
       1 - (1 - surface.cartSpeedScale) * tire.offRoadPenalty,
     );
-    const scale = tire.topSpeedScale * surfaceScale;
-    const maxForward = CART_TUNING.topSpeed * scale;
-    const maxReverse = -CART_TUNING.reverseTopSpeed * scale;
-
-    const throttle = clampSigned(intent.throttle);
-    if (intent.brake) {
-      this.speed = decayToward(this.speed, 0, CART_TUNING.brakeDecel * tire.grip * dt);
-    } else if (throttle !== 0) {
-      this.speed += throttle * CART_TUNING.accel * tire.grip * dt;
-    } else {
-      this.speed = decayToward(this.speed, 0, CART_TUNING.coastDecel * dt);
-    }
-    this.speed = Math.min(maxForward, Math.max(maxReverse, this.speed));
-
-    // Steering authority rises with speed but never reaches zero, so a stopped cart can still
-    // pivot -- a golf cart that cannot turn on the spot feels broken long before it feels
-    // realistic. Reversing flips the steering the way a real vehicle does.
+    const steer = clampSigned(intent.steer);
     const authority = Math.min(
       1,
       Math.max(CART_TUNING.pivotAuthority, Math.abs(this.speed) / CART_TUNING.steerFullSpeed),
     );
+    // A descent lets the cart run on, capped so a hill is a bonus rather than a launch ramp.
+    const downhill = grade < 0 ? Math.min(CART_TUNING.downhillMaxScale, 1 - grade * CART_TUNING.downhillGain) : 1;
+    // A hard turn scrubs speed: the cap falls with how much of the lock is in use.
+    const bleed = 1 - CART_TUNING.turnBleed * Math.abs(steer) * authority;
+    const scale = tire.topSpeedScale * surfaceScale;
+    const maxForward = CART_TUNING.topSpeed * scale * downhill * bleed;
+    const maxReverse = -CART_TUNING.reverseTopSpeed * scale;
+
+    const throttle = clampSigned(intent.throttle);
+    if (intent.brake) {
+      this.spool = 0;
+      this.speed = decayToward(this.speed, 0, CART_TUNING.brakeDecel * tire.grip * dt);
+    } else if (throttle !== 0) {
+      // Spooled: some drive at once, the rest over `spoolSeconds`, so a tap is a nudge and a hold
+      // is a launch.
+      const drive = CART_TUNING.spoolInstant + (1 - CART_TUNING.spoolInstant) * this.spool;
+      this.spool = Math.min(1, this.spool + dt / CART_TUNING.spoolSeconds);
+      // Throttle never pushes past the cap; it can only hold what is already over it.
+      const driven = this.speed + throttle * CART_TUNING.accel * tire.grip * drive * dt;
+      this.speed =
+        throttle > 0
+          ? Math.max(Math.min(this.speed, driven), Math.min(driven, maxForward))
+          : Math.min(Math.max(this.speed, driven), Math.max(driven, maxReverse));
+    } else {
+      this.spool = 0;
+      this.speed = decayToward(this.speed, 0, CART_TUNING.coastDecel * dt);
+    }
+    // Over the cap -- a turn tightening, sand underneath, a descent ending -- the excess goes over
+    // a moment rather than at once; a cart does not stop dead at the edge of a bunker.
+    if (this.speed > maxForward) this.speed = Math.max(maxForward, this.speed - CART_TUNING.overSpeedDecel * dt);
+    else if (this.speed < maxReverse) this.speed = Math.min(maxReverse, this.speed + CART_TUNING.overSpeedDecel * dt);
+
+    // Steering authority rises with speed but never reaches zero, so a stopped cart can still
+    // pivot -- a golf cart that cannot turn on the spot feels broken long before it feels
+    // realistic. Reversing flips the steering the way a real vehicle does.
     const reversing = this.speed < -0.1 ? -1 : 1;
-    this.heading += clampSigned(intent.steer) * CART_TUNING.steerRate * tire.grip * authority * reversing * dt;
+    this.heading += steer * CART_TUNING.steerRate * tire.grip * authority * reversing * dt;
   }
 }
 

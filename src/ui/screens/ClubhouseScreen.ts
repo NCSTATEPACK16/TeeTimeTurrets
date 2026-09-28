@@ -4,7 +4,9 @@ import type { Showroom } from "../../render/showroom";
 import { ClubhouseState, clubStatCards } from "./clubhouseState";
 import type { Category } from "./clubhouseState";
 import { CHASSIS_PAINTS, TIRE_OPTIONS, TURRET_SKINS } from "../../sim/loadout";
-import type { Loadout } from "../../sim/loadout";
+import { DRIVER_UNLOCK_LEVEL, UPGRADES, upgradePrice } from "../../sim/upgrades";
+import type { UpgradeId } from "../../sim/upgrades";
+import type { Profile } from "../../app/profile";
 import { ClubType } from "../../physics/Ballistics";
 import { el, on } from "../dom";
 import type { Screen } from "../../app/ScreenManager";
@@ -29,10 +31,10 @@ const CATEGORIES: readonly { id: Category; label: string }[] = [
 export interface ClubhouseScreenOptions {
   readonly root: HTMLElement;
   readonly renderer: THREE.WebGLRenderer;
-  readonly loadout: Loadout;
-  readonly coins: number;
-  /** Called on CONFIRM with the equipped loadout and the coins left. */
-  readonly onConfirm: (loadout: Loadout, coins: number) => void;
+  /** Where the player stands: coins, level, what they own, wear and have upgraded. */
+  readonly profile: Profile;
+  /** Called with the profile after every purchase, CONFIRM or upgrade, to be saved. */
+  readonly onChange: (profile: Profile) => void;
   readonly onBack: () => void;
 }
 
@@ -45,12 +47,14 @@ export class ClubhouseScreen implements Screen {
   private coinValue: HTMLElement | null = null;
   private confirmButton: HTMLButtonElement | null = null;
   private readonly swatchNodes = new Map<string, HTMLButtonElement>();
+  private readonly upgradeNodes = new Map<UpgradeId, HTMLButtonElement>();
   private lastFrameMs = 0;
   private club = ClubType.Driver;
 
   constructor(options: ClubhouseScreenOptions) {
     this.options = options;
-    this.state = new ClubhouseState(options.loadout, options.coins);
+    const { profile } = options;
+    this.state = new ClubhouseState(profile.loadout, profile.coins, profile.owned, profile.upgrades);
   }
 
   enter(): void {
@@ -62,6 +66,7 @@ export class ClubhouseScreen implements Screen {
 
     this.container = el("div", { class: "screen clubhouse" }, [
       this.buildCategories(),
+      this.buildUpgrades(),
       this.buildCoins(),
       this.buildClubCards(),
       this.buildActions(),
@@ -93,6 +98,7 @@ export class ClubhouseScreen implements Screen {
     for (const off of this.teardown) off();
     this.teardown.length = 0;
     this.swatchNodes.clear();
+    this.upgradeNodes.clear();
     this.showroom?.dispose();
     this.showroom = null;
     this.container?.remove();
@@ -133,6 +139,39 @@ export class ClubhouseScreen implements Screen {
       );
     }
     return list;
+  }
+
+  /** Armour, ball bag and quick hands: one button a line, buying the next level at once. */
+  private buildUpgrades(): HTMLElement {
+    const list = el("div", { class: "clubhouse__upgrades" }, [
+      el("span", { class: "clubhouse__category-label", text: `UPGRADES — LEVEL ${this.options.profile.level}` }),
+    ]);
+    for (const upgrade of UPGRADES) {
+      const node = el("button", { class: "btn clubhouse__upgrade", type: "button", title: upgrade.note });
+      this.teardown.push(
+        on(node, "click", () => {
+          if (!this.state.buyUpgrade(upgrade.id)) return;
+          this.save();
+          this.refresh();
+        }),
+      );
+      this.upgradeNodes.set(upgrade.id, node);
+      list.append(node);
+    }
+    const driver = this.options.profile.level >= DRIVER_UNLOCK_LEVEL ? "DRIVER UNLOCKED" : `DRIVER AT LEVEL ${DRIVER_UNLOCK_LEVEL}`;
+    list.append(el("span", { class: "clubhouse__note", text: driver }));
+    return list;
+  }
+
+  /** Hands the profile as it now stands to be saved. */
+  private save(): void {
+    this.options.onChange({
+      ...this.options.profile,
+      coins: this.state.coins,
+      loadout: { ...this.state.equipped },
+      owned: this.state.ownedIds,
+      upgrades: { ...this.state.upgrades },
+    });
   }
 
   private buildCoins(): HTMLElement {
@@ -191,7 +230,7 @@ export class ClubhouseScreen implements Screen {
     this.teardown.push(
       on(this.confirmButton, "click", () => {
         if (!this.state.confirm()) return;
-        this.options.onConfirm({ ...this.state.equipped }, this.state.coins);
+        this.save();
         this.refresh();
       }),
     );
@@ -215,6 +254,15 @@ export class ClubhouseScreen implements Screen {
         // clubhouse sells before they can buy it.
         node.disabled = !this.state.affordable(category.id, option.id);
       }
+    }
+
+    for (const upgrade of UPGRADES) {
+      const node = this.upgradeNodes.get(upgrade.id);
+      if (!node) continue;
+      const level = this.state.upgradeLevel(upgrade.id);
+      const price = upgradePrice(upgrade.id, level);
+      node.textContent = `${upgrade.label} ${level}/${upgrade.maxLevel}${price === Infinity ? " — MAX" : ` — ${price}`}`;
+      node.disabled = price > this.state.coins;
     }
 
     if (this.coinValue) this.coinValue.textContent = String(this.state.coins);

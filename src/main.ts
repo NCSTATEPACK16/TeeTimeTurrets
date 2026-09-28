@@ -1,18 +1,30 @@
 import * as THREE from "three";
 import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
-import { FIXED_DT, Sim } from "./sim/world";
+import { FrameStats } from "./engine/frameStats";
+import { FIXED_DT } from "./sim/frame";
+import type { Sim } from "./sim/world";
 import { authoredCourse } from "./sim/authoredCourse";
 import { buildCourseWorld } from "./sim/courseWorld";
 import type { CourseWorld } from "./sim/courseWorld";
 import { arenaFromCourse } from "./sim/arena";
 import { ARENA_BOTS } from "./sim/matchConfig";
-import { createLoadout, tireTypeFor } from "./sim/loadout";
+import { awardMatch, loadProfile, saveProfile } from "./app/profile";
+import type { Profile } from "./app/profile";
+import { teamOf } from "./sim/matchConfig";
 import type { ArenaSource } from "./render/scene";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import { MatchScreen } from "./ui/screens/MatchScreen";
 import { MatchResultsScreen } from "./ui/screens/MatchResultsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
+import { SettingsScreen } from "./ui/screens/SettingsScreen";
+import { browserStore, hasSeenControls, loadSettings, markControlsSeen, saveSettings } from "./app/settings";
+import type { Settings } from "./app/settings";
+import { AudioEngine } from "./audio/synth";
+import { pixelRatioFor, probeDeviceFacts, resolveQuality } from "./render/quality";
+import { loadGroundDetail } from "./render/terrainTextures";
+import { applyColourPipeline } from "./render/colour";
+import type { QualityPreset } from "./render/quality";
 
 /**
  * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
@@ -26,9 +38,8 @@ const COURSE_SEED = 2026;
 const VERSION = "v0.1.0";
 
 /** Coins a new player starts with, until progression pays out per match. */
-const STARTING_COINS = 6000;
 
-type ScreenName = "title" | "match" | "matchResults" | "clubhouse";
+type ScreenName = "title" | "match" | "matchResults" | "clubhouse" | "settings";
 
 async function main(): Promise<void> {
   const container = document.getElementById("app");
@@ -39,15 +50,38 @@ async function main(): Promise<void> {
     throw new Error("expected #app, #screens, #hud and #nameplates in index.html");
   }
 
+  const store = browserStore();
+  let settings: Settings = loadSettings(store);
+
+  // The quality preset is resolved before the renderer exists, because it decides whether the
+  // context is multisampled -- which cannot change without a new context.
+  const device = probeDeviceFacts();
+  let quality: QualityPreset = resolveQuality(settings.quality, device);
+
   // Created once and shared. A context per screen would hit the browser's hard limit on live
   // WebGL contexts within a few transitions, and lose the title backdrop's whole reason to exist.
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  container.appendChild(renderer.domElement);
-  window.addEventListener("resize", () => {
+  const renderer = new THREE.WebGLRenderer({ antialias: quality.msaa });
+  applyColourPipeline(renderer);
+  const fitRenderer = (): void => {
+    renderer.setPixelRatio(pixelRatioFor(quality, window.devicePixelRatio));
     renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  };
+  fitRenderer();
+  container.appendChild(renderer.domElement);
+  window.addEventListener("resize", fitRenderer);
+
+  const audio = new AudioEngine(settings);
+  // Browsers only start audio from inside a gesture. Every click and key is one; unlocking an
+  // unlocked engine does nothing, so the listeners simply stay.
+  window.addEventListener("pointerdown", () => audio.unlock());
+  window.addEventListener("keydown", () => audio.unlock());
+  const changeSettings = (next: Settings): void => {
+    settings = next;
+    saveSettings(store, settings);
+    audio.apply(settings);
+    quality = resolveQuality(settings.quality, device);
+    fitRenderer();
+  };
 
   const course = authoredCourse(COURSE_SEED);
   const screens = new ScreenManager<ScreenName>();
@@ -62,32 +96,61 @@ async function main(): Promise<void> {
   let courseWorld: CourseWorld | null = null;
   let arenaSource: ArenaSource | null = null;
 
-  // Page-scoped for now; persisting the player's profile is the progression work's job.
-  let loadout = createLoadout();
-  let coins = STARTING_COINS;
+  // Coins, level, what the player owns, wears and has upgraded: saved after every change.
+  let profile: Profile = loadProfile(store);
+  const commitProfile = (next: Profile): void => {
+    profile = next;
+    saveProfile(store, profile);
+  };
+
+  /**
+   * The sim and Rapier, loaded on the first PLAY rather than with the page: Rapier inlines its WASM
+   * and is most of the bundle, and nothing before a match needs it. Prefetched once the title has
+   * drawn, so PLAY rarely waits on it. Forgotten on failure, so the next PLAY tries again.
+   */
+  let simModule: Promise<typeof import("./sim/world")> | null = null;
+  const loadSim = (): Promise<typeof import("./sim/world")> => {
+    simModule ??= import("./sim/world").catch((err: unknown) => {
+      simModule = null;
+      throw err;
+    });
+    return simModule;
+  };
 
   const startMatch = async (): Promise<void> => {
+    const { Sim } = await loadSim();
+    // Photo detail on the ground from Medium up; Low draws the palette alone. Not awaited: the
+    // match starts plain and the detail fades in when the files arrive.
+    if (quality.name !== "low") {
+      void loadGroundDetail(new URL("textures/terrain/512/", document.baseURI).href, renderer.capabilities.getMaxAnisotropy());
+    }
     if (courseWorld === null) {
       courseWorld = buildCourseWorld(course, COURSE_SEED);
+      const { playfield, zone, paths } = arenaFromCourse(courseWorld);
       arenaSource = {
+        zone,
+        paths,
         course: courseWorld.terrain,
         surfaces: courseWorld.surfaces,
         southBoundary: courseWorld.southBoundary,
         seed: COURSE_SEED,
+        heightAt: (x, z) => playfield.heightAt(x, z),
       };
     }
     // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
     // match's has to be freed by hand or every rematch leaks a whole course.
     sim?.dispose();
-    // The tire the player bought is the tire the physics uses: the one purchase that is a stat.
+    // What the player bought is what the physics uses: the tyre and the upgrades, by applyLoadout.
     sim = await Sim.create(arenaFromCourse(courseWorld), {
-      tire: tireTypeFor(loadout),
+      player: { loadout: profile.loadout, upgrades: profile.upgrades, level: profile.level },
       botCount: ARENA_BOTS,
     });
     screens.show("match");
   };
 
   screens.register("title", () => {
+    // After the title's first frame, so the download never competes with it.
+    requestAnimationFrame(() => setTimeout(() => void loadSim().catch(() => {}), 0));
     return new TitleScreen({
       root: screensRoot,
       renderer,
@@ -96,9 +159,9 @@ async function main(): Promise<void> {
       actions: {
         play: () => void startMatch(),
         clubhouse: () => screens.show("clubhouse"),
-        // Still undefined, so these render visibly disabled rather than absent.
+        // Still undefined, so it renders visibly disabled rather than absent.
         multiplayer: undefined,
-        settings: undefined,
+        settings: () => screens.show("settings"),
       },
     });
   });
@@ -114,17 +177,39 @@ async function main(): Promise<void> {
       hudRoot,
       nameplateRoot,
       onMatchOver: () => screens.show("matchResults"),
+      screensRoot,
+      audio,
+      settings: () => settings,
+      onSettingsChange: changeSettings,
+      onMainMenu: () => screens.show("title"),
+      showControls: !hasSeenControls(store),
+      onControlsSeen: () => markControlsSeen(store),
+      quality,
+      loadout: profile.loadout,
     });
     return matchScreen;
+  });
+
+  screens.register("settings", () => {
+    return new SettingsScreen({
+      root: screensRoot,
+      settings: () => settings,
+      onChange: changeSettings,
+      onBack: () => screens.show("title"),
+    });
   });
 
   screens.register("matchResults", () => {
     const live = sim;
     const behind = matchScreen;
     if (!live) throw new Error("results screen entered with no sim");
+    // The match pays into the profile once, as its results come up.
+    const { profile: paid, reward } = awardMatch(profile, { ...live.tally, won: live.match.winningTeam() === teamOf(0) });
+    commitProfile(paid);
     return new MatchResultsScreen({
       root: screensRoot,
       match: live.match,
+      reward: { ...reward, level: paid.level },
       // Keeps the finished match on screen under the scrim.
       drawBehind: behind ? () => behind.drawStill() : undefined,
       actions: {
@@ -143,12 +228,8 @@ async function main(): Promise<void> {
     return new ClubhouseScreen({
       root: screensRoot,
       renderer,
-      loadout,
-      coins,
-      onConfirm: (next, remaining) => {
-        loadout = next;
-        coins = remaining;
-      },
+      profile,
+      onChange: (next) => commitProfile(next),
       onBack: () => screens.show("title"),
     });
   });
@@ -162,23 +243,62 @@ async function main(): Promise<void> {
     get render() {
       return matchScreen?.scene ?? null;
     },
+    get profile() {
+      return profile;
+    },
+    /** For the smoke check and the console: replaces the saved profile. */
+    setProfile: (patch: Partial<Profile>) => commitProfile({ ...profile, ...patch }),
     get coins() {
-      return coins;
+      return profile.coins;
     },
     get screen() {
       return screens.activeName;
     },
     course,
     screens,
+    audio,
+    get settings() {
+      return settings;
+    },
+    get quality() {
+      return quality;
+    },
+    /** Changes settings as the Settings screen does: saved, and applied where it applies. */
+    setSettings: (patch: Partial<Settings>) => changeSettings({ ...settings, ...patch }),
+    device,
+    get match() {
+      return matchScreen;
+    },
     // Exposed for the memory gate in tools/smoke.mjs: `renderer.info.memory` is the only honest way
     // to ask whether a screen gave its geometries and textures back.
     renderer,
+    /** The last four seconds of frames: `__teetimeturrets.perf` in the console. */
+    get perf() {
+      return frameStats.summary();
+    },
+    resetPerf: () => frameStats.reset(),
   };
 
+  // Frame time, CPU work and draw calls, for the dev hook below. Draw calls are counted over the
+  // whole frame rather than per `render()` call, so a composer's passes add up instead of the last
+  // one overwriting the rest.
+  const frameStats = new FrameStats();
+  renderer.info.autoReset = false;
+  let workStart = 0;
   const loop = new GameLoop({
     fixedDt: FIXED_DT,
-    step: () => screens.step(),
-    render: (alpha) => screens.draw(alpha),
+    step: () => {
+      if (workStart === 0) workStart = performance.now();
+      screens.step();
+    },
+    render: (alpha) => {
+      const start = workStart === 0 ? performance.now() : workStart;
+      renderer.info.reset();
+      screens.draw(alpha);
+      const end = performance.now();
+      frameStats.record(end, end - start, renderer.info.render.calls, renderer.info.render.triangles);
+      workStart = 0;
+    },
   });
 
   screens.show("title");

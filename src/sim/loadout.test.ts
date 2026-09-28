@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CHASSIS_PAINTS,
+  botLoadout,
   TIRE_OPTIONS,
   TURRET_SKINS,
   createLoadout,
@@ -90,5 +91,16 @@ describe("slotColorsFor", () => {
   it("falls back to the defaults when an id is not recognised", () => {
     const colors = slotColorsFor({ paint: "no-such-paint", skin: "no-such-skin", tire: "nope" });
     expect(colors["chassis"]).toBe(CHASSIS_PAINTS[0]!.slots["chassis"]);
+  });
+});
+
+describe("botLoadout", () => {
+  it("dresses bots from the shop, differently from one to the next", () => {
+    const a = botLoadout(0);
+    const b = botLoadout(1);
+    expect(CHASSIS_PAINTS.some((p) => p.id === a.paint)).toBe(true);
+    expect(TURRET_SKINS.some((s) => s.id === a.skin)).toBe(true);
+    expect(a.paint !== b.paint || a.skin !== b.skin).toBe(true);
+    expect(botLoadout(3)).toEqual(botLoadout(3));
   });
 });

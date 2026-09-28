@@ -1,4 +1,5 @@
-import type { HitEventKind } from "../sim/world";
+import { hitMarkerText } from "./hitMarkerText";
+import type { HitMarkerKind } from "./hitMarkerText";
 
 /**
  * Hit markers (UI-SPEC H11, image 00): the little `+50` / `DIRECT HIT!` / `ENEMY DOWN` callouts
@@ -13,17 +14,6 @@ import type { HitEventKind } from "../sim/world";
  * tears down, per the AGENTS.md cleanup rule -- a marker mid-animation must not outlive its round.
  */
 
-interface MarkerText {
-  readonly label: string;
-  /** A CSS modifier class, so a kill can read differently from a plain hit. */
-  readonly variant: string;
-}
-
-const TEXT: Record<HitEventKind, MarkerText> = {
-  hit: { label: "+50", variant: "hit-marker--hit" },
-  kill: { label: "ENEMY DOWN", variant: "hit-marker--kill" },
-};
-
 export class HitMarkers {
   private readonly root: HTMLElement;
   /** Live nodes, so `dispose` can drop any still animating. A node removes itself on animationend
@@ -35,8 +25,8 @@ export class HitMarkers {
   }
 
   /** Spawns one marker at a screen pixel position. `screenX/Y` come from `projectToScreen`. */
-  spawn(kind: HitEventKind, screenX: number, screenY: number): void {
-    const text = TEXT[kind];
+  spawn(kind: HitMarkerKind, damage: number, screenX: number, screenY: number): void {
+    const text = hitMarkerText(kind, damage);
     const node = document.createElement("div");
     node.className = `hit-marker ${text.variant}`;
     node.textContent = text.label;

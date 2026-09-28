@@ -3,8 +3,8 @@ import { CLUB_STATS, ClubType } from "../physics/Ballistics";
 import { CART_COLLIDER } from "../sim/entities/Cart";
 import { CART_GRAPH } from "./cartGraph";
 import { DRIVER_GRAPH } from "./driverGraph";
-import { buildGraph } from "./primitiveGraph";
-import type { BuiltGraph, SlotColors } from "./primitiveGraph";
+import { mergeGraphBySlot } from "./primitiveGraph";
+import type { BuiltGraph, SlotColors, SlotMergeFrames } from "./primitiveGraph";
 import { BALL_RADIUS } from "./BallSwarm";
 
 /**
@@ -40,6 +40,20 @@ const HEAD_NODES: Readonly<Record<ClubType, string>> = {
   [ClubType.Iron]: "head_iron",
   [ClubType.Driver]: "head_driver",
 };
+
+/**
+ * What the cart is drawn as: one mesh per slot for each rigid part (`mergeGraphBySlot`). A node the
+ * pose code moves or hides starts a part; the club head's socket is kept to hang the loaded ball
+ * from. Everything else is merged into the part it rides in, which is what takes a cart from a
+ * draw per node (78 with the rider) to one per slot per part.
+ */
+const CART_FRAMES: SlotMergeFrames = {
+  moving: [TURRET_PIVOT, BARREL_PITCH, SWING_ARM, HOUSING_PITCH, ...Object.values(HEAD_NODES)],
+  anchors: [HEAD_SLOT],
+};
+
+/** The rider does not move against the cart: one part, a mesh per slot. */
+const RIDER_FRAMES: SlotMergeFrames = { moving: [] };
 
 /**
  * The swing, in seconds and radians rather than in fractions of a reload.
@@ -181,12 +195,12 @@ export class GolfClub extends THREE.Group {
     super();
     this.equippedClub = initialClub;
 
-    this.graph = buildGraph(CART_GRAPH, slotColors);
+    this.graph = mergeGraphBySlot(CART_GRAPH, CART_FRAMES, slotColors);
     this.add(this.graph.root);
 
     // The rider is his own graph with his own four material slots, so a chassis repaint cannot
     // reach his trousers and `cartGraph.test.ts`'s exact-eight-slots assertion still holds.
-    this.rider = options.rider === false ? null : buildGraph(DRIVER_GRAPH);
+    this.rider = options.rider === false ? null : mergeGraphBySlot(DRIVER_GRAPH, RIDER_FRAMES);
     if (this.rider) this.add(this.rider.root);
 
     this.turretPivot = this.requireNode(TURRET_PIVOT);

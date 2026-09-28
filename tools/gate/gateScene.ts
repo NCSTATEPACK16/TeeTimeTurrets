@@ -13,6 +13,10 @@ import { createGround } from "../../src/render/ground";
 import { createCourseGround } from "../../src/render/courseGround";
 import { authoredCourse } from "../../src/sim/authoredCourse";
 import { buildCourseWorld } from "../../src/sim/courseWorld";
+import { applyColourPipeline } from "../../src/render/colour";
+import { LIGHT_LEVELS, createLighting } from "../../src/render/lighting";
+import { QUALITY } from "../../src/render/quality";
+import { bakeSkyEnvironment } from "../../src/render/sky";
 
 /**
  * One subject, one fixed rig. No Sim, no terrain, no input, no randomness -- AGENTS.md's Scene
@@ -213,15 +217,17 @@ function main(): void {
   // display the gate happens to run against.
   renderer.setPixelRatio(1);
   renderer.setSize(VIEW_WIDTH, VIEW_HEIGHT);
+  // The game's colour pipeline and the game's light -- sky environment, hemisphere and sun at the
+  // match's levels -- so a subject here looks as it does in a round. No shadows: they depend on the
+  // quality preset, and a signature that moved with it would be measuring the preset.
+  applyColourPipeline(renderer);
   document.body.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x202428);
-
-  const sun = new THREE.DirectionalLight(0xffffff, 2.4);
-  sun.position.set(12, 18, 8);
-  scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const environment = bakeSkyEnvironment(renderer);
+  scene.environment = environment.texture;
+  scene.environmentIntensity = LIGHT_LEVELS.environment;
 
   const subject = build();
   scene.add(subject.object);
@@ -234,6 +240,7 @@ function main(): void {
   const camera = new THREE.PerspectiveCamera(45, VIEW_WIDTH / VIEW_HEIGHT, 0.01, radius * 100);
   camera.position.copy(centre).addScaledVector(CAMERA_DIRECTION, radius * CAMERA_DISTANCE_SCALE);
   camera.lookAt(centre);
+  createLighting(scene, camera, QUALITY.low);
 
   renderer.render(scene, camera);
 

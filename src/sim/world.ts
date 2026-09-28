@@ -12,15 +12,26 @@ import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
+import { ASSIST_WINDOW_S, createTally } from "./scoring";
+import { applyLoadout } from "./upgrades";
+import type { UpgradeLevels } from "./upgrades";
+import type { Loadout } from "./loadout";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
+import { maxClimbRad } from "./mobility";
+import { applyPathBonus, pathWeightAt } from "./cartPaths";
+import { buildNavGraph, createNavRoute, lineClear, navGraphFor, planRoute } from "./navGraph";
+import type { NavGraph, NavRoute } from "./navGraph";
+import type { CartPath } from "./cartPaths";
+import { ZONE_CLAMP_REACH_M, clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
+import type { ArenaZone } from "./arenaZone";
 import type { SouthBoundary } from "./courseBarrier";
 import { SurfaceId, createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
-import { BOT_CHANNEL, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
+import { BOT_CHANNEL, BOT_ENGAGE_RANGE, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
 import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
 import {
@@ -29,15 +40,16 @@ import {
   NO_KILLER,
   SPAWN_CHANNEL,
   SPAWN_PROTECTION_S,
+  teamOf,
 } from "./matchConfig";
 import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
+import { NO_TARGET_RIG, SimEventLog } from "./events";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, PREVIEW_MAX_POINTS, PREVIEW_MAX_TICKS, PREVIEW_SAMPLE_STRIDE } from "./frame";
+import type { CartTransform } from "./frame";
 
 export type { Vec3 } from "./course";
-
-/** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
-export const FIXED_DT = 1 / 60;
 
 /**
  * Re-exported from `matchConfig.ts`, which is where it lives along with every other arena tunable.
@@ -45,29 +57,17 @@ export const FIXED_DT = 1 / 60;
  */
 export { MATCH_DURATION_S };
 
-/** Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. */
-export const TRANSFORM_STRIDE = 7;
-
-/** As TRANSFORM_STRIDE, plus a trailing 1/0 active flag: an idle pool slot is parked far below
- *  the world and must not be drawn where it is parked. */
-export const POOL_TRANSFORM_STRIDE = 8;
-
-/** Aim-preview arc granularity: `Sim.previewTrajectory` writes one point every this many ticks. */
-export const PREVIEW_SAMPLE_STRIDE = 4;
-/** Hard cap on the ticks `previewTrajectory` integrates (~6 s at FIXED_DT), so a flat shot that
- *  never quite lands still terminates the loop. */
-const PREVIEW_MAX_TICKS = 360;
-/** Upper bound on points `previewTrajectory` writes: the tick cap over the stride, plus the muzzle
- *  point and a final landing point. Sizes `createPreviewBuffer`. */
-export const PREVIEW_MAX_POINTS = Math.ceil(PREVIEW_MAX_TICKS / PREVIEW_SAMPLE_STRIDE) + 2;
-
-/** A reusable buffer of `Vec3`s for `previewTrajectory` to fill, so the arc allocates nothing per
- *  frame. A caller holds one and passes it in every frame. */
-export function createPreviewBuffer(): Vec3[] {
-  const buffer: Vec3[] = [];
-  for (let i = 0; i < PREVIEW_MAX_POINTS; i++) buffer.push({ x: 0, y: 0, z: 0 });
-  return buffer;
-}
+// The clock and the render-facing shapes live in `frame.ts`, which does not import Rapier, so the
+// renderer and the page's entry can use them without loading the physics engine.
+export {
+  FIXED_DT,
+  POOL_TRANSFORM_STRIDE,
+  PREVIEW_MAX_POINTS,
+  PREVIEW_SAMPLE_STRIDE,
+  TRANSFORM_STRIDE,
+  createPreviewBuffer,
+} from "./frame";
+export type { CartTransform } from "./frame";
 
 function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
   const p = out[i]!;
@@ -75,20 +75,6 @@ function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: numb
   p.y = y;
   p.z = z;
 }
-
-/** What a hit marker is marking: a player ball connecting, or a cart the player killed. */
-export type HitEventKind = "hit" | "kill";
-/** A world-space combat event for the render layer to float a hit marker over. Attributed to the
- *  player only -- bot-on-bot hits are not marked, or the arena would be a blizzard of numbers. */
-export interface HitEvent {
-  kind: HitEventKind;
-  x: number;
-  y: number;
-  z: number;
-}
-/** Most player-attributed events one tick can hold. A dropped overflow event is a missing marker,
- *  never a wrong number, so a fixed pool is safe. */
-const HIT_EVENT_CAPACITY = 16;
 
 /**
  * Air drag on a fired ball, mirrored by `previewTrajectory` so the aim arc matches the flight.
@@ -117,19 +103,25 @@ const PICKUP_RANGE = 3.0;
  * `computeColliderMovement` against its own controller settings is timing a different vehicle.
  */
 export const CHARACTER_OFFSET = 0.02;
+/** The controller's climb limit before any cart has moved; each cart then sets its own (mobility.ts). */
 export const CART_MAX_SLOPE_CLIMB_DEG = 45;
 export const CART_MIN_SLOPE_SLIDE_DEG = 32;
 export const CART_AUTOSTEP_HEIGHT = 0.45;
 export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
 export const CART_SNAP_TO_GROUND = 0.6;
 
-export interface CartTransform {
-  position: Vec3;
-  /** Chassis yaw, radians. */
-  heading: number;
-  /** Turret yaw, radians, absolute in world space. */
-  turretYaw: number;
-}
+/** Within this range and in a clear line, a bot drives straight at its target without a route. */
+const NAV_DIRECT_M = 80;
+/** Seconds between a bot's replans. */
+const NAV_REPLAN_S = 1;
+/**
+ * A waypoint this close counts as reached. Wider than `BOT_STANDOFF`, or a bot would hold station
+ * at each waypoint as though it were the enemy.
+ */
+const NAV_WAYPOINT_REACH_M = 22;
+
+/** Half the span the cart's grade is measured over: about half a wheelbase. */
+const GRADE_HALF_BASE_M = 1.2;
 
 /**
  * Everything the world owns for one cart: the state machine, the kinematic body it drives, the
@@ -162,6 +154,8 @@ interface CartRig {
    * ammo it is heading for. `null` for the player's rig. Written in place every tick.
    */
   readonly mind: BotMind | null;
+  /** The bot's route to its target across the zone, or `null` with no graph or for the player. */
+  readonly route: NavRoute | null;
 }
 
 export interface SimOptions {
@@ -177,6 +171,11 @@ export interface SimOptions {
    * stat rather than a skin: `TIRE_TUNING` scales top speed, grip and surface penalties.
    */
   readonly tire?: TireType;
+  /**
+   * What the player bought and has earned: tyre, upgrades and level, applied to the player's cart
+   * by `applyLoadout`. Overrides `tire`.
+   */
+  readonly player?: { readonly loadout: Loadout; readonly upgrades: UpgradeLevels; readonly level: number };
 }
 
 /**
@@ -206,6 +205,14 @@ export class Sim {
   previousBotCarts: CartTransform[] = [];
   /** Bot cart transforms from the most recent fixed step. One per bot. */
   currentBotCarts: CartTransform[] = [];
+  /**
+   * The two transforms each cart's `previous`/`current` pair is drawn from, swapped every tick:
+   * the new `current` is written into whichever one `previous` is not holding. A renderer
+   * interpolating between the pair never sees either overwritten under it, and a tick allocates no
+   * transform at all.
+   */
+  private readonly cartBuffers: [CartTransform, CartTransform] = [blankTransform(), blankTransform()];
+  private readonly botBuffers: [CartTransform, CartTransform][] = [];
   private ballPool!: BallPool;
   /** Ammo buckets. One for now; course-scale supply placement is Stage D's. */
   private readonly buckets: Bucket[] = [];
@@ -215,6 +222,16 @@ export class Sim {
   currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** The player's shot counters, for the results screen's accuracy. See sim/stats.ts. */
   readonly stats = createStats();
+  /**
+   * What the player did this match -- kills, assists, damage, pickups -- for the results screen's
+   * score, coins and XP (sim/scoring.ts). Unlike `stats`, a rematch starts it again: it is what one
+   * match earned.
+   */
+  readonly tally = createTally();
+  /** When the player last hit each rig, by rig index, for assists. */
+  private readonly playerHitAt: number[] = [];
+  /** What happened, for hit markers, the kill feed, effects and audio. See `sim/events.ts`. */
+  readonly events = new SimEventLog();
 
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
   private readonly registry = new CombatRegistry();
@@ -232,20 +249,6 @@ export class Sim {
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly botTarget = { x: 0, z: 0, dead: false };
-  /**
-   * Player-attributed combat events for the current tick, for the render layer's hit markers. A
-   * fixed pool written in place (no per-tick allocation); `hitEventCount` says how many are live and
-   * `hitEventEpoch` ticks up once per step so a consumer spawns each marker exactly once however
-   * many frames it renders between steps.
-   */
-  private readonly hitEventPool: HitEvent[] = Array.from({ length: HIT_EVENT_CAPACITY }, () => ({
-    kind: "hit" as HitEventKind,
-    x: 0,
-    y: 0,
-    z: 0,
-  }));
-  hitEventCount = 0;
-  hitEventEpoch = 0;
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   /** The clock and the scoreboard. Its roster is set in `create`, once every rig exists. */
   readonly match: Match;
@@ -259,6 +262,12 @@ export class Sim {
   }
   /** The road carts are held north of, or null where the ground has none. */
   private readonly southBoundary: SouthBoundary | null;
+  /** Where the match is played, or null on a ground that is all playable. */
+  readonly zone: ArenaZone | null;
+  /** Cart paths, where a cart runs faster. Empty on a test ground. */
+  private readonly paths: readonly CartPath[];
+  /** Where bots can drive, on a ground with a zone; built once per course. See navGraph.ts. */
+  private readonly nav: NavGraph | null;
   /** One tee per spawn hole, in the course frame. */
   private readonly spawnSet: SpawnPoint[];
   /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
@@ -277,6 +286,15 @@ export class Sim {
   private constructor(ground: ArenaGround, matchDurationS: number, tire: TireType) {
     this.playfield = ground.playfield;
     this.southBoundary = ground.southBoundary;
+    this.zone = ground.zone ?? null;
+    this.paths = ground.paths ?? [];
+    const zone = this.zone;
+    this.nav =
+      zone === null
+        ? null
+        : navGraphFor(ground.playfield, () =>
+            buildNavGraph(zone, (x, z) => ground.playfield.heightAt(x, z), ground.playfield.surfaces, this.paths),
+          );
     this.seed = ground.seed;
     this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
     this.teamPads =
@@ -284,7 +302,7 @@ export class Sim {
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
-    this.currentCart = cartTransformOf(this.cart);
+    this.currentCart = writeTransform(this.cart, this.cartBuffers[0]);
     this.previousCart = this.currentCart;
   }
 
@@ -306,6 +324,7 @@ export class Sim {
   static async create(ground: ArenaGround, options: SimOptions = {}): Promise<Sim> {
     await RAPIER.init();
     const sim = new Sim(ground, options.matchDurationS ?? MATCH_DURATION_S, options.tire ?? TireType.Street);
+    if (options.player) applyLoadout(sim.cart, options.player.loadout, options.player.upgrades, options.player.level);
 
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
@@ -324,7 +343,7 @@ export class Sim {
 
     sim.combatContext = {
       registry: sim.registry,
-      onBallHit: (shooter, x, y, z) => sim.creditHit(shooter, x, y, z),
+      onBallHit: (shooter, victim, damage, x, y, z) => sim.creditHit(shooter, victim, damage, x, y, z),
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
     };
     // Now that every rig exists. The scoreboard is indexed by rig index.
@@ -332,8 +351,7 @@ export class Sim {
     for (const rig of sim.rigs) sim.placeRig(rig, sim.openingPoint(rig.index));
 
     sim.syncCurrentCart();
-    sim.previousCart = sim.currentCart;
-    sim.previousBotCarts = sim.currentBotCarts.slice();
+    sim.collapseRenderPairs();
     sim.syncCurrentPool();
     sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
@@ -473,6 +491,7 @@ export class Sim {
       intentScratch: botIndex === null ? null : neutralIntent(),
       targetIndex: NO_TARGET,
       mind: botIndex === null ? null : createBotMind(this.botSkill(botIndex)),
+      route: botIndex === null || this.nav === null ? null : createNavRoute(),
     });
   }
 
@@ -486,34 +505,36 @@ export class Sim {
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
     this.match.scoreKill(killer, victim);
-    // A kill the player made floats a marker over the cart that went down. Only the player's, for
-    // the same reason `creditHit` credits only rig 0 -- the markers are the player's feedback.
-    if (killer === 0) this.recordHitEvent("kill", cart.position.x, cart.position.y, cart.position.z);
-  }
-
-  /** The player-attributed combat events from the last stepped tick, for the hit-marker layer. */
-  get hitEvents(): readonly HitEvent[] {
-    return this.hitEventPool;
-  }
-
-  /** Writes one event into the pool in place, dropping it if the tick's pool is already full. */
-  private recordHitEvent(kind: HitEventKind, x: number, y: number, z: number): void {
-    if (this.hitEventCount >= this.hitEventPool.length) return;
-    const e = this.hitEventPool[this.hitEventCount++]!;
-    e.kind = kind;
-    e.x = x;
-    e.y = y;
-    e.z = z;
+    const playerTeam = teamOf(0);
+    if (teamOf(victim) !== playerTeam) {
+      if (killer === 0) this.tally.kills += 1;
+      else if (
+        killer !== NO_KILLER &&
+        teamOf(killer) === playerTeam &&
+        this.simTime - (this.playerHitAt[victim] ?? -Infinity) <= ASSIST_WINDOW_S
+      ) {
+        this.tally.assists += 1;
+      }
+    }
+    const p = cart.position;
+    this.events.push("kill", killer, victim, p.x, p.y, p.z, 0, null);
+    this.events.push("stroke", NO_TARGET_RIG, victim, p.x, p.y, p.z, this.match.teamStrokes(teamOf(victim)), null);
   }
 
   /**
-   * A fired ball connected, and `shooter` is the rig that fired it. `Sim.stats` is the **player's**
-   * -- it is the accuracy the results screen reports -- so only rig 0's hits may write it.
+   * A fired ball connected: `shooter` fired it, it hit `victim` and took `damage` off it. Every hit
+   * is an event; only rig 0's may write `Sim.stats`, which is the **player's** -- the accuracy the
+   * results screen reports.
    */
-  private creditHit(shooter: number, x: number, y: number, z: number): void {
-    if (shooter !== 0) return;
-    this.stats.directHits += 1;
-    this.recordHitEvent("hit", x, y, z);
+  private creditHit(shooter: number, victim: number, damage: number, x: number, y: number, z: number): void {
+    this.events.push("hit", shooter, victim, x, y, z, damage, null);
+    if (shooter === 0) {
+      this.stats.directHits += 1;
+      if (teamOf(victim) !== teamOf(0)) {
+        this.tally.damage += damage;
+        this.playerHitAt[victim] = this.simTime;
+      }
+    }
   }
 
   /** One cart onto one spawn point: position, facing, momentum and the body, in that order. */
@@ -560,11 +581,6 @@ export class Sim {
     // Stepping with the queue is what fills it; combat.ts drains it immediately afterwards, so
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
-    // Fresh set of hit-marker events for this tick. The epoch bump lets a consumer spawn each
-    // marker once even when it renders several frames between steps; the early return above skips
-    // it, so a frozen (match-over) scene stops producing events.
-    this.hitEventCount = 0;
-    this.hitEventEpoch++;
     processContacts(this.eventQueue, this.combatContext);
     this.syncCurrentPool();
 
@@ -573,8 +589,7 @@ export class Sim {
     // onto its current value, so a renderer lerping between them holds still rather than hanging
     // one tick apart forever.
     if (this.match.over) {
-      this.previousCart = this.currentCart;
-      this.previousBotCarts = this.currentBotCarts.slice();
+      this.collapseRenderPairs();
       this.previousPoolTransforms.set(this.currentPoolTransforms);
     }
   }
@@ -606,15 +621,67 @@ export class Sim {
     if (rig.cart.dead) return IDLE_INTENT;
     rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
     if (rig.mind !== null) this.findAmmoFor(rig.cart, rig.mind);
+    const target = this.botTargetScratch(rig.targetIndex);
+    if (rig.route !== null) this.steerByRoute(rig.cart, rig.route, target);
     computeBotIntent(
       rig.cart,
-      this.botTargetScratch(rig.targetIndex),
+      target,
       FIXED_DT,
       rig.random,
       rig.intentScratch,
       rig.mind,
     );
     return rig.intentScratch;
+  }
+
+  /**
+   * Swaps a far or hidden target for the next waypoint on a planned route to it, so a bot drives
+   * round a pond or a bank instead of into it. Close and in a clear line, the bot goes straight at
+   * its target -- and always does within fighting range, where it aims at what it drives toward.
+   * Replans at most once a second.
+   */
+  private steerByRoute(cart: Cart, route: NavRoute, target: { x: number; z: number; dead: boolean }): void {
+    const nav = this.nav;
+    if (nav === null || target.dead) return;
+    const p = cart.position;
+    const distance = Math.hypot(target.x - p.x, target.z - p.z);
+    if (distance <= BOT_ENGAGE_RANGE || (distance <= NAV_DIRECT_M && lineClear(nav, p.x, p.z, target.x, target.z))) {
+      route.count = 0;
+      route.replanIn = 0;
+      return;
+    }
+    route.replanIn -= FIXED_DT;
+    if (route.replanIn <= 0) {
+      route.count = planRoute(nav, p.x, p.z, target.x, target.z, route.points);
+      route.next = 0;
+      route.replanIn = NAV_REPLAN_S;
+    }
+    if (route.count === 0) return;
+    // On to the next waypoint once this one is within reach and the next is in a clear line --
+    // not before, or the bot cuts the corner the waypoint was there to take it round. The last
+    // waypoint is the target itself, which moves, so the live target stands in for it.
+    const points = route.points;
+    while (
+      route.next < route.count - 1 &&
+      Math.hypot(points[route.next * 2]! - p.x, points[route.next * 2 + 1]! - p.z) < NAV_WAYPOINT_REACH_M &&
+      lineClear(nav, p.x, p.z, points[route.next * 2 + 2]!, points[route.next * 2 + 3]!)
+    ) {
+      route.next++;
+    }
+    if (route.next >= route.count - 1) return;
+    const wx = points[route.next * 2]!;
+    const wz = points[route.next * 2 + 1]!;
+    const toWaypoint = Math.hypot(wx - p.x, wz - p.z);
+    if (toWaypoint >= NAV_WAYPOINT_REACH_M) {
+      target.x = wx;
+      target.z = wz;
+      return;
+    }
+    // Close to a corner that cannot be cut yet: aim through it, so the bot drives on round it
+    // rather than holding station at it as though it were the enemy.
+    const scale = toWaypoint > 1e-6 ? NAV_WAYPOINT_REACH_M / toWaypoint : 0;
+    target.x = p.x + (wx - p.x) * scale;
+    target.z = p.z + (wz - p.z) * scale;
   }
 
   /**
@@ -632,6 +699,7 @@ export class Sim {
     let best = Infinity;
     for (const bucket of this.buckets) {
       if (bucket.cooldownRemaining > 0) continue;
+      if (this.zone !== null && zoneSignedDistance(this.zone, bucket.position.x, bucket.position.z) > 0) continue;
       const d = Math.hypot(bucket.position.x - px, bucket.position.z - pz);
       if (d < best) {
         best = d;
@@ -642,6 +710,7 @@ export class Sim {
     for (const ball of this.ballPool.all) {
       if (ball.state !== "landed") continue;
       const t = ball.body.translation();
+      if (this.zone !== null && zoneSignedDistance(this.zone, t.x, t.z) > 0) continue;
       const d = Math.hypot(t.x - px, t.z - pz);
       if (d < best) {
         best = d;
@@ -662,6 +731,8 @@ export class Sim {
     this.botTarget.x = target?.position.x ?? 0;
     this.botTarget.z = target?.position.z ?? 0;
     this.botTarget.dead = target === null || target.dead;
+    // A bot never chases out of the zone: an enemy past the stakes is hunted from the edge.
+    if (this.zone !== null) clampToZone(this.zone, this.botTarget.x, this.botTarget.z, 0, this.botTarget);
     return this.botTarget;
   }
 
@@ -677,22 +748,63 @@ export class Sim {
 
     const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
-    cart.step(intent, FIXED_DT, this.cartTuningScratch);
+    if (this.paths.length > 0) applyPathBonus(this.cartTuningScratch, pathWeightAt(this.paths, c.x, c.z));
+    cart.step(intent, FIXED_DT, this.cartTuningScratch, this.gradeAlong(c.x, c.z, cart.heading));
+    // The controller is shared, so each cart sets its own climb limit before it moves: the ground
+    // under it and its tyres decide how steep a face it can drive up (see mobility.ts).
+    this.controller.setMaxSlopeClimbAngle(maxClimbRad(this.cartTuningScratch, cart.tire));
     this.moveCartBody(rig);
     this.checkCartWater(rig);
+    this.checkZone(rig);
+    if (cart.dead) return;
 
+    const ammoBefore = cart.ammo;
+    let collected = false;
     for (const bucket of this.buckets) {
-      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) cart.addAmmo(BUCKET_REFILL_AMMO);
+      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) {
+        cart.addAmmo(BUCKET_REFILL_AMMO);
+        collected = true;
+      }
     }
     for (const landed of this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE)) {
       cart.addAmmo(1);
       this.ballPool.release(landed);
+      collected = true;
     }
+    // One event for whatever this tick collected, with the rounds it actually gave: a full magazine
+    // still takes the bucket, and says so with a zero.
+    if (collected && rig.index === 0) this.tally.pickups += 1;
+    if (collected) this.events.push("pickup", rig.index, NO_TARGET_RIG, c.x, c.y, c.z, cart.ammo - ammoBefore, null);
 
     if (cart.shot.fired) {
       cart.shot.fired = false;
       this.resolveShot(rig);
     }
+  }
+
+  /**
+   * Outside the zone a cart is warned at once and drains a point every two seconds; a drain that
+   * empties the bar is a death nobody caused, like a drowning.
+   */
+  private checkZone(rig: CartRig): void {
+    const cart = rig.cart;
+    if (this.zone === null || cart.dead) return;
+    const p = cart.position;
+    if (zoneSignedDistance(this.zone, p.x, p.z) <= 0) {
+      cart.outOfBoundsFor = 0;
+      return;
+    }
+    const before = cart.outOfBoundsFor;
+    cart.outOfBoundsFor += FIXED_DT;
+    const drain = outOfBoundsDrain(before, cart.outOfBoundsFor);
+    if (drain > 0 && applyDamage(cart.health, drain)) this.killCart(cart, rig.index, NO_KILLER);
+  }
+
+  /** The ground's rise over run along `heading` at (x, z), from two samples a wheelbase apart. */
+  private gradeAlong(x: number, z: number, heading: number): number {
+    const dx = Math.cos(heading) * GRADE_HALF_BASE_M;
+    const dz = Math.sin(heading) * GRADE_HALF_BASE_M;
+    return (this.playfield.heightAt(x + dx, z + dz) - this.playfield.heightAt(x - dx, z - dz)) / (2 * GRADE_HALF_BASE_M);
   }
 
   /**
@@ -704,6 +816,8 @@ export class Sim {
     if (rig.cart.respawnTimer > 0) return;
     this.placeRig(rig, this.respawnPointFor(rig.index));
     rig.cart.revive();
+    const p = rig.cart.position;
+    this.events.push("respawn", NO_TARGET_RIG, rig.index, p.x, p.y, p.z, 0, null);
     // After `revive`, which clears it: protection is a property of respawning, granted here and
     // nowhere else, so `reset` starting a fresh match does not start it behind a shield.
     rig.cart.protectedFor = SPAWN_PROTECTION_S;
@@ -766,6 +880,10 @@ export class Sim {
       p.z + corrected.z,
       this.clampScratch,
     );
+    // And no further than the reach past the zone's stakes.
+    if (this.zone !== null) {
+      clampToZone(this.zone, this.clampScratch.x, this.clampScratch.z, ZONE_CLAMP_REACH_M, this.clampScratch);
+    }
     p.x = this.clampScratch.x;
     p.y += corrected.y;
     p.z = this.clampScratch.z;
@@ -795,6 +913,7 @@ export class Sim {
 
     if (cart.wasInWater) return;
     cart.wasInWater = true;
+    this.events.push("splash", NO_TARGET_RIG, rig.index, p.x, p.y, p.z, 0, null);
 
     if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart, rig.index, NO_KILLER);
 
@@ -814,17 +933,22 @@ export class Sim {
   private resolveShot(rig: CartRig): void {
     const cart = rig.cart;
     const isPlayer = rig.index === 0;
+    const muzzle = this.muzzleScratch;
+    computeMuzzle(cart, muzzle);
     if (!cart.shot.hasBall) {
       if (isPlayer) this.lastShotWasStrike = false;
+      this.events.push("dryfire", rig.index, NO_TARGET_RIG, muzzle.x, muzzle.y, muzzle.z, 0, cart.shot.club);
       return;
     }
 
     const pooled = this.ballPool.acquire(rig.index);
     if (!pooled) {
-      // Every pooled body is in flight at once. `Cart.fire()` already spent the round on the
-      // assumption a ball would spawn; refund it so this degrades to a true no-op.
+      // Every pooled body is up in the air at once. `Cart.fire()` already spent the round on the
+      // assumption a ball would spawn; refund it so this degrades to a true no-op -- one that
+      // sounds like an empty trigger rather than like nothing.
       cart.addAmmo(1);
       if (isPlayer) this.lastShotWasStrike = false;
+      this.events.push("dryfire", rig.index, NO_TARGET_RIG, muzzle.x, muzzle.y, muzzle.z, 0, cart.shot.club);
       return;
     }
 
@@ -834,8 +958,8 @@ export class Sim {
       // from ammo's own decrement, which a 0-ammo blank also triggers.
       this.stats.shotsFired += 1;
     }
-    computeMuzzle(cart, this.muzzleScratch);
-    pooled.body.setTranslation(this.muzzleScratch, true);
+    this.events.push("shot", rig.index, NO_TARGET_RIG, muzzle.x, muzzle.y, muzzle.z, cart.shot.charge01, cart.shot.club);
+    pooled.body.setTranslation(muzzle, true);
     pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
     pooled.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     pooled.body.setLinvel(computeLaunchVelocity(cart.shot.club, cart.shot.charge01, cart.shot.yaw), true);
@@ -920,12 +1044,13 @@ export class Sim {
   reset(): void {
     this.lastShotWasStrike = false;
     this.match.reset();
+    Object.assign(this.tally, createTally());
+    this.playerHitAt.length = 0;
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.freePhysics();
     this.buildPhysics();
     for (const bucket of this.buckets) bucket.cooldownRemaining = 0;
     this.simTime = 0;
-    this.hitEventCount = 0;
 
     for (const rig of this.rigs) {
       this.placeRig(rig, this.openingPoint(rig.index));
@@ -934,8 +1059,7 @@ export class Sim {
     }
 
     this.syncCurrentCart();
-    this.previousCart = this.currentCart;
-    this.previousBotCarts = this.currentBotCarts.slice();
+    this.collapseRenderPairs();
     this.syncCurrentPool();
     this.previousPoolTransforms.set(this.currentPoolTransforms);
   }
@@ -956,10 +1080,17 @@ export class Sim {
    * every cart one tick behind everything else.
    */
   private syncCurrentCart(): void {
-    this.currentCart = cartTransformOf(this.cart);
+    this.currentCart = writeTransform(this.cart, otherOf(this.cartBuffers, this.previousCart));
     for (let i = 0; i < this.bots.length; i++) {
-      this.currentBotCarts[i] = cartTransformOf(this.bots[i]!);
+      const pair = (this.botBuffers[i] ??= [blankTransform(), blankTransform()]);
+      this.currentBotCarts[i] = writeTransform(this.bots[i]!, otherOf(pair, this.previousBotCarts[i]));
     }
+  }
+
+  /** Every previous/current pair onto its current value, so an interpolating renderer holds still. */
+  private collapseRenderPairs(): void {
+    this.previousCart = this.currentCart;
+    for (let i = 0; i < this.currentBotCarts.length; i++) this.previousBotCarts[i] = this.currentBotCarts[i]!;
   }
 
   /**
@@ -1001,11 +1132,22 @@ export class Sim {
 /** Neutral intent for callers that step without driving. Frozen: `Sim` never writes to it. */
 const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
 
-function cartTransformOf(cart: Cart): CartTransform {
+function blankTransform(): CartTransform {
+  return { position: { x: 0, y: 0, z: 0 }, heading: 0, turretYaw: 0 };
+}
+
+/** Writes `cart`'s state into `out` and returns it. */
+function writeTransform(cart: Cart, out: CartTransform): CartTransform {
   const p = cart.position;
-  return {
-    position: { x: p.x, y: p.y, z: p.z },
-    heading: cart.heading,
-    turretYaw: cart.turretYaw,
-  };
+  out.position.x = p.x;
+  out.position.y = p.y;
+  out.position.z = p.z;
+  out.heading = cart.heading;
+  out.turretYaw = cart.turretYaw;
+  return out;
+}
+
+/** The buffer of `pair` that is not `avoid`. */
+function otherOf(pair: [CartTransform, CartTransform], avoid: CartTransform | undefined): CartTransform {
+  return pair[0] === avoid ? pair[1] : pair[0];
 }

@@ -777,3 +777,19 @@ It is not iteration order. Object, `Map` and array iteration order is fixed by t
 The golden is only the first thing to notice. The same one-ulp drift splits any two machines that run the sim side by side: an x64 server and an arm64 client would disagree about a match by tick 46. `ARCHITECTURE.md` §1 plans for the server to run `src/sim/**` unmodified, so this has to be settled before lockstep, replays or server reconciliation.
 
 The fix is known in outline: route the sim's `sin`, `cos` and `atan2` through a pure-JS implementation, since JS arithmetic is IEEE-exact on every platform. That is 61 call sites across 13 files in `src/sim/**` and `src/physics/**`. A faithful fdlibm port should reproduce x64's current results bit for bit, so the golden might not move at all, but that is a claim to test, not to assume. It is not scheduled in `REVAMP-PLAN.md`.
+
+## What the 2026-09-28 session decided
+
+Choices made while building Stages 3–9 of `docs/REVAMP-PLAN.md`, where the plan left room.
+
+- **Quality: auto never picks High.** A device probe cannot tell a desktop GPU that holds 60 fps under CSM and GTAO from one that does not; Medium is the design target, and High is the player's choice in Settings.
+- **The near-tile cache holds 24, not 20.** Up to 21 tiles lie inside the near radius at once; a cap under that would evict a tile it is about to draw.
+- **The shadow map is always enabled on the renderer.** Low turns shadows off by having no shadow-casting light, not by toggling the renderer, so a quality change never recompiles every material.
+- **The zone is a convex hull, not the union of the six corridors.** The union does not reach the clubhouse where the teams start, so a cart would have to leave the zone to get to a fairway.
+- **Resistance is read off `cartSpeedScale`, not tabled beside it.** One number per surface decides both how much a surface slows a cart and how steep it can climb there, so the two cannot disagree.
+- **Trees are thinned to the cap after scattering.** The archived scatter stopped at its cap mid-scan and left the northern holes bare.
+- **Cart paths are straight runs.** Clubhouse to each arena tee, each green to the next tee. A path's speed scale is 1.12, above fairway.
+- **Bots plan only when it matters.** Within 40 m, or within 80 m in a clear line, a bot drives straight at its target; otherwise it follows an A* route, replanned at most once a second. Pond banks are closed in the graph, and a bot moves to the next waypoint only once that is in a clear line.
+- **Upgrades buy at once; paint waits for CONFIRM.** An upgrade has no look to preview.
+- **A new profile starts with no coins.** Earnings come from matches (half the score).
+- **Verification cadence (the user, 2026-09-28).** CI's typecheck and unit tests gate commits and merges. Long local browser runs are not repeated per change; a short drive of 30 s at most when a browser check is needed.

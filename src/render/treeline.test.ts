@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { createTreeline } from "./treeline";
+import { createTreeline, treelineFor } from "./treeline";
 import { metresNorthOf } from "../sim/courseBarrier";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { Bounds } from "../sim/courseLayout";
@@ -98,5 +98,19 @@ describe("the treeline", () => {
     expect(band.count).toBe(0);
     expect(band.mesh).toBeNull();
     band.dispose();
+  });
+});
+
+describe("one treeline per course", () => {
+  it("is built once and handed back after", () => {
+    const source = { southBoundary: ROAD, course: { bounds: BOUNDS, heightAt: FLAT }, seed: 2026 };
+    const band = treelineFor(source);
+    expect(band).not.toBeNull();
+    expect(treelineFor(source)).toBe(band);
+    expect(treelineFor({ ...source })).not.toBe(band);
+  });
+
+  it("is nothing on a course with no road", () => {
+    expect(treelineFor({ course: { bounds: BOUNDS, heightAt: FLAT }, seed: 2026 })).toBeNull();
   });
 });

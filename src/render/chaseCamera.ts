@@ -1,4 +1,4 @@
-import type { CartTransform } from "../sim/world";
+import type { CartTransform } from "../sim/frame";
 
 /**
  * Chase framing, from image 03: cart low in frame, horizon high, enough lead to read the next
@@ -48,6 +48,19 @@ export const CHASE_TARGET_LERP = 0.2;
 
 const TUNED_FRAME_SECONDS = 1 / 60;
 
+/** Vertical field of view at rest, degrees. */
+export const CHASE_BASE_FOV = 60;
+/** Degrees the view widens by at full speed: the rush of a flat-out cart. */
+export const CHASE_FOV_KICK = 12;
+/** Forward speed, m/s, at which the whole kick is in. A street cart's top speed on fairway. */
+export const CHASE_FOV_FULL_SPEED = 20;
+
+/** The field of view for a cart moving at `speed` m/s. Reversing does not widen it. */
+export function chaseFov(speed: number): number {
+  const t = Math.min(1, Math.max(0, speed / CHASE_FOV_FULL_SPEED));
+  return CHASE_BASE_FOV + CHASE_FOV_KICK * t;
+}
+
 /**
  * The fraction of the remaining distance to close in a frame `frameSeconds` long: exponential
  * decay, so the camera settles at the same speed at any frame rate. A fixed per-frame factor
@@ -55,4 +68,28 @@ const TUNED_FRAME_SECONDS = 1 / 60;
  */
 export function chaseSmoothing(per60HzFrame: number, frameSeconds: number): number {
   return 1 - Math.pow(1 - per60HzFrame, frameSeconds / TUNED_FRAME_SECONDS);
+}
+/** Points along the sight line the ground is checked at. */
+const CLEARANCE_SAMPLES = 12;
+
+/**
+ * Lifts `eye` until the line from `look` to it clears the ground by `clearance` at every sample:
+ * a bank between the camera and the cart, or a rise behind it, lifts the camera over rather than
+ * hiding the cart. Only ever lifts; `frameChase` smooths the result like any other move.
+ */
+export function clearTerrain(
+  eye: MutableVec3,
+  look: { readonly x: number; readonly y: number; readonly z: number },
+  heightAt: (x: number, z: number) => number,
+  clearance: number,
+): void {
+  let y = eye.y;
+  for (let i = 1; i <= CLEARANCE_SAMPLES; i++) {
+    const t = i / CLEARANCE_SAMPLES;
+    const ground = heightAt(look.x + (eye.x - look.x) * t, look.z + (eye.z - look.z) * t);
+    // The line's height at t is look.y + (eye.y - look.y) * t; solve for the eye that clears here.
+    const needed = look.y + (ground + clearance - look.y) / t;
+    if (needed > y) y = needed;
+  }
+  eye.y = y;
 }

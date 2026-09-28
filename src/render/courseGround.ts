@@ -6,6 +6,7 @@ import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
 import { BIOMES } from "./biomes";
 import { applyGroundShader } from "./groundShader";
+import { GROUND_DETAIL } from "./terrainTextures";
 
 /**
  * The whole course, drawn as tiles that get finer as you approach them.
@@ -49,6 +50,19 @@ const FAR_MASK_M = 8;
 /** A tile closer than this to the camera is worth its near build. */
 const NEAR_RADIUS_M = 320;
 
+/**
+ * Near tiles kept built at most. Past it, the least recently wanted are freed (see `evict`), so a
+ * lap of the course holds the ground around the cart rather than everything it ever drove over.
+ *
+ * 24, not the 20 `REVAMP-PLAN.md` first said: with 180 m tiles, up to 21 lie within `NEAR_RADIUS_M`
+ * of some camera positions, so a cap of 20 would evict ground the camera is looking at and
+ * rebuild it the next frame. Measured by the test that holds this cap.
+ */
+const NEAR_TILE_CAP = 24;
+/** Metres past `NEAR_RADIUS_M` a built near tile must be before it may be freed, so driving back
+ *  and forth across the radius does not rebuild the same tile over and over. */
+const NEAR_EVICT_MARGIN_M = 120;
+
 /** How long `update` may spend building, per call. Under a sixth of a 16.67 ms frame. */
 const BUILD_BUDGET_MS = 2.5;
 
@@ -67,6 +81,10 @@ export interface CourseGround {
   update(cameraX: number, cameraZ: number): void;
   /** Tiles currently drawn at near detail. For tests and the smoke check. */
   readonly nearTileCount: number;
+  /** Tiles holding a near build, drawn or not. Bounded by `NEAR_TILE_CAP` plus what is in range. */
+  readonly builtNearTileCount: number;
+  /** Near builds completed since construction. */
+  readonly nearBuilds: number;
   dispose(): void;
 }
 
@@ -86,6 +104,8 @@ interface Tile {
   near: TileLevel | null;
   /** Work in progress toward `near`, if any. */
   job: NearJob | null;
+  /** The `update` call this tile was last within `NEAR_RADIUS_M` on: the LRU clock. */
+  lastWanted: number;
 }
 
 /** A near build, part-done. Rows are filled a few at a time so no frame pays for a whole tile. */
@@ -95,8 +115,8 @@ interface NearJob {
   maskRow: number;
   readonly cells: number;
   readonly positions: Float32Array;
-  readonly biome: Float32Array;
-  readonly mow: Float32Array;
+  readonly biome: Uint8Array;
+  readonly mow: Int8Array;
   gridRow: number;
 }
 
@@ -104,7 +124,16 @@ function paletteVector(field: "green" | "fairway" | "rough" | "sand" | "water"):
   return BIOME_ORDER.map((biome) => new THREE.Color(BIOMES[biome][field]));
 }
 
-export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): CourseGround {
+/**
+ * `heightAt` is the ground the tiles stand on. It defaults to the course's exact blend; the match
+ * hands in the playfield's, which is the heightfield the carts collide with, so what you see is
+ * what you drive on -- and it is a grid lookup rather than an eighteen-hole blend per vertex.
+ */
+export function createCourseGround(
+  terrain: CourseTerrain,
+  surfaces: Surfaces,
+  heightAt: (x: number, z: number) => number = (x, z) => terrain.heightAt(x, z),
+): CourseGround {
   const group = new THREE.Group();
   const extentX = terrain.bounds.maxX - terrain.bounds.minX;
   const extentZ = terrain.bounds.maxZ - terrain.bounds.minZ;
@@ -120,42 +149,46 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     uRoughBiome: { value: paletteVector("rough") },
     uSandBiome: { value: paletteVector("sand") },
     uWaterBiome: { value: paletteVector("water") },
+    ...GROUND_DETAIL,
   };
 
   const weightScratch = new Float32Array(terrain.holes.length);
   const surfaceWeights = createSurfaceWeights();
 
-  /** Which biomes claim a point, in `BIOME_ORDER`, written into `out` at `offset`. */
-  function biomeInto(x: number, z: number, out: Float32Array, offset: number): void {
-    terrain.weightsInto(x, z, weightScratch);
-    out[offset] = 0;
-    out[offset + 1] = 0;
-    out[offset + 2] = 0;
+  /**
+   * Which biomes claim a point, in `BIOME_ORDER`, and the direction its owning hole is mown in, from
+   * one `weightsInto` -- it used to be asked twice per vertex, once for each. Biome weights go out
+   * as 0..255 and the mow direction as a signed unit vector in -127..127: both are 8-bit
+   * normalised attributes, which the shader reads back as floats.
+   *
+   * `stripeAngle` is in the hole's own frame, so it turns with the placement. The mow is zero where
+   * no hole owns the ground, which is where the stripes are faded out anyway.
+   */
+  function vertexInto(x: number, z: number, biome: Uint8Array, mow: Int8Array, index: number): void {
+    const owner = terrain.weightsInto(x, z, weightScratch);
+    let b0 = 0;
+    let b1 = 0;
+    let b2 = 0;
     for (let i = 0; i < weightScratch.length; i++) {
       const weight = weightScratch[i]!;
       if (weight <= 0) continue;
-      const biome = biomeForIndex(terrain.holes[i]!.spec.index);
-      out[offset + BIOME_ORDER.indexOf(biome)] += weight;
+      const slot = BIOME_ORDER.indexOf(biomeForIndex(terrain.holes[i]!.spec.index));
+      if (slot === 0) b0 += weight;
+      else if (slot === 1) b1 += weight;
+      else b2 += weight;
     }
-  }
-
-  /**
-   * The direction this hole is mown in, at a point, as a world-space vector.
-   *
-   * `stripeAngle` is in the hole's own frame, so it turns with the placement. Zero where no hole
-   * owns the ground, which is where the stripes are faded out anyway.
-   */
-  function mowInto(x: number, z: number, out: Float32Array, offset: number): void {
-    const owner = terrain.weightsInto(x, z, weightScratch);
+    biome[index * 3] = Math.round(Math.min(1, b0) * 255);
+    biome[index * 3 + 1] = Math.round(Math.min(1, b1) * 255);
+    biome[index * 3 + 2] = Math.round(Math.min(1, b2) * 255);
     if (owner < 0) {
-      out[offset] = 0;
-      out[offset + 1] = 0;
+      mow[index * 2] = 0;
+      mow[index * 2 + 1] = 0;
       return;
     }
     const hole = terrain.holes[owner]!;
     const angle = hole.spec.stripeAngle + hole.placement.rotation;
-    out[offset] = Math.cos(angle);
-    out[offset + 1] = Math.sin(angle);
+    mow[index * 2] = Math.round(Math.cos(angle) * 127);
+    mow[index * 2 + 1] = Math.round(Math.sin(angle) * 127);
   }
 
   /** One row of mask texels. Split out because a near tile fills these a few rows at a time. */
@@ -185,18 +218,17 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     cells: number,
     row: number,
     positions: Float32Array,
-    biome: Float32Array,
-    mow: Float32Array,
+    biome: Uint8Array,
+    mow: Int8Array,
   ): void {
     const worldZ = tile.minZ + (row / cells) * tile.sizeZ;
     for (let col = 0; col <= cells; col++) {
       const worldX = tile.minX + (col / cells) * tile.sizeX;
       const index = row * (cells + 1) + col;
       positions[index * 3] = worldX;
-      positions[index * 3 + 1] = terrain.heightAt(worldX, worldZ);
+      positions[index * 3 + 1] = heightAt(worldX, worldZ);
       positions[index * 3 + 2] = worldZ;
-      biomeInto(worldX, worldZ, biome, index * 3);
-      mowInto(worldX, worldZ, mow, index * 2);
+      vertexInto(worldX, worldZ, biome, mow, index);
     }
   }
 
@@ -210,8 +242,8 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
   function buildGeometry(
     cells: number,
     positions: Float32Array,
-    biome: Float32Array,
-    mow: Float32Array,
+    biome: Uint8Array,
+    mow: Int8Array,
   ): THREE.BufferGeometry {
     const side = cells + 1;
     const gridVerts = side * side;
@@ -221,8 +253,8 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     const total = gridVerts + skirtVerts;
 
     const pos = new Float32Array(total * 3);
-    const bio = new Float32Array(total * 3);
-    const mowAttr = new Float32Array(total * 2);
+    const bio = new Uint8Array(total * 3);
+    const mowAttr = new Int8Array(total * 2);
     const uv = new Float32Array(total * 2);
     pos.set(positions);
     bio.set(biome);
@@ -294,8 +326,8 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    geometry.setAttribute("aBiome", new THREE.BufferAttribute(bio, 3));
-    geometry.setAttribute("aMow", new THREE.BufferAttribute(mowAttr, 2));
+    geometry.setAttribute("aBiome", new THREE.BufferAttribute(bio, 3, true));
+    geometry.setAttribute("aMow", new THREE.BufferAttribute(mowAttr, 2, true));
     geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
@@ -314,6 +346,13 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
       normalArray[target * 3 + 2] = normalArray[rim * 3 + 2]!;
     }
     normals.needsUpdate = true;
+
+    // Once on the GPU, the CPU copies only cost memory -- except positions, which three's frustum
+    // culling bounds and the smoke's NaN check both read.
+    for (const name of ["aBiome", "aMow", "uv", "normal"] as const) {
+      (geometry.getAttribute(name) as THREE.BufferAttribute).onUpload(releaseArray);
+    }
+    geometry.getIndex()?.onUpload(releaseArray);
     return geometry;
   }
 
@@ -347,14 +386,17 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     cells: number,
     maskSize: number,
     positions: Float32Array,
-    biome: Float32Array,
-    mow: Float32Array,
+    biome: Uint8Array,
+    mow: Int8Array,
     maskData: Uint8Array,
   ): TileLevel {
     const mask = makeMask(maskData, maskSize);
     const material = buildMaterial(mask);
     const geometry = buildGeometry(cells, positions, biome, mow);
     const mesh = new THREE.Mesh(geometry, material);
+    // Receives, never casts: the ground is the floor every shadow lands on, and its own relief is
+    // lit by its normals.
+    mesh.receiveShadow = true;
     return { mesh, geometry, material, mask };
   }
 
@@ -375,13 +417,14 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
         far: null as unknown as TileLevel,
         near: null,
         job: null,
+        lastWanted: -1,
       };
       const cells = Math.max(1, Math.round(Math.max(sizeX, sizeZ) / FAR_CELL_M));
       const maskSize = Math.max(2, Math.round(Math.max(sizeX, sizeZ) / FAR_MASK_M));
       const side = cells + 1;
       const positions = new Float32Array(side * side * 3);
-      const biome = new Float32Array(side * side * 3);
-      const mow = new Float32Array(side * side * 2);
+      const biome = new Uint8Array(side * side * 3);
+      const mow = new Int8Array(side * side * 2);
       for (let row = 0; row < side; row++) fillGridRow(tile, cells, row, positions, biome, mow);
       const maskData = new Uint8Array(maskSize * maskSize * 4);
       for (let row = 0; row < maskSize; row++) fillMaskRow(tile, maskData, maskSize, row);
@@ -407,8 +450,8 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
       maskRow: 0,
       cells,
       positions: new Float32Array(side * side * 3),
-      biome: new Float32Array(side * side * 3),
-      mow: new Float32Array(side * side * 2),
+      biome: new Uint8Array(side * side * 3),
+      mow: new Int8Array(side * side * 2),
       gridRow: 0,
     };
   }
@@ -437,27 +480,38 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
       );
       group.add(tile.near.mesh);
       tile.job = null;
+      nearBuilds++;
       return true;
     }
     return false;
   }
 
+  let clock = 0;
+  let nearBuilds = 0;
+  let builtNear = 0;
+
   function update(cameraX: number, cameraZ: number): void {
     const deadline = performance.now() + BUILD_BUDGET_MS;
     let closest: Tile | null = null;
     let closestDistance = Infinity;
+    clock++;
 
     for (const tile of tiles) {
       const distance = distanceToTile(tile, cameraX, cameraZ);
       const wantNear = distance <= NEAR_RADIUS_M;
+      if (wantNear) tile.lastWanted = clock;
       if (tile.near !== null) {
-        // Built tiles are kept rather than freed: driving back the way you came is the common
-        // case in a match, and rebuilding is 65 ms of work to save a third of a megabyte.
+        // Built tiles are kept while there is room: driving back the way you came is the common
+        // case in a match. `evict` frees the stalest once there is not.
         tile.near.mesh.visible = wantNear;
         tile.far.mesh.visible = !wantNear;
         continue;
       }
-      if (!wantNear) continue;
+      if (!wantNear) {
+        // A build the camera has driven well away from is abandoned rather than finished later.
+        if (tile.job !== null && distance > NEAR_RADIUS_M + NEAR_EVICT_MARGIN_M) tile.job = null;
+        continue;
+      }
       if (tile.job === null) startJob(tile);
       if (distance < closestDistance) {
         closestDistance = distance;
@@ -470,7 +524,37 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     if (closest !== null && advanceJob(closest, deadline)) {
       closest.near!.mesh.visible = true;
       closest.far.mesh.visible = false;
+      builtNear++;
     }
+    if (builtNear > NEAR_TILE_CAP) evict(cameraX, cameraZ);
+  }
+
+  /**
+   * Frees the least recently wanted near tiles until the cap holds. Tiles beyond the hysteresis band
+   * go first; only if that is not enough do tiles inside the band, but out of range, go too. A tile
+   * in range is never freed, so the cap can only be exceeded by what the camera is looking at.
+   */
+  function evict(cameraX: number, cameraZ: number): void {
+    for (const reach of [NEAR_RADIUS_M + NEAR_EVICT_MARGIN_M, NEAR_RADIUS_M]) {
+      while (builtNear > NEAR_TILE_CAP && evictStalest(cameraX, cameraZ, reach));
+    }
+  }
+
+  /** Frees the least recently wanted built tile further than `reach`; false if there is none. */
+  function evictStalest(cameraX: number, cameraZ: number, reach: number): boolean {
+    let stalest: Tile | null = null;
+    for (const tile of tiles) {
+      if (tile.near === null) continue;
+      if (distanceToTile(tile, cameraX, cameraZ) <= reach) continue;
+      if (stalest === null || tile.lastWanted < stalest.lastWanted) stalest = tile;
+    }
+    if (stalest === null) return false;
+    group.remove(stalest.near!.mesh);
+    disposeLevel(stalest.near!);
+    stalest.near = null;
+    stalest.far.mesh.visible = true;
+    builtNear--;
+    return true;
   }
 
   return {
@@ -478,6 +562,12 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     update,
     get nearTileCount(): number {
       return tiles.filter((tile) => tile.near !== null && tile.near.mesh.visible).length;
+    },
+    get builtNearTileCount(): number {
+      return builtNear;
+    },
+    get nearBuilds(): number {
+      return nearBuilds;
     },
     dispose: () => {
       for (const tile of tiles) {
@@ -498,4 +588,34 @@ export const COURSE_GROUND_TUNING = {
   FAR_MASK_M,
   NEAR_RADIUS_M,
   SKIRT_M,
+  NEAR_TILE_CAP,
+  NEAR_EVICT_MARGIN_M,
 } as const;
+
+/** `onUpload` callback: drops a buffer's CPU copy once three has handed it to the GPU. */
+function releaseArray(this: THREE.BufferAttribute): void {
+  (this as unknown as { array: unknown }).array = null;
+}
+
+/** What a course ground is built from: the arena's course, its surfaces, and its heights. */
+export interface CourseGroundSource {
+  readonly course: CourseTerrain;
+  readonly surfaces: Surfaces;
+  readonly heightAt?: (x: number, z: number) => number;
+}
+
+const grounds = new WeakMap<CourseGroundSource, CourseGround>();
+
+/**
+ * One ground per course, for the page's life. The course never changes under it, and building
+ * every far tile again for each match was a second or more of work to arrive at the same ground.
+ * The match's scene borrows it and gives it back on exit; nothing disposes it.
+ */
+export function courseGroundFor(source: CourseGroundSource): CourseGround {
+  let ground = grounds.get(source);
+  if (!ground) {
+    ground = createCourseGround(source.course, source.surfaces, source.heightAt);
+    grounds.set(source, ground);
+  }
+  return ground;
+}
