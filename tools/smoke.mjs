@@ -215,11 +215,42 @@ const clickTitle = (label) =>
     [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === l).click();
   }, label);
 
+// This browser is SwiftShader, which `pickQuality` sends to low -- and low is the one preset whose
+// context is not multisampled, so the pick is visible on the renderer itself.
+const bootQuality = await page.evaluate(() => {
+  const hook = window.__teetimeturrets;
+  return { name: hook.quality.name, gpu: hook.device.gpu, antialias: hook.renderer.getContext().getContextAttributes().antialias };
+});
+check(
+  "auto picks low on a software renderer, with no MSAA",
+  bootQuality.name === "low" && bootQuality.antialias === false,
+  `${bootQuality.name}, antialias ${bootQuality.antialias}, gpu "${bootQuality.gpu}"`,
+);
+// The first match runs medium -- the preset most desktops get -- so its single shadow map is
+// exercised; the second runs high. Low's only difference is having no shadows at all.
+await page.evaluate(() => window.__teetimeturrets.setSettings({ quality: "medium" }));
+
 console.log("=== PLAY (the arena) ===");
 // Eighteen holes routed and blended into one heightfield, built for the first time here, so this
 // is the one boot path in the file that earns a generous timeout.
 await clickTitle("PLAY");
 await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 30000 });
+
+// The render base (Stage 3): a sky dome baked into the environment, fog in the colour read back
+// off the dome's horizon, and medium's one shadow-casting sun.
+const lit = await page.evaluate(() => window.__teetimeturrets.render.describeLighting());
+const fogOff = Math.max(...lit.fogColour.map((c, i) => Math.abs(c - lit.modelHorizon[i])));
+check(
+  "the match is lit by the sky's environment, under exponential fog",
+  lit.environment === true && lit.fog === "FogExp2",
+  `environment ${lit.environment}, fog ${lit.fog}`,
+);
+check(
+  "the fog is the drawn horizon's colour, and the dome draws the sky model",
+  fogOff < 0.03,
+  `fog ${lit.fogColour.map((c) => c.toFixed(3)).join(",")} vs model ${lit.modelHorizon.map((c) => c.toFixed(3)).join(",")}`,
+);
+check("medium lights the match with one shadow-casting sun", lit.quality === "medium" && lit.shadowLights === 1, `${lit.quality}, ${lit.shadowLights} shadow lights`);
 
 console.log("=== CONTROLS CARD (first play) ===");
 // A fresh browser profile is a first play, so the match opens paused on the controls card. The
@@ -782,31 +813,29 @@ check("SETTINGS opens from the title", settingsOut.screen === "settings", settin
 check("a volume change is saved", settingsOut.saved === 0.37, `${settingsOut.saved}`);
 check("and applied at once", settingsOut.live === 0.37, `${settingsOut.live}`);
 
-// Graphics quality (Stage 3). This browser is SwiftShader, which `pickQuality` sends to low -- and
-// low is the one preset whose context is not multisampled, so the pick is visible on the renderer.
+// Graphics quality (Stage 3): the GRAPHICS row switches and saves the preset, and AUTO hands it
+// back to the device. HIGH is left selected, so the second match (after the clubhouse) runs the
+// cascaded shadows; the first ran medium's single map.
 const qualityOut = await page.evaluate(() => {
   const hook = window.__teetimeturrets;
   const select = document.querySelector('.settings-screen [data-setting="quality"]');
-  const boot = { name: hook.quality.name, gpu: hook.device.gpu, antialias: hook.renderer.getContext().getContextAttributes().antialias };
-  if (!select) return { boot, picked: null, saved: null, back: null };
-  select.value = "high";
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-  const picked = hook.quality.name;
+  if (!select) return { picked: null, saved: null, back: null, left: null };
+  const pick = (value) => {
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return hook.quality.name;
+  };
+  const picked = pick("high");
   let saved = null;
   try {
     saved = JSON.parse(localStorage.getItem("teetimeturrets.settings.v1") ?? "null")?.quality ?? null;
   } catch {
     saved = "unreadable";
   }
-  select.value = "auto";
-  select.dispatchEvent(new Event("change", { bubbles: true }));
-  return { boot, picked, saved, back: hook.quality.name };
+  const back = pick("auto");
+  const left = pick("high");
+  return { picked, saved, back, left };
 });
-check(
-  "auto picks low on a software renderer, with no MSAA",
-  qualityOut.boot.name === "low" && qualityOut.boot.antialias === false,
-  `${qualityOut.boot.name}, antialias ${qualityOut.boot.antialias}, gpu "${qualityOut.boot.gpu}"`,
-);
 check("GRAPHICS switches the preset and saves it", qualityOut.picked === "high" && qualityOut.saved === "high", `${qualityOut.picked} / saved ${qualityOut.saved}`);
 check("and AUTO hands it back to the device", qualityOut.back === "low", `${qualityOut.back}`);
 await page.evaluate(() => [...document.querySelectorAll(".settings-screen .btn")].find((b) => b.textContent === "BACK").click());
@@ -967,6 +996,21 @@ check(
   "a tire bought in the clubhouse is the tire the sim runs",
   tireAfter.tire === "turf" && tireAfter.tire !== tireBefore,
   `${tireBefore} -> ${tireAfter.tire}`,
+);
+
+// The second match was entered at HIGH (left selected in SETTINGS): cascaded shadows, adopted by
+// every lit material including ground tiles built as the camera moves.
+await page.evaluate(() => window.__teetimeturrets.resetPerf());
+await waitForSimSeconds(2);
+const high = await page.evaluate(() => ({ lit: window.__teetimeturrets.render.describeLighting(), perf: window.__teetimeturrets.perf }));
+console.log(
+  `  perf at high: ${high.perf.frames} frames, frame ${high.perf.frameMs.median.toFixed(1)} ms median, ` +
+    `draw calls ${high.perf.drawCalls.median}/${high.perf.drawCalls.max} (median/max)`,
+);
+check(
+  "high lights the second match with cascaded shadows and keeps drawing",
+  high.lit.quality === "high" && high.lit.shadowLights === 3 && high.perf.frames > 0,
+  `${high.lit.quality}, ${high.lit.shadowLights} shadow lights, ${high.perf.frames} frames`,
 );
 
 check("no console errors during the session", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));

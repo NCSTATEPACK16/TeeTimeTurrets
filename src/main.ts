@@ -20,6 +20,7 @@ import { browserStore, hasSeenControls, loadSettings, markControlsSeen, saveSett
 import type { Settings } from "./app/settings";
 import { AudioEngine } from "./audio/synth";
 import { pixelRatioFor, probeDeviceFacts, resolveQuality } from "./render/quality";
+import { applyColourPipeline } from "./render/colour";
 import type { QualityPreset } from "./render/quality";
 
 /**
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
   // Created once and shared. A context per screen would hit the browser's hard limit on live
   // WebGL contexts within a few transitions, and lose the title backdrop's whole reason to exist.
   const renderer = new THREE.WebGLRenderer({ antialias: quality.msaa });
+  applyColourPipeline(renderer);
   const fitRenderer = (): void => {
     renderer.setPixelRatio(pixelRatioFor(quality, window.devicePixelRatio));
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -170,6 +172,7 @@ async function main(): Promise<void> {
       onMainMenu: () => screens.show("title"),
       showControls: !hasSeenControls(store),
       onControlsSeen: () => markControlsSeen(store),
+      quality,
     });
     return matchScreen;
   });
@@ -242,6 +245,8 @@ async function main(): Promise<void> {
     get quality() {
       return quality;
     },
+    /** Changes settings as the Settings screen does: saved, and applied where it applies. */
+    setSettings: (patch: Partial<Settings>) => changeSettings({ ...settings, ...patch }),
     device,
     get match() {
       return matchScreen;

@@ -128,6 +128,19 @@ describe("level of detail", () => {
     ground.dispose();
   });
 
+  it("receives shadows on every tile, far and near", () => {
+    // A tile built later -- every near tile -- is a new mesh, so this has to be the ground's own
+    // doing rather than a flag the scene sets once on what exists when it is built.
+    const { terrain, ground } = build();
+    const centreX = (terrain.bounds.minX + terrain.bounds.maxX) / 2;
+    const centreZ = (terrain.bounds.minZ + terrain.bounds.maxZ) / 2;
+    for (let i = 0; i < 5000 && ground.nearTileCount === 0; i++) ground.update(centreX, centreZ);
+    expect(ground.nearTileCount).toBeGreaterThan(0);
+    const all = meshes(ground);
+    expect(all.filter((m) => !m.receiveShadow).length, `${all.length} tiles`).toBe(0);
+    ground.dispose();
+  });
+
   it("builds a near tile finer than the far one it replaces", () => {
     const { terrain, ground } = build();
     const centreX = (terrain.bounds.minX + terrain.bounds.maxX) / 2;

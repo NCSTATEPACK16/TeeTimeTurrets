@@ -392,6 +392,9 @@ export function createCourseGround(
     const material = buildMaterial(mask);
     const geometry = buildGeometry(cells, positions, biome, mow);
     const mesh = new THREE.Mesh(geometry, material);
+    // Receives, never casts: the ground is the floor every shadow lands on, and its own relief is
+    // lit by its normals.
+    mesh.receiveShadow = true;
     return { mesh, geometry, material, mask };
   }
 

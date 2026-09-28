@@ -7,7 +7,12 @@ import type { Surfaces } from "../sim/surfaces";
 import type { CartTransform } from "../sim/frame";
 import type { Vec3 } from "../sim/course";
 import type { CourseTerrain } from "../sim/courseTerrain";
-import { BIOMES } from "./biomes";
+import { SKY, createSky, skyColourAt, sunDirection } from "./sky";
+import type { SkyRig } from "./sky";
+import { LIGHT_LEVELS, createLighting } from "./lighting";
+import type { Lighting } from "./lighting";
+import { QUALITY } from "./quality";
+import type { QualityPreset } from "./quality";
 import { CHASE_BASE_FOV, CHASE_POSITION_LERP, CHASE_TARGET_LERP, chaseFov, chasePose, chaseSmoothing } from "./chaseCamera";
 import { Trauma, traumaFor } from "./cameraShake";
 import type { ShakeOffset } from "./cameraShake";
@@ -18,6 +23,12 @@ import { treelineFor } from "./treeline";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
+
+/**
+ * The fog is 95% of the sky's colour at this share of the course's diagonal: the far holes are
+ * haze, the arena's own is clear.
+ */
+const FOG_REACH = 1.2;
 
 /** Keeps the chase eye out of the terrain when the cart backs toward a slope. */
 const CHASE_MIN_GROUND_CLEARANCE = 1.5;
@@ -119,6 +130,11 @@ export class RenderScene {
    *  the smoothing and drifts the camera. */
   private readonly chaseRig = new THREE.Vector3();
   private readonly courseGround: CourseGround;
+  /** Ground tiles built when the lighting last adopted the ground's materials. */
+  private adoptedNearBuilds = -1;
+  private readonly sky: SkyRig;
+  private readonly lighting: Lighting;
+  private readonly quality: QualityPreset;
   /** The band of trees beyond the road, on a course that has one. */
   private readonly treeline: Treeline | null;
   /** Ground height under the chase camera, so the eye never dips into a hillside. */
@@ -136,22 +152,22 @@ export class RenderScene {
    * a hard browser limit and a guaranteed leak across transitions. `ScreenManager` owns its
    * lifetime; this class only borrows it, and `dispose()` below deliberately does not free it.
    */
-  constructor(renderer: THREE.WebGLRenderer, arena: ArenaSource, botCount: number) {
+  constructor(
+    renderer: THREE.WebGLRenderer,
+    arena: ArenaSource,
+    botCount: number,
+    quality: QualityPreset = QUALITY.medium,
+  ) {
     // The draw distance the fog and far plane are cut to: the diagonal of the course's bounds, so
     // the far plane still reaches the horizon from any tee.
     const fieldSize = Math.hypot(
       arena.course.bounds.maxX - arena.course.bounds.minX,
       arena.course.bounds.maxZ - arena.course.bounds.minZ,
     );
-    // The course opens and closes in parkland, and the clubhouse sits in it: that is its sky.
-    const palette = BIOMES.parkland;
-
     this.renderer = renderer;
+    this.quality = quality;
 
     this.scene = new THREE.Scene();
-    // Sky and fog share one colour, so the horizon dissolves rather than banding.
-    this.scene.background = new THREE.Color(palette.sky);
-    this.scene.fog = new THREE.Fog(palette.sky, fieldSize * 0.5, fieldSize * 2);
 
     this.camera = new THREE.PerspectiveCamera(
       CHASE_BASE_FOV,
@@ -160,10 +176,14 @@ export class RenderScene {
       fieldSize * 2.5,
     );
 
-    const sun = new THREE.DirectionalLight(0xffffff, 2.4);
-    sun.position.set(12, 18, 8);
-    this.scene.add(sun);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    // The sky dome, its baked environment and the fog in its horizon's colour, so the far course
+    // dissolves into the sky rather than banding against it. Then the sun and its shadows.
+    this.sky = createSky(renderer, this.scene, {
+      radius: this.camera.far * 0.9,
+      fogDistance: fieldSize * FOG_REACH,
+      environmentIntensity: LIGHT_LEVELS.environment,
+    });
+    this.lighting = createLighting(this.scene, this.camera, quality);
 
     // Borrowed, not built: one ground and one treeline per course for the page's life, so a
     // second match does not rebuild either. `dispose` hands them back rather than freeing them.
@@ -192,6 +212,20 @@ export class RenderScene {
 
     this.effects = new Effects();
     this.scene.add(this.effects);
+
+    // Carts and the balls in flight cast; carts receive their own and each other's. The ground
+    // receives by its own construction. A ball's shadow on the turf is most of how its height reads.
+    for (const cart of [this.cart, ...this.botCarts]) {
+      cart.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        child.castShadow = true;
+        child.receiveShadow = true;
+      });
+    }
+    this.pooledBalls.traverse((child) => {
+      child.castShadow = true;
+    });
+    this.lighting.adopt(this.scene);
 
     this.cameraTarget.set(0, 0, 0);
     this.onResize();
@@ -225,7 +259,15 @@ export class RenderScene {
     // was last frame. `update` is internally budgeted to BUILD_BUDGET_MS, so this cannot blow the
     // frame however far the cart has driven.
     this.courseGround.update(this.camera.position.x, this.camera.position.z);
+    // Tiles built since the last frame bring new materials, which cascaded shadows have to adopt
+    // before they compile.
+    if (this.courseGround.nearBuilds !== this.adoptedNearBuilds) {
+      this.adoptedNearBuilds = this.courseGround.nearBuilds;
+      this.lighting.adopt(this.courseGround.group);
+    }
 
+    this.sky.follow(this.camera);
+    this.lighting.update(this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -242,10 +284,45 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.aimArc.dispose();
     this.effects.dispose();
+    // Before the ground is handed back: cascaded shadows give its materials back as they found them.
+    this.lighting.dispose();
+    this.sky.dispose();
     // The ground and treeline belong to the course, not to this match: taken out, not freed.
     this.scene.remove(this.courseGround.group);
     if (this.treeline?.mesh) this.scene.remove(this.treeline.mesh);
     this.scene.clear();
+  }
+
+  /**
+   * What the scene is lit with, for the smoke check and the console. `modelHorizon` is
+   * `skyColourAt`'s horizon away from the sun; `fogColour` is what the drawn dome read back, so the
+   * two agreeing is the dome's shader agreeing with the model.
+   */
+  describeLighting(): {
+    quality: string;
+    shadowLights: number;
+    environment: boolean;
+    fog: string;
+    fogColour: [number, number, number];
+    modelHorizon: [number, number, number];
+  } {
+    let shadowLights = 0;
+    this.scene.traverse((child) => {
+      if ((child as THREE.DirectionalLight).isDirectionalLight && child.castShadow) shadowLights++;
+    });
+    const fog = this.scene.fog;
+    const sun = sunDirection(SKY);
+    const across = Math.hypot(sun.x, sun.z);
+    const model = new THREE.Color();
+    skyColourAt(SKY, -sun.x / across, 0, -sun.z / across, model);
+    return {
+      quality: this.quality.name,
+      shadowLights,
+      environment: this.scene.environment !== null,
+      fog: fog instanceof THREE.FogExp2 ? "FogExp2" : fog === null ? "none" : "Fog",
+      fogColour: fog ? [fog.color.r, fog.color.g, fog.color.b] : [0, 0, 0],
+      modelHorizon: [model.r, model.g, model.b],
+    };
   }
 
   /**
