@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { fixedHoleSpec } from "./course";
 import { arenaFromHole } from "./arena";
-import { POOL_TRANSFORM_STRIDE, Sim } from "./world";
+import { Sim } from "./world";
+import { POOL_TRANSFORM_STRIDE } from "./frame";
 import { POOL_SIZE } from "./entities/BallPool";
 import { neutralIntent } from "./intent";
 

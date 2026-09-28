@@ -40,36 +40,6 @@ import { NO_TARGET_RIG, SimEventLog } from "./events";
 import { FIXED_DT } from "./frame";
 import type { CartTransform } from "./frame";
 
-export type { Vec3 } from "./course";
-
-// Re-exported so the tests and tools that tune against the controller keep one import path.
-export {
-  CART_AUTOSTEP_HEIGHT,
-  CART_AUTOSTEP_MIN_WIDTH,
-  CART_MAX_SLOPE_CLIMB_DEG,
-  CART_MIN_SLOPE_SLIDE_DEG,
-  CART_SNAP_TO_GROUND,
-  CHARACTER_OFFSET,
-  GRAVITY,
-} from "./physicsWorld";
-
-/**
- * Re-exported from `matchConfig.ts`, which is where it lives along with every other arena tunable.
- * Kept exported here because the smoke driver imports it from this module.
- */
-export { MATCH_DURATION_S };
-
-// The clock and the render-facing shapes live in `frame.ts`, which does not import Rapier, so the
-// renderer and the page's entry can use them without loading the physics engine.
-export {
-  FIXED_DT,
-  POOL_TRANSFORM_STRIDE,
-  PREVIEW_MAX_POINTS,
-  PREVIEW_SAMPLE_STRIDE,
-  TRANSFORM_STRIDE,
-  createPreviewBuffer,
-} from "./frame";
-export type { CartTransform } from "./frame";
 
 
 export interface SimOptions {

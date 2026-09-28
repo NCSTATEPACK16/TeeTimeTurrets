@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CHASE_BASE_FOV, CHASE_DISTANCE, CHASE_FOV_KICK, CHASE_FOV_FULL_SPEED, CHASE_POSITION_LERP, chaseFov, chasePose, chaseSmoothing, clearTerrain } from "./chaseCamera";
-import type { CartTransform } from "../sim/world";
+import type { CartTransform } from "../sim/frame";
 
 function cartAt(heading: number, turretYaw: number): CartTransform {
   return { position: { x: 0, y: 0, z: 0 }, heading, turretYaw };

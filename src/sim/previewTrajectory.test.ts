@@ -7,7 +7,8 @@ import { fixedHoleSpec } from "./course";
 import { arenaFromHole } from "./arena";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { POOL_SIZE } from "./entities/BallPool";
-import { POOL_TRANSFORM_STRIDE, Sim, createPreviewBuffer } from "./world";
+import { Sim } from "./world";
+import { POOL_TRANSFORM_STRIDE, createPreviewBuffer } from "./frame";
 
 /**
  * `previewTrajectory` is the one place a read can corrupt play: if it advanced the ball or touched

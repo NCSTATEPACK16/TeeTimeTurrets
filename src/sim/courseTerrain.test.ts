@@ -6,7 +6,7 @@ import { authoredCourse } from "./authoredCourse";
 import { AUTHORED_PLACEMENTS } from "./authoredLayout";
 import type { HoleSpec } from "./course";
 import { BLEND_WIDTH, createTerrain, halfWidthAt } from "./terrain";
-import { CART_MAX_SLOPE_CLIMB_DEG, CART_MIN_SLOPE_SLIDE_DEG } from "./world";
+import { CART_MAX_SLOPE_CLIMB_DEG, CART_MIN_SLOPE_SLIDE_DEG } from "./physicsWorld";
 import { toCourseFrame, toHoleFrame } from "./courseLayout";
 import type { HolePlacement } from "./courseLayout";
 import { mulberry32 } from "./rng";

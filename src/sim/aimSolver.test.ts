@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SOLVER_CONSTANTS } from "./aimSolver";
-import { FIXED_DT, GRAVITY } from "./world";
+import { FIXED_DT } from "./frame";
+import { GRAVITY } from "./physicsWorld";
 
 describe("aimSolver", () => {
   it("integrates with the world's own gravity and step", () => {

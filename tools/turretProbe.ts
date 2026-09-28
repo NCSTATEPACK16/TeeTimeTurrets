@@ -5,7 +5,8 @@
  * `tools/.probe-out/turretProbe.mjs`. Named `feelProbe.ts` until Stage 9 of the revamp.
  */
 import { createNoise2D } from "simplex-noise";
-import { Sim, FIXED_DT } from "../src/sim/world";
+import { Sim } from "../src/sim/world";
+import { FIXED_DT } from "../src/sim/frame";
 import { mulberry32 } from "../src/sim/rng";
 import { fixedHoleSpec } from "../src/sim/course";
 import { NOISE_MAX_GRADIENT, createTerrain } from "../src/sim/terrain";

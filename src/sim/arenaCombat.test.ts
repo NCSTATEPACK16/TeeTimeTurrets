@@ -10,7 +10,8 @@ import { arenaFromHole } from "./arena";
 import { CART_COLLIDER, CART_HULL } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import { POOL_SIZE } from "./entities/BallPool";
-import { POOL_TRANSFORM_STRIDE, Sim } from "./world";
+import { Sim } from "./world";
+import { POOL_TRANSFORM_STRIDE } from "./frame";
 
 /**
  * The bot arena is only a game if a bot can actually hurt the player -- otherwise the match clock
