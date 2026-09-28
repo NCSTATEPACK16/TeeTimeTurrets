@@ -7,9 +7,8 @@ import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
-import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
+import { CombatRegistry, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
-import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import { ASSIST_WINDOW_S, createTally } from "./scoring";
 import { applyLoadout } from "./upgrades";
@@ -21,9 +20,9 @@ import { applyPathBonus, pathWeightAt } from "./cartPaths";
 import { buildNavGraph, lineClear, navGraphFor, planRoute } from "./navGraph";
 import type { NavGraph, NavRoute } from "./navGraph";
 import type { CartPath } from "./cartPaths";
-import { clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
+import { clampToZone, zoneSignedDistance } from "./arenaZone";
 import type { ArenaZone } from "./arenaZone";
-import { SurfaceId, createSurfaceTuning } from "./surfaces";
+import { createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
@@ -44,6 +43,8 @@ import type { SpawnPoint } from "./spawn";
 import { addCartRig, placeRig } from "./rigs";
 import { GRAVITY, createMoveScratch, createPhysicsWorld, freePhysicsWorld, gradeAlong, moveCartBody } from "./physicsWorld";
 import type { CartLimits, PhysicsWorld } from "./physicsWorld";
+import { checkCartWater, checkZone } from "./hazardRules";
+import type { HazardDeath } from "./hazardRules";
 import type { CartRig } from "./rigs";
 import { hashChannel, mulberry32 } from "./rng";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
@@ -383,6 +384,9 @@ export class Sim {
     this.events.push("stroke", NO_TARGET_RIG, victim, p.x, p.y, p.z, this.match.teamStrokes(teamOf(victim)), null);
   }
 
+  /** A drowning or a drained bar: a death nobody caused. Built once, so a tick allocates none. */
+  private readonly hazardDeath: HazardDeath = (cart, victim) => this.killCart(cart, victim, NO_KILLER);
+
   /**
    * A fired ball connected: `shooter` fired it, it hit `victim` and took `damage` off it. Every hit
    * is an event; only rig 0's may write `Sim.stats`, which is the **player's** -- the accuracy the
@@ -599,8 +603,8 @@ export class Sim {
     // under it and its tyres decide how steep a face it can drive up (see mobility.ts).
     this.controller.setMaxSlopeClimbAngle(maxClimbRad(this.cartTuningScratch, cart.tire));
     moveCartBody(this.controller, rig, this.limits, this.moveScratch);
-    this.checkCartWater(rig);
-    this.checkZone(rig);
+    checkCartWater(rig, this.surfaces, this.events, this.hazardDeath);
+    checkZone(rig, this.zone, this.hazardDeath);
     if (cart.dead) return;
 
     const ammoBefore = cart.ammo;
@@ -625,24 +629,6 @@ export class Sim {
       cart.shot.fired = false;
       this.resolveShot(rig);
     }
-  }
-
-  /**
-   * Outside the zone a cart is warned at once and drains a point every two seconds; a drain that
-   * empties the bar is a death nobody caused, like a drowning.
-   */
-  private checkZone(rig: CartRig): void {
-    const cart = rig.cart;
-    if (this.zone === null || cart.dead) return;
-    const p = cart.position;
-    if (zoneSignedDistance(this.zone, p.x, p.z) <= 0) {
-      cart.outOfBoundsFor = 0;
-      return;
-    }
-    const before = cart.outOfBoundsFor;
-    cart.outOfBoundsFor += FIXED_DT;
-    const drain = outOfBoundsDrain(before, cart.outOfBoundsFor);
-    if (drain > 0 && applyDamage(cart.health, drain)) this.killCart(cart, rig.index, NO_KILLER);
   }
 
   /**
@@ -686,40 +672,6 @@ export class Sim {
       for (const rig of this.rigs) this.cartsScratch.push(rig.cart);
     }
     return this.cartsScratch;
-  }
-
-  /**
-   * A cart in the water loses a point of health and is dropped back where it was last on dry land.
-   * Edge-triggered on `wasInWater`, so a cart nosing into a pond pays once rather than once per tick.
-   * A drowning that empties the bar is a death nobody caused: a stroke, and a point for nobody.
-   */
-  private checkCartWater(rig: CartRig): void {
-    const cart = rig.cart;
-    const p = cart.position;
-    const inWater = this.surfaces.surfaceAt(p.x, p.z) === SurfaceId.Water;
-
-    if (!inWater) {
-      cart.wasInWater = false;
-      // Recorded every dry tick: wherever the cart is now is somewhere it can be put back down.
-      cart.lastSafePosition.x = p.x;
-      cart.lastSafePosition.y = p.y;
-      cart.lastSafePosition.z = p.z;
-      return;
-    }
-
-    if (cart.wasInWater) return;
-    cart.wasInWater = true;
-    this.events.push("splash", NO_TARGET_RIG, rig.index, p.x, p.y, p.z, 0, null);
-
-    if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart, rig.index, NO_KILLER);
-
-    const safe = cart.lastSafePosition;
-    p.x = safe.x;
-    p.y = safe.y;
-    p.z = safe.z;
-    cart.speed = 0;
-    rig.fallSpeed = 0;
-    rig.body.setTranslation(p, true);
   }
 
   /**
