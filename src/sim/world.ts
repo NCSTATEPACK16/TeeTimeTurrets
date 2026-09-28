@@ -16,6 +16,8 @@ import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import { maxClimbRad } from "./mobility";
 import { applyPathBonus, pathWeightAt } from "./cartPaths";
+import { buildNavGraph, createNavRoute, lineClear, navGraphFor, planRoute } from "./navGraph";
+import type { NavGraph, NavRoute } from "./navGraph";
 import type { CartPath } from "./cartPaths";
 import { ZONE_CLAMP_REACH_M, clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
 import type { ArenaZone } from "./arenaZone";
@@ -25,7 +27,7 @@ import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
-import { BOT_CHANNEL, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
+import { BOT_CHANNEL, BOT_ENGAGE_RANGE, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
 import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
 import {
@@ -104,6 +106,16 @@ export const CART_AUTOSTEP_HEIGHT = 0.45;
 export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
 export const CART_SNAP_TO_GROUND = 0.6;
 
+/** Within this range and in a clear line, a bot drives straight at its target without a route. */
+const NAV_DIRECT_M = 80;
+/** Seconds between a bot's replans. */
+const NAV_REPLAN_S = 1;
+/**
+ * A waypoint this close counts as reached. Wider than `BOT_STANDOFF`, or a bot would hold station
+ * at each waypoint as though it were the enemy.
+ */
+const NAV_WAYPOINT_REACH_M = 22;
+
 /** Half the span the cart's grade is measured over: about half a wheelbase. */
 const GRADE_HALF_BASE_M = 1.2;
 
@@ -138,6 +150,8 @@ interface CartRig {
    * ammo it is heading for. `null` for the player's rig. Written in place every tick.
    */
   readonly mind: BotMind | null;
+  /** The bot's route to its target across the zone, or `null` with no graph or for the player. */
+  readonly route: NavRoute | null;
 }
 
 export interface SimOptions {
@@ -235,6 +249,8 @@ export class Sim {
   readonly zone: ArenaZone | null;
   /** Cart paths, where a cart runs faster. Empty on a test ground. */
   private readonly paths: readonly CartPath[];
+  /** Where bots can drive, on a ground with a zone; built once per course. See navGraph.ts. */
+  private readonly nav: NavGraph | null;
   /** One tee per spawn hole, in the course frame. */
   private readonly spawnSet: SpawnPoint[];
   /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
@@ -255,6 +271,13 @@ export class Sim {
     this.southBoundary = ground.southBoundary;
     this.zone = ground.zone ?? null;
     this.paths = ground.paths ?? [];
+    const zone = this.zone;
+    this.nav =
+      zone === null
+        ? null
+        : navGraphFor(ground.playfield, () =>
+            buildNavGraph(zone, (x, z) => ground.playfield.heightAt(x, z), ground.playfield.surfaces, this.paths),
+          );
     this.seed = ground.seed;
     this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
     this.teamPads =
@@ -450,6 +473,7 @@ export class Sim {
       intentScratch: botIndex === null ? null : neutralIntent(),
       targetIndex: NO_TARGET,
       mind: botIndex === null ? null : createBotMind(this.botSkill(botIndex)),
+      route: botIndex === null || this.nav === null ? null : createNavRoute(),
     });
   }
 
@@ -562,15 +586,67 @@ export class Sim {
     if (rig.cart.dead) return IDLE_INTENT;
     rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
     if (rig.mind !== null) this.findAmmoFor(rig.cart, rig.mind);
+    const target = this.botTargetScratch(rig.targetIndex);
+    if (rig.route !== null) this.steerByRoute(rig.cart, rig.route, target);
     computeBotIntent(
       rig.cart,
-      this.botTargetScratch(rig.targetIndex),
+      target,
       FIXED_DT,
       rig.random,
       rig.intentScratch,
       rig.mind,
     );
     return rig.intentScratch;
+  }
+
+  /**
+   * Swaps a far or hidden target for the next waypoint on a planned route to it, so a bot drives
+   * round a pond or a bank instead of into it. Close and in a clear line, the bot goes straight at
+   * its target -- and always does within fighting range, where it aims at what it drives toward.
+   * Replans at most once a second.
+   */
+  private steerByRoute(cart: Cart, route: NavRoute, target: { x: number; z: number; dead: boolean }): void {
+    const nav = this.nav;
+    if (nav === null || target.dead) return;
+    const p = cart.position;
+    const distance = Math.hypot(target.x - p.x, target.z - p.z);
+    if (distance <= BOT_ENGAGE_RANGE || (distance <= NAV_DIRECT_M && lineClear(nav, p.x, p.z, target.x, target.z))) {
+      route.count = 0;
+      route.replanIn = 0;
+      return;
+    }
+    route.replanIn -= FIXED_DT;
+    if (route.replanIn <= 0) {
+      route.count = planRoute(nav, p.x, p.z, target.x, target.z, route.points);
+      route.next = 0;
+      route.replanIn = NAV_REPLAN_S;
+    }
+    if (route.count === 0) return;
+    // On to the next waypoint once this one is within reach and the next is in a clear line --
+    // not before, or the bot cuts the corner the waypoint was there to take it round. The last
+    // waypoint is the target itself, which moves, so the live target stands in for it.
+    const points = route.points;
+    while (
+      route.next < route.count - 1 &&
+      Math.hypot(points[route.next * 2]! - p.x, points[route.next * 2 + 1]! - p.z) < NAV_WAYPOINT_REACH_M &&
+      lineClear(nav, p.x, p.z, points[route.next * 2 + 2]!, points[route.next * 2 + 3]!)
+    ) {
+      route.next++;
+    }
+    if (route.next >= route.count - 1) return;
+    const wx = points[route.next * 2]!;
+    const wz = points[route.next * 2 + 1]!;
+    const toWaypoint = Math.hypot(wx - p.x, wz - p.z);
+    if (toWaypoint >= NAV_WAYPOINT_REACH_M) {
+      target.x = wx;
+      target.z = wz;
+      return;
+    }
+    // Close to a corner that cannot be cut yet: aim through it, so the bot drives on round it
+    // rather than holding station at it as though it were the enemy.
+    const scale = toWaypoint > 1e-6 ? NAV_WAYPOINT_REACH_M / toWaypoint : 0;
+    target.x = p.x + (wx - p.x) * scale;
+    target.z = p.z + (wz - p.z) * scale;
   }
 
   /**

@@ -82,6 +82,14 @@ Ported code
     the sun, and probing the bake for a black or NaN result. The sky model and
     its colours are new.
 
+  src/sim/navGraph.ts
+    Derived from src/sim/botRoutePlanner.ts in Claude of Tanks (vendored as
+    src/vendor/cot/botRoutePlanner.ts).
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+    Adapted: the binary min-heap A* over a height grid, the rule against
+    cutting a corner past a closed cell, and the nearest-open-cell fallback.
+    The zone-bounded grid, the costs and the route pulling are new.
+
   reference/claude-of-tanks/*.ts.txt
     Copied from src/engine/{sky,lighting,quality,cameraRig,post}.ts in Claude of
     Tanks as reading material; not compiled or shipped.
