@@ -2,13 +2,13 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
-import { BUCKET_REFILL_AMMO, CART_COLLIDER, CART_HULL, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
-import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
+import { CART_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
@@ -20,7 +20,7 @@ import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import { maxClimbRad } from "./mobility";
 import { applyPathBonus, pathWeightAt } from "./cartPaths";
-import { buildNavGraph, createNavRoute, lineClear, navGraphFor, planRoute } from "./navGraph";
+import { buildNavGraph, lineClear, navGraphFor, planRoute } from "./navGraph";
 import type { NavGraph, NavRoute } from "./navGraph";
 import type { CartPath } from "./cartPaths";
 import { ZONE_CLAMP_REACH_M, clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
@@ -31,7 +31,7 @@ import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
-import { BOT_CHANNEL, BOT_ENGAGE_RANGE, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
+import { BOT_ENGAGE_RANGE, NO_TARGET, computeBotIntent, pickTarget } from "./bot";
 import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
 import {
@@ -44,6 +44,8 @@ import {
 } from "./matchConfig";
 import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnPoint } from "./spawn";
+import { addCartRig, placeRig } from "./rigs";
+import type { CartRig } from "./rigs";
 import { hashChannel, mulberry32 } from "./rng";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, PREVIEW_MAX_POINTS, PREVIEW_MAX_TICKS, PREVIEW_SAMPLE_STRIDE } from "./frame";
@@ -122,41 +124,6 @@ const NAV_WAYPOINT_REACH_M = 22;
 
 /** Half the span the cart's grade is measured over: about half a wheelbase. */
 const GRADE_HALF_BASE_M = 1.2;
-
-/**
- * Everything the world owns for one cart: the state machine, the kinematic body it drives, the
- * collider that generates its contacts, and the fall speed the KCC does not integrate for us.
- *
- * Bundled rather than kept as parallel arrays because every one of these is looked up together,
- * every time. Rig 0 is always the player's; the rest are bots, in `bots` order.
- */
-interface CartRig {
-  /**
-   * Its own position in `Sim.rigs`. 0 is always the player's. It is the identity of a player
-   * everywhere in the project -- `bots[i - 1]`, the nameplates and the scoreboard all index by it.
-   */
-  readonly index: number;
-  readonly cart: Cart;
-  readonly body: RAPIER.RigidBody;
-  readonly collider: RAPIER.Collider;
-  fallSpeed: number;
-  /**
-   * The bot's own seeded stream. `null` for the player's rig, which is not AI-driven.
-   * Deliberately not `readonly`: `reset()` re-seeds it so "play again" is a genuine rerun.
-   */
-  random: (() => number) | null;
-  /** Reused per tick so the bot's intent costs no allocation. `null` for the player's rig. */
-  readonly intentScratch: PlayerIntent | null;
-  /** The rig this bot is fighting, per `pickTarget`, or `NO_TARGET`. Unused by the player's rig. */
-  targetIndex: number;
-  /**
-   * What the bot remembers between ticks (`sim/bot.ts`): its skill, its progress tracking and the
-   * ammo it is heading for. `null` for the player's rig. Written in place every tick.
-   */
-  readonly mind: BotMind | null;
-  /** The bot's route to its target across the zone, or `null` with no graph or for the player. */
-  readonly route: NavRoute | null;
-}
 
 export interface SimOptions {
   /**
@@ -348,29 +315,13 @@ export class Sim {
     };
     // Now that every rig exists. The scoreboard is indexed by rig index.
     sim.match.setRoster(sim.rigs.length);
-    for (const rig of sim.rigs) sim.placeRig(rig, sim.openingPoint(rig.index));
+    for (const rig of sim.rigs) placeRig(rig, sim.openingPoint(rig.index));
 
     sim.syncCurrentCart();
     sim.collapseRenderPairs();
     sim.syncCurrentPool();
     sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
-  }
-
-  /**
-   * Bot `i`'s seeded stream. The `0` is the slot a hole index occupied when arena was built on top
-   * of a hole-1 `Sim`; it stays so a recorded match replays unchanged.
-   */
-  private botStreamSeed(botIndex: number): number {
-    return hashChannel(this.seed, 0, BOT_CHANNEL, botIndex);
-  }
-
-  /**
-   * Bot `i`'s skill, 0..1: the first draw of its own `BOT_SKILL_CHANNEL` stream, so it is fixed
-   * per seed and giving bots a skill moves none of their `BOT_CHANNEL` draws.
-   */
-  private botSkill(botIndex: number): number {
-    return mulberry32(hashChannel(this.seed, 0, BOT_SKILL_CHANNEL, botIndex))();
   }
 
   /**
@@ -400,7 +351,7 @@ export class Sim {
 
     this.rigs.length = 0;
     this.registry.clear();
-    this.addCartRig(this.cart, null);
+    addCartRig(this.world, this.registry, this.rigs, this.cart, null, false);
 
     this.ballPool = new BallPool(this.world, {
       heightAt: (x, z) => this.playfield.heightAt(x, z),
@@ -410,7 +361,9 @@ export class Sim {
     for (const pooled of this.ballPool.all) {
       this.registry.registerBall(pooled.body.collider(0).handle, pooled);
     }
-    for (let i = 0; i < this.bots.length; i++) this.addCartRig(this.bots[i]!, i);
+    for (let i = 0; i < this.bots.length; i++) {
+      addCartRig(this.world, this.registry, this.rigs, this.bots[i]!, { seed: this.seed, index: i }, this.nav !== null);
+    }
   }
 
   /** Frees what `buildPhysics` made. Rapier's WASM heap is not garbage-collected. */
@@ -445,54 +398,6 @@ export class Sim {
    */
   get pickups(): readonly Bucket[] {
     return this.buckets;
-  }
-
-  /**
-   * Creates one cart's body and collider, registers it for contact dispatch, and files the rig.
-   * Every cart -- the player's and every bot's -- goes through here, so a bot is physically
-   * identical to the player rather than a cheaper approximation of one. `placeRig` puts it down.
-   *
-   * `botIndex` is the cart's place in `bots`, or `null` for the player. It is passed in rather than
-   * read off `rigs.length`, which only equals it while the player's rig is the one already filed.
-   */
-  private addCartRig(cart: Cart, botIndex: number | null): void {
-    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
-    const collider = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius)
-        .setCollisionGroups(CART_GROUPS)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
-        // Rapier computes no contacts between two kinematic bodies by default, and every cart
-        // here is kinematic -- without this, cart-vs-cart shunting generates no events at all.
-        .setActiveCollisionTypes(
-          RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
-        ),
-      body,
-    );
-    // Before the push, so it is the index this rig is about to occupy.
-    const index = this.rigs.length;
-    this.registry.registerCart(collider.handle, cart, index);
-    // What a shot hits. Same body, so it moves with the cart for free; ball-only, so the cart
-    // drives exactly as it did without it.
-    const hull = this.world.createCollider(
-      RAPIER.ColliderDesc.cylinder(CART_HULL.height / 2, CART_HULL.radius)
-        .setTranslation(0, CART_HULL.centreOffset, 0)
-        .setCollisionGroups(HULL_GROUPS)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
-      body,
-    );
-    this.registry.registerCart(hull.handle, cart, index);
-    this.rigs.push({
-      index,
-      cart,
-      body,
-      collider,
-      fallSpeed: 0,
-      random: botIndex === null ? null : mulberry32(this.botStreamSeed(botIndex)),
-      intentScratch: botIndex === null ? null : neutralIntent(),
-      targetIndex: NO_TARGET,
-      mind: botIndex === null ? null : createBotMind(this.botSkill(botIndex)),
-      route: botIndex === null || this.nav === null ? null : createNavRoute(),
-    });
   }
 
   /**
@@ -535,23 +440,6 @@ export class Sim {
         this.playerHitAt[victim] = this.simTime;
       }
     }
-  }
-
-  /** One cart onto one spawn point: position, facing, momentum and the body, in that order. */
-  private placeRig(rig: CartRig, spawn: SpawnPoint): void {
-    const cart = rig.cart;
-    cart.position.x = spawn.x;
-    cart.position.y = spawn.y + CART_COLLIDER.groundOffset;
-    cart.position.z = spawn.z;
-    cart.heading = spawn.heading;
-    cart.turretOffset = 0;
-    // The drop point after a hazard is where it now stands, not wherever it drowned.
-    cart.lastSafePosition.x = cart.position.x;
-    cart.lastSafePosition.y = cart.position.y;
-    cart.lastSafePosition.z = cart.position.z;
-    cart.wasInWater = false;
-    rig.fallSpeed = 0;
-    rig.body.setTranslation(cart.position, true);
   }
 
   /**
@@ -814,7 +702,7 @@ export class Sim {
   private stepRespawn(rig: CartRig): void {
     rig.cart.respawnTimer -= FIXED_DT;
     if (rig.cart.respawnTimer > 0) return;
-    this.placeRig(rig, this.respawnPointFor(rig.index));
+    placeRig(rig, this.respawnPointFor(rig.index));
     rig.cart.revive();
     const p = rig.cart.position;
     this.events.push("respawn", NO_TARGET_RIG, rig.index, p.x, p.y, p.z, 0, null);
@@ -1053,7 +941,7 @@ export class Sim {
     this.simTime = 0;
 
     for (const rig of this.rigs) {
-      this.placeRig(rig, this.openingPoint(rig.index));
+      placeRig(rig, this.openingPoint(rig.index));
       rig.cart.revive();
       rig.cart.rearm();
     }
