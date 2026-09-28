@@ -2,13 +2,12 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
-import { BUCKET_REFILL_AMMO, CART_COLLIDER, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
-import { CART_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
@@ -17,15 +16,13 @@ import { applyLoadout } from "./upgrades";
 import type { UpgradeLevels } from "./upgrades";
 import type { Loadout } from "./loadout";
 import type { Vec3 } from "./course";
-import { clampToPlayable } from "./courseBarrier";
 import { maxClimbRad } from "./mobility";
 import { applyPathBonus, pathWeightAt } from "./cartPaths";
 import { buildNavGraph, lineClear, navGraphFor, planRoute } from "./navGraph";
 import type { NavGraph, NavRoute } from "./navGraph";
 import type { CartPath } from "./cartPaths";
-import { ZONE_CLAMP_REACH_M, clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
+import { clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
 import type { ArenaZone } from "./arenaZone";
-import type { SouthBoundary } from "./courseBarrier";
 import { SurfaceId, createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
@@ -45,6 +42,8 @@ import {
 import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnPoint } from "./spawn";
 import { addCartRig, placeRig } from "./rigs";
+import { GRAVITY, createMoveScratch, createPhysicsWorld, freePhysicsWorld, gradeAlong, moveCartBody } from "./physicsWorld";
+import type { CartLimits, PhysicsWorld } from "./physicsWorld";
 import type { CartRig } from "./rigs";
 import { hashChannel, mulberry32 } from "./rng";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
@@ -52,6 +51,17 @@ import { FIXED_DT, POOL_TRANSFORM_STRIDE, PREVIEW_MAX_POINTS, PREVIEW_MAX_TICKS,
 import type { CartTransform } from "./frame";
 
 export type { Vec3 } from "./course";
+
+// Re-exported so the tests and tools that tune against the controller keep one import path.
+export {
+  CART_AUTOSTEP_HEIGHT,
+  CART_AUTOSTEP_MIN_WIDTH,
+  CART_MAX_SLOPE_CLIMB_DEG,
+  CART_MIN_SLOPE_SLIDE_DEG,
+  CART_SNAP_TO_GROUND,
+  CHARACTER_OFFSET,
+  GRAVITY,
+} from "./physicsWorld";
 
 /**
  * Re-exported from `matchConfig.ts`, which is where it lives along with every other arena tunable.
@@ -85,32 +95,11 @@ function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: numb
  */
 const LINEAR_DAMPING = 0.05;
 
-export const GRAVITY = 9.81;
-
 /**
  * How close a cart has to be to a landed ball or a bucket to collect it. Ammo is the only thing a
  * landed ball is for, so driving over your own spent rounds is how a cart reloads between buckets.
  */
 const PICKUP_RANGE = 3.0;
-
-/**
- * KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one.
- *
- * The two slope angles are exported because the causeway is designed against them: at a 1.0 m
- * heightfield cell there is no deck width that behaves like a bridge, only shoulders the cart drives
- * up (under the climb limit) or cannot leave (over it). A second copy of 32 in a terrain test would
- * let the crossing and the controller drift apart.
- *
- * The rest are exported for `tools/terrainProbe.ts`, for the same reason: a probe that times
- * `computeColliderMovement` against its own controller settings is timing a different vehicle.
- */
-export const CHARACTER_OFFSET = 0.02;
-/** The controller's climb limit before any cart has moved; each cart then sets its own (mobility.ts). */
-export const CART_MAX_SLOPE_CLIMB_DEG = 45;
-export const CART_MIN_SLOPE_SLIDE_DEG = 32;
-export const CART_AUTOSTEP_HEIGHT = 0.45;
-export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
-export const CART_SNAP_TO_GROUND = 0.6;
 
 /** Within this range and in a clear line, a bot drives straight at its target without a route. */
 const NAV_DIRECT_M = 80;
@@ -121,9 +110,6 @@ const NAV_REPLAN_S = 1;
  * at each waypoint as though it were the enemy.
  */
 const NAV_WAYPOINT_REACH_M = 22;
-
-/** Half the span the cart's grade is measured over: about half a wheelbase. */
-const GRADE_HALF_BASE_M = 1.2;
 
 export interface SimOptions {
   /**
@@ -150,6 +136,7 @@ export interface SimOptions {
  * decide it. There is one mode -- the arena -- and `create` is handed the ground to fight on.
  */
 export class Sim {
+  private physics!: PhysicsWorld;
   private world!: RAPIER.World;
   /** Rig 0 is the player's; rigs 1.. are `bots`, in the same order. */
   private readonly rigs: CartRig[] = [];
@@ -209,10 +196,8 @@ export class Sim {
   private simTime = 0;
   /** True when the player's last trigger pull put a ball in the air rather than firing a blank. */
   lastShotWasStrike = false;
-  /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
-  private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  /** Reused by `moveCartBody`'s barrier clamp: no per-tick allocation in the fixed loop. */
-  private readonly clampScratch = { x: 0, z: 0 };
+  /** Reused by `moveCartBody`, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
+  private readonly moveScratch = createMoveScratch();
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly botTarget = { x: 0, z: 0, dead: false };
@@ -227,8 +212,8 @@ export class Sim {
   get matchOver(): boolean {
     return this.match.over;
   }
-  /** The road carts are held north of, or null where the ground has none. */
-  private readonly southBoundary: SouthBoundary | null;
+  /** Where a cart may be moved to: the ground's box, the road north of it and the zone's reach. */
+  private readonly limits: CartLimits;
   /** Where the match is played, or null on a ground that is all playable. */
   readonly zone: ArenaZone | null;
   /** Cart paths, where a cart runs faster. Empty on a test ground. */
@@ -252,8 +237,8 @@ export class Sim {
 
   private constructor(ground: ArenaGround, matchDurationS: number, tire: TireType) {
     this.playfield = ground.playfield;
-    this.southBoundary = ground.southBoundary;
     this.zone = ground.zone ?? null;
+    this.limits = { playfield: ground.playfield, southBoundary: ground.southBoundary, zone: this.zone };
     this.paths = ground.paths ?? [];
     const zone = this.zone;
     this.nav =
@@ -335,19 +320,11 @@ export class Sim {
    * rematch then drifts from the first match from its very first tick.
    */
   private buildPhysics(): void {
-    this.world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
-    this.world.timestep = FIXED_DT;
-    this.buildGround();
-
-    this.controller = this.world.createCharacterController(CHARACTER_OFFSET);
-    this.controller.setUp({ x: 0, y: 1, z: 0 });
-    this.controller.setMaxSlopeClimbAngle((CART_MAX_SLOPE_CLIMB_DEG * Math.PI) / 180);
-    this.controller.setMinSlopeSlideAngle((CART_MIN_SLOPE_SLIDE_DEG * Math.PI) / 180);
-    this.controller.enableAutostep(CART_AUTOSTEP_HEIGHT, CART_AUTOSTEP_MIN_WIDTH, true);
-    this.controller.enableSnapToGround(CART_SNAP_TO_GROUND);
-    // A future flag-ball has to be shovable by the cart, and a KCC ignores dynamic bodies unless
-    // told otherwise. Nudging a landed ball by driving into it is correct behaviour anyway.
-    this.controller.setApplyImpulsesToDynamicBodies(true);
+    this.heightfield ??= this.playfield.buildHeightfield();
+    const physics = createPhysicsWorld(this.heightfield);
+    this.physics = physics;
+    this.world = physics.world;
+    this.controller = physics.controller;
 
     this.rigs.length = 0;
     this.registry.clear();
@@ -368,28 +345,8 @@ export class Sim {
 
   /** Frees what `buildPhysics` made. Rapier's WASM heap is not garbage-collected. */
   private freePhysics(): void {
-    this.world.removeCharacterController(this.controller);
     this.eventQueue.free();
-    this.world.free();
-  }
-
-  /**
-   * Builds the heightfield collider for the ground. The heights are computed once per `Sim` and
-   * kept, so a rematch does not rebuild them.
-   */
-  private buildGround(): void {
-    this.heightfield ??= this.playfield.buildHeightfield();
-    const field = this.heightfield;
-    const groundDesc = RAPIER.ColliderDesc.heightfield(field.rows, field.cols, field.heights, {
-      x: field.extentX,
-      y: 1,
-      z: field.extentZ,
-    })
-      // The course is a box that is not centred on anything, so the collider goes where its middle is.
-      .setTranslation(field.centreX, 0, field.centreZ)
-      .setFriction(0.8)
-      .setRestitution(0.15);
-    this.world.createCollider(groundDesc);
+    freePhysicsWorld(this.physics);
   }
 
   /**
@@ -637,11 +594,11 @@ export class Sim {
     const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
     if (this.paths.length > 0) applyPathBonus(this.cartTuningScratch, pathWeightAt(this.paths, c.x, c.z));
-    cart.step(intent, FIXED_DT, this.cartTuningScratch, this.gradeAlong(c.x, c.z, cart.heading));
+    cart.step(intent, FIXED_DT, this.cartTuningScratch, gradeAlong(this.playfield, c.x, c.z, cart.heading));
     // The controller is shared, so each cart sets its own climb limit before it moves: the ground
     // under it and its tyres decide how steep a face it can drive up (see mobility.ts).
     this.controller.setMaxSlopeClimbAngle(maxClimbRad(this.cartTuningScratch, cart.tire));
-    this.moveCartBody(rig);
+    moveCartBody(this.controller, rig, this.limits, this.moveScratch);
     this.checkCartWater(rig);
     this.checkZone(rig);
     if (cart.dead) return;
@@ -688,13 +645,6 @@ export class Sim {
     if (drain > 0 && applyDamage(cart.health, drain)) this.killCart(cart, rig.index, NO_KILLER);
   }
 
-  /** The ground's rise over run along `heading` at (x, z), from two samples a wheelbase apart. */
-  private gradeAlong(x: number, z: number, heading: number): number {
-    const dx = Math.cos(heading) * GRADE_HALF_BASE_M;
-    const dz = Math.sin(heading) * GRADE_HALF_BASE_M;
-    return (this.playfield.heightAt(x + dx, z + dz) - this.playfield.heightAt(x - dx, z - dz)) / (2 * GRADE_HALF_BASE_M);
-  }
-
   /**
    * Counts one cart's respawn delay down and puts it back on a tee when it expires. Intent is not
    * read at all while dead, so ammo, reload and position are frozen for the duration.
@@ -736,48 +686,6 @@ export class Sim {
       for (const rig of this.rigs) this.cartsScratch.push(rig.cart);
     }
     return this.cartsScratch;
-  }
-
-  /**
-   * A KCC has no gravity and receives no impulses, so both are this class's problem: fall speed
-   * is integrated here, and the recoil that shoves the cart arrives already baked into
-   * `cart.desiredTranslation` as a velocity term the cart decays itself.
-   *
-   * `computedMovement()` allocates inside the binding. That is the one unavoidable per-tick
-   * allocation in this loop; everything on our side of the call reuses `moveScratch`.
-   */
-  private moveCartBody(rig: CartRig): void {
-    rig.fallSpeed -= GRAVITY * FIXED_DT;
-    this.moveScratch.x = rig.cart.desiredTranslation.x;
-    this.moveScratch.y = rig.fallSpeed * FIXED_DT;
-    this.moveScratch.z = rig.cart.desiredTranslation.z;
-
-    // Filtered by the capsule's own groups, so the controller does not collide with hulls.
-    this.controller.computeColliderMovement(rig.collider, this.moveScratch, undefined, CART_GROUPS);
-    const corrected = this.controller.computedMovement();
-
-    const p = rig.cart.position;
-    // Held inside the ground's own box -- past it there are no heights, so nothing to stand on --
-    // and, where there is one, north of the road: the box is axis-aligned and County Home Road is
-    // not, so the box alone leaves a wedge of playable ground on the road side. See courseBarrier.ts.
-    clampToPlayable(
-      this.playfield.bounds,
-      this.southBoundary,
-      CART_COLLIDER.radius,
-      p.x + corrected.x,
-      p.z + corrected.z,
-      this.clampScratch,
-    );
-    // And no further than the reach past the zone's stakes.
-    if (this.zone !== null) {
-      clampToZone(this.zone, this.clampScratch.x, this.clampScratch.z, ZONE_CLAMP_REACH_M, this.clampScratch);
-    }
-    p.x = this.clampScratch.x;
-    p.y += corrected.y;
-    p.z = this.clampScratch.z;
-
-    if (this.controller.computedGrounded()) rig.fallSpeed = 0;
-    rig.body.setNextKinematicTranslation(p);
   }
 
   /**
