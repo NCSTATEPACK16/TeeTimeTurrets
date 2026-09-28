@@ -2,7 +2,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType } from "../physics/Ballistics";
 import type { PlayerIntent } from "./intent";
 import { Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
-import { BallPool, POOL_SIZE } from "./entities/BallPool";
+import { BallPool } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { CombatRegistry, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
@@ -33,10 +33,11 @@ import type { HazardDeath } from "./hazardRules";
 import { SpawnPlan, stepRespawn } from "./respawn";
 import { previewTrajectory, resolveShot } from "./shots";
 import { BotDriver, IDLE_INTENT } from "./botDriver";
+import { RenderSnapshot } from "./snapshot";
 import { collectPickups, placeBuckets, resetBuckets, stepBuckets } from "./pickups";
 import type { CartRig } from "./rigs";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
-import { FIXED_DT, POOL_TRANSFORM_STRIDE } from "./frame";
+import { FIXED_DT } from "./frame";
 import type { CartTransform } from "./frame";
 
 export type { Vec3 } from "./course";
@@ -107,33 +108,39 @@ export class Sim {
   private readonly playfield: Playfield;
   /** The playfield's collider heights, built by the first `buildGround` and reused after it. */
   private heightfield: PlayfieldHeightfield | null = null;
+  /** The render transforms: every cart's and every pooled ball's, previous and current. */
+  private readonly snapshot: RenderSnapshot;
   /** Cart state from the previous fixed step, for render interpolation. */
-  previousCart: CartTransform;
+  get previousCart(): CartTransform {
+    return this.snapshot.previousCart;
+  }
   /** Cart state from the most recent fixed step. */
-  currentCart: CartTransform;
+  get currentCart(): CartTransform {
+    return this.snapshot.currentCart;
+  }
   /** The player's cart state machine. Read for the HUD; drive it through `step`. */
   readonly cart: Cart;
   /** AI-controlled carts, in rig order after the player. */
   readonly bots: Cart[] = [];
   /** Bot cart transforms from the previous fixed step, for render interpolation. One per bot. */
-  previousBotCarts: CartTransform[] = [];
+  get previousBotCarts(): readonly CartTransform[] {
+    return this.snapshot.previousBotCarts;
+  }
   /** Bot cart transforms from the most recent fixed step. One per bot. */
-  currentBotCarts: CartTransform[] = [];
-  /**
-   * The two transforms each cart's `previous`/`current` pair is drawn from, swapped every tick:
-   * the new `current` is written into whichever one `previous` is not holding. A renderer
-   * interpolating between the pair never sees either overwritten under it, and a tick allocates no
-   * transform at all.
-   */
-  private readonly cartBuffers: [CartTransform, CartTransform] = [blankTransform(), blankTransform()];
-  private readonly botBuffers: [CartTransform, CartTransform][] = [];
+  get currentBotCarts(): readonly CartTransform[] {
+    return this.snapshot.currentBotCarts;
+  }
   private ballPool!: BallPool;
   /** Ammo buckets. One for now; course-scale supply placement is Stage D's. */
   private readonly buckets: Bucket[] = [];
   /** Pooled ball transforms from the previous fixed step, for render interpolation. */
-  previousPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
+  get previousPoolTransforms(): Float32Array {
+    return this.snapshot.previousPoolTransforms;
+  }
   /** Pooled ball transforms from the most recent fixed step. */
-  currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
+  get currentPoolTransforms(): Float32Array {
+    return this.snapshot.currentPoolTransforms;
+  }
   /** The player's shot counters, for the results screen's accuracy. See sim/stats.ts. */
   readonly stats = createStats();
   /**
@@ -205,8 +212,7 @@ export class Sim {
     this.spawns = new SpawnPlan(ground, this.seed);
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
-    this.currentCart = writeTransform(this.cart, this.cartBuffers[0]);
-    this.previousCart = this.currentCart;
+    this.snapshot = new RenderSnapshot(this.cart);
   }
 
   /** The materials under everything. */
@@ -249,10 +255,9 @@ export class Sim {
     sim.match.setRoster(sim.rigs.length);
     for (const rig of sim.rigs) placeRig(rig, sim.spawns.openingPoint(rig.index));
 
-    sim.syncCurrentCart();
-    sim.collapseRenderPairs();
-    sim.syncCurrentPool();
-    sim.previousPoolTransforms.set(sim.currentPoolTransforms);
+    sim.snapshot.syncCarts(sim.cart, sim.bots);
+    sim.snapshot.syncPool(sim.ballPool);
+    sim.snapshot.hold();
     return sim;
   }
 
@@ -362,30 +367,22 @@ export class Sim {
     // A finished match freezes exactly where it stood.
     if (this.match.over) return;
     this.match.tick(FIXED_DT);
-    const swapPool = this.previousPoolTransforms;
-    this.previousPoolTransforms = this.currentPoolTransforms;
-    this.currentPoolTransforms = swapPool;
-
-    this.previousCart = this.currentCart;
-    for (let i = 0; i < this.currentBotCarts.length; i++) {
-      this.previousBotCarts[i] = this.currentBotCarts[i]!;
-    }
+    this.snapshot.beginTick();
     this.stepCarts(intent);
-    this.syncCurrentCart();
+    this.snapshot.syncCarts(this.cart, this.bots);
 
     // Stepping with the queue is what fills it; combat.ts drains it immediately afterwards, so
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
     processContacts(this.eventQueue, this.combatContext);
-    this.syncCurrentPool();
+    this.snapshot.syncPool(this.ballPool);
 
     // The tick that ends the match is still a whole tick -- carts move, balls fly, a hit lands and
     // a kill scores -- and only then does the world freeze. Every previous/current pair collapses
     // onto its current value, so a renderer lerping between them holds still rather than hanging
     // one tick apart forever.
     if (this.match.over) {
-      this.collapseRenderPairs();
-      this.previousPoolTransforms.set(this.currentPoolTransforms);
+      this.snapshot.hold();
     }
   }
 
@@ -504,10 +501,9 @@ export class Sim {
       rig.cart.rearm();
     }
 
-    this.syncCurrentCart();
-    this.collapseRenderPairs();
-    this.syncCurrentPool();
-    this.previousPoolTransforms.set(this.currentPoolTransforms);
+    this.snapshot.syncCarts(this.cart, this.bots);
+    this.snapshot.syncPool(this.ballPool);
+    this.snapshot.hold();
   }
 
   /**
@@ -519,79 +515,4 @@ export class Sim {
     this.disposed = true;
     this.freePhysics();
   }
-
-  /**
-   * Snapshots each cart's own position rather than its rigid body's: a kinematic body only moves
-   * when `world.step()` consumes the queued translation, so reading the body here would render
-   * every cart one tick behind everything else.
-   */
-  private syncCurrentCart(): void {
-    this.currentCart = writeTransform(this.cart, otherOf(this.cartBuffers, this.previousCart));
-    for (let i = 0; i < this.bots.length; i++) {
-      const pair = (this.botBuffers[i] ??= [blankTransform(), blankTransform()]);
-      this.currentBotCarts[i] = writeTransform(this.bots[i]!, otherOf(pair, this.previousBotCarts[i]));
-    }
-  }
-
-  /** Every previous/current pair onto its current value, so an interpolating renderer holds still. */
-  private collapseRenderPairs(): void {
-    this.previousCart = this.currentCart;
-    for (let i = 0; i < this.currentBotCarts.length; i++) this.previousBotCarts[i] = this.currentBotCarts[i]!;
-  }
-
-  /**
-   * Flattens the pool into the current buffer. An idle ball is parked far below the world, so the
-   * active flag is what stops the renderer drawing thirty-two spheres at y = -1000.
-   *
-   * A slot transitioning idle -> active this tick also gets `previousPoolTransforms` seeded with
-   * the same transform, or the renderer would lerp the ball in from wherever its slot last was.
-   */
-  private syncCurrentPool(): void {
-    const buffer = this.currentPoolTransforms;
-    const previous = this.previousPoolTransforms;
-    const balls = this.ballPool.all;
-    for (let i = 0; i < POOL_SIZE; i++) {
-      const flat = i * POOL_TRANSFORM_STRIDE;
-      const ball = balls[i];
-      if (!ball || ball.state === "idle") {
-        buffer[flat + 7] = 0;
-        continue;
-      }
-      const wasActive = previous[flat + 7] === 1;
-      const t = ball.body.translation();
-      const r = ball.body.rotation();
-      buffer[flat] = t.x;
-      buffer[flat + 1] = t.y;
-      buffer[flat + 2] = t.z;
-      buffer[flat + 3] = r.x;
-      buffer[flat + 4] = r.y;
-      buffer[flat + 5] = r.z;
-      buffer[flat + 6] = r.w;
-      buffer[flat + 7] = 1;
-      if (!wasActive) {
-        for (let k = 0; k < POOL_TRANSFORM_STRIDE; k++) previous[flat + k] = buffer[flat + k]!;
-      }
-    }
-  }
-}
-
-
-function blankTransform(): CartTransform {
-  return { position: { x: 0, y: 0, z: 0 }, heading: 0, turretYaw: 0 };
-}
-
-/** Writes `cart`'s state into `out` and returns it. */
-function writeTransform(cart: Cart, out: CartTransform): CartTransform {
-  const p = cart.position;
-  out.position.x = p.x;
-  out.position.y = p.y;
-  out.position.z = p.z;
-  out.heading = cart.heading;
-  out.turretYaw = cart.turretYaw;
-  return out;
-}
-
-/** The buffer of `pair` that is not `avoid`. */
-function otherOf(pair: [CartTransform, CartTransform], avoid: CartTransform | undefined): CartTransform {
-  return pair[0] === avoid ? pair[1] : pair[0];
 }
