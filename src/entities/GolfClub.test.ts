@@ -363,3 +363,117 @@ describe("the rider", () => {
     cart.dispose();
   });
 });
+
+describe("what a cart costs to draw", () => {
+  /** The layers a default camera renders. */
+  const drawnLayers = new THREE.Layers();
+
+  /** Meshes a camera would draw: every ancestor visible, and on a layer the camera renders. */
+  function drawn(root: THREE.Object3D): THREE.Mesh[] {
+    const out: THREE.Mesh[] = [];
+    const walk = (node: THREE.Object3D): void => {
+      if (!node.visible) return;
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && node.layers.test(drawnLayers)) out.push(mesh);
+      for (const child of node.children) walk(child);
+    };
+    walk(root);
+    return out;
+  }
+
+  /** The meshes the rig itself is made of, drawn or not, whose ancestors are all visible. */
+  function rigMeshes(root: THREE.Object3D): THREE.Mesh[] {
+    const out: THREE.Mesh[] = [];
+    const walk = (node: THREE.Object3D): void => {
+      if (!node.visible) return;
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && !node.layers.test(drawnLayers)) out.push(mesh);
+      for (const child of node.children) walk(child);
+    };
+    walk(root);
+    return out;
+  }
+
+  /** Bounds of the actual vertices in world space: a transformed bounding box is not tight. */
+  function worldBox(meshes: THREE.Mesh[]): THREE.Box3 {
+    const box = new THREE.Box3();
+    const v = new THREE.Vector3();
+    for (const mesh of meshes) {
+      const position = mesh.geometry.getAttribute("position");
+      for (let i = 0; i < position.count; i++) box.expandByPoint(v.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld));
+    }
+    return box;
+  }
+
+  function vertices(meshes: THREE.Mesh[]): number {
+    return meshes.reduce((sum, mesh) => sum + mesh.geometry.getAttribute("position").count, 0);
+  }
+
+  /**
+   * Eight carts were about 78 draw calls each, over 600 a frame for the carts alone. The target
+   * is about 150 for eight: one draw per material slot per posed part, not one per primitive.
+   */
+  it("draws a riding cart, loaded, in at most 20 meshes", () => {
+    const cart = new GolfClub(ClubType.Driver);
+    cart.setBallLoaded(true);
+    expect(drawn(cart).length).toBeLessThanOrEqual(20);
+    cart.dispose();
+  });
+
+  it("draws every cart from the same geometry", () => {
+    const a = new GolfClub(ClubType.Driver);
+    const b = new GolfClub(ClubType.Putter);
+    const geometries = (cart: GolfClub): Set<THREE.BufferGeometry> => {
+      const set = new Set<THREE.BufferGeometry>();
+      cart.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (mesh.isMesh && node.layers.test(drawnLayers) && node.parent?.name !== "head_slot") set.add(mesh.geometry);
+      });
+      return set;
+    };
+    expect([...geometries(b)].every((g) => geometries(a).has(g))).toBe(true);
+    expect(geometries(a).size).toBeGreaterThan(0);
+    a.dispose();
+    b.dispose();
+  });
+
+  /**
+   * The drawn meshes are the rig's primitives merged per slot per posed part, so in any pose they
+   * must cover exactly the same vertices over exactly the same box. A primitive merged into the
+   * wrong part's frame would sit where that part was at rest and not follow its own.
+   */
+  it.each([ClubType.Putter, ClubType.Iron, ClubType.Driver])(
+    "draws exactly the %s rig's geometry, whatever the pose",
+    (club) => {
+      const cart = new GolfClub(club);
+      const poses: [number, number, number][] = [
+        [0, 0, 1],
+        [0.9, 1, 1],
+        [-2.1, 0, 0.3],
+      ];
+      for (const [yaw, charge, reload] of poses) {
+        cart.setAimYaw(yaw);
+        cart.setSwing(charge, reload);
+        cart.updateMatrixWorld(true);
+        const rig = rigMeshes(cart);
+        const shown = drawn(cart);
+        expect(vertices(shown), `pose ${yaw},${charge},${reload}`).toBe(vertices(rig));
+        const a = worldBox(rig);
+        const b = worldBox(shown);
+        expect(b.min.distanceTo(a.min)).toBeLessThan(1e-5);
+        expect(b.max.distanceTo(a.max)).toBeLessThan(1e-5);
+      }
+      cart.dispose();
+    },
+  );
+
+  it("repaints the drawn meshes when a slot is repainted", () => {
+    const cart = new GolfClub(ClubType.Driver);
+    cart.setSlotColor("chassis", 0xff0000);
+    const red = drawn(cart).filter(
+      (mesh) => (mesh.material as THREE.MeshStandardMaterial).color.getHex() === 0xff0000,
+    );
+    expect(red.length).toBeGreaterThan(0);
+    cart.dispose();
+  });
+});
