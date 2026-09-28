@@ -40,6 +40,16 @@ export interface PooledBall {
    * not flying at anyone, so `acquire` may recycle it before it has come fully to rest.
    */
   touchedDown: boolean;
+  /** Consecutive ticks spent grounded and slow, toward `REST_HOLD_TICKS`. */
+  restTicks: number;
+  /**
+   * Where the body was, and how fast it was going, after the last world step: read once per tick by
+   * `BallPool.sync` and used by everything else that asks. Rapier's `translation()` and `linvel()`
+   * each return a fresh object, so asking three times a tick was three allocations, and nothing
+   * moves a body between the step and the next one except a teleport, which also changes `state`.
+   */
+  readonly position: Float64Array;
+  readonly velocity: Float64Array;
 }
 
 export const POOL_SIZE = 32;
@@ -81,10 +91,13 @@ const REST_HOLD_TICKS = 12;
  * OUT_OF_BOUNDS_Y, so a parked idle ball can never be mistaken for a live one by any bounds
  * or height check. */
 const PARKED_POSITION = { x: 0, y: -1000, z: 0 };
+/** Handed to Rapier as a velocity; read, never kept, so one frozen object serves every call. */
+const ZERO = Object.freeze({ x: 0, y: 0, z: 0 });
 
 export class BallPool {
   private readonly balls: PooledBall[];
-  private readonly restTicks = new WeakMap<RAPIER.RigidBody, number>();
+  /** Reused per `setLinvel` in the fixed tick. */
+  private readonly velocityScratch = { x: 0, y: 0, z: 0 };
   private readonly ground: PoolGround;
   private readonly tuningScratch = createSurfaceTuning();
   /** Sim time as of the last `step`, so `acquire` can stamp `firedAt` without being passed it. */
@@ -122,8 +135,10 @@ export class BallPool {
         spent: false,
         damage: 1,
         touchedDown: false,
+        restTicks: 0,
+        position: new Float64Array([PARKED_POSITION.x, PARKED_POSITION.y, PARKED_POSITION.z]),
+        velocity: new Float64Array(3),
       });
-      this.restTicks.set(body, 0);
     }
   }
 
@@ -173,7 +188,7 @@ export class BallPool {
     ball.touchedDown = false;
     ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
-    this.restTicks.set(ball.body, 0);
+    ball.restTicks = 0;
     return ball;
   }
 
@@ -184,11 +199,11 @@ export class BallPool {
     ball.state = "idle";
     ball.firedBy = NO_KILLER;
     ball.body.setTranslation(PARKED_POSITION, true);
-    ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    ball.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    ball.body.setLinvel(ZERO, true);
+    ball.body.setAngvel(ZERO, true);
     ball.body.collider(0).setEnabled(false);
     ball.body.setEnabled(false);
-    this.restTicks.set(ball.body, 0);
+    ball.restTicks = 0;
   }
 
   /** Releases every ball not already idle. Used when swapping holes so stale in-flight/landed
@@ -210,22 +225,23 @@ export class BallPool {
    */
   step(dt: number, simTime: number): void {
     this.now = simTime;
-    for (const ball of this.balls) {
+    for (let i = 0; i < this.balls.length; i++) {
+      const ball = this.balls[i]!;
       if (ball.state === "flying") {
         if (simTime - ball.firedAt >= MAX_FLIGHT_S) {
           this.release(ball);
           continue;
         }
-        const t = ball.body.translation();
-        const grounded = t.y - this.ground.heightAt(t.x, t.z) < POOLED_BALL_RADIUS * 2;
+        const p = ball.position;
+        const grounded = p[1]! - this.ground.heightAt(p[0]!, p[2]!) < POOLED_BALL_RADIUS * 2;
         if (grounded) {
           ball.touchedDown = true;
-          this.applyRollingResistance(ball.body, t.x, t.z, dt);
+          this.applyRollingResistance(ball, dt);
         }
-        const v = ball.body.linvel();
-        const slow = Math.hypot(v.x, v.y, v.z) < REST_SPEED_THRESHOLD;
-        const ticks = grounded && slow ? (this.restTicks.get(ball.body) ?? 0) + 1 : 0;
-        this.restTicks.set(ball.body, ticks);
+        const v = ball.velocity;
+        const slow = Math.hypot(v[0]!, v[1]!, v[2]!) < REST_SPEED_THRESHOLD;
+        const ticks = grounded && slow ? ball.restTicks + 1 : 0;
+        ball.restTicks = ticks;
         if (ticks >= REST_HOLD_TICKS) {
           ball.state = "landed";
           ball.landedAt = simTime;
@@ -243,16 +259,45 @@ export class BallPool {
    * stops the ball rather than reversing it. Direct velocity changes rather than impulses, so the
    * result is mass-independent and exactly reproducible on an authoritative server.
    */
-  private applyRollingResistance(body: RAPIER.RigidBody, x: number, z: number, dt: number): void {
+  private applyRollingResistance(ball: PooledBall, dt: number): void {
     if (!this.ground.tuningAt) return;
     const tuning = this.tuningScratch;
-    this.ground.tuningAt(x, z, tuning);
-    const v = body.linvel();
-    const horizontalSpeed = Math.hypot(v.x, v.z);
+    const p = ball.position;
+    this.ground.tuningAt(p[0]!, p[2]!, tuning);
+    const v = ball.velocity;
+    const horizontalSpeed = Math.hypot(v[0]!, v[2]!);
     const speedDrop = tuning.rolling * GRAVITY * dt;
     const scale = horizontalSpeed < 1e-4 ? 1 : Math.max(0, 1 - speedDrop / horizontalSpeed);
-    const bounceY = v.y > 0 ? v.y * tuning.bounceScale : v.y;
-    body.setLinvel({ x: v.x * scale, y: bounceY, z: v.z * scale }, true);
+    const bounceY = v[1]! > 0 ? v[1]! * tuning.bounceScale : v[1]!;
+    const next = this.velocityScratch;
+    next.x = v[0]! * scale;
+    next.y = bounceY;
+    next.z = v[2]! * scale;
+    ball.body.setLinvel(next, true);
+    // Rapier keeps velocity in single precision, so the cache holds what `linvel()` would now return.
+    v[0] = Math.fround(next.x);
+    v[1] = Math.fround(next.y);
+    v[2] = Math.fround(next.z);
+  }
+
+  /**
+   * Reads every live body's position and velocity once, after the world step, into the balls'
+   * caches. Idle bodies are parked and never read. The one place the pool asks Rapier where a ball
+   * is, per tick.
+   */
+  sync(): void {
+    for (let i = 0; i < this.balls.length; i++) {
+      const ball = this.balls[i]!;
+      if (ball.state === "idle") continue;
+      const t = ball.body.translation();
+      ball.position[0] = t.x;
+      ball.position[1] = t.y;
+      ball.position[2] = t.z;
+      const v = ball.body.linvel();
+      ball.velocity[0] = v.x;
+      ball.velocity[1] = v.y;
+      ball.velocity[2] = v.z;
+    }
   }
 
   /** Every pooled body, whatever its state -- for one-time setup like registering colliders for
@@ -261,12 +306,18 @@ export class BallPool {
     return this.balls;
   }
 
-  /** "landed" balls only, for pickup checks. */
-  ballsNear(x: number, z: number, radius: number): PooledBall[] {
-    return this.balls.filter((b) => {
-      if (b.state !== "landed") return false;
-      const t = b.body.translation();
-      return Math.hypot(t.x - x, t.z - z) <= radius;
-    });
+  /**
+   * "landed" balls within `radius`, for pickup checks, written into `out` from index 0; returns
+   * how many. `out` is the caller's and is grown only the first time it is too short.
+   */
+  ballsNear(x: number, z: number, radius: number, out: PooledBall[]): number {
+    let n = 0;
+    for (let i = 0; i < this.balls.length; i++) {
+      const b = this.balls[i]!;
+      if (b.state !== "landed") continue;
+      if (Math.hypot(b.position[0]! - x, b.position[2]! - z) > radius) continue;
+      out[n++] = b;
+    }
+    return n;
   }
 }
