@@ -12,6 +12,10 @@ import type { SkyRig } from "./sky";
 import { LIGHT_LEVELS, createLighting } from "./lighting";
 import { createPost } from "./post";
 import { ZoneStakes } from "./zoneStakes";
+import { courseTreesFor } from "./courseTrees";
+import { coursePropsFor } from "./courseProps";
+import type { CourseProps } from "./courseProps";
+import type { CourseTrees } from "./courseTrees";
 import { CartSuspension } from "./cartSuspension";
 import type { ArenaZone } from "../sim/arenaZone";
 import type { Post } from "./post";
@@ -144,6 +148,10 @@ export class RenderScene {
   /** High only; null draws straight to the canvas. */
   private readonly post: Post | null;
   private readonly zoneStakes: ZoneStakes | null;
+  /** Borrowed like the ground: one wood per course and tree cap. */
+  private readonly courseTrees: CourseTrees;
+  /** Tee markers, benches, bins and a flagstick on every green; borrowed like the trees. */
+  private readonly courseProps: CourseProps;
   /** Each cart model's springs, made on the first frame it is posed. */
   private readonly suspension = new Map<GolfClub, CartSuspension>();
   private suspensionDt = 0;
@@ -206,6 +214,10 @@ export class RenderScene {
     this.treeline = treelineFor(arena);
     if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
     this.groundHeightAt = arena.heightAt ?? ((x, z) => arena.course.heightAt(x, z));
+    this.courseTrees = courseTreesFor(arena.course, arena.surfaces, arena.seed ?? 0, quality.treeCap);
+    this.scene.add(this.courseTrees.group);
+    this.courseProps = coursePropsFor(arena.course);
+    this.scene.add(this.courseProps.group);
     this.zoneStakes = arena.zone ? new ZoneStakes(arena.zone, this.groundHeightAt) : null;
     if (this.zoneStakes) this.scene.add(this.zoneStakes);
 
@@ -267,6 +279,7 @@ export class RenderScene {
     this.pooledBalls.setFromTransforms(view.poolTransforms);
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
     this.effects.update(view.frameSeconds);
+    this.courseProps.update(view.elapsedSeconds);
     this.trauma.update(view.frameSeconds);
     this.shakeClock += view.frameSeconds;
 
@@ -309,6 +322,8 @@ export class RenderScene {
     this.sky.dispose();
     // The ground and treeline belong to the course, not to this match: taken out, not freed.
     this.scene.remove(this.courseGround.group);
+    this.scene.remove(this.courseTrees.group);
+    this.scene.remove(this.courseProps.group);
     if (this.treeline?.mesh) this.scene.remove(this.treeline.mesh);
     this.scene.clear();
   }
