@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { QUALITY } from "./quality";
 import { SKY, sunDirection } from "./sky";
-import { patchMaterial, shadowTexelSize, snapShadowFocus } from "./lighting";
+import { createLighting, patchMaterial, shadowTexelSize, snapShadowFocus } from "./lighting";
 
 /**
  * The single shadow map follows the camera, and a map that slides by fractions of a texel crawls:
@@ -102,5 +102,22 @@ describe("patchMaterial", () => {
     expect(material.defines).toEqual({ KEEP: 1, USE_CSM: 1 });
     restore();
     expect(material.defines).toEqual({ KEEP: 1 });
+  });
+});
+
+describe("createLighting, cascaded", () => {
+  it("takes down cleanly, and leaves a material with no defines as it found it", () => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 2000);
+    const lambert = new THREE.MeshLambertMaterial();
+    const standard = new THREE.MeshStandardMaterial();
+    const standardDefines = { ...standard.defines };
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(), lambert), new THREE.Mesh(new THREE.BoxGeometry(), standard));
+    const lighting = createLighting(scene, camera, QUALITY.high);
+    lighting.adopt(scene);
+    expect(() => lighting.dispose()).not.toThrow();
+    expect(lambert.defines).toBeUndefined();
+    expect(standard.defines).toEqual(standardDefines);
+    expect(lambert.customProgramCacheKey()).not.toContain("csm");
   });
 });

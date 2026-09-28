@@ -236,10 +236,13 @@ function cascaded(
       root.traverse(visit);
     },
     dispose(): void {
-      for (const restore of restores.values()) restore();
-      restores.clear();
+      // CSM's own teardown first: it deletes its defines from each material it set up, and a
+      // material whose defines were `undefined` before -- a Lambert -- has none to delete from
+      // once it has been given back. Then each material gets its own hook, key and defines back.
       csm.remove();
       csm.dispose();
+      for (const restore of restores.values()) restore();
+      restores.clear();
       for (const light of csm.lights) light.dispose();
       scene.remove(hemisphere);
       hemisphere.dispose();
