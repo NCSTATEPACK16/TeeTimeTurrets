@@ -4,7 +4,7 @@
  * This is the trick the whole authoring system rests on (docs/COURSE_PIPELINE.md §3): a brief says
  * `placement: 'fairway-elbow'` and never a coordinate, so a hole stays reconstructible from a
  * `uint32` and multiplayer ships a seed rather than a level file. The resolution from "the fairway
- * elbow" to a point happens here, against a routing the generator has already drawn and validated.
+ * elbow" to a point happens here, against a routing that is already fixed (`authoredCourse.ts`).
  *
  * Everything is a pure function of (brief, routing, random). No module state, no clock, no
  * reaching for a global RNG -- the `random` parameter is the AGENTS.md rule about seeded

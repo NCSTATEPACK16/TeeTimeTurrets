@@ -1,10 +1,10 @@
 /**
  * The eighteen holes, authored from a real routing instead of drafted by a solver.
  *
- * **Why this module exists.** `generateCourse` drafts holes by sampling `DRAFT_BAND` and placing
- * them by physics relaxation. It works, it is deterministic, and the result does not read as a
- * golf course -- because it is about two-thirds real length hole for hole. Measured against a real
- * par-72 card: not one of its eighteen holes was legal under the old bands, and the old par-4
+ * **Why this module exists.** A procedural generator (deleted in Stage 9 of the revamp) drafted
+ * holes by sampling length bands and placing them by physics relaxation. It worked, it was
+ * deterministic, and the result did not read as a golf course -- because it was about two-thirds
+ * real length hole for hole. Measured against a real par-72 card: not one of its eighteen holes was legal under the old bands, and the old par-4
  * *minimum* (148 yd) was shorter than every real par 3. A course made of holes that are all a
  * third too short reads as a miniature of a golf course rather than as one.
  *
@@ -82,8 +82,7 @@ export const AUTHORED_HOLES: readonly AuthoredHole[] = [
 ];
 
 /**
- * One authored hole, with its hazards and green placed from the seed exactly as `generateHole`
- * places a drafted one.
+ * One authored hole, with its hazards and green placed from the seed.
  *
  * No rejection sampling, and that is the point of authoring: a drafted hole that fails a check is
  * redrawn, but an authored hole that fails one is a hole somebody chose and the answer is to fix
@@ -129,8 +128,7 @@ function authoredHoleSpec(courseSeed: number, authored: AuthoredHole): HoleSpec 
     stripeAngle: stripeAngleFor(seed, index, tee, cup),
   };
 
-  // Channel 1 is the placement channel, the same one `generateHole` draws from, so an authored
-  // hole's hazards come off the seed exactly as a drafted hole's do.
+  // Channel 1 is the placement channel (it was the generator's sand-noise channel before that).
   const random = mulberry32(hashChannel(seed, index, 1));
   const routing = {
     spline,

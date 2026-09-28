@@ -1,18 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COURSE_BRIEFS, COVER_CORRIDOR, briefForHole } from "./briefs";
-import type { HoleBrief } from "./briefs";
-import {
-  DRAFT_BAND,
-  FIELD_FOR_PAR,
-  biomeForIndex,
-} from "./course";
-import { EDGE_MARGIN } from "./holeValidation";
+import { biomeForIndex } from "./course";
 import { AUTHORED_HOLES } from "./authoredCourse";
-// From terrain, not course: course.ts imports BLEND_WIDTH but does not re-export it, and vitest
-// transpiles without type-checking. Importing it from the wrong module gives `undefined`, which
-// makes `half` NaN and every `NaN < min` comparison false -- so the room check below would pass
-// on any input at all. Found by deliberately breaking a brief and watching it not fail.
-import { BLEND_WIDTH } from "./terrain";
 
 /**
  * These briefs are eighteen hand-typed literals transcribed from a table in a markdown file, and
@@ -21,7 +10,7 @@ import { BLEND_WIDTH } from "./terrain";
  *
  * So every assertion here checks the briefs against something that was written independently:
  * the authored card in authoredCourse.ts, `BIOME_ROUTING` in course.ts, the design rules stated in
- * docs/COURSE_PIPELINE.md section 4, or the geometry the generator actually has room for. A typo
+ * docs/COURSE_PIPELINE.md section 4. A typo
  * in a brief fails one of these; a typo copied identically into both places is the only thing
  * that gets through, and there is no second place to copy it into.
  */
@@ -76,9 +65,9 @@ describe("the course bible as data", () => {
      * Section 4 design rule 1, loosened from "no two adjacent" to "no three in a row" on 13
      * September 2026, and the reason the rule exists is the reason it had to loosen.
      *
-     * It exists because the generator flips a coin per hole (`random() < 0.5 ? -1 : 1` in
-     * `draftHole`), so **a run of four same-way doglegs** has probability 1/16 in any given window
-     * and is likely to appear at least once across 18 holes. That is a statement about runs, not
+     * It was written because the procedural generator (deleted in Stage 9) flipped a coin per hole
+     * (`random() < 0.5 ? -1 : 1` in `draftHole`), so **a run of four same-way doglegs** had
+     * probability 1/16 in any given window and was likely to appear at least once across 18 holes. That is a statement about runs, not
      * about pairs -- the pairwise form was simply stricter than the argument for it.
      *
      * The stricter form now asserts something false. These briefs describe a real traced routing
@@ -156,36 +145,6 @@ describe("the course bible as data", () => {
     for (const [cover, c] of Object.entries(COVER_CORRIDOR)) {
       expect(c.mid, `${cover} should pinch at the landing zone`).toBeLessThan(c.start);
     }
-  });
-
-  it("leaves every hole enough room to reach its par band", () => {
-    // The one assertion here that can fail on plausible numbers rather than only on a typo.
-    //
-    // `draftHole` builds a hole inside a box of half-extent
-    //   half = fieldSize / 2 - (corridorHalfWidth + BLEND_WIDTH) - EDGE_MARGIN
-    // and spends at most STRAIGHT_FILL of it on the run and APEX_FILL on the dog-leg apex, so the
-    // longest corridor it can draw on the worst-case (axis-aligned) bearing is
-    //   2 * hypot(half * 0.92, half * 0.85).
-    // Widening the corridor eats the box, so an over-generous `cover` setting can make a hole
-    // unbuildable at its own par -- silently, as an exhausted sampler thirty-two attempts later.
-    const STRAIGHT_FILL = 0.92;
-    const APEX_FILL = 0.85;
-
-    const longestFor = (b: HoleBrief) => {
-      const widest = Math.max(b.corridor.start, b.corridor.mid, b.corridor.end);
-      const half = FIELD_FOR_PAR[b.parTarget]! / 2 - (widest + BLEND_WIDTH) - EDGE_MARGIN;
-      return 2 * Math.hypot(half * STRAIGHT_FILL, half * APEX_FILL);
-    };
-
-    // Guard the guard. A comparison against NaN is false, so a constant that arrives undefined
-    // turns this whole check into a no-op that reports success -- which is how it behaved on
-    // first writing. Assert the arithmetic produced numbers before trusting what it says.
-    expect(COURSE_BRIEFS.every((b) => Number.isFinite(longestFor(b)))).toBe(true);
-
-    const tooTight = COURSE_BRIEFS.filter((b) => longestFor(b) < DRAFT_BAND[b.parTarget]!.min)
-      .map((b) => `hole ${b.number} (par ${b.parTarget}, ${b.cover})`);
-
-    expect(tooTight).toEqual([]);
   });
 });
 

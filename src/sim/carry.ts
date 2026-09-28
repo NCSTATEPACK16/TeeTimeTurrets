@@ -43,9 +43,9 @@ export const DRIVER_CARRY_M = 69.5;
  * ball pool.
  *
  * This is the number the probe now holds the driver to. `REFERENCE_CARRY_M` was the stroke-play
- * tee shot, and stroke play is gone. It survives only because the course generator still derives
- * par from it, and that goes when the generator is deleted (REVAMP-PLAN.md, Stage 9). The two
- * differ because the arena driver was retuned for combat, not because either measurement is wrong.
+ * tee shot, and stroke play is gone. It survives as `validateHole`'s reach limit (check 7, three
+ * driver shots) and the par-3 bound on `fixedHoleSpec`; the generator that derived par from it
+ * was deleted in Stage 9. The two differ because the arena driver was retuned for combat, not because either measurement is wrong.
  */
 export const ARENA_DRIVER_TOTAL_M = 103.8;
 
