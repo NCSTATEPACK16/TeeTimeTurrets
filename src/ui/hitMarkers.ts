@@ -1,4 +1,5 @@
-import type { HitEventKind } from "../sim/world";
+/** What a marker marks: the player's ball connecting, or a cart the player killed. */
+export type MarkerKind = "hit" | "kill";
 
 /**
  * Hit markers (UI-SPEC H11, image 00): the little `+50` / `DIRECT HIT!` / `ENEMY DOWN` callouts
@@ -13,15 +14,10 @@ import type { HitEventKind } from "../sim/world";
  * tears down, per the AGENTS.md cleanup rule -- a marker mid-animation must not outlive its round.
  */
 
-interface MarkerText {
-  readonly label: string;
-  /** A CSS modifier class, so a kill can read differently from a plain hit. */
-  readonly variant: string;
-}
-
-const TEXT: Record<HitEventKind, MarkerText> = {
-  hit: { label: "+50", variant: "hit-marker--hit" },
-  kill: { label: "ENEMY DOWN", variant: "hit-marker--kill" },
+/** A CSS modifier class per kind, so a kill reads differently from a plain hit. */
+const VARIANT: Record<MarkerKind, string> = {
+  hit: "hit-marker--hit",
+  kill: "hit-marker--kill",
 };
 
 export class HitMarkers {
@@ -34,12 +30,12 @@ export class HitMarkers {
     this.root = container;
   }
 
-  /** Spawns one marker at a screen pixel position. `screenX/Y` come from `projectToScreen`. */
-  spawn(kind: HitEventKind, screenX: number, screenY: number): void {
-    const text = TEXT[kind];
+  /** Spawns one marker at a screen pixel position. `screenX/Y` come from `projectToScreen`;
+   *  `label` is what the hit earned (`hitFeedback.markerLabel`). */
+  spawn(kind: MarkerKind, label: string, screenX: number, screenY: number): void {
     const node = document.createElement("div");
-    node.className = `hit-marker ${text.variant}`;
-    node.textContent = text.label;
+    node.className = `hit-marker ${VARIANT[kind]}`;
+    node.textContent = label;
     // left/top rather than the nameplate's translate3d: a marker's position is set once and never
     // touched again (it is a one-shot, not repositioned per frame), and leaving `transform` free
     // lets the CSS keyframe own the drift without fighting a positioning transform.

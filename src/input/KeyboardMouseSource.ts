@@ -39,6 +39,8 @@ export class KeyboardMouseSource implements InputSource {
   private readonly intent: PlayerIntent = neutralIntent();
   private pointerAimDelta = 0;
   private readonly canvas: HTMLElement;
+  /** The player's mouse sensitivity setting, a multiplier on `POINTER_SENSITIVITY`. */
+  sensitivity = 1;
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (SWALLOWED.has(event.code)) event.preventDefault();
@@ -53,7 +55,7 @@ export class KeyboardMouseSource implements InputSource {
 
   private readonly onMouseMove = (event: MouseEvent): void => {
     if (document.pointerLockElement !== this.canvas) return;
-    this.pointerAimDelta += event.movementX * POINTER_SENSITIVITY;
+    this.pointerAimDelta += event.movementX * POINTER_SENSITIVITY * this.sensitivity;
   };
 
   // Mouse buttons join the key sets as `Mouse<button>`, so `intentFromKeys` binds them from the
@@ -101,6 +103,11 @@ export class KeyboardMouseSource implements InputSource {
 
   sample(): PlayerIntent {
     return intentFromKeys(this.keysDown, this.pressedThisTick, this.pointerAimDelta, this.intent);
+  }
+
+  /** Asks for the pointer lock again, from a user gesture such as the pause menu's RESUME. */
+  lockPointer(): void {
+    if (document.pointerLockElement !== this.canvas) void this.canvas.requestPointerLock();
   }
 
   endTick(): void {

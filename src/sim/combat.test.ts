@@ -59,7 +59,7 @@ describe("combat contact resolution", () => {
       // `Sim.creditHit` is what decides whose accuracy a hit belongs to; here the raw shooter is
       // recorded and `stats.directHits` is credited unconditionally, so the existing tests that
       // assert on `directHits` keep asserting what they always did.
-      onBallHit: (shooter: number, x: number, y: number, z: number) => {
+      onBallHit: (shooter: number, _victim: number, _damage: number, x: number, y: number, z: number) => {
         hits.push(shooter);
         hitPositions.push({ x, y, z });
         stats.directHits += 1;
@@ -68,6 +68,7 @@ describe("combat contact resolution", () => {
         killed.push(c);
         kills.push({ victim, killer });
       },
+      onRamDamage: () => {},
     };
   }
 
@@ -78,7 +79,7 @@ describe("combat contact resolution", () => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.ball(0.15).setDensity(1130), body);
     body.setLinvel({ x: vx, y: 0, z: 0 }, true);
-    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false, damage: STROKE_DAMAGE }, handle: collider.handle };
+    return { ball: { body, state: "flying", landedAt: 0, firedBy, firedAt: 0, spent: false, damage: STROKE_DAMAGE, touchedDown: false }, handle: collider.handle };
   }
 
   beforeEach(() => {

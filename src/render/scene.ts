@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { BallSwarm } from "../entities/BallSwarm";
 import { AimArc } from "../entities/AimArc";
+import { EffectsLayer } from "./effects";
+import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, placeCart } from "../entities/GolfClub";
 import { ClubType } from "../physics/Ballistics";
 import type { Surfaces } from "../sim/surfaces";
@@ -78,6 +80,12 @@ export interface FrameView {
   /** The player's aim arc from `Sim.previewTrajectory`: the first `aimArcCount` points. */
   aimArc: Vec3[];
   aimArcCount: number;
+  /** The player's cart is out of the world awaiting respawn, so it is not drawn. */
+  playerDead: boolean;
+  /** Per bot, as `botCarts`: out of the world awaiting respawn. */
+  botDead: boolean[];
+  /** The player's forward speed as a fraction of top speed, for the FOV kick. */
+  speed01: number;
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -89,6 +97,13 @@ export class RenderScene {
   private readonly botCarts: GolfClub[] = [];
   private readonly pooledBalls: BallSwarm;
   private readonly aimArc: AimArc;
+  /** Puffs, sparks, death bursts and splashes; triggered by `MatchScreen` from `Sim.events`. */
+  readonly effects: EffectsLayer;
+  /** Camera shake; `MatchScreen` adds trauma from `Sim.events`. */
+  readonly trauma = new CameraTrauma();
+  /** Where the smoothed chase eye is, before shake: the shake is drawn on top, never fed back. */
+  private readonly chaseEye = new THREE.Vector3();
+  private readonly shakeScratch = { x: 0, y: 0, roll: 0 };
   private readonly courseGround: CourseGround;
   /** The band of trees beyond the road, on a course that has one. */
   private readonly treeline: Treeline | null;
@@ -125,7 +140,7 @@ export class RenderScene {
     this.scene.fog = new THREE.Fog(palette.sky, fieldSize * 0.5, fieldSize * 2);
 
     this.camera = new THREE.PerspectiveCamera(
-      60,
+      BASE_FOV_DEG,
       window.innerWidth / window.innerHeight,
       0.1,
       fieldSize * 2.5,
@@ -167,6 +182,9 @@ export class RenderScene {
     this.aimArc = new AimArc();
     this.scene.add(this.aimArc);
 
+    this.effects = new EffectsLayer();
+    this.scene.add(this.effects.group);
+
     this.cameraTarget.set(0, 0, 0);
     this.onResize();
     // Kept as a field so `dispose` can detach it. An anonymous listener here would outlive every
@@ -177,9 +195,12 @@ export class RenderScene {
 
   draw(view: FrameView): void {
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
+    // A dead cart has burst (`EffectsLayer.death`) and is out of the world until it respawns.
+    this.cart.visible = !view.playerDead;
     for (let i = 0; i < this.botCarts.length; i++) {
       const transform = view.botCarts[i];
       if (transform === undefined) continue;
+      this.botCarts[i]!.visible = !view.botDead[i];
       // reload01 = 1 is "loaded and idle", so a bot stands at address. Same reason as the club
       // and the charge above: Sim publishes no per-bot reload, and a guessed swing would be a
       // bot that looks like it is shooting when it is not.
@@ -187,6 +208,7 @@ export class RenderScene {
     }
     this.pooledBalls.setFromTransforms(view.poolTransforms);
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
+    this.effects.update(view.frameSeconds);
 
     this.frameChase(view);
 
@@ -210,6 +232,7 @@ export class RenderScene {
     for (const bot of this.botCarts) bot.dispose();
     this.pooledBalls.dispose();
     this.aimArc.dispose();
+    this.effects.dispose();
     this.treeline?.dispose();
     this.courseGround.dispose();
     this.scene.clear();
@@ -259,9 +282,27 @@ export class RenderScene {
     const groundAtEye = this.groundHeightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
     this.chaseEyeScratch.y = Math.max(this.chaseEyeScratch.y, groundAtEye + CHASE_MIN_GROUND_CLEARANCE);
 
-    this.camera.position.lerp(this.chaseEyeScratch, chaseSmoothing(CHASE_POSITION_LERP, view.frameSeconds));
+    this.chaseEye.lerp(this.chaseEyeScratch, chaseSmoothing(CHASE_POSITION_LERP, view.frameSeconds));
     this.cameraTarget.lerp(this.chaseLookScratch, chaseSmoothing(CHASE_TARGET_LERP, view.frameSeconds));
+    this.camera.position.copy(this.chaseEye);
     this.camera.lookAt(this.cameraTarget);
+
+    // Shake on top of the smoothed pose, in the camera's own axes, rebuilt from `chaseEye` every
+    // frame so it can never drift the chase.
+    this.trauma.update(view.frameSeconds);
+    this.trauma.offset(this.shakeScratch);
+    if (this.trauma.value > 0) {
+      this.camera.translateX(this.shakeScratch.x);
+      this.camera.translateY(this.shakeScratch.y);
+      this.camera.rotateZ(this.shakeScratch.roll);
+    }
+
+    const fov = fovForSpeed(view.speed01);
+    const nextFov = this.camera.fov + (fov - this.camera.fov) * chaseSmoothing(CHASE_TARGET_LERP, view.frameSeconds);
+    if (Math.abs(nextFov - this.camera.fov) > 0.01) {
+      this.camera.fov = nextFov;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   private onResize(): void {

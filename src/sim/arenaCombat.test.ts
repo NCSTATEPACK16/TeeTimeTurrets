@@ -77,15 +77,11 @@ describe("arena combat is winnable", () => {
     expect(minHp).toBeLessThan(startHp); // and its shots connected
   });
 
-  it("advances the hit-event epoch each step and resets the buffer", async () => {
+  it("writes no events on ticks where nothing happens", async () => {
     const sim = await Sim.create(arenaFromHole(fixedHoleSpec()), { botCount: 0 });
-    let last = sim.hitEventEpoch;
-    for (let i = 0; i < 10; i++) {
-      sim.step(neutralIntent());
-      expect(sim.hitEventEpoch).toBe(last + 1); // exactly one bump per live step
-      last = sim.hitEventEpoch;
-      expect(sim.hitEventCount).toBe(0); // nothing hit anything, so the buffer is empty
-    }
+    const from = sim.events.total;
+    for (let i = 0; i < 10; i++) sim.step(neutralIntent());
+    expect(sim.events.total).toBe(from); // an idle cart alone on the course: nothing to report
   });
 
   it("does not attribute a bot's hits on the player to the player's hit markers", async () => {
@@ -109,12 +105,16 @@ describe("arena combat is winnable", () => {
     botRig.body.setTranslation({ x: bx, y: by, z: player.position.z }, true);
 
     // Player never fires; the bot does all the shooting.
-    let playerEvents = 0;
+    const from = sim.events.total;
     let minHp = player.health.hp;
     for (let i = 0; i < seconds(15); i++) {
       sim.step(neutralIntent());
-      playerEvents += sim.hitEventCount;
       minHp = Math.min(minHp, player.health.hp);
+    }
+    let playerEvents = 0;
+    for (let s = Math.max(from, sim.events.oldest); s < sim.events.total; s++) {
+      const e = sim.events.at(s)!;
+      if ((e.kind === "hit" || e.kind === "kill") && e.actor === 0) playerEvents++;
     }
 
     expect(minHp, "the bot never landed a hit, so the test proves nothing").toBeLessThan(player.health.max);

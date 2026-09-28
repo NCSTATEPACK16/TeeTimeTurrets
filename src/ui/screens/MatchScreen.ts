@@ -2,10 +2,12 @@ import * as THREE from "three";
 import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
 import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
-import { CLUB_STATS } from "../../physics/Ballistics";
+import { CLUB_STATS, ClubType as Club } from "../../physics/Ballistics";
+import { CART_TUNING } from "../../sim/entities/Cart";
 import type { ClubType } from "../../physics/Ballistics";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE, Sim, TRANSFORM_STRIDE, createPreviewBuffer } from "../../sim/world";
 import type { CartTransform } from "../../sim/world";
+import type { SimEventCursor, SimEventKind } from "../../sim/events";
 import { drawHud, readHud } from "../hud";
 import type { Hud } from "../hud";
 import { drawBanner, readBanner } from "../banner";
@@ -13,6 +15,18 @@ import type { BannerDom } from "../banner";
 import { BannerFeed, createBannerView } from "../bannerFeed";
 import type { BannerSource } from "../bannerFeed";
 import { HitMarkers } from "../hitMarkers";
+import { KillFeed, drawKillFeed } from "../killFeed";
+import { DamageIndicators, damageScreenAngle, lowHpIntensity, markerLabel } from "../hitFeedback";
+import { gameAudio } from "../../audio/audioEngine";
+import { cueFor, heartbeatInterval } from "../../audio/audioDirector";
+import { PauseState } from "../pauseState";
+import { CourseMap } from "../courseMap";
+import type { MapMarker } from "../courseMap";
+import { courseMapHoles, nearestHoleNumber } from "../courseMapHoles";
+import { teamOf } from "../../sim/matchConfig";
+import type { Settings } from "../../app/settings";
+import { buildSettingsPanel } from "../settingsPanel";
+import { el } from "../dom";
 import { Nameplates } from "../nameplates";
 import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
@@ -35,6 +49,13 @@ export interface MatchScreenOptions {
   readonly nameplateRoot: HTMLElement;
   /** Called once, when the match clock runs out. Drives the transition to `MatchResultsScreen`. */
   readonly onMatchOver: () => void;
+  /** Where the pause menu and the controls card are mounted. */
+  readonly overlayRoot: HTMLElement;
+  readonly settings: Settings;
+  /** A setting changed in the pause menu, or the controls card was dismissed: apply and save. */
+  readonly onSettingsChange: (next: Settings) => void;
+  /** MAIN MENU from the pause menu. */
+  readonly onQuit: () => void;
 }
 
 export class MatchScreen implements Screen {
@@ -57,10 +78,50 @@ export class MatchScreen implements Screen {
   private lastBannerMs = 0;
   /** UI-SPEC H11. Optional like the banner; the match runs without #hit-markers. */
   private hitMarkers: HitMarkers | null = null;
-  /** The last `Sim.hitEventEpoch` consumed, so each tick's events spawn a marker exactly once
-   *  however many frames render between steps. */
-  private lastHitEpoch = 0;
+  /** This screen's place in `Sim.events`, so each event is handled exactly once however many
+   *  ticks ran since the last frame. Made on `enter`, which starts it at the present. */
+  private eventCursor: SimEventCursor | null = null;
   private readonly hitScreenScratch = { x: 0, y: 0 };
+  /** Optional like the banner; the match runs without #kill-feed. */
+  private killFeedRoot: HTMLElement | null = null;
+  private killFeed = new KillFeed();
+  private killFeedDrawn = -1;
+  /** Damage-direction flashes (#damage-indicators) and the low-HP vignette (#low-hp). Optional. */
+  private readonly damageIndicators = new DamageIndicators();
+  /** Where the player hears from, refreshed each frame for `cueFor`. */
+  private readonly listener = { x: 0, z: 0, yaw: 0 };
+  /** Seconds since the last low-health heartbeat. */
+  private sinceHeartbeat = 0;
+  /** Frozen or running, and which card is up. The sim is not stepped while paused. */
+  private pause = new PauseState({ showControls: false });
+  private settings: Settings | null = null;
+  private overlay: HTMLElement | null = null;
+  private overlayPanel = "";
+  /** The `M` map: closed, framed on the hole you are on, or the whole course. */
+  private courseMap: CourseMap | null = null;
+  private readonly mapMarkers: MapMarker[] = [];
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.repeat) return;
+    if (event.code === "KeyM" && !this.pause.paused) {
+      this.courseMap?.cycle();
+      return;
+    }
+    if (event.code !== "Escape") return;
+    // Esc closes an open map before it pauses anything.
+    if (this.courseMap?.visible) {
+      this.courseMap.close();
+      return;
+    }
+    this.pause.escape(this.options.sim.matchOver);
+    this.syncPause();
+  };
+  private readonly onPointerLockChange = (): void => {
+    if (document.pointerLockElement !== null) return;
+    this.pause.pointerLockLost(this.options.sim.matchOver);
+    this.syncPause();
+  };
+  private damageRoot: HTMLElement | null = null;
+  private lowHp: HTMLElement | null = null;
   private view: FrameView | null = null;
   /** Guards `onMatchOver`: called once. */
   private matchOverReported = false;
@@ -94,6 +155,15 @@ export class MatchScreen implements Screen {
     );
     this.lastSeenAtMs.length = 0;
     this.input = new KeyboardMouseSource(renderer.domElement);
+    this.settings = { ...this.options.settings };
+    this.input.sensitivity = this.settings.sensitivity;
+    this.pause = new PauseState({ showControls: !this.settings.seenControls });
+    // The holes are sampled on first open (courseMapHoles), not here: most matches never open it.
+    this.courseMap = new CourseMap(nameplateRoot, () => courseMapHoles(arena));
+    this.overlayPanel = "";
+    window.addEventListener("keydown", this.onKeyDown);
+    document.addEventListener("pointerlockchange", this.onPointerLockChange);
+    this.syncPause();
     this.hud = readHud();
     if (!this.hud) throw new Error("expected the #hud elements in index.html");
     hudRoot.hidden = false;
@@ -103,7 +173,13 @@ export class MatchScreen implements Screen {
     this.lastBannerMs = performance.now();
     const hitRoot = document.getElementById("hit-markers");
     this.hitMarkers = hitRoot ? new HitMarkers(hitRoot) : null;
-    this.lastHitEpoch = sim.hitEventEpoch;
+    this.eventCursor = sim.events.cursor();
+    this.killFeedRoot = document.getElementById("kill-feed");
+    this.killFeed = new KillFeed();
+    this.killFeedDrawn = -1;
+    this.damageRoot = document.getElementById("damage-indicators");
+    this.lowHp = document.getElementById("low-hp");
+    this.damageIndicators.clear();
     this.matchOverReported = false;
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
@@ -120,6 +196,9 @@ export class MatchScreen implements Screen {
       frameSeconds: 0,
       aimArc: createPreviewBuffer(),
       aimArcCount: 0,
+      playerDead: sim.cart.dead,
+      botDead: sim.bots.map((b) => b.dead),
+      speed01: 0,
     };
     this.lastDrawMs = performance.now();
   }
@@ -127,6 +206,11 @@ export class MatchScreen implements Screen {
   step(): void {
     const { sim } = this.options;
     if (!this.input) return;
+    if (this.pause.paused) {
+      // Frozen: nothing advances, and keys pressed meanwhile are not replayed on resume.
+      this.input.endTick();
+      return;
+    }
     sim.step(this.input.sample());
     this.input.endTick();
     this.elapsedSeconds += FIXED_DT;
@@ -152,6 +236,9 @@ export class MatchScreen implements Screen {
     // swap deliberately does not clear the reload, so read the club here too rather than caching it.
     view.reload01 = reloadFraction(sim.cart.reloadRemaining, sim.cart.equippedClub);
     view.turretLoaded = sim.cart.ammo > 0;
+    view.playerDead = sim.cart.dead;
+    view.speed01 = sim.cart.speed / CART_TUNING.topSpeed;
+    for (let i = 0; i < view.botDead.length; i++) view.botDead[i] = sim.bots[i]!.dead;
     view.elapsedSeconds = this.elapsedSeconds;
     const now = performance.now();
     // Capped, so a frame after the tab was hidden does not snap the camera across the course.
@@ -172,7 +259,8 @@ export class MatchScreen implements Screen {
 
     this.render.draw(view);
     this.drawNameplates();
-    this.drawHitMarkers(sim);
+    this.drainEvents(sim);
+    this.drawCourseMap();
     drawHud(this.hud, sim);
     this.updateBanner(sim);
   }
@@ -195,6 +283,19 @@ export class MatchScreen implements Screen {
     // and ammo cards lit over whatever screen comes next.
     if (this.hud) this.hud.combat.hidden = true;
     if (this.banner) this.banner.root.hidden = true;
+    gameAudio.engineStop();
+    window.removeEventListener("keydown", this.onKeyDown);
+    document.removeEventListener("pointerlockchange", this.onPointerLockChange);
+    this.overlay?.remove();
+    this.overlay = null;
+    this.courseMap?.dispose();
+    this.courseMap = null;
+    this.killFeedRoot?.replaceChildren();
+    this.killFeedRoot = null;
+    this.damageRoot?.replaceChildren();
+    this.damageRoot = null;
+    if (this.lowHp) this.lowHp.style.opacity = "0";
+    this.lowHp = null;
     this.hitMarkers?.dispose();
     this.hitMarkers = null;
     this.input?.dispose();
@@ -224,22 +325,206 @@ export class MatchScreen implements Screen {
     this.bannerFeed.update(source, dt);
     this.bannerFeed.view(this.bannerView);
     if (this.banner) drawBanner(this.banner, this.bannerView);
+
+    this.killFeed.update(dt);
+    if (this.killFeedRoot) this.killFeedDrawn = drawKillFeed(this.killFeedRoot, this.killFeed, this.killFeedDrawn);
+
+    this.damageIndicators.update(dt);
+    if (this.damageRoot) drawDamageIndicators(this.damageRoot, this.damageIndicators);
+    const lowHp = lowHpIntensity(sim.cart.health.hp, sim.cart.health.max);
+    if (this.lowHp) {
+      const opacity = lowHp.toFixed(2);
+      if (this.lowHp.style.opacity !== opacity) this.lowHp.style.opacity = opacity;
+    }
+
+    // Sound that follows state rather than events: the motor, and the heartbeat at low health.
+    if (sim.matchOver || sim.cart.dead || this.pause.paused) gameAudio.engineStop();
+    else gameAudio.engine(sim.cart.speed / CART_TUNING.topSpeed);
+    if (!this.pause.paused) this.sinceHeartbeat += dt;
+    if (!sim.matchOver && !this.pause.paused && this.sinceHeartbeat >= heartbeatInterval(lowHp)) {
+      this.sinceHeartbeat = 0;
+      gameAudio.heartbeat(lowHp);
+    }
   }
 
   /**
-   * Spawns a hit marker for each of the tick's player-attributed combat events, once per tick. The
-   * epoch gate is what makes it once: the sim advances at a fixed step while this renders at the
-   * display rate. Runs after `render.draw`, so the camera `projectToScreen` reads is this frame's.
+   * Everything that reacts to the match reads `Sim.events` here, once per frame: each event since
+   * the last frame, exactly once, however many ticks ran in between. Runs after `render.draw`, so
+   * the camera `projectToScreen` reads is this frame's.
    */
-  private drawHitMarkers(sim: Sim): void {
+  private drainEvents(sim: Sim): void {
+    const cursor = this.eventCursor;
+    if (!cursor) return;
+    const log = sim.events;
+    this.listener.x = sim.cart.position.x;
+    this.listener.z = sim.cart.position.z;
+    this.listener.yaw = sim.cart.turretYaw;
+    for (let s = cursor.begin(); s < log.total; s++) {
+      const e = log.at(s)!;
+      const cue = cueFor(e, this.listener);
+      if (cue) gameAudio.play(cue);
+      if (e.kind === "kill") this.killFeed.onKill(e.actor, e.target);
+      this.playEffect(e.kind, e.x, e.y, e.z);
+      this.addTrauma(sim, e.kind, e.actor, e.target, e.club, e.x, e.z);
+      // Markers are the player's feedback: the player's own hits, rams and kills, nobody else's.
+      if (e.actor === 0) {
+        if (e.kind === "hit" || e.kind === "ram") this.spawnHitMarker("hit", markerLabel("hit", e.amount), e.x, e.y, e.z);
+        else if (e.kind === "kill") this.spawnHitMarker("kill", markerLabel("kill", 0), e.x, e.y, e.z);
+      }
+      // The player was hurt: flash the side it came from, pointing at the cart that did it.
+      if (e.target === 0 && (e.kind === "hit" || e.kind === "ram") && e.actor > 0) {
+        const from = sim.currentBotCarts[e.actor - 1];
+        if (from) {
+          const me = sim.cart.position;
+          this.damageIndicators.add(damageScreenAngle(from.position.x, from.position.z, me.x, me.z, sim.cart.turretYaw));
+        }
+      }
+    }
+    cursor.end();
+  }
+
+  /**
+   * How hard an event shakes the player's camera: firing the heavy clubs, taking a hit, making a
+   * kill, dying, and a kill going off close by.
+   */
+  private addTrauma(sim: Sim, kind: SimEventKind, actor: number, target: number, club: ClubType | null, x: number, z: number): void {
+    const trauma = this.render?.trauma;
+    if (!trauma) return;
+    if (kind === "shot" && actor === 0) {
+      if (club === Club.Driver) trauma.add(TRAUMA_DRIVER);
+      else if (club === Club.Iron) trauma.add(TRAUMA_IRON);
+    } else if ((kind === "hit" || kind === "ram") && target === 0) {
+      trauma.add(TRAUMA_HURT);
+    } else if (kind === "kill") {
+      if (target === 0) trauma.add(TRAUMA_DEATH);
+      else if (actor === 0) trauma.add(TRAUMA_KILL);
+      else {
+        const d = Math.hypot(x - sim.cart.position.x, z - sim.cart.position.z);
+        if (d < NEAR_BLAST_M) trauma.add(TRAUMA_NEAR_BLAST * (1 - d / NEAR_BLAST_M));
+      }
+    }
+  }
+
+  /**
+   * The `M` map's live layer: the player, every living cart in its team's colour, and the ammo
+   * buckets. Costs nothing while the map is closed.
+   */
+  private drawCourseMap(): void {
+    const map = this.courseMap;
+    const view = this.view;
+    if (!map || !map.visible || !view) return;
+    const { sim } = this.options;
+    const markers = this.mapMarkers;
+    markers.length = 0;
+    if (!sim.cart.dead) {
+      markers.push({ x: view.cart.position.x, z: view.cart.position.z, kind: "self", heading: view.cart.heading });
+    }
+    for (let i = 0; i < view.botCarts.length; i++) {
+      if (view.botDead[i]) continue;
+      const bot = view.botCarts[i]!;
+      // Bot i is rig i + 1.
+      const kind = teamOf(i + 1) === teamOf(0) ? "ally" : "enemy";
+      markers.push({ x: bot.position.x, z: bot.position.z, kind, heading: 0 });
+    }
+    for (const bucket of sim.pickups) {
+      if (bucket.cooldownRemaining > 0) continue;
+      markers.push({ x: bucket.position.x, z: bucket.position.z, kind: "pickup", heading: 0 });
+    }
+    const holes = courseMapHoles(this.options.arena);
+    map.draw(markers, nearestHoleNumber(holes, view.cart.position.x, view.cart.position.z));
+  }
+
+  /** Shows the card `PauseState` asks for, rebuilding it only when that changes. */
+  private syncPause(): void {
+    const panel = this.pause.panel;
+    if (panel === this.overlayPanel) return;
+    this.overlayPanel = panel;
+    this.overlay?.remove();
+    this.overlay = null;
+    if (panel === "none" || !this.settings) return;
+    // The lock is released while a card is up, so its buttons can be clicked.
+    if (document.pointerLockElement !== null) document.exitPointerLock();
+    this.overlay = panel === "controls" ? this.buildControlsCard() : this.buildPauseMenu();
+    this.options.overlayRoot.appendChild(this.overlay);
+  }
+
+  private resumePlay(): void {
+    this.input?.lockPointer();
+    this.syncPause();
+  }
+
+  private buildControlsCard(): HTMLElement {
+    const go = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "GOT IT" });
+    // Only dismisses. Clicking the canvas takes the pointer lock, as it always has, and that click
+    // is guarded against firing (KeyboardMouseSource), so the player's first aim is not a shot.
+    go.addEventListener("click", () => {
+      this.pause.dismissControls();
+      if (this.settings) {
+        this.settings.seenControls = true;
+        this.options.onSettingsChange({ ...this.settings });
+      }
+      this.syncPause();
+    });
+    const row = (keys: string, action: string): HTMLElement =>
+      el("div", { class: "controls__row" }, [el("span", { class: "controls__keys", text: keys }), el("span", { text: action })]);
+    return el("div", { class: "screen screen--scrim match-overlay" }, [
+      el("div", { class: "panel match-overlay__panel" }, [
+        el("h1", { class: "match-overlay__title", text: "CONTROLS" }),
+        el("div", { class: "controls" }, [
+          row("W A S D", "Drive"),
+          row("CLICK", "Take the mouse, then aim the turret with it"),
+          row("LEFT CLICK", "Hold to charge, release to fire"),
+          row("RIGHT CLICK", "Cancel a charge"),
+          row("1  2  3", "Putter · iron · driver"),
+          row("SHIFT", "Brake"),
+          row("M", "Course map"),
+          row("ESC", "Pause"),
+        ]),
+        el("p", { class: "match-overlay__note", text: "Knock the other team out. Every time you drop to zero, your team takes a stroke. Fewest strokes wins." }),
+        go,
+      ]),
+    ]);
+  }
+
+  private buildPauseMenu(): HTMLElement {
+    const resume = el("button", { class: "btn btn--primary", type: "button", text: "RESUME" });
+    resume.addEventListener("click", () => {
+      this.pause.resume();
+      this.resumePlay();
+    });
+    const quit = el("button", { class: "btn", type: "button", text: "MAIN MENU" });
+    quit.addEventListener("click", () => this.options.onQuit());
+    const panel = buildSettingsPanel(this.settings!, (next) => {
+      this.settings = next;
+      if (this.input) this.input.sensitivity = next.sensitivity;
+      this.options.onSettingsChange({ ...next });
+    });
+    return el("div", { class: "screen screen--scrim match-overlay" }, [
+      el("div", { class: "panel match-overlay__panel" }, [
+        el("h1", { class: "match-overlay__title", text: "PAUSED" }),
+        panel,
+        el("div", { class: "match-overlay__actions" }, [resume, quit]),
+      ]),
+    ]);
+  }
+
+  /** The world effect for an event, if it has one. */
+  private playEffect(kind: SimEventKind, x: number, y: number, z: number): void {
+    const fx = this.render?.effects;
+    if (!fx) return;
+    if (kind === "shot") fx.muzzle(x, y, z);
+    else if (kind === "hit") fx.impact(x, y, z);
+    else if (kind === "ram") fx.ram(x, y, z);
+    else if (kind === "kill") fx.death(x, y, z);
+    // A splash event is at the cart's body centre; the water is drawn on the ground under it.
+    else if (kind === "splash") fx.splash(x, this.options.sim.heightAt(x, z), z);
+  }
+
+  private spawnHitMarker(kind: "hit" | "kill", label: string, x: number, y: number, z: number): void {
     if (!this.hitMarkers || !this.render) return;
-    if (sim.hitEventEpoch === this.lastHitEpoch) return;
-    this.lastHitEpoch = sim.hitEventEpoch;
-    for (let i = 0; i < sim.hitEventCount; i++) {
-      const e = sim.hitEvents[i]!;
-      // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
-      const onScreen = this.render.projectToScreen(e.x, e.y + HIT_MARKER_LIFT, e.z, this.hitScreenScratch);
-      if (onScreen) this.hitMarkers.spawn(e.kind, this.hitScreenScratch.x, this.hitScreenScratch.y);
+    // Lift the marker to about turret height so it reads over the cart rather than at its wheels.
+    if (this.render.projectToScreen(x, y + HIT_MARKER_LIFT, z, this.hitScreenScratch)) {
+      this.hitMarkers.spawn(kind, label, this.hitScreenScratch.x, this.hitScreenScratch.y);
     }
   }
 
@@ -267,6 +552,16 @@ export class MatchScreen implements Screen {
 }
 
 /** Longest frame the camera smoothing is given: a frame after a hidden tab is not 30 s long. */
+/** Camera trauma per event (0..1; shake is its square). See `addTrauma`. */
+const TRAUMA_DRIVER = 0.35;
+const TRAUMA_IRON = 0.15;
+const TRAUMA_HURT = 0.45;
+const TRAUMA_KILL = 0.3;
+const TRAUMA_DEATH = 0.9;
+const TRAUMA_NEAR_BLAST = 0.35;
+/** A kill closer to the player than this shakes the camera, less with distance. */
+const NEAR_BLAST_M = 25;
+
 const MAX_FRAME_SECONDS = 0.1;
 
 /** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
@@ -410,4 +705,27 @@ function reloadFraction(remainingSeconds: number, club: ClubType): number {
 
 function cloneCart(t: CartTransform): CartTransform {
   return { position: { ...t.position }, heading: t.heading, turretYaw: t.turretYaw };
+}
+
+/**
+ * One arc per active flash, rotated to its direction and faded by its age. At most four, so the
+ * nodes are reused rather than rebuilt: extra ones are hidden, missing ones are added.
+ */
+function drawDamageIndicators(root: HTMLElement, indicators: DamageIndicators): void {
+  const active = indicators.active;
+  while (root.children.length < active.length) {
+    const arc = document.createElement("div");
+    arc.className = "damage-indicator";
+    root.appendChild(arc);
+  }
+  for (let i = 0; i < root.children.length; i++) {
+    const node = root.children[i] as HTMLElement;
+    const ind = active[i];
+    if (!ind) {
+      if (node.style.opacity !== "0") node.style.opacity = "0";
+      continue;
+    }
+    node.style.transform = `rotate(${ind.angle}rad)`;
+    node.style.opacity = ind.opacity.toFixed(2);
+  }
 }

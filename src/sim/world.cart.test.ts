@@ -903,9 +903,10 @@ describe("driving a crossing", () => {
  */
 describe("whose accuracy a hit belongs to", () => {
   function creditFrom(sim: Sim, shooter: number): void {
-    const ctx = (sim as unknown as { combatContext: { onBallHit: (s: number) => void } })
-      .combatContext;
-    ctx.onBallHit(shooter);
+    const ctx = (sim as unknown as {
+      combatContext: { onBallHit: (s: number, v: number, d: number, x: number, y: number, z: number) => void };
+    }).combatContext;
+    ctx.onBallHit(shooter, 1, 1, 0, 0, 0);
   }
 
   it("counts a hit from the player's own ball", async () => {
