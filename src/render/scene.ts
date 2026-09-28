@@ -10,6 +10,8 @@ import type { CourseTerrain } from "../sim/courseTerrain";
 import { SKY, createSky, skyColourAt, sunDirection } from "./sky";
 import type { SkyRig } from "./sky";
 import { LIGHT_LEVELS, createLighting } from "./lighting";
+import { createPost } from "./post";
+import type { Post } from "./post";
 import type { Lighting } from "./lighting";
 import { QUALITY } from "./quality";
 import type { QualityPreset } from "./quality";
@@ -134,6 +136,8 @@ export class RenderScene {
   private adoptedNearBuilds = -1;
   private readonly sky: SkyRig;
   private readonly lighting: Lighting;
+  /** High only; null draws straight to the canvas. */
+  private readonly post: Post | null;
   private readonly quality: QualityPreset;
   /** The band of trees beyond the road, on a course that has one. */
   private readonly treeline: Treeline | null;
@@ -184,6 +188,7 @@ export class RenderScene {
       environmentIntensity: LIGHT_LEVELS.environment,
     });
     this.lighting = createLighting(this.scene, this.camera, quality);
+    this.post = createPost(renderer, this.scene, this.camera, quality);
 
     // Borrowed, not built: one ground and one treeline per course for the page's life, so a
     // second match does not rebuild either. `dispose` hands them back rather than freeing them.
@@ -268,7 +273,8 @@ export class RenderScene {
 
     this.sky.follow(this.camera);
     this.lighting.update(this.camera);
-    this.renderer.render(this.scene, this.camera);
+    if (this.post) this.post.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   /**
@@ -285,6 +291,7 @@ export class RenderScene {
     this.aimArc.dispose();
     this.effects.dispose();
     // Before the ground is handed back: cascaded shadows give its materials back as they found them.
+    this.post?.dispose();
     this.lighting.dispose();
     this.sky.dispose();
     // The ground and treeline belong to the course, not to this match: taken out, not freed.
@@ -418,5 +425,6 @@ export class RenderScene {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.post?.setSize(window.innerWidth, window.innerHeight);
   }
 }
