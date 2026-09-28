@@ -282,6 +282,15 @@ export class Cart {
   readonly desiredTranslation: Vec3;
   readonly shot: CartShot;
   ammo: number;
+  /**
+   * The load a cart starts a match and every life with. `STARTING_AMMO` stock; the ammo upgrade
+   * raises it. Set by `applyLoadout` and nowhere else.
+   */
+  startingAmmo: number;
+  /** Multiplier on every club's reload. 1 stock; the reload upgrade lowers it. See `applyLoadout`. */
+  reloadScale: number;
+  /** Clubs this cart may not select -- the driver, below its unlock level. See `applyLoadout`. */
+  readonly lockedClubs = new Set<ClubType>();
 
   private club: ClubType;
   /** The club this cart was built with, which a rematch goes back to. See `rearm`. */
@@ -307,6 +316,8 @@ export class Cart {
     this.shuntVelocity = { x: 0, z: 0 };
     this.desiredTranslation = { x: 0, y: 0, z: 0 };
     this.ammo = STARTING_AMMO;
+    this.startingAmmo = STARTING_AMMO;
+    this.reloadScale = 1;
     this.health = createHealth(options.maxHealth ?? ARENA_MAX_HEALTH);
     this.dead = false;
     this.respawnTimer = 0;
@@ -345,7 +356,7 @@ export class Cart {
    * charge does reset, because charge time is a per-club stat.
    */
   selectClub(club: ClubType): void {
-    if (club === this.club) return;
+    if (club === this.club || this.lockedClubs.has(club)) return;
     this.club = club;
     this.chargeHeld = 0;
   }
@@ -374,7 +385,7 @@ export class Cart {
     this.shuntVelocity.z = 0;
     // A cart comes back able to fight. Topped up, not reset: dying never costs a cart the ammo it
     // had gathered above the starting load.
-    this.ammo = Math.max(this.ammo, STARTING_AMMO);
+    this.ammo = Math.max(this.ammo, this.startingAmmo);
   }
 
   /**
@@ -386,7 +397,7 @@ export class Cart {
    */
   rearm(): void {
     this.club = this.startingClub;
-    this.ammo = STARTING_AMMO;
+    this.ammo = this.startingAmmo;
     this.reload = 0;
     this.spool = 0;
     this.chargeHeld = 0;
@@ -428,7 +439,7 @@ export class Cart {
     const charge = clamp01(charge01);
     const launchSpeed = stats.minSpeed + (stats.maxSpeed - stats.minSpeed) * charge;
 
-    this.reload = stats.reloadSeconds;
+    this.reload = stats.reloadSeconds * this.reloadScale;
     this.chargeHeld = 0;
 
     const hasBall = this.ammo > 0;

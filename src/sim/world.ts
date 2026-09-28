@@ -12,6 +12,10 @@ import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
+import { ASSIST_WINDOW_S, createTally } from "./scoring";
+import { applyLoadout } from "./upgrades";
+import type { UpgradeLevels } from "./upgrades";
+import type { Loadout } from "./loadout";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import { maxClimbRad } from "./mobility";
@@ -167,6 +171,11 @@ export interface SimOptions {
    * stat rather than a skin: `TIRE_TUNING` scales top speed, grip and surface penalties.
    */
   readonly tire?: TireType;
+  /**
+   * What the player bought and has earned: tyre, upgrades and level, applied to the player's cart
+   * by `applyLoadout`. Overrides `tire`.
+   */
+  readonly player?: { readonly loadout: Loadout; readonly upgrades: UpgradeLevels; readonly level: number };
 }
 
 /**
@@ -213,6 +222,14 @@ export class Sim {
   currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** The player's shot counters, for the results screen's accuracy. See sim/stats.ts. */
   readonly stats = createStats();
+  /**
+   * What the player did this match -- kills, assists, damage, pickups -- for the results screen's
+   * score, coins and XP (sim/scoring.ts). Unlike `stats`, a rematch starts it again: it is what one
+   * match earned.
+   */
+  readonly tally = createTally();
+  /** When the player last hit each rig, by rig index, for assists. */
+  private readonly playerHitAt: number[] = [];
   /** What happened, for hit markers, the kill feed, effects and audio. See `sim/events.ts`. */
   readonly events = new SimEventLog();
 
@@ -307,6 +324,7 @@ export class Sim {
   static async create(ground: ArenaGround, options: SimOptions = {}): Promise<Sim> {
     await RAPIER.init();
     const sim = new Sim(ground, options.matchDurationS ?? MATCH_DURATION_S, options.tire ?? TireType.Street);
+    if (options.player) applyLoadout(sim.cart, options.player.loadout, options.player.upgrades, options.player.level);
 
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
@@ -487,6 +505,17 @@ export class Sim {
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
     this.match.scoreKill(killer, victim);
+    const playerTeam = teamOf(0);
+    if (teamOf(victim) !== playerTeam) {
+      if (killer === 0) this.tally.kills += 1;
+      else if (
+        killer !== NO_KILLER &&
+        teamOf(killer) === playerTeam &&
+        this.simTime - (this.playerHitAt[victim] ?? -Infinity) <= ASSIST_WINDOW_S
+      ) {
+        this.tally.assists += 1;
+      }
+    }
     const p = cart.position;
     this.events.push("kill", killer, victim, p.x, p.y, p.z, 0, null);
     this.events.push("stroke", NO_TARGET_RIG, victim, p.x, p.y, p.z, this.match.teamStrokes(teamOf(victim)), null);
@@ -499,7 +528,13 @@ export class Sim {
    */
   private creditHit(shooter: number, victim: number, damage: number, x: number, y: number, z: number): void {
     this.events.push("hit", shooter, victim, x, y, z, damage, null);
-    if (shooter === 0) this.stats.directHits += 1;
+    if (shooter === 0) {
+      this.stats.directHits += 1;
+      if (teamOf(victim) !== teamOf(0)) {
+        this.tally.damage += damage;
+        this.playerHitAt[victim] = this.simTime;
+      }
+    }
   }
 
   /** One cart onto one spawn point: position, facing, momentum and the body, in that order. */
@@ -738,6 +773,7 @@ export class Sim {
     }
     // One event for whatever this tick collected, with the rounds it actually gave: a full magazine
     // still takes the bucket, and says so with a zero.
+    if (collected && rig.index === 0) this.tally.pickups += 1;
     if (collected) this.events.push("pickup", rig.index, NO_TARGET_RIG, c.x, c.y, c.z, cart.ammo - ammoBefore, null);
 
     if (cart.shot.fired) {
@@ -1008,6 +1044,8 @@ export class Sim {
   reset(): void {
     this.lastShotWasStrike = false;
     this.match.reset();
+    Object.assign(this.tally, createTally());
+    this.playerHitAt.length = 0;
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.freePhysics();
     this.buildPhysics();
