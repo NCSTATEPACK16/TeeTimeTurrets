@@ -6,7 +6,8 @@ import type { HoleSpec } from "../sim/course";
 import { createSurfaces } from "../sim/surfaces";
 import { createTerrain } from "../sim/terrain";
 import { derivePlacements } from "./props";
-import { createBackdrop } from "./backdrop";
+import { GOLDEN_HOUR, createBackdrop } from "./backdrop";
+import { skyColourAt, sunDirection } from "./sky";
 
 /**
  * The title screen is the **second consumer of every static prop factory**, and the one nobody
@@ -128,5 +129,21 @@ describe("the title-screen backdrop", () => {
     backdrop.dispose();
     const leaked = resources.filter((r) => !disposed.has(r));
     expect(leaked).toHaveLength(0);
+  });
+});
+
+describe("the title-screen sky", () => {
+  it("is the golden-hour sky, with exponential fog in its own horizon colour", () => {
+    const backdrop = createBackdrop(fixedHoleSpec());
+    const fog = backdrop.scene.fog;
+    expect(fog).toBeInstanceOf(THREE.FogExp2);
+    const sun = sunDirection(GOLDEN_HOUR);
+    const horizon = new THREE.Color();
+    skyColourAt(GOLDEN_HOUR, -sun.x, 0, -sun.z, horizon);
+    expect((fog as THREE.FogExp2).color.getHex()).toBe(horizon.getHex());
+    const domes = findByType(backdrop.scene, THREE.Mesh).filter((m) => (m.material as THREE.Material) instanceof THREE.ShaderMaterial);
+    expect(domes).toHaveLength(1);
+    expect(GOLDEN_HOUR.sunElevationDeg).toBeLessThan(15);
+    backdrop.dispose();
   });
 });

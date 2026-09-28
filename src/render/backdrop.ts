@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { Flagstick, placeFlagstick } from "../entities/Flagstick";
-import { BIOMES } from "./biomes";
+import { createSkyMaterial, fogDensityFor, skyColourAt, sunDirection } from "./sky";
+import type { SkyStyle } from "./sky";
 import { createGround } from "./ground";
 import { createProps } from "./props";
 import { createTrees } from "./Trees";
@@ -21,8 +22,6 @@ import type { HoleSpec } from "../sim/course";
 
 /** Radians per second. Slow enough to read as a living scene, not as a rotating turntable. */
 const ORBIT_RATE = 0.035;
-/** Low sun for the golden-hour look image 10 is lit with. */
-const SUN_ELEVATION = 0.22;
 
 export interface Backdrop {
   readonly scene: THREE.Scene;
@@ -33,24 +32,49 @@ export interface Backdrop {
   dispose(): void;
 }
 
+/**
+ * The title's sky: the same course late in the day. A low warm sun and a hazy peach horizon under
+ * a deeper blue, which is most of what makes the menu read as a different place from the match.
+ */
+export const GOLDEN_HOUR: SkyStyle = {
+  zenith: 0x35609c,
+  horizon: 0xf2c28d,
+  ground: 0x4f5a3a,
+  exponent: 0.45,
+  sunColour: 0xffc98a,
+  sunElevationDeg: 9,
+  sunAzimuthDeg: 30,
+  sunGlow: 0.7,
+  sunGlowPower: 6,
+  sunDiscCos: Math.cos((1.1 * Math.PI) / 180),
+  sunDiscIntensity: 5,
+};
 export function createBackdrop(spec: HoleSpec): Backdrop {
   const terrain = createTerrain(spec);
   const surfaces = createSurfaces(spec, terrain);
-  const palette = BIOMES[spec.biome];
   const fieldSize = spec.fieldSize;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(palette.sky);
-  scene.fog = new THREE.Fog(palette.sky, fieldSize * 0.5, fieldSize * 2);
-
   const camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.1, fieldSize * 2.5);
 
-  // Warmer and lower than the round's sun: this is the same course at a different hour, which is
-  // most of what makes the menu read as a different place from the game.
-  const sun = new THREE.DirectionalLight(0xffe6c0, 2.1);
-  sun.position.set(fieldSize * 0.4, fieldSize * SUN_ELEVATION, fieldSize * 0.25);
+  // The sky model drawn on a dome, and fog in its horizon colour away from the sun, from the model
+  // itself: the title has no baked environment to read the horizon back from, and needs none.
+  const sunDir = sunDirection(GOLDEN_HOUR);
+  const horizon = new THREE.Color();
+  skyColourAt(GOLDEN_HOUR, -sunDir.x, 0, -sunDir.z, horizon);
+  scene.background = horizon.clone();
+  scene.fog = new THREE.FogExp2(horizon.getHex(), fogDensityFor(fieldSize * 1.4, 0.95));
+  const domeGeometry = new THREE.SphereGeometry(fieldSize * 2.2, 32, 16);
+  const domeMaterial = createSkyMaterial(GOLDEN_HOUR);
+  const dome = new THREE.Mesh(domeGeometry, domeMaterial);
+  dome.renderOrder = -1;
+  dome.frustumCulled = false;
+  scene.add(dome);
+
+  const sun = new THREE.DirectionalLight(GOLDEN_HOUR.sunColour, 2.2);
+  sun.position.set(sunDir.x * fieldSize, sunDir.y * fieldSize, sunDir.z * fieldSize);
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xbfd4ff, 0.5));
+  scene.add(new THREE.HemisphereLight(GOLDEN_HOUR.zenith, GOLDEN_HOUR.ground, 0.9));
 
   const ground = createGround(terrain, surfaces);
   scene.add(ground.mesh);
@@ -101,6 +125,9 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
       ground.dispose();
       if (trees.mesh !== null) scene.remove(trees.mesh);
       trees.dispose();
+      scene.remove(dome);
+      domeGeometry.dispose();
+      domeMaterial.dispose();
       scene.remove(flagstick);
       flagstick.dispose();
       for (const object of props.objects) scene.remove(object);
