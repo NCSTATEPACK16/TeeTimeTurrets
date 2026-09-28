@@ -4,6 +4,8 @@ import { AimArc } from "../entities/AimArc";
 import { EffectsLayer } from "./effects";
 import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, placeCart } from "../entities/GolfClub";
+import { teamOf } from "../sim/matchConfig";
+import { teamColors } from "./teamColors";
 import { ClubType } from "../physics/Ballistics";
 import type { Surfaces } from "../sim/surfaces";
 import type { CartTransform, Vec3 } from "../sim/world";
@@ -166,12 +168,16 @@ export class RenderScene {
     this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
     this.cart = new GolfClub();
+    const own = teamColors(teamOf(0));
+    this.cart.setTeamColors(own.canopy, own.shirt);
     this.scene.add(this.cart);
 
     // A bot is physically a cart, so it is visually one too -- the same procedural model, no
-    // cheaper stand-in. Team colour is Phase 5's; today the nameplate is what tells them apart.
+    // cheaper stand-in. Bot i is cart index i + 1, so `teamOf(i + 1)` is its side.
     for (let i = 0; i < botCount; i++) {
       const bot = new GolfClub();
+      const colours = teamColors(teamOf(i + 1));
+      bot.setTeamColors(colours.canopy, colours.shirt);
       this.botCarts.push(bot);
       this.scene.add(bot);
     }

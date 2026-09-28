@@ -98,7 +98,7 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 
 | Asset | Route | Budget | Notes |
 |---|---|---|---|
-| Golf cart | primitive-graph | 2,000–3,000 tri | 8 material slots (§2.1). Wheels separate for rotation. |
+| Golf cart | primitive-graph | 2,000–3,000 tri | 9 material slots (§2.1). Wheels separate for rotation. |
 | Turret housing + barrel | primitive-graph | 300 | Child of cart; Y-rotation for aim. |
 | Club heads (driver, iron, putter) | primitive | 150 each | The barrel *is* the club, per image 03. |
 | Ragdoll target mannequin | **primitive** | ~600 | ~15 parts, one per rigid body. §2.2. |
@@ -130,7 +130,9 @@ paint and skin variants must apply to both.
 The customisation menu implies **separable material slots**, authored as distinct slots on one
 model so a paint swap is a material-index change rather than a mesh swap:
 
-`chassis` · `roof` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
+`chassis` · `roof` · `canopy` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
+
+`canopy` (added in Stage 7, `docs/art/specs/cart-v2.md`) is the **team colour** and no loadout cosmetic touches it. `roof` is now the posts and windscreen rails only.
 
 ### 2.2 The mannequin is a ragdoll, not a model — except the one who is driving
 

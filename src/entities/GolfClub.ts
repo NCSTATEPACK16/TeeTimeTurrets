@@ -259,6 +259,15 @@ export class GolfClub extends THREE.Group {
     this.graph.setSlotColor(slot, color);
   }
 
+  /**
+   * Paints this cart as one team's: the canopy and the rider's shirt, the two surfaces no
+   * cosmetic owns (`src/render/teamColors.ts`). A rider-less cart just gets the canopy.
+   */
+  setTeamColors(canopy: number, shirt: number): void {
+    this.graph.setSlotColor("canopy", canopy);
+    this.rider?.setSlotColor("shirt", shirt);
+  }
+
   /** Applies a whole cosmetic at once. Slots the graph does not declare are ignored. */
   setSlotColors(colors: SlotColors): void {
     for (const [slot, color] of Object.entries(colors)) this.graph.setSlotColor(slot, color);
