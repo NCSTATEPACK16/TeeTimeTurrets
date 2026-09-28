@@ -14,6 +14,9 @@ import { createPost } from "./post";
 import { ZoneStakes } from "./zoneStakes";
 import { courseTreesFor } from "./courseTrees";
 import { coursePropsFor } from "./courseProps";
+import { createWater } from "./water";
+import { GrassCarpet } from "./grassCarpet";
+import type { Water } from "./water";
 import type { CourseProps } from "./courseProps";
 import type { CourseTrees } from "./courseTrees";
 import { CartSuspension } from "./cartSuspension";
@@ -152,6 +155,8 @@ export class RenderScene {
   private readonly courseTrees: CourseTrees;
   /** Tee markers, benches, bins and a flagstick on every green; borrowed like the trees. */
   private readonly courseProps: CourseProps;
+  private readonly water: Water;
+  private readonly grass: GrassCarpet;
   /** Each cart model's springs, made on the first frame it is posed. */
   private readonly suspension = new Map<GolfClub, CartSuspension>();
   private suspensionDt = 0;
@@ -218,6 +223,10 @@ export class RenderScene {
     this.scene.add(this.courseTrees.group);
     this.courseProps = coursePropsFor(arena.course);
     this.scene.add(this.courseProps.group);
+    this.water = createWater(arena.course, quality);
+    this.scene.add(this.water.group);
+    this.grass = new GrassCarpet(arena.surfaces, this.groundHeightAt, quality);
+    this.scene.add(this.grass.mesh);
     this.zoneStakes = arena.zone ? new ZoneStakes(arena.zone, this.groundHeightAt) : null;
     if (this.zoneStakes) this.scene.add(this.zoneStakes);
 
@@ -280,6 +289,7 @@ export class RenderScene {
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
     this.effects.update(view.frameSeconds);
     this.courseProps.update(view.elapsedSeconds);
+    this.water.update(view.elapsedSeconds);
     this.trauma.update(view.frameSeconds);
     this.shakeClock += view.frameSeconds;
 
@@ -289,6 +299,7 @@ export class RenderScene {
     // was last frame. `update` is internally budgeted to BUILD_BUDGET_MS, so this cannot blow the
     // frame however far the cart has driven.
     this.courseGround.update(this.camera.position.x, this.camera.position.z);
+    this.grass.update(this.camera.position.x, this.camera.position.z, view.elapsedSeconds);
     // Tiles built since the last frame bring new materials, which cascaded shadows have to adopt
     // before they compile.
     if (this.courseGround.nearBuilds !== this.adoptedNearBuilds) {
@@ -316,6 +327,8 @@ export class RenderScene {
     this.aimArc.dispose();
     this.effects.dispose();
     this.zoneStakes?.dispose();
+    this.water.dispose();
+    this.grass.dispose();
     // Before the ground is handed back: cascaded shadows give its materials back as they found them.
     this.post?.dispose();
     this.lighting.dispose();
