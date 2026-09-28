@@ -18,7 +18,7 @@ textures, so nothing needs to be resolved on load.
 **Custom properties are the export contract**, on the rider exactly as on the cart. Select any
 object and look at Object Properties → Custom Properties:
 
-- `ttt_kind` — one of `box` `cylinder` `cone` `sphere` `capsule` `torus`
+- `ttt_kind` — one of `box` `cylinder` `cone` `sphere` `capsule` `torus` `prism`
 - `ttt_params` — the arguments for the *matching THREE geometry constructor*, in that
   constructor's order (§4.2). For a box this is `[width, height, depth]` in **Three's** axes, so
   it is the Blender dimensions with Y and Z swapped.
@@ -30,20 +30,13 @@ An object without all three fails the export loudly rather than silently droppin
 
 ## `ttt_authoring.py`
 
-A Text datablock **inside the `.blend`**, holding the helpers a session uses to build and export:
-`make()` (creates a primitive whose Blender mesh matches what the THREE constructor would produce,
-and stamps the three custom properties as it goes), `material()`, `node()` and `export()`.
-
-Load it at the top of any `execute_blender_code` call:
+**The exporter is the repo file `art/ttt_authoring.py`.** It holds the helpers a session uses to build and export: `make()` (creates a primitive whose Blender mesh matches what the THREE constructor would produce, and stamps the three custom properties as it goes), `material()`, `node()`, `export()` and `export_set()`. Load it at the top of any `execute_blender_code` call, or any headless `blender -b … --python-expr` run:
 
 ```python
-exec(bpy.data.texts['ttt_authoring.py'].as_string(), globals())
+exec(open(REPO + '/art/ttt_authoring.py').read(), globals())
 ```
 
-It is checked in with the `.blend` rather than pasted per session because a helper that stamps the
-export contract is part of the contract. **It is the working exporter**; `ASSET_PIPELINE.md` §4.3
-prints the design, and §4.3's own list of where the printed version differs is worth reading before
-trusting a hand-run copy.
+It was extracted from the Text datablock inside `clubhouse-and-cart.blend` in Stage 7. The copy inside that `.blend` is now stale; don't edit it. On Blender 5.2 the extracted exporter re-exports `cart.json` and `driver.json` byte-identical to the committed files. Stage 7 added the `prism` kind (`docs/art/specs/00-pipeline.md`).
 
 ## Re-exporting
 

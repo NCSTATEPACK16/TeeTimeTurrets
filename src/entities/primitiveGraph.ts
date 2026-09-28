@@ -17,7 +17,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
  * clubhouse loadout drives (`UI-SPEC.md` S3).
  */
 
-export type PrimitiveKind = "box" | "cylinder" | "cone" | "sphere" | "capsule" | "torus";
+export type PrimitiveKind = "box" | "cylinder" | "cone" | "sphere" | "capsule" | "torus" | "prism";
 
 export interface PrimitiveNode {
   readonly name: string;
@@ -280,9 +280,47 @@ function geometryFor(node: PrimitiveNode, graphName: string): THREE.BufferGeomet
       return new THREE.CapsuleGeometry(p[0], p[1], p[2], p[3]);
     case "torus":
       return new THREE.TorusGeometry(p[0], p[1], p[2], p[3]);
+    case "prism":
+      return prismGeometry(node, graphName);
     default:
       throw new Error(
         `primitive graph "${graphName}": node "${node.name}" has unknown kind "${String(node.kind)}"`,
       );
   }
+}
+
+/**
+ * `prism`: `[depth, x0, y0, x1, y1, ...]`. It is a polygon in the node's local XY plane, extruded
+ * along +Z by `depth` and centred on z, the same way Box and Cylinder are centred. Roofs, wedges
+ * and awning scallops need it, and none of the six constructor kinds can make them without
+ * non-uniform scale, which the exporter forbids (`docs/art/specs/00-pipeline.md`).
+ *
+ * Given an index because `ExtrudeGeometry` is non-indexed and every other kind is indexed, and
+ * `mergeGeometries` refuses to mix the two. A merged roof would otherwise fail at load, not here.
+ */
+function prismGeometry(node: PrimitiveNode, graphName: string): THREE.BufferGeometry {
+  const p = node.params;
+  const depth = p[0] ?? 0;
+  const coords = p.length - 1;
+  if (!(depth > 0) || coords < 6 || coords % 2 !== 0) {
+    throw new Error(
+      `primitive graph "${graphName}": prism "${node.name}" needs [depth > 0, x0, y0, ...] with at ` +
+        `least three points (got ${p.length} params, depth ${depth})`,
+    );
+  }
+  const points: THREE.Vector2[] = [];
+  for (let i = 1; i < p.length; i += 2) points.push(new THREE.Vector2(p[i], p[i + 1]));
+
+  const geometry = new THREE.ExtrudeGeometry(new THREE.Shape(points), {
+    depth,
+    bevelEnabled: false,
+    steps: 1,
+  });
+  geometry.translate(0, 0, -depth / 2);
+  geometry.clearGroups();
+  const count = geometry.getAttribute("position").count;
+  const index: number[] = [];
+  for (let i = 0; i < count; i++) index.push(i);
+  geometry.setIndex(index);
+  return geometry;
 }

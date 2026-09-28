@@ -220,7 +220,7 @@ line into the game — **only parameters cross.**
 ### 4.1 Format
 
 ```ts
-export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'capsule' | 'torus';
+export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'capsule' | 'torus' | 'prism';
 
 export interface PrimitiveNode {
   readonly name: string;
@@ -262,8 +262,11 @@ translation layer:
 | `sphere` | `[radius, widthSegments, heightSegments]` |
 | `capsule` | `[radius, length, capSegments, radialSegments]` |
 | `torus` | `[radius, tube, radialSegments, tubularSegments]` |
+| `prism` | `[depth, x0, y0, x1, y1, …]`: a polygon (≥3 points) in local XY, extruded along +Z by `depth` and centred on z. `ExtrudeGeometry` with no bevel. Added in Stage 7 for roofs, wedges and scallops; see `docs/art/specs/00-pipeline.md`. |
 
 ### 4.3 The Blender-side exporter
+
+> **The working exporter is `art/ttt_authoring.py`** (extracted from the `.blend` in Stage 7, and it supports `prism`). The listing below is the original design and is kept for its reasoning.
 
 Objects are tagged with custom properties and the exporter walks the selection. Run via
 `execute_blender_code`, or saved as an addon operator.
