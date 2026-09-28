@@ -1,6 +1,8 @@
 import { AUTHORED_CLUBHOUSE } from "./authoredLayout";
 import { createArenaZone } from "./arenaZone";
 import type { ArenaZone } from "./arenaZone";
+import { createCartPaths } from "./cartPaths";
+import type { CartPath } from "./cartPaths";
 import type { CourseWorld } from "./courseWorld";
 import type { Vec2 } from "./mapGeometry";
 import type { HoleSpec } from "./course";
@@ -33,6 +35,8 @@ export interface ArenaGround {
   readonly clubhouse: Vec2 | null;
   /** Where the match is played; none on a test ground, which is all playable. See arenaZone.ts. */
   readonly zone?: ArenaZone | null;
+  /** The course's cart paths; none on a test ground. See cartPaths.ts. */
+  readonly paths?: readonly CartPath[];
   /**
    * Root of every seeded stream in the match -- each bot's and the respawn draw. Taken from the
    * ground rather than the clock, per the AGENTS.md no-`Math.random`-in-the-sim rule, so the same
@@ -47,6 +51,16 @@ export interface ArenaGround {
  */
 const playfields = new WeakMap<CourseWorld, Playfield>();
 const zones = new WeakMap<CourseWorld, ArenaZone>();
+const pathSets = new WeakMap<CourseWorld, readonly CartPath[]>();
+
+function pathsFor(world: CourseWorld): readonly CartPath[] {
+  let paths = pathSets.get(world);
+  if (!paths) {
+    paths = createCartPaths(world.holes, AUTHORED_CLUBHOUSE);
+    pathSets.set(world, paths);
+  }
+  return paths;
+}
 
 function zoneFor(world: CourseWorld): ArenaZone {
   let zone = zones.get(world);
@@ -78,6 +92,7 @@ export function arenaFromCourse(world: CourseWorld): ArenaGround {
     southBoundary: world.southBoundary,
     clubhouse: AUTHORED_CLUBHOUSE,
     zone: zoneFor(world),
+    paths: pathsFor(world),
     seed: first.spec.seed,
   };
 }

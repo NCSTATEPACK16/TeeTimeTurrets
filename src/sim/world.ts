@@ -15,6 +15,8 @@ import { createStats } from "./stats";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import { maxClimbRad } from "./mobility";
+import { applyPathBonus, pathWeightAt } from "./cartPaths";
+import type { CartPath } from "./cartPaths";
 import { ZONE_CLAMP_REACH_M, clampToZone, outOfBoundsDrain, zoneSignedDistance } from "./arenaZone";
 import type { ArenaZone } from "./arenaZone";
 import type { SouthBoundary } from "./courseBarrier";
@@ -231,6 +233,8 @@ export class Sim {
   private readonly southBoundary: SouthBoundary | null;
   /** Where the match is played, or null on a ground that is all playable. */
   readonly zone: ArenaZone | null;
+  /** Cart paths, where a cart runs faster. Empty on a test ground. */
+  private readonly paths: readonly CartPath[];
   /** One tee per spawn hole, in the course frame. */
   private readonly spawnSet: SpawnPoint[];
   /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
@@ -250,6 +254,7 @@ export class Sim {
     this.playfield = ground.playfield;
     this.southBoundary = ground.southBoundary;
     this.zone = ground.zone ?? null;
+    this.paths = ground.paths ?? [];
     this.seed = ground.seed;
     this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
     this.teamPads =
@@ -632,6 +637,7 @@ export class Sim {
 
     const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
+    if (this.paths.length > 0) applyPathBonus(this.cartTuningScratch, pathWeightAt(this.paths, c.x, c.z));
     cart.step(intent, FIXED_DT, this.cartTuningScratch, this.gradeAlong(c.x, c.z, cart.heading));
     // The controller is shared, so each cart sets its own climb limit before it moves: the ground
     // under it and its tyres decide how steep a face it can drive up (see mobility.ts).

@@ -16,6 +16,9 @@ import { courseTreesFor } from "./courseTrees";
 import { coursePropsFor } from "./courseProps";
 import { createWater } from "./water";
 import { GrassCarpet } from "./grassCarpet";
+import { createCartPathRibbons } from "./cartPathRibbons";
+import type { CartPathRibbons } from "./cartPathRibbons";
+import type { CartPath } from "../sim/cartPaths";
 import type { Water } from "./water";
 import type { CourseProps } from "./courseProps";
 import type { CourseTrees } from "./courseTrees";
@@ -77,6 +80,8 @@ export interface ArenaSource {
   readonly heightAt?: (x: number, z: number) => number;
   /** Where the match is played; its edge is staked out. None on a ground that is all playable. */
   readonly zone?: ArenaZone | null;
+  /** The cart paths, drawn as gravel strips. */
+  readonly paths?: readonly CartPath[];
 }
 
 /**
@@ -157,6 +162,7 @@ export class RenderScene {
   private readonly courseProps: CourseProps;
   private readonly water: Water;
   private readonly grass: GrassCarpet;
+  private readonly pathRibbons: CartPathRibbons | null;
   /** Each cart model's springs, made on the first frame it is posed. */
   private readonly suspension = new Map<GolfClub, CartSuspension>();
   private suspensionDt = 0;
@@ -227,6 +233,8 @@ export class RenderScene {
     this.scene.add(this.water.group);
     this.grass = new GrassCarpet(arena.surfaces, this.groundHeightAt, quality);
     this.scene.add(this.grass.mesh);
+    this.pathRibbons = arena.paths && arena.paths.length > 0 ? createCartPathRibbons(arena.paths, this.groundHeightAt) : null;
+    if (this.pathRibbons) this.scene.add(this.pathRibbons.mesh);
     this.zoneStakes = arena.zone ? new ZoneStakes(arena.zone, this.groundHeightAt) : null;
     if (this.zoneStakes) this.scene.add(this.zoneStakes);
 
@@ -329,6 +337,7 @@ export class RenderScene {
     this.zoneStakes?.dispose();
     this.water.dispose();
     this.grass.dispose();
+    this.pathRibbons?.dispose();
     // Before the ground is handed back: cascaded shadows give its materials back as they found them.
     this.post?.dispose();
     this.lighting.dispose();

@@ -122,9 +122,10 @@ async function main(): Promise<void> {
     }
     if (courseWorld === null) {
       courseWorld = buildCourseWorld(course, COURSE_SEED);
-      const { playfield, zone } = arenaFromCourse(courseWorld);
+      const { playfield, zone, paths } = arenaFromCourse(courseWorld);
       arenaSource = {
         zone,
+        paths,
         course: courseWorld.terrain,
         surfaces: courseWorld.surfaces,
         southBoundary: courseWorld.southBoundary,
