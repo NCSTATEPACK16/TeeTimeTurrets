@@ -1,4 +1,5 @@
 import type { ClubType } from "../physics/Ballistics";
+import { OOB_DRAIN_HP, OOB_DRAIN_INTERVAL_S } from "../sim/arenaZone";
 
 /**
  * The DOM-free half of the HUD: sim state in, display values out. Split from the writing half so
@@ -20,6 +21,8 @@ export interface HudSource {
     readonly ammo: number;
     readonly dead: boolean;
     readonly respawnTimer: number;
+    /** Seconds outside the arena zone; 0 inside it. */
+    readonly outOfBoundsFor: number;
     readonly health: { readonly hp: number; readonly max: number };
   };
   /**
@@ -114,6 +117,11 @@ const LOW_HEALTH_FRACTION = 0.5;
 function statusText(source: HudSource): string {
   const cart = source.cart;
   if (cart.dead) return `DESTROYED — RESPAWNING ${(Math.floor(cart.respawnTimer * 10) / 10).toFixed(1)}s`;
+  // Outside the stakes the bar is draining, which matters more than anything about the weapon.
+  if (cart.outOfBoundsFor > 0) {
+    const next = OOB_DRAIN_INTERVAL_S - (cart.outOfBoundsFor % OOB_DRAIN_INTERVAL_S);
+    return `OUT OF BOUNDS — ${OOB_DRAIN_HP} HP IN ${next.toFixed(1)}s`;
+  }
   if (!cart.canFire) return `RELOADING ${(Math.floor(cart.reloadRemaining * 10) / 10).toFixed(1)}s`;
   return cart.ammo > 0 ? "READY" : "NO AMMO — fire a blank to boost";
 }

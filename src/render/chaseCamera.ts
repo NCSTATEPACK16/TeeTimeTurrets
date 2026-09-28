@@ -69,3 +69,27 @@ export function chaseFov(speed: number): number {
 export function chaseSmoothing(per60HzFrame: number, frameSeconds: number): number {
   return 1 - Math.pow(1 - per60HzFrame, frameSeconds / TUNED_FRAME_SECONDS);
 }
+/** Points along the sight line the ground is checked at. */
+const CLEARANCE_SAMPLES = 12;
+
+/**
+ * Lifts `eye` until the line from `look` to it clears the ground by `clearance` at every sample:
+ * a bank between the camera and the cart, or a rise behind it, lifts the camera over rather than
+ * hiding the cart. Only ever lifts; `frameChase` smooths the result like any other move.
+ */
+export function clearTerrain(
+  eye: MutableVec3,
+  look: { readonly x: number; readonly y: number; readonly z: number },
+  heightAt: (x: number, z: number) => number,
+  clearance: number,
+): void {
+  let y = eye.y;
+  for (let i = 1; i <= CLEARANCE_SAMPLES; i++) {
+    const t = i / CLEARANCE_SAMPLES;
+    const ground = heightAt(look.x + (eye.x - look.x) * t, look.z + (eye.z - look.z) * t);
+    // The line's height at t is look.y + (eye.y - look.y) * t; solve for the eye that clears here.
+    const needed = look.y + (ground + clearance - look.y) / t;
+    if (needed > y) y = needed;
+  }
+  eye.y = y;
+}

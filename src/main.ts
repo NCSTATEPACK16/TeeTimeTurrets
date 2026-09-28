@@ -116,8 +116,9 @@ async function main(): Promise<void> {
     const { Sim } = await loadSim();
     if (courseWorld === null) {
       courseWorld = buildCourseWorld(course, COURSE_SEED);
-      const playfield = arenaFromCourse(courseWorld).playfield;
+      const { playfield, zone } = arenaFromCourse(courseWorld);
       arenaSource = {
+        zone,
         course: courseWorld.terrain,
         surfaces: courseWorld.surfaces,
         southBoundary: courseWorld.southBoundary,

@@ -23,6 +23,7 @@ function source(overrides: Partial<HudSource> = {}): HudSource {
       ammo: 10,
       dead: false,
       respawnTimer: 0,
+      outOfBoundsFor: 0,
       health: { hp: 100, max: 100 },
     },
     match: {
@@ -74,6 +75,13 @@ describe("status precedence", () => {
       source({ cart: { ...source().cart, dead: true, respawnTimer: 2.44, canFire: false, reloadRemaining: 1.2 } }),
     );
     expect(state.status).toBe("DESTROYED — RESPAWNING 2.4s");
+  });
+
+  it("warns a cart out of bounds above everything but death, with the seconds to the next drain", () => {
+    const out = { ...source().cart, outOfBoundsFor: 0.5, canFire: false, reloadRemaining: 1.2 };
+    expect(derive(source({ cart: out })).status).toBe("OUT OF BOUNDS — 1 HP IN 1.5s");
+    expect(derive(source({ cart: { ...out, outOfBoundsFor: 2.9 } })).status).toBe("OUT OF BOUNDS — 1 HP IN 1.1s");
+    expect(derive(source({ cart: { ...out, dead: true, respawnTimer: 2 } })).status).toMatch(/^DESTROYED/);
   });
 
   it("reports reloading when alive and not yet able to fire", () => {

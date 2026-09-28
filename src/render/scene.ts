@@ -11,11 +11,14 @@ import { SKY, createSky, skyColourAt, sunDirection } from "./sky";
 import type { SkyRig } from "./sky";
 import { LIGHT_LEVELS, createLighting } from "./lighting";
 import { createPost } from "./post";
+import { ZoneStakes } from "./zoneStakes";
+import { CartSuspension } from "./cartSuspension";
+import type { ArenaZone } from "../sim/arenaZone";
 import type { Post } from "./post";
 import type { Lighting } from "./lighting";
 import { QUALITY } from "./quality";
 import type { QualityPreset } from "./quality";
-import { CHASE_BASE_FOV, CHASE_POSITION_LERP, CHASE_TARGET_LERP, chaseFov, chasePose, chaseSmoothing } from "./chaseCamera";
+import { CHASE_BASE_FOV, CHASE_POSITION_LERP, CHASE_TARGET_LERP, chaseFov, chasePose, chaseSmoothing, clearTerrain } from "./chaseCamera";
 import { Trauma, traumaFor } from "./cameraShake";
 import type { ShakeOffset } from "./cameraShake";
 import { Effects } from "./effects";
@@ -65,6 +68,8 @@ export interface ArenaSource {
    * Without it, the course's exact blend.
    */
   readonly heightAt?: (x: number, z: number) => number;
+  /** Where the match is played; its edge is staked out. None on a ground that is all playable. */
+  readonly zone?: ArenaZone | null;
 }
 
 /**
@@ -138,6 +143,10 @@ export class RenderScene {
   private readonly lighting: Lighting;
   /** High only; null draws straight to the canvas. */
   private readonly post: Post | null;
+  private readonly zoneStakes: ZoneStakes | null;
+  /** Each cart model's springs, made on the first frame it is posed. */
+  private readonly suspension = new Map<GolfClub, CartSuspension>();
+  private suspensionDt = 0;
   private readonly quality: QualityPreset;
   /** The band of trees beyond the road, on a course that has one. */
   private readonly treeline: Treeline | null;
@@ -197,6 +206,8 @@ export class RenderScene {
     this.treeline = treelineFor(arena);
     if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
     this.groundHeightAt = arena.heightAt ?? ((x, z) => arena.course.heightAt(x, z));
+    this.zoneStakes = arena.zone ? new ZoneStakes(arena.zone, this.groundHeightAt) : null;
+    if (this.zoneStakes) this.scene.add(this.zoneStakes);
 
     this.cart = new GolfClub();
     this.scene.add(this.cart);
@@ -241,6 +252,7 @@ export class RenderScene {
   }
 
   draw(view: FrameView): void {
+    this.suspensionDt = view.frameSeconds;
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
     this.cart.visible = !view.playerDead;
     for (let i = 0; i < this.botCarts.length; i++) {
@@ -290,6 +302,7 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.aimArc.dispose();
     this.effects.dispose();
+    this.zoneStakes?.dispose();
     // Before the ground is handed back: cascaded shadows give its materials back as they found them.
     this.post?.dispose();
     this.lighting.dispose();
@@ -388,6 +401,17 @@ export class RenderScene {
     loaded: boolean,
   ): void {
     placeCart(model, c.position, c.heading, c.turretYaw);
+    // The body rides the ground under its wheels: pitch, roll and a landing dip, drawn only.
+    let suspension = this.suspension.get(model);
+    if (suspension === undefined) {
+      suspension = new CartSuspension();
+      this.suspension.set(model, suspension);
+      model.rotation.order = "YXZ";
+    }
+    suspension.update(this.suspensionDt, model.position.x, model.position.y, model.position.z, c.heading, this.groundHeightAt);
+    model.rotation.x = -suspension.pitch;
+    model.rotation.z = suspension.roll;
+    model.position.y += suspension.heave;
     model.setClub(club);
     model.setSwing(charge01, reload01);
     model.setBallLoaded(loaded);
@@ -398,8 +422,9 @@ export class RenderScene {
 
     // Keep the eye above the terrain it is flying over, or a chase camera reversing into a
     // hillside ends up underground looking at the inside of the heightfield.
-    const groundAtEye = this.groundHeightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
-    this.chaseEyeScratch.y = Math.max(this.chaseEyeScratch.y, groundAtEye + CHASE_MIN_GROUND_CLEARANCE);
+    // Checked along the whole sight line, so a bank between the camera and the cart lifts the
+    // camera over it too.
+    clearTerrain(this.chaseEyeScratch, this.chaseLookScratch, this.groundHeightAt, CHASE_MIN_GROUND_CLEARANCE);
 
     this.chaseRig.lerp(this.chaseEyeScratch, chaseSmoothing(CHASE_POSITION_LERP, view.frameSeconds));
     this.cameraTarget.lerp(this.chaseLookScratch, chaseSmoothing(CHASE_TARGET_LERP, view.frameSeconds));
