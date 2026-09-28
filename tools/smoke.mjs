@@ -338,6 +338,18 @@ check(
 check("the match scene holds ground geometry", geometry.vertices > 10000, `${geometry.meshes} meshes, ${geometry.vertices} vertices`);
 check("no mesh in the match scene has NaN vertices", geometry.nanVertexComponents === 0, `${geometry.nanVertexComponents} NaN components`);
 
+// The dev hook's frame readout (engine/frameStats.ts), read off a running match: a window of real
+// frames, a positive frame time, and the renderer's draw calls for the last one.
+const perf = await page.evaluate(async () => {
+  await new Promise((r) => setTimeout(r, 500));
+  return window.__teetimeturrets.perf;
+});
+check(
+  "the dev hook reports frame time and draw calls",
+  perf.frames > 10 && perf.frameMs > 0 && perf.workMs > 0 && perf.drawCalls > 0,
+  `${perf.frames} frames, ${perf.frameMs.toFixed(1)} ms a frame, ${perf.workMs.toFixed(1)} ms work, ${perf.drawCalls} draws`,
+);
+
 // Since bots got their minds (Stage 1.8) they close on the player's spawn and kill an idle cart
 // in well under the time these checks take -- 7 HP to 0 during the FIRE section, twice in two
 // runs. A dead cart takes no input, so every control check below would really be asking whether

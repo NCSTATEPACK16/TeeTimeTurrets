@@ -35,41 +35,34 @@ import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } 
 import type { SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
 import { NO_RIG, SimEventLog } from "./events";
+import {
+  FIXED_DT,
+  POOL_TRANSFORM_STRIDE,
+  PREVIEW_MAX_POINTS,
+  PREVIEW_MAX_TICKS,
+  PREVIEW_SAMPLE_STRIDE,
+} from "./tickConstants";
 
 export type { Vec3 } from "./course";
 
-/** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
-export const FIXED_DT = 1 / 60;
+/**
+ * The tick's constants, and the preview buffer, live in `tickConstants.ts`: the renderer needs
+ * them, and importing them from here would pull Rapier into every chunk that draws a ball.
+ */
+export {
+  FIXED_DT,
+  POOL_TRANSFORM_STRIDE,
+  PREVIEW_MAX_POINTS,
+  PREVIEW_SAMPLE_STRIDE,
+  TRANSFORM_STRIDE,
+  createPreviewBuffer,
+} from "./tickConstants";
 
 /**
  * Re-exported from `matchConfig.ts`, which is where it lives along with every other arena tunable.
  * Kept exported here because the smoke driver imports it from this module.
  */
 export { MATCH_DURATION_S };
-
-/** Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. */
-export const TRANSFORM_STRIDE = 7;
-
-/** As TRANSFORM_STRIDE, plus a trailing 1/0 active flag: an idle pool slot is parked far below
- *  the world and must not be drawn where it is parked. */
-export const POOL_TRANSFORM_STRIDE = 8;
-
-/** Aim-preview arc granularity: `Sim.previewTrajectory` writes one point every this many ticks. */
-export const PREVIEW_SAMPLE_STRIDE = 4;
-/** Hard cap on the ticks `previewTrajectory` integrates (~6 s at FIXED_DT), so a flat shot that
- *  never quite lands still terminates the loop. */
-const PREVIEW_MAX_TICKS = 360;
-/** Upper bound on points `previewTrajectory` writes: the tick cap over the stride, plus the muzzle
- *  point and a final landing point. Sizes `createPreviewBuffer`. */
-export const PREVIEW_MAX_POINTS = Math.ceil(PREVIEW_MAX_TICKS / PREVIEW_SAMPLE_STRIDE) + 2;
-
-/** A reusable buffer of `Vec3`s for `previewTrajectory` to fill, so the arc allocates nothing per
- *  frame. A caller holds one and passes it in every frame. */
-export function createPreviewBuffer(): Vec3[] {
-  const buffer: Vec3[] = [];
-  for (let i = 0; i < PREVIEW_MAX_POINTS; i++) buffer.push({ x: 0, y: 0, z: 0 });
-  return buffer;
-}
 
 function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
   const p = out[i]!;

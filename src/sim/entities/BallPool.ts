@@ -2,7 +2,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { NO_KILLER } from "../matchConfig";
 import { createSurfaceTuning } from "../surfaces";
 import type { MutableSurfaceTuning } from "../surfaces";
-import { BALL_RADIUS as POOLED_BALL_RADIUS } from "./ballShape";
+import { BALL_RADIUS as POOLED_BALL_RADIUS, POOL_SIZE } from "./ballShape";
 import { BALL_GROUPS } from "../collisionGroups";
 
 /** Sim-only pooled combat balls for cart mode. No render/HUD concerns here — see the spec's
@@ -52,7 +52,7 @@ export interface PooledBall {
   readonly velocity: Float64Array;
 }
 
-export const POOL_SIZE = 32;
+export { POOL_SIZE };
 export const LANDED_BALL_DESPAWN_S = 15;
 /**
  * A ball still flying after this long is given back to the pool. Rolling resistance brings a ball on

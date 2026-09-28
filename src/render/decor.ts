@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 /**
- * The one place a `.glb` may be loaded, and the only place `GLTFLoader` is imported.
+ * The one place a `.glb` may be loaded, and the only place `GLTFLoader` is imported -- lazily, on
+ * first use, so the loader is not in the first chunk for the sake of a backdrop that may never load.
  *
  * `AGENTS.md` bans mesh files from the playable path absolutely, and `ASSET_PIPELINE.md` section 1
  * draws the line mechanically: **if removing the asset would change a simulation result, it is
@@ -31,6 +31,7 @@ export interface Decor {
  */
 export async function loadDecor(url: string): Promise<Decor | null> {
   try {
+    const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
     const gltf = await new GLTFLoader().loadAsync(url);
     const object = gltf.scene;
     if (!object) return null;

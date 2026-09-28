@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { PREVIEW_MAX_POINTS } from "../sim/world";
+import { PREVIEW_MAX_POINTS } from "../sim/tickConstants";
 import type { Vec3 } from "../sim/world";
 
 /**
