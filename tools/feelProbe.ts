@@ -18,8 +18,8 @@ import {
   draftHole,
   generateCourse,
   parForIndex,
-  validateHole,
 } from "../src/sim/course";
+import { validateHole } from "../src/sim/holeValidation";
 import { createSurfaces } from "../src/sim/surfaces";
 import { SurfaceId } from "../src/sim/surfaces";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../src/physics/Ballistics";

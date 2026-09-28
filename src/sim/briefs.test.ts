@@ -3,11 +3,11 @@ import { COURSE_BRIEFS, COVER_CORRIDOR, briefForHole } from "./briefs";
 import type { HoleBrief } from "./briefs";
 import {
   DRAFT_BAND,
-  EDGE_MARGIN,
   FIELD_FOR_PAR,
   biomeForIndex,
   parForIndex,
 } from "./course";
+import { EDGE_MARGIN } from "./holeValidation";
 // From terrain, not course: course.ts imports BLEND_WIDTH but does not re-export it, and vitest
 // transpiles without type-checking. Importing it from the wrong module gives `undefined`, which
 // makes `half` NaN and every `NaN < min` comparison false -- so the room check below would pass
