@@ -30,8 +30,8 @@ import { el } from "../dom";
 import { Nameplates } from "../nameplates";
 import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
-import { hasLineOfSight } from "../../sim/lineOfSight";
 import type { HeightSampler } from "../../sim/lineOfSight";
+import { Sightlines } from "../sightlines";
 import type { Screen } from "../../app/ScreenManager";
 
 /**
@@ -136,6 +136,8 @@ export class MatchScreen implements Screen {
    * purpose: this is a presentation fade and need not be reproducible frame-for-frame.
    */
   private readonly lastSeenAtMs: number[] = [];
+  /** When each enemy plate walks its sight line, and what it found: see `sightlines.ts`. */
+  private sightlines = new Sightlines(0);
   /** Wall-clock time of the last drawn frame, for `FrameView.frameSeconds`. */
   private lastDrawMs = 0;
 
@@ -154,6 +156,7 @@ export class MatchScreen implements Screen {
       sim.bots.map((_, i) => plateTeamOf(i + 1, 0)),
     );
     this.lastSeenAtMs.length = 0;
+    this.sightlines = new Sightlines(sim.bots.length);
     this.input = new KeyboardMouseSource(renderer.domElement);
     this.settings = { ...this.options.settings };
     this.input.sensitivity = this.settings.sensitivity;
@@ -544,6 +547,7 @@ export class MatchScreen implements Screen {
         view.botCarts[i]!,
         bot.health,
         sim,
+        this.sightlines,
         this.lastSeenAtMs,
         now,
       );
@@ -583,6 +587,18 @@ const plateSourceScratch = {
   secondsSinceLastSeen: 0,
 };
 
+/** Reused per cart per frame, like `plateSourceScratch`. */
+const sightScratch = {
+  enemy: true,
+  onScreen: false,
+  fromX: 0,
+  fromY: 0,
+  fromZ: 0,
+  toX: 0,
+  toY: 0,
+  toZ: 0,
+};
+
 /** Module-level rather than nested inside the method: a function declared inside a function body
  *  allocates a fresh closure on every call, and this one runs once per cart per frame. */
 function placeNameplate(
@@ -593,6 +609,7 @@ function placeNameplate(
   cart: CartTransform,
   health: { readonly hp: number; readonly max: number },
   terrain: HeightSampler,
+  sightlines: Sightlines,
   lastSeenAtMs: number[],
   nowMs: number,
 ): void {
@@ -606,17 +623,18 @@ function placeNameplate(
   // Sight is measured cart to cart at plate height, not from the camera: the chase camera floats
   // behind and above the player, so a ridge the cart is actually hiding behind would read as
   // clear from the camera's vantage. The plate answers "can I see them", not "can the camera".
-  // An ally's plate shows through terrain regardless, so its sight line is never walked.
+  // An ally's plate shows through terrain regardless, so its sight line is never walked; an
+  // enemy's is walked ten times a second, and only while on screen and in range (`Sightlines`).
   const team = plateTeamOf(index + 1, 0);
-  const seen = team === "ally" || hasLineOfSight(
-    terrain,
-    player.position.x,
-    player.position.y + NAMEPLATE_HEIGHT,
-    player.position.z,
-    cart.position.x,
-    cart.position.y + NAMEPLATE_HEIGHT,
-    cart.position.z,
-  );
+  sightScratch.enemy = team === "enemy";
+  sightScratch.onScreen = onScreen;
+  sightScratch.fromX = player.position.x;
+  sightScratch.fromY = player.position.y + NAMEPLATE_HEIGHT;
+  sightScratch.fromZ = player.position.z;
+  sightScratch.toX = cart.position.x;
+  sightScratch.toY = cart.position.y + NAMEPLATE_HEIGHT;
+  sightScratch.toZ = cart.position.z;
+  const seen = sightlines.canSee(index, sightScratch, terrain, nowMs);
   if (seen) lastSeenAtMs[index] = nowMs;
   const lastSeen = lastSeenAtMs[index];
 

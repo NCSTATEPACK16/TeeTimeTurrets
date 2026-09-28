@@ -1,5 +1,6 @@
 import { authoredCourse } from "../authoredCourse";
 import { AUTHORED_PLACEMENTS } from "../authoredLayout";
+import { bakeCourseGrids } from "../courseGrids";
 import { createCourseSurfaces } from "../courseSurfaces";
 import { createCourseTerrain } from "../courseTerrain";
 import type { CourseTerrain, PlacedHole } from "../courseTerrain";
@@ -51,7 +52,7 @@ export function miniCourse(holeCount: number, cellM = 8, seed = 2026): MiniCours
     surfaces,
     holes,
     ground: {
-      playfield: coursePlayfield(terrain, surfaces),
+      playfield: coursePlayfield(bakeCourseGrids(terrain, surfaces)),
       holes,
       southBoundary: null,
       // A few holes do not reach the clubhouse, so these tests deal carts onto the tees.

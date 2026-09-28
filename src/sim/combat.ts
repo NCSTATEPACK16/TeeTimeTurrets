@@ -125,16 +125,29 @@ const velB = { x: 0, z: 0 };
  * matching how BallPool.step already treats each pooled ball.
  */
 export function processContacts(queue: CollisionEventSource, ctx: CombatContext): void {
-  queue.drainCollisionEvents((handle1, handle2, started) => {
-    if (!started) return;
-    const a = ctx.registry.get(handle1);
-    const b = ctx.registry.get(handle2);
-    if (!a || !b) return;
+  // The handler is one module-level function rather than a closure over `ctx`, which would be a
+  // new function object every tick; `ctx` rides in this slot for the length of the drain.
+  drainContext = ctx;
+  try {
+    queue.drainCollisionEvents(handleContact);
+  } finally {
+    drainContext = null;
+  }
+}
 
-    if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.ball, b, ctx);
-    if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.ball, a, ctx);
-    if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a, b, ctx);
-  });
+/** The context `processContacts` is draining for; null outside a drain. */
+let drainContext: CombatContext | null = null;
+
+function handleContact(handle1: number, handle2: number, started: boolean): void {
+  const ctx = drainContext;
+  if (!started || ctx === null) return;
+  const a = ctx.registry.get(handle1);
+  const b = ctx.registry.get(handle2);
+  if (!a || !b) return;
+
+  if (a.kind === "ball" && b.kind === "cart") return ballHitsCart(a.ball, b, ctx);
+  if (b.kind === "ball" && a.kind === "cart") return ballHitsCart(b.ball, a, ctx);
+  if (a.kind === "cart" && b.kind === "cart") return cartsShunt(a, b, ctx);
 }
 
 function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, ctx: CombatContext): void {

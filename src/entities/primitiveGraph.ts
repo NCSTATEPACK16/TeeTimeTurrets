@@ -54,6 +54,8 @@ export interface BuiltGraph {
   readonly root: THREE.Object3D;
   /** Every node by its authored name, so callers address pivots by name instead of tree position. */
   readonly named: ReadonlyMap<string, THREE.Object3D>;
+  /** One material per slot, shared by every node in it. */
+  readonly materials: ReadonlyMap<string, THREE.MeshStandardMaterial>;
   /** Repaints every node in a slot at once. Unknown slots are ignored, not an error: a cosmetic
    *  referring to a slot this graph does not have should degrade, never throw mid-frame. */
   setSlotColor(slot: string, color: number): void;
@@ -117,6 +119,7 @@ export function buildGraph(graph: PrimitiveGraph, slotOverrides: SlotColors = {}
   return {
     root,
     named,
+    materials,
     setSlotColor(slot: string, color: number): void {
       materials.get(slot)?.color.setHex(color);
     },
@@ -125,6 +128,123 @@ export function buildGraph(graph: PrimitiveGraph, slotOverrides: SlotColors = {}
       for (const material of materials.values()) material.dispose();
     },
   };
+}
+
+/**
+ * The layer a built graph's own meshes are moved to once `drawBySlot` draws it instead. A camera
+ * renders layer 0 only, and three still walks the children of an object it does not draw, so the
+ * rig keeps every node, name, transform and geometry -- for posing, and for tests that measure a
+ * part -- and costs no draw calls.
+ */
+export const RIG_LAYER = 31;
+
+export interface SlotDraw {
+  /** The drawn meshes, each already added under the node it moves with. */
+  readonly meshes: readonly THREE.Mesh[];
+  /** Detaches the meshes and frees the shared geometry once no other copy of the graph uses it. */
+  dispose(): void;
+}
+
+interface SlotDrawCache {
+  readonly parts: readonly { readonly anchor: string; readonly slot: string; readonly geometry: THREE.BufferGeometry }[];
+  refs: number;
+}
+
+const slotDrawCache = new Map<string, SlotDrawCache>();
+
+/**
+ * Draws a built graph with one mesh per material slot per posed part, rather than one per node.
+ *
+ * `posed` names every node something moves, turns or hides at runtime. Each node's geometry is
+ * baked into the frame of its nearest posed ancestor (or the graph root) and merged with the rest
+ * of that part's nodes in the same slot; the merged mesh is hung under the posed node, so it
+ * follows the pose exactly as its primitives did. A node that moves but is not listed would be
+ * frozen at rest -- the caller's list is the contract.
+ *
+ * **Unlike `mergeGraph`, slot recolouring survives**: each merged mesh uses the built graph's own
+ * slot material, so `setSlotColor` repaints it. That is what makes this usable on the cart.
+ *
+ * The merged geometry depends only on the graph and `posed`, so every copy of the graph shares it
+ * and it is freed when the last copy is disposed. The built graph's own meshes move to
+ * `RIG_LAYER`: kept, never drawn.
+ */
+export function drawBySlot(
+  graph: PrimitiveGraph,
+  built: BuiltGraph,
+  posed: readonly string[],
+): SlotDraw {
+  const key = `${graph.name}|${posed.join(",")}`;
+  let cached = slotDrawCache.get(key);
+  if (cached === undefined) {
+    cached = { parts: mergeBySlot(built, new Set(posed)), refs: 0 };
+    slotDrawCache.set(key, cached);
+  }
+  cached.refs++;
+
+  const meshes: THREE.Mesh[] = [];
+  for (const part of cached.parts) {
+    const anchor = part.anchor === "" ? built.root : built.named.get(part.anchor)!;
+    const mesh = new THREE.Mesh(part.geometry, built.materials.get(part.slot)!);
+    mesh.name = `merged:${part.anchor || graph.root.name}:${part.slot}`;
+    anchor.add(mesh);
+    meshes.push(mesh);
+  }
+  for (const node of built.named.values()) node.layers.set(RIG_LAYER);
+
+  const entry = cached;
+  let disposed = false;
+  return {
+    meshes,
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      for (const mesh of meshes) mesh.removeFromParent();
+      entry.refs--;
+      if (entry.refs > 0) return;
+      for (const part of entry.parts) part.geometry.dispose();
+      slotDrawCache.delete(key);
+    },
+  };
+}
+
+/** The merge itself, done once per graph: each node into its part's frame, grouped by slot. */
+function mergeBySlot(
+  built: BuiltGraph,
+  posed: ReadonlySet<string>,
+): { anchor: string; slot: string; geometry: THREE.BufferGeometry }[] {
+  built.root.updateMatrixWorld(true);
+  const groups = new Map<string, { anchor: string; slot: string; geometries: THREE.BufferGeometry[] }>();
+  const inverse = new THREE.Matrix4();
+  const relative = new THREE.Matrix4();
+
+  built.root.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    let anchor: THREE.Object3D = mesh;
+    while (anchor !== built.root && !posed.has(anchor.name)) anchor = anchor.parent!;
+    const anchorName = anchor === built.root && !posed.has(anchor.name) ? "" : anchor.name;
+    // At rest, which is how the graph was just built: the frame from part to node is fixed,
+    // because nothing between them is ever posed.
+    inverse.copy(anchor.matrixWorld).invert();
+    relative.multiplyMatrices(inverse, mesh.matrixWorld);
+    const slot = (mesh.material as THREE.MeshStandardMaterial).name;
+    const key = `${anchorName}|${slot}`;
+    let group = groups.get(key);
+    if (group === undefined) {
+      group = { anchor: anchorName, slot, geometries: [] };
+      groups.set(key, group);
+    }
+    group.geometries.push(mesh.geometry.clone().applyMatrix4(relative));
+  });
+
+  const parts: { anchor: string; slot: string; geometry: THREE.BufferGeometry }[] = [];
+  for (const group of groups.values()) {
+    const geometry = mergeGeometries(group.geometries, false);
+    for (const g of group.geometries) g.dispose();
+    if (geometry === null) throw new Error(`slot "${group.slot}" under "${group.anchor}" failed to merge`);
+    parts.push({ anchor: group.anchor, slot: group.slot, geometry });
+  }
+  return parts;
 }
 
 export interface MergedGraph {

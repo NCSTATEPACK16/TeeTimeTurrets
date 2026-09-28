@@ -29,10 +29,25 @@ const ROUGH = SURFACES[SurfaceId.Rough];
  * rather than built here so a caller that already has them (the renderer, `Sim`) does not build
  * eighteen more.
  */
+/**
+ * The course's `Surfaces`, plus each query split at the seam where it has asked `weightsInto`.
+ *
+ * The `...FromWeights` forms take a point's `weightsInto` answer (`owner` is its return value)
+ * rather than computing it, and give exactly what the plain query would. A caller that wants height,
+ * material and tuning for one point -- the grid bake, a ground tile -- pays for one `weightsInto`
+ * rather than three. The plain queries are these with the `weightsInto` in front, so the two
+ * cannot disagree.
+ */
+export interface CourseSurfaces extends Surfaces {
+  surfaceFromOwner(owner: number, x: number, z: number): SurfaceId;
+  tuningFromWeights(owner: number, weights: Float32Array, x: number, z: number, out: MutableSurfaceTuning): void;
+  weightsFromWeights(owner: number, weights: Float32Array, x: number, z: number, out: SurfaceWeights): void;
+}
+
 export function createCourseSurfaces(
   terrain: CourseTerrain,
   surfaces: readonly Surfaces[],
-): Surfaces {
+): CourseSurfaces {
   // Closure-owned scratch: every function here runs inside the fixed tick, and `weightsAt` runs
   // once per texel when the renderer bakes its surface mask.
   const local = { x: 0, z: 0 };
@@ -47,14 +62,26 @@ export function createCourseSurfaces(
   }
 
   function surfaceAt(x: number, z: number): SurfaceId {
-    const owner = terrain.weightsInto(x, z, weights);
+    return surfaceFromOwner(terrain.weightsInto(x, z, weights), x, z);
+  }
+
+  function surfaceFromOwner(owner: number, x: number, z: number): SurfaceId {
     if (owner < 0) return SurfaceId.Rough;
     localTo(owner, x, z);
     return surfaces[owner]!.surfaceAt(local.x, local.z);
   }
 
   function tuningAt(x: number, z: number, out: MutableSurfaceTuning): void {
-    const owner = terrain.weightsInto(x, z, weights);
+    tuningFromWeights(terrain.weightsInto(x, z, weights), weights, x, z, out);
+  }
+
+  function tuningFromWeights(
+    owner: number,
+    weights: Float32Array,
+    x: number,
+    z: number,
+    out: MutableSurfaceTuning,
+  ): void {
     let sumWeight = 0;
     let rolling = 0;
     let bounceScale = 0;
@@ -91,7 +118,16 @@ export function createCourseSurfaces(
   }
 
   function weightsAt(x: number, z: number, out: SurfaceWeights): void {
-    const owner = terrain.weightsInto(x, z, weights);
+    weightsFromWeights(terrain.weightsInto(x, z, weights), weights, x, z, out);
+  }
+
+  function weightsFromWeights(
+    owner: number,
+    weights: Float32Array,
+    x: number,
+    z: number,
+    out: SurfaceWeights,
+  ): void {
     if (owner < 0) {
       // 1 is "off the green" and "in full rough" -- the far end of both falloffs, which is what
       // ground no hole reaches is.
@@ -130,5 +166,5 @@ export function createCourseSurfaces(
     out.bridge = holeWeights.bridge;
   }
 
-  return { surfaceAt, tuningAt, weightsAt };
+  return { surfaceAt, tuningAt, weightsAt, surfaceFromOwner, tuningFromWeights, weightsFromWeights };
 }

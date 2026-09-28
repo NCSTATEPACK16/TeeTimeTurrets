@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { BallPool, LANDED_BALL_DESPAWN_S, MAX_FLIGHT_S, POOL_SIZE } from "./BallPool";
+import type { PooledBall } from "./BallPool";
 import { NO_KILLER } from "../matchConfig";
 
 const DT = 1 / 60;
@@ -83,9 +84,13 @@ describe("BallPool", () => {
     ball.body.setTranslation({ x: 0, y: groundY + 0.1, z: 0 }, true);
     ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
 
-    for (let i = 0; i < 11; i++) pool.step(DT, i * DT);
+    for (let i = 0; i < 11; i++) {
+      pool.sync();
+      pool.step(DT, i * DT);
+    }
     expect(ball.state).toBe("flying");
 
+    pool.sync();
     pool.step(DT, 11 * DT);
     expect(ball.state).toBe("landed");
   });
@@ -96,7 +101,10 @@ describe("BallPool", () => {
     ball.body.setTranslation({ x: 0, y: groundY + 0.1, z: 0 }, true);
     ball.body.setLinvel({ x: 5, y: 0, z: 0 }, true);
 
-    for (let i = 0; i < 20; i++) pool.step(DT, i * DT);
+    for (let i = 0; i < 20; i++) {
+      pool.sync();
+      pool.step(DT, i * DT);
+    }
     expect(ball.state).toBe("flying");
   });
 
@@ -105,9 +113,11 @@ describe("BallPool", () => {
     ball.state = "landed";
     ball.landedAt = 0;
 
+    pool.sync();
     pool.step(DT, LANDED_BALL_DESPAWN_S - 0.001);
     expect(ball.state).toBe("landed");
 
+    pool.sync();
     pool.step(DT, LANDED_BALL_DESPAWN_S);
     expect(ball.state).toBe("idle");
   });
@@ -120,10 +130,11 @@ describe("BallPool", () => {
     const flying = pool.acquire(0)!;
     flying.body.setTranslation({ x: 5, y: 0, z: 5 }, true);
 
-    const near = pool.ballsNear(5, 5, 1);
-    expect(near).toHaveLength(1);
-    expect(near[0].body).toBe(landed.body);
-    expect(pool.ballsNear(50, 50, 1)).toHaveLength(0);
+    pool.sync();
+    const near: PooledBall[] = [];
+    expect(pool.ballsNear(5, 5, 1, near)).toBe(1);
+    expect(near[0]!.body).toBe(landed.body);
+    expect(pool.ballsNear(50, 50, 1, near)).toBe(0);
   });
 
   it("step() grounds a ball against the injected height function, not any real terrain", () => {
@@ -154,6 +165,7 @@ describe("BallPool", () => {
       ball.body.setTranslation({ x: i, y: 50, z: 0 }, true);
       balls.push(ball);
       time += DT;
+      pool.sync();
       pool.step(DT, time);
     }
     return { balls, time };
@@ -165,6 +177,7 @@ describe("BallPool", () => {
     // On the grass and still moving: not at rest, so not landed, but no longer a shot in the air.
     roller.body.setTranslation({ x: 0, y: 0.1, z: 0 }, true);
     roller.body.setLinvel({ x: 6, y: 0, z: 0 }, true);
+    pool.sync();
     pool.step(DT, time + DT);
     expect(roller.state).toBe("flying");
 
@@ -223,6 +236,7 @@ describe("BallPool rolling and flight limits", () => {
     for (let i = 0; i < 10 * 60; i++) {
       world.step();
       time += DT;
+      pool.sync();
       pool.step(DT, time);
     }
     expect(ball.state).toBe("landed");
@@ -237,11 +251,13 @@ describe("BallPool rolling and flight limits", () => {
     let time = 0;
     while (time < MAX_FLIGHT_S - 0.5) {
       time += DT;
+      pool.sync();
       pool.step(DT, time);
     }
     expect(ball.state).toBe("flying");
     while (time < MAX_FLIGHT_S + 0.5) {
       time += DT;
+      pool.sync();
       pool.step(DT, time);
     }
     expect(ball.state).toBe("idle");

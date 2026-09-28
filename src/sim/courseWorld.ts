@@ -1,13 +1,15 @@
 import type { Course } from "./course";
+import { bakeCourseGrids } from "./courseGrids";
+import type { CourseGrids } from "./courseGrids";
 import { AUTHORED_HOLES } from "./authoredCourse";
 import { AUTHORED_SOUTH_BOUNDARY, authoredCourseLayout } from "./authoredLayout";
 import type { SouthBoundary } from "./courseBarrier";
 import { createCourseSurfaces } from "./courseSurfaces";
+import type { CourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
 import type { CourseTerrain, PlacedHole } from "./courseTerrain";
 import { mulberry32 } from "./rng";
 import { createSurfaces } from "./surfaces";
-import type { Surfaces } from "./surfaces";
 import { createTerrain } from "./terrain";
 
 /**
@@ -26,7 +28,8 @@ import { createTerrain } from "./terrain";
  */
 export interface CourseWorld {
   readonly terrain: CourseTerrain;
-  readonly surfaces: Surfaces;
+  /** The blended materials: exact, and 3-6 us a query. The renderer's; the sim reads `grids`. */
+  readonly surfaces: CourseSurfaces;
   /**
    * The placed holes, in course order. Structurally a `SpawnHole[]` as well, which is why
    * `Sim.loadCourse` can be handed this array as it stands -- see `spawn.ts`.
@@ -38,6 +41,12 @@ export interface CourseWorld {
    * road instead of borrowing this one's.
    */
   readonly southBoundary: SouthBoundary;
+  /**
+   * The ground baked at every heightfield vertex (`courseGrids.ts`), which is what the arena's
+   * `Sim` stands on. Baked on first read and kept: several seconds of work that a page does once,
+   * however many matches it plays, and that a test which never builds a `Sim` never pays for.
+   */
+  readonly grids: CourseGrids;
 }
 
 /**
@@ -83,5 +92,15 @@ export function buildCourseWorld(course: Course, seed: number): CourseWorld {
     // and make that agreement a coincidence rather than a fact.
     holes.map((hole) => createSurfaces(hole.spec, hole.terrain)),
   );
-  return { terrain, surfaces, holes, southBoundary: AUTHORED_SOUTH_BOUNDARY };
+  let grids: CourseGrids | null = null;
+  return {
+    terrain,
+    surfaces,
+    holes,
+    southBoundary: AUTHORED_SOUTH_BOUNDARY,
+    get grids() {
+      grids ??= bakeCourseGrids(terrain, surfaces);
+      return grids;
+    },
+  };
 }

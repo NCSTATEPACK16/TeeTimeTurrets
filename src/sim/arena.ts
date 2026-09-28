@@ -48,7 +48,7 @@ export function arenaFromCourse(world: CourseWorld): ArenaGround {
   const first = world.holes.find((h) => h.spec.index === 0) ?? world.holes[0];
   if (!first) throw new Error("arenaFromCourse: the course has no holes");
   return {
-    playfield: coursePlayfield(world.terrain, world.surfaces),
+    playfield: coursePlayfield(world.grids),
     holes: world.holes,
     southBoundary: world.southBoundary,
     clubhouse: AUTHORED_CLUBHOUSE,

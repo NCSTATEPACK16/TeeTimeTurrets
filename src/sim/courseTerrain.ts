@@ -106,6 +106,12 @@ export interface CourseTerrain {
    * makes baking a surface mask over the whole course affordable.
    */
   weightsInto(x: number, z: number, out: Float32Array): number;
+  /**
+   * `heightAt` for a caller that already holds this point's `weightsInto` answer: the same sum,
+   * bit for bit, without walking the holes a second time. What lets a bake or a ground tile ask
+   * for height, material and tuning off one `weightsInto` rather than three.
+   */
+  heightFromWeights(x: number, z: number, weights: Float32Array): number;
   buildHeightfield(): Float32Array;
 }
 
@@ -264,10 +270,14 @@ export function createCourseTerrain(
   /** The blend: each hole's ground by its share, and the course rough for the remainder. */
   function heightAt(x: number, z: number): number {
     weightsInto(x, z, weightScratch);
+    return heightFromWeights(x, z, weightScratch);
+  }
+
+  function heightFromWeights(x: number, z: number, weights: Float32Array): number {
     let sumWeight = 0;
     let sumHeight = 0;
     for (let i = 0; i < contexts.length; i++) {
-      const weight = weightScratch[i]!;
+      const weight = weights[i]!;
       if (weight <= 0) continue;
       const context = contexts[i]!;
       toHoleFrame(context.hole.placement, x, z, localScratch);
@@ -302,5 +312,16 @@ export function createCourseTerrain(
     return heights;
   }
 
-  return { holes, bounds, cellM, cols, rows, heightAt, influenceAt, weightsInto, buildHeightfield };
+  return {
+    holes,
+    bounds,
+    cellM,
+    cols,
+    rows,
+    heightAt,
+    influenceAt,
+    weightsInto,
+    heightFromWeights,
+    buildHeightfield,
+  };
 }

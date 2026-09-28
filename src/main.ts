@@ -1,23 +1,24 @@
 import * as THREE from "three";
 import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
-import { FIXED_DT, Sim } from "./sim/world";
+import { FrameStats, createFrameReport } from "./engine/frameStats";
+import { FIXED_DT } from "./sim/tickConstants";
 import { authoredCourse } from "./sim/authoredCourse";
-import { buildCourseWorld } from "./sim/courseWorld";
 import type { CourseWorld } from "./sim/courseWorld";
-import { arenaFromCourse } from "./sim/arena";
+import type { Sim } from "./sim/world";
 import { ARENA_BOTS } from "./sim/matchConfig";
 import { createLoadout, tireTypeFor } from "./sim/loadout";
 import type { ArenaSource } from "./render/scene";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
-import { MatchScreen } from "./ui/screens/MatchScreen";
-import { MatchResultsScreen } from "./ui/screens/MatchResultsScreen";
+import type { MatchScreen } from "./ui/screens/MatchScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 import { gameAudio } from "./audio/audioEngine";
 import { loadSettings, pageStorage, saveSettings } from "./app/settings";
 import type { Settings } from "./app/settings";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
-import { courseMapHoles } from "./ui/courseMapHoles";
+import { mountPerfOverlay } from "./ui/perfOverlay";
+
+type MatchPath = typeof import("./app/matchPath");
 
 /**
  * Boot and routing. This file owns the things that outlive any one screen -- the renderer, the
@@ -71,6 +72,29 @@ async function main(): Promise<void> {
   const course = authoredCourse(COURSE_SEED);
   const screens = new ScreenManager<ScreenName>();
 
+  /**
+   * The match path -- sim, Rapier, course world, match screens -- is its own chunk (`matchPath.ts`).
+   * Fetched once, the first time anything asks: the title asks as soon as it shows, so by the time
+   * the player presses PLAY it has usually arrived.
+   */
+  let matchPath: MatchPath | null = null;
+  let matchPathLoading: Promise<MatchPath> | null = null;
+  const loadMatchPath = (): Promise<MatchPath> => {
+    matchPathLoading ??= import("./app/matchPath").then((loaded) => {
+      matchPath = loaded;
+      return loaded;
+    });
+    return matchPathLoading;
+  };
+  const prefetchMatchPath = (): void => {
+    loadMatchPath()
+      .then((loaded) => loaded.warmPhysics())
+      // A prefetch that fails is not an error yet: PLAY asks again and reports it then.
+      .catch(() => {
+        matchPathLoading = null;
+      });
+  };
+
 
   let sim: Sim | null = null;
   let matchScreen: MatchScreen | null = null;
@@ -87,8 +111,9 @@ async function main(): Promise<void> {
   let coins = STARTING_COINS;
 
   const startMatch = async (): Promise<void> => {
+    const path = await loadMatchPath();
     if (courseWorld === null) {
-      courseWorld = buildCourseWorld(course, COURSE_SEED);
+      courseWorld = path.buildCourseWorld(course, COURSE_SEED);
       arenaSource = {
         course: courseWorld.terrain,
         surfaces: courseWorld.surfaces,
@@ -97,13 +122,13 @@ async function main(): Promise<void> {
       };
       // The M map's holes, sampled now, while PLAY is already loading, rather than on first open
       // in the middle of a fight. Cached for the page, like the course.
-      courseMapHoles(arenaSource);
+      path.courseMapHoles(arenaSource);
     }
     // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
     // match's has to be freed by hand or every rematch leaks a whole course.
     sim?.dispose();
     // The tire the player bought is the tire the physics uses: the one purchase that is a stat.
-    sim = await Sim.create(arenaFromCourse(courseWorld), {
+    sim = await path.Sim.create(path.arenaFromCourse(courseWorld), {
       tire: tireTypeFor(loadout),
       botCount: ARENA_BOTS,
     });
@@ -111,6 +136,7 @@ async function main(): Promise<void> {
   };
 
   screens.register("title", () => {
+    prefetchMatchPath();
     return new TitleScreen({
       root: screensRoot,
       renderer,
@@ -129,8 +155,8 @@ async function main(): Promise<void> {
   screens.register("match", () => {
     const live = sim;
     const arena = arenaSource;
-    if (!live || !arena) throw new Error("match screen entered with no sim or no course");
-    matchScreen = new MatchScreen({
+    if (!live || !arena || !matchPath) throw new Error("match screen entered with no sim or no course");
+    matchScreen = new matchPath.MatchScreen({
       renderer,
       sim: live,
       arena,
@@ -148,8 +174,8 @@ async function main(): Promise<void> {
   screens.register("matchResults", () => {
     const live = sim;
     const behind = matchScreen;
-    if (!live) throw new Error("results screen entered with no sim");
-    return new MatchResultsScreen({
+    if (!live || !matchPath) throw new Error("results screen entered with no sim");
+    return new matchPath.MatchResultsScreen({
       root: screensRoot,
       match: live.match,
       // Keeps the finished match on screen under the scrim.
@@ -189,9 +215,23 @@ async function main(): Promise<void> {
     });
   });
 
+  // Frame time and draw calls, for the dev hook's `perf` and the `?perf` overlay. The renderer's
+  // counters are reset once per frame rather than per `render` call, so a frame drawn in several
+  // passes (the High preset's post chain) reports all of them.
+  const frameStats = new FrameStats();
+  const frameReport = createFrameReport();
+  renderer.info.autoReset = false;
+  if (new URLSearchParams(window.location.search).has("perf")) {
+    mountPerfOverlay(document.body, () => frameStats.report(frameReport), () => renderer.getPixelRatio());
+  }
+
   // Dev-only inspection hook for manual tuning in the browser console, and what tools/smoke.mjs
   // drives. Getters rather than fixed values: `sim` and the scene are rebuilt on every match.
   (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = {
+    /** The last `FRAME_STATS_WINDOW` frames: frame and work times, draw calls, triangles. */
+    get perf() {
+      return { ...frameStats.report(createFrameReport()), pixelRatio: renderer.getPixelRatio() };
+    },
     get sim() {
       return sim;
     },
@@ -211,10 +251,24 @@ async function main(): Promise<void> {
     renderer,
   };
 
+  // Work is timed from the frame's first step to the end of its draw: everything the loop does.
+  let frameStartMs = -1;
   const loop = new GameLoop({
     fixedDt: FIXED_DT,
-    step: () => screens.step(),
-    render: (alpha) => screens.draw(alpha),
+    step: () => {
+      if (frameStartMs < 0) frameStartMs = performance.now();
+      screens.step();
+    },
+    render: (alpha) => {
+      // The interval is taken at the draw, once a frame, so it follows the display; the work
+      // starts at the frame's first step when it had one.
+      const drawAt = performance.now();
+      const workFrom = frameStartMs < 0 ? drawAt : frameStartMs;
+      renderer.info.reset();
+      screens.draw(alpha);
+      frameStats.record(drawAt, performance.now() - workFrom, renderer.info.render.calls, renderer.info.render.triangles);
+      frameStartMs = -1;
+    },
   });
 
   screens.show("title");

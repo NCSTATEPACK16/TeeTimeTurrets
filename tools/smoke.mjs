@@ -338,6 +338,18 @@ check(
 check("the match scene holds ground geometry", geometry.vertices > 10000, `${geometry.meshes} meshes, ${geometry.vertices} vertices`);
 check("no mesh in the match scene has NaN vertices", geometry.nanVertexComponents === 0, `${geometry.nanVertexComponents} NaN components`);
 
+// The dev hook's frame readout (engine/frameStats.ts), read off a running match: a window of real
+// frames, a positive frame time, and the renderer's draw calls for the last one.
+const perf = await page.evaluate(async () => {
+  await new Promise((r) => setTimeout(r, 500));
+  return window.__teetimeturrets.perf;
+});
+check(
+  "the dev hook reports frame time and draw calls",
+  perf.frames > 10 && perf.frameMs > 0 && perf.workMs > 0 && perf.drawCalls > 0,
+  `${perf.frames} frames, ${perf.frameMs.toFixed(1)} ms a frame, ${perf.workMs.toFixed(1)} ms work, ${perf.drawCalls} draws`,
+);
+
 // Since bots got their minds (Stage 1.8) they close on the player's spawn and kill an idle cart
 // in well under the time these checks take -- 7 HP to 0 during the FIRE section, twice in two
 // runs. A dead cart takes no input, so every control check below would really be asking whether
@@ -575,6 +587,14 @@ const behindCamera = await page.evaluate(() => {
 });
 check("a point far behind the camera projects as not visible", behindCamera === false, `${behindCamera}`);
 
+// The ground is the course's, not the match's (render/courseDressing.ts): marked here, and its first
+// tile -- a far level, which only a full dispose ever frees -- watched, so the rematch and the title
+// can show the ground was handed on intact.
+await page.evaluate(() => {
+  const ground = window.__teetimeturrets.render.courseGround;
+  window.__smokeGround = { ground, disposed: false };
+  ground.group.children[0].geometry.addEventListener("dispose", () => (window.__smokeGround.disposed = true));
+});
 console.log("=== MATCH OVER ===");
 await page.evaluate(() => clearInterval(window.__smokeKeepAlive));
 // Written on `sim.match.remaining`, the clock itself: `sim.matchTimeRemaining` is a getter with no
@@ -624,12 +644,27 @@ await new Promise((r) => setTimeout(r, 400));
 const rematch = await page.evaluate(() => ({
   remaining: window.__teetimeturrets.sim.match.remaining,
   over: window.__teetimeturrets.sim.matchOver,
+  sameGround: window.__teetimeturrets.render.courseGround === window.__smokeGround.ground,
+  inScene: window.__smokeGround.ground.group.parent === window.__teetimeturrets.render.scene,
 }));
 check("PLAY AGAIN resets the match clock", rematch.remaining > 1, `${rematch.remaining}`);
 check("PLAY AGAIN resets the match itself", rematch.over === false, `${rematch.over}`);
+check("a rematch draws the first match's ground rather than building another", rematch.sameGround && rematch.inScene);
 
 await page.evaluate(() => window.__teetimeturrets.screens.show("title"));
 await new Promise((r) => setTimeout(r, 300));
+
+// Leaving a match takes the ground out of its scene without freeing it.
+const kept = await page.evaluate(() => ({
+  disposed: window.__smokeGround.disposed,
+  tiles: window.__smokeGround.ground.group.children.length,
+  detached: window.__smokeGround.ground.group.parent === null,
+}));
+check(
+  "leaving a match keeps the course ground for the next",
+  kept.detached && kept.tiles > 0 && kept.disposed === false,
+  `detached=${kept.detached}, ${kept.tiles} tile meshes, far tile freed=${kept.disposed}`,
+);
 
 console.log("=== SCREEN LIFECYCLE (Phase 1.75 memory gate) ===");
 const leak = await page.evaluate(async () => {

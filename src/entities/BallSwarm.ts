@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { POOL_SIZE } from "../sim/entities/BallPool";
-import { POOL_TRANSFORM_STRIDE } from "../sim/world";
+import { POOL_SIZE } from "../sim/entities/ballShape";
+import { POOL_TRANSFORM_STRIDE } from "../sim/tickConstants";
 import { BALL_RADIUS } from "../sim/entities/ballShape";
 
 /**

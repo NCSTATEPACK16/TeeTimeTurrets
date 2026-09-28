@@ -9,3 +9,10 @@
  * A true leaf: no imports, so nothing importing this can create a cycle.
  */
 export const BALL_RADIUS = 0.15;
+
+/**
+ * How many pooled balls exist: the size of the render's ball buffers as much as the pool's. Here,
+ * beside the radius, because the render side needs it and `BallPool.ts` imports Rapier -- taking it
+ * from there pulled Rapier into every chunk that draws a ball. `BallPool.ts` re-exports it.
+ */
+export const POOL_SIZE = 32;
