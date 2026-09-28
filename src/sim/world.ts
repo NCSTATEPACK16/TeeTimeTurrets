@@ -1,9 +1,8 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType } from "../physics/Ballistics";
 import type { PlayerIntent } from "./intent";
-import { BUCKET_REFILL_AMMO, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
+import { Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
-import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
 import { CombatRegistry, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
@@ -34,6 +33,7 @@ import type { HazardDeath } from "./hazardRules";
 import { SpawnPlan, stepRespawn } from "./respawn";
 import { previewTrajectory, resolveShot } from "./shots";
 import { BotDriver, IDLE_INTENT } from "./botDriver";
+import { collectPickups, placeBuckets, resetBuckets, stepBuckets } from "./pickups";
 import type { CartRig } from "./rigs";
 import { NO_TARGET_RIG, SimEventLog } from "./events";
 import { FIXED_DT, POOL_TRANSFORM_STRIDE } from "./frame";
@@ -70,11 +70,6 @@ export {
 } from "./frame";
 export type { CartTransform } from "./frame";
 
-/**
- * How close a cart has to be to a landed ball or a bucket to collect it. Ammo is the only thing a
- * landed ball is for, so driving over your own spent rounds is how a cart reloads between buckets.
- */
-const PICKUP_RANGE = 3.0;
 
 export interface SimOptions {
   /**
@@ -243,11 +238,7 @@ export class Sim {
     }
     sim.buildPhysics();
 
-    // KNOWN MISPLACEMENT, kept for one commit so the refactor around it can be shown to change
-    // nothing: this is hole 1's *local* tee plus 10 m, read as a course coordinate, which is where
-    // the arena has always put its bucket. The next change moves it and says so.
-    const firstHole = ground.holes.find((h) => h.spec.index === 0) ?? ground.holes[0]!;
-    sim.buckets.push(createBucket(firstHole.spec.tee.x + 10, firstHole.spec.tee.z));
+    placeBuckets(ground, sim.buckets);
 
     sim.combatContext = {
       registry: sim.registry,
@@ -407,7 +398,7 @@ export class Sim {
     // bucket cooldowns keep ticking. Only the cart is frozen.
     this.simTime += FIXED_DT;
     this.ballPool.step(FIXED_DT, this.simTime);
-    for (const bucket of this.buckets) stepBucket(bucket, FIXED_DT);
+    stepBuckets(this.buckets);
 
     for (const rig of this.rigs) {
       this.stepRig(rig, this.driver.intentFor(rig, intent, this.rigs, this.carts, this.ballPool));
@@ -436,23 +427,7 @@ export class Sim {
     checkZone(rig, this.zone, this.hazardDeath);
     if (cart.dead) return;
 
-    const ammoBefore = cart.ammo;
-    let collected = false;
-    for (const bucket of this.buckets) {
-      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) {
-        cart.addAmmo(BUCKET_REFILL_AMMO);
-        collected = true;
-      }
-    }
-    for (const landed of this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE)) {
-      cart.addAmmo(1);
-      this.ballPool.release(landed);
-      collected = true;
-    }
-    // One event for whatever this tick collected, with the rounds it actually gave: a full magazine
-    // still takes the bucket, and says so with a zero.
-    if (collected && rig.index === 0) this.tally.pickups += 1;
-    if (collected) this.events.push("pickup", rig.index, NO_TARGET_RIG, c.x, c.y, c.z, cart.ammo - ammoBefore, null);
+    collectPickups(rig, this.buckets, this.ballPool, this.events, this.tally);
 
     if (cart.shot.fired) {
       cart.shot.fired = false;
@@ -520,7 +495,7 @@ export class Sim {
     this.spawns.reset();
     this.freePhysics();
     this.buildPhysics();
-    for (const bucket of this.buckets) bucket.cooldownRemaining = 0;
+    resetBuckets(this.buckets);
     this.simTime = 0;
 
     for (const rig of this.rigs) {
