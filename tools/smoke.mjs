@@ -228,7 +228,11 @@ check(
 );
 // The first match runs medium -- the preset most desktops get -- so its single shadow map is
 // exercised; the second runs high. Low's only difference is having no shadows at all.
-await page.evaluate(() => window.__teetimeturrets.setSettings({ quality: "medium" }));
+// Level 2, so the driver is unlocked for the club checks below (Stage 8 locks it before then).
+await page.evaluate(() => {
+  window.__teetimeturrets.setSettings({ quality: "medium" });
+  window.__teetimeturrets.setProfile({ level: 2 });
+});
 
 console.log("=== PLAY (the arena) ===");
 // Eighteen holes routed and blended into one heightfield, built for the first time here, so this
