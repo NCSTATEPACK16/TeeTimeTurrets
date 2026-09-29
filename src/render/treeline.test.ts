@@ -4,6 +4,20 @@ import { createTreeline } from "./treeline";
 import { metresNorthOf } from "../sim/courseBarrier";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { Bounds } from "../sim/courseLayout";
+import type { Treeline } from "./treeline";
+
+/** Every tree's position, across both species' meshes. */
+function positions(band: Treeline): THREE.Vector3[] {
+  const matrix = new THREE.Matrix4();
+  const out: THREE.Vector3[] = [];
+  for (const mesh of band.meshes) {
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, matrix);
+      out.push(new THREE.Vector3().setFromMatrixPosition(matrix));
+    }
+  }
+  return out;
+}
 
 /** Diagonal, like the real one: a band placed with a z-only offset would be caught by this. */
 const ROAD: SouthBoundary = { a: { x: -600, z: -400 }, b: { x: 400, z: -680 } };
@@ -20,11 +34,7 @@ describe("the treeline", () => {
     const band = createTreeline(ROAD, BOUNDS, FLAT, 2026);
     expect(band.count).toBeGreaterThan(0);
 
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    for (let i = 0; i < band.count; i++) {
-      band.mesh!.getMatrixAt(i, matrix);
-      position.setFromMatrixPosition(matrix);
+    for (const [i, position] of positions(band).entries()) {
       expect(
         metresNorthOf(ROAD, position.x, position.z),
         `tree ${i} at (${position.x.toFixed(0)}, ${position.z.toFixed(0)})`,
@@ -36,17 +46,13 @@ describe("the treeline", () => {
   it("runs the length of the road and past both ends", () => {
     // A band that stopped at the road's own ends would leave the corners open to the skybox.
     const band = createTreeline(ROAD, BOUNDS, FLAT, 2026);
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
     let minAlong = Infinity;
     let maxAlong = -Infinity;
     const length = Math.hypot(ROAD.b.x - ROAD.a.x, ROAD.b.z - ROAD.a.z);
     const ax = (ROAD.b.x - ROAD.a.x) / length;
     const az = (ROAD.b.z - ROAD.a.z) / length;
 
-    for (let i = 0; i < band.count; i++) {
-      band.mesh!.getMatrixAt(i, matrix);
-      position.setFromMatrixPosition(matrix);
+    for (const position of positions(band)) {
       const along = (position.x - ROAD.a.x) * ax + (position.z - ROAD.a.z) * az;
       minAlong = Math.min(minAlong, along);
       maxAlong = Math.max(maxAlong, along);
@@ -63,17 +69,7 @@ describe("the treeline", () => {
     const c = createTreeline(ROAD, BOUNDS, FLAT, 2027);
     expect(a.count).toBe(b.count);
 
-    const read = (band: ReturnType<typeof createTreeline>): number[] => {
-      const matrix = new THREE.Matrix4();
-      const position = new THREE.Vector3();
-      const out: number[] = [];
-      for (let i = 0; i < band.count; i++) {
-        band.mesh!.getMatrixAt(i, matrix);
-        position.setFromMatrixPosition(matrix);
-        out.push(position.x, position.z);
-      }
-      return out;
-    };
+    const read = (band: Treeline): number[] => positions(band).flatMap((p) => [p.x, p.z]);
     expect(read(a)).toEqual(read(b));
     expect(read(a)).not.toEqual(read(c));
     a.dispose();
@@ -81,14 +77,16 @@ describe("the treeline", () => {
     c.dispose();
   });
 
-  it("frees its geometry, material and mesh", () => {
+  it("frees its geometries and material", () => {
     // AGENTS.md's resource rule. An InstancedMesh left behind is a GPU buffer per arena entered.
     const band = createTreeline(ROAD, BOUNDS, FLAT, 2026);
+    expect(band.meshes).toHaveLength(2);
     let disposed = 0;
-    band.mesh!.geometry.addEventListener("dispose", () => { disposed += 1; });
-    (band.mesh!.material as THREE.Material).addEventListener("dispose", () => { disposed += 1; });
+    for (const mesh of band.meshes) mesh.geometry.addEventListener("dispose", () => { disposed += 1; });
+    // Both species share one material, so it is counted once.
+    (band.meshes[0]!.material as THREE.Material).addEventListener("dispose", () => { disposed += 1; });
     band.dispose();
-    expect(disposed).toBe(2);
+    expect(disposed).toBe(3);
   });
 
   it("plants nothing rather than floating a wood on a heightfield that has no heights", () => {
@@ -96,7 +94,7 @@ describe("the treeline", () => {
     // whole InstancedMesh vanish, which looks like the band was never built.
     const band = createTreeline(ROAD, BOUNDS, () => Number.NaN, 2026);
     expect(band.count).toBe(0);
-    expect(band.mesh).toBeNull();
+    expect(band.meshes).toHaveLength(0);
     band.dispose();
   });
 });

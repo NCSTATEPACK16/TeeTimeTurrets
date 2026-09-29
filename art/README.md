@@ -60,7 +60,7 @@ build_all(); export_all(REPO)   # clubhouse.json, pickups.json, tee_sign.json
 ```python
 exec(open(REPO + '/art/ttt_authoring.py').read(), globals())
 exec(open(REPO + '/art/stage5_kit.py').read(), globals())
-build_all(); export_all(REPO); save_blend(REPO)   # trees, dressing, horizon, course_kit .json
+built = build_all(); export_all(REPO, built); save_blend(REPO)   # trees, dressing, horizon, course_kit .json
 ```
 
 Both kits `exec` `art/kit_common.py` themselves, so `REPO` must be defined before either runs.

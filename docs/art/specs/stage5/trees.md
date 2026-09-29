@@ -47,3 +47,34 @@ The existing `hole-ground` and `course-ground` subjects will change, because the
 ## Acceptance
 
 A play-tester sees varied stands in each biome, the links reads as treeless scrub, and the frame rate holds on Med.
+
+## As built
+
+- **Species bit on its own stream.** The spec asked for the bit to be drawn from the existing
+  `random` stream after the existing draws. That stream also decides cell occupancy, so one extra
+  draw per tree shifts every later cell and re-rolls the whole wood. The bit comes instead from a
+  stream of its own: `hashChannel(seed, index, 7)` in `createTrees` and `hashChannel(seed, 0, 8)` in
+  the treeline. Every position, scale and rotation is bit-identical to the one-species wood in all
+  three biomes (checked by comparing every instance matrix: parkland 101, links 17, marsh 65).
+- **Shared planting helper.** `plantTrees(palette, matrices, species)` in `Trees.ts` builds both
+  species, one `InstancedMesh` each, over one shared material. `createTrees`, `treeline.ts` and the
+  course woods all go through it. `Treeline` is now the same type as `Trees`.
+- **Woods in the match (added).** When stroke play was removed, per-hole woods came out of the
+  match, and only the parkland treeline beyond the road was left. So links and marsh trees would
+  otherwise have appeared nowhere in the game. `createCourseTrees` (in `Trees.ts`, built once per
+  course in `courseDressing.ts`) plants the eighteen-hole course with the same cell, density,
+  deep-rough and scale rules:
+  - Each cell takes the biome of the hole with the largest share of it. Ground that no hole
+    reaches has no biome and is left open.
+  - Any water weight rejects a cell, because course water is painted by surface weight rather
+    than drawn as a plane.
+  - Trees stay north of the road and at least 55 m from the clubhouse centre.
+  - On the shipped course: 1,515 trees, 6 draws, about 164k triangles, built in about 0.25 s.
+  - They have no colliders, like the treeline. Carts drive through them.
+- **Gate.** No Scene Gate subject draws trees. `hole-ground` is the ground mesh alone and
+  `course-ground` is `createCourseGround`, so neither changes, and this slice re-baselines nothing.
+- **Triangles** (`buildGraph`): conifer_tall 62, broadleaf_oak 164, gorse_mound 114,
+  pine_windbent 72, willow_weeping 124, reed_clump 64.
+- **Windbent pine root.** The pipeline keeps graph roots unrotated, so the pine's root is a short
+  root-flare cylinder and the 20° lean is on its trunk, a direct child. A part tilted about X is
+  lifted so its lowest rim vertex sits on y = 0.

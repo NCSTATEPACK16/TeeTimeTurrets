@@ -6,6 +6,7 @@ import { createTerrain } from "../sim/terrain";
 import { createSurfaceWeights, createSurfaces } from "../sim/surfaces";
 import { BIOMES } from "./biomes";
 import { createTrees } from "./Trees";
+import type { Trees } from "./Trees";
 
 /**
  * A render-layer test, which is why it may import three -- the node environment exists to catch a
@@ -16,6 +17,19 @@ import { createTrees } from "./Trees";
  * by breaking the thing it guards and watching it go red.
  */
 
+/** Every instance's position, across both species' meshes, in mesh order. */
+function positions(trees: Trees): THREE.Vector3[] {
+  const matrix = new THREE.Matrix4();
+  const out: THREE.Vector3[] = [];
+  for (const mesh of trees.meshes) {
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, matrix);
+      out.push(new THREE.Vector3().setFromMatrixPosition(matrix));
+    }
+  }
+  return out;
+}
+
 function build(overrides: Partial<HoleSpec> = {}) {
   const spec: HoleSpec = { ...fixedHoleSpec(), ...overrides };
   const terrain = createTerrain(spec);
@@ -24,28 +38,25 @@ function build(overrides: Partial<HoleSpec> = {}) {
 }
 
 describe("createTrees", () => {
-  it("draws the whole wood as one instanced mesh", () => {
+  it("draws the whole wood as one instanced mesh per species", () => {
     // The budget rule that matters at this fidelity is draw calls, not triangles. If this ever
     // becomes a group of per-tree meshes, the frame cost goes up by orders of magnitude while
     // every triangle-count check still passes.
     const { trees } = build();
     expect(trees.count).toBeGreaterThan(0);
-    expect(trees.mesh).toBeInstanceOf(THREE.InstancedMesh);
-    expect(trees.mesh!.count).toBe(trees.count);
+    expect(trees.meshes).toHaveLength(2);
+    for (const mesh of trees.meshes) expect(mesh).toBeInstanceOf(THREE.InstancedMesh);
+    expect(trees.meshes[0]!.count + trees.meshes[1]!.count).toBe(trees.count);
     trees.dispose();
   });
 
   it("plants only in rough, never on the mown corridor", () => {
     const { surfaces, trees } = build();
     const weights = createSurfaceWeights();
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
 
     expect(trees.count).toBeGreaterThan(20); // or the loop below proves nothing
 
-    for (let i = 0; i < trees.count; i++) {
-      trees.mesh!.getMatrixAt(i, matrix);
-      position.setFromMatrixPosition(matrix);
+    for (const position of positions(trees)) {
       surfaces.weightsAt(position.x, position.z, weights);
       expect(weights.corridor).toBeGreaterThanOrEqual(0.92);
       expect(weights.sand).toBe(0);
@@ -71,13 +82,9 @@ describe("createTrees", () => {
       ],
     });
     const weights = createSurfaceWeights();
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
 
     expect(trees.count).toBeGreaterThan(20);
-    for (let i = 0; i < trees.count; i++) {
-      trees.mesh!.getMatrixAt(i, matrix);
-      position.setFromMatrixPosition(matrix);
+    for (const position of positions(trees)) {
       surfaces.weightsAt(position.x, position.z, weights);
       expect(weights.water).toBe(0);
       expect(position.y).toBeGreaterThan(terrain.spec.waterLevel);
@@ -87,11 +94,7 @@ describe("createTrees", () => {
 
   it("stands every trunk on the ground, not floating or buried", () => {
     const { terrain, trees } = build();
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    for (let i = 0; i < trees.count; i++) {
-      trees.mesh!.getMatrixAt(i, matrix);
-      position.setFromMatrixPosition(matrix);
+    for (const position of positions(trees)) {
       // 4 decimals, not more: instanceMatrix is a Float32 buffer, so a read-back carries ~1e-7
       // of relative error. A tenth of a millimetre still says "standing on the ground".
       expect(position.y).toBeCloseTo(terrain.heightAt(position.x, position.z), 4);
@@ -106,10 +109,13 @@ describe("createTrees", () => {
 
     const ma = new THREE.Matrix4();
     const mb = new THREE.Matrix4();
-    for (let i = 0; i < a.trees.count; i += 7) {
-      a.trees.mesh!.getMatrixAt(i, ma);
-      b.trees.mesh!.getMatrixAt(i, mb);
-      expect(Array.from(ma.elements)).toEqual(Array.from(mb.elements));
+    for (let m = 0; m < a.trees.meshes.length; m++) {
+      expect(a.trees.meshes[m]!.count).toBe(b.trees.meshes[m]!.count);
+      for (let i = 0; i < a.trees.meshes[m]!.count; i += 7) {
+        a.trees.meshes[m]!.getMatrixAt(i, ma);
+        b.trees.meshes[m]!.getMatrixAt(i, mb);
+        expect(Array.from(ma.elements)).toEqual(Array.from(mb.elements));
+      }
     }
     a.trees.dispose();
     b.trees.dispose();
@@ -143,18 +149,20 @@ describe("createTrees", () => {
     marsh.trees.dispose();
   });
 
-  it("bakes two foliage tones and a trunk colour into the merged geometry", () => {
+  it("bakes two foliage tones and a trunk colour into each species' merged geometry", () => {
     // The flat-shaded look is two tones per form. One merged geometry with vertex colours is
-    // what lets that survive instancing without a second material or a second draw.
+    // what lets that survive instancing without a second material or a second draw per tone.
     const { trees } = build();
-    const colour = trees.mesh!.geometry.getAttribute("color");
-    expect(colour).toBeDefined();
+    for (const mesh of trees.meshes) {
+      const colour = mesh.geometry.getAttribute("color");
+      expect(colour).toBeDefined();
 
-    const seen = new Set<string>();
-    for (let i = 0; i < colour.count; i++) {
-      seen.add(`${colour.getX(i).toFixed(4)},${colour.getY(i).toFixed(4)},${colour.getZ(i).toFixed(4)}`);
+      const seen = new Set<string>();
+      for (let i = 0; i < colour.count; i++) {
+        seen.add(`${colour.getX(i).toFixed(4)},${colour.getY(i).toFixed(4)},${colour.getZ(i).toFixed(4)}`);
+      }
+      expect(seen.size).toBe(3);
     }
-    expect(seen.size).toBe(3);
     trees.dispose();
   });
 });

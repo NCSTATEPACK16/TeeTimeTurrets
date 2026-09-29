@@ -194,7 +194,8 @@ export class RenderScene {
     this.courseGround = dressing.ground;
     this.scene.add(this.courseGround.group);
     this.treeline = dressing.treeline;
-    if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
+    for (const mesh of this.treeline?.meshes ?? []) this.scene.add(mesh);
+    for (const mesh of dressing.woods.meshes) this.scene.add(mesh);
     this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
     // Stage 7: the clubhouse complex, a sign on every tee, and the pickups.
@@ -330,7 +331,7 @@ export class RenderScene {
     this.shadows.dispose();
     this.post?.dispose();
     this.sky.dispose();
-    // The ground and treeline are the course's, not this match's: taken out of the scene and kept.
+    // The ground, woods and treeline are the course's, not this match's: taken out of the scene and kept.
     // `scene.clear()` below only detaches, so they come out intact for the next match to add.
     this.scene.clear();
   }

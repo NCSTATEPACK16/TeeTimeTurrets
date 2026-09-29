@@ -1,0 +1,893 @@
+{
+  "name": "trees",
+  "version": 1,
+  "units": "m",
+  "slots": {
+    "tree_foliage_dark": {
+      "color": 4481831,
+      "roughness": 0.9,
+      "metalness": 0.0
+    },
+    "tree_foliage_light": {
+      "color": 6725428,
+      "roughness": 0.9,
+      "metalness": 0.0
+    },
+    "tree_trunk": {
+      "color": 6639166,
+      "roughness": 0.9,
+      "metalness": 0.0
+    }
+  },
+  "props": {
+    "conifer_tall": {
+      "name": "tr_conifer_trunk",
+      "kind": "cylinder",
+      "params": [
+        0.07,
+        0.1,
+        0.3,
+        5.0
+      ],
+      "position": [
+        0.0,
+        0.15,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "tree_trunk",
+      "children": [
+        {
+          "name": "tr_conifer_low",
+          "kind": "cone",
+          "params": [
+            0.36,
+            0.5,
+            7.0
+          ],
+          "position": [
+            0.0,
+            0.27,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.1745,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_conifer_mid",
+          "kind": "cone",
+          "params": [
+            0.28,
+            0.42,
+            7.0
+          ],
+          "position": [
+            0.025,
+            0.47,
+            -0.01
+          ],
+          "rotation": [
+            0.0,
+            0.6109,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_conifer_top",
+          "kind": "cone",
+          "params": [
+            0.19,
+            0.34,
+            7.0
+          ],
+          "position": [
+            -0.015,
+            0.68,
+            0.015
+          ],
+          "rotation": [
+            0.0,
+            0.9599,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        }
+      ]
+    },
+    "broadleaf_oak": {
+      "name": "tr_oak_trunk",
+      "kind": "cylinder",
+      "params": [
+        0.07,
+        0.1,
+        0.4,
+        5.0
+      ],
+      "position": [
+        0.0,
+        0.2,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "tree_trunk",
+      "children": [
+        {
+          "name": "tr_oak_clump0",
+          "kind": "sphere",
+          "params": [
+            0.28,
+            6.0,
+            4.0
+          ],
+          "position": [
+            0.0,
+            0.35,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_oak_clump1",
+          "kind": "sphere",
+          "params": [
+            0.24,
+            6.0,
+            4.0
+          ],
+          "position": [
+            0.2,
+            0.42,
+            0.1
+          ],
+          "rotation": [
+            0.0,
+            0.5236,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_oak_clump2",
+          "kind": "sphere",
+          "params": [
+            0.23,
+            6.0,
+            4.0
+          ],
+          "position": [
+            -0.18,
+            0.5,
+            -0.08
+          ],
+          "rotation": [
+            0.0,
+            0.2618,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_oak_clump3",
+          "kind": "sphere",
+          "params": [
+            0.22,
+            6.0,
+            4.0
+          ],
+          "position": [
+            0.02,
+            0.58,
+            0.05
+          ],
+          "rotation": [
+            0.0,
+            0.7854,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        }
+      ]
+    },
+    "gorse_mound": {
+      "name": "tr_gorse_mid",
+      "kind": "sphere",
+      "params": [
+        0.5,
+        7.0,
+        4.0
+      ],
+      "position": [
+        0.0,
+        0.5,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "tree_foliage_light",
+      "children": [
+        {
+          "name": "tr_gorse_east",
+          "kind": "sphere",
+          "params": [
+            0.38,
+            6.0,
+            4.0
+          ],
+          "position": [
+            0.52,
+            -0.12,
+            0.12
+          ],
+          "rotation": [
+            0.0,
+            0.3491,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_gorse_west",
+          "kind": "sphere",
+          "params": [
+            0.38,
+            6.0,
+            4.0
+          ],
+          "position": [
+            -0.52,
+            -0.12,
+            -0.12
+          ],
+          "rotation": [
+            0.0,
+            0.6981,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        }
+      ]
+    },
+    "pine_windbent": {
+      "name": "tr_pine_flare",
+      "kind": "cylinder",
+      "params": [
+        0.08,
+        0.11,
+        0.06,
+        5.0
+      ],
+      "position": [
+        0.0,
+        0.03,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "tree_trunk",
+      "children": [
+        {
+          "name": "tr_pine_canopy",
+          "kind": "cone",
+          "params": [
+            0.62,
+            0.26,
+            8.0
+          ],
+          "position": [
+            0.0,
+            0.75,
+            0.2565
+          ],
+          "rotation": [
+            0.0,
+            0.2094,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_pine_crown",
+          "kind": "cone",
+          "params": [
+            0.4,
+            0.2,
+            8.0
+          ],
+          "position": [
+            -0.05,
+            0.87,
+            0.2965
+          ],
+          "rotation": [
+            0.0,
+            0.5934,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_pine_trunk",
+          "kind": "cylinder",
+          "params": [
+            0.05,
+            0.08,
+            0.75,
+            5.0
+          ],
+          "position": [
+            0.0,
+            0.3497,
+            0.1283
+          ],
+          "rotation": [
+            0.3491,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_trunk",
+          "children": null
+        }
+      ]
+    },
+    "willow_weeping": {
+      "name": "tr_willow_trunk",
+      "kind": "cylinder",
+      "params": [
+        0.06,
+        0.1,
+        0.55,
+        5.0
+      ],
+      "position": [
+        0.0,
+        0.275,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "tree_trunk",
+      "children": [
+        {
+          "name": "tr_willow_crown",
+          "kind": "cone",
+          "params": [
+            0.44,
+            0.44,
+            8.0
+          ],
+          "position": [
+            0.0,
+            0.445,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_willow_strand0",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.34,
+            0.025
+          ],
+          "position": [
+            0.1035,
+            0.095,
+            0.3864
+          ],
+          "rotation": [
+            0.0,
+            0.2618,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_willow_strand1",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.26,
+            0.025
+          ],
+          "position": [
+            0.3864,
+            0.135,
+            0.1035
+          ],
+          "rotation": [
+            0.0,
+            1.309,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_willow_strand2",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.38,
+            0.025
+          ],
+          "position": [
+            0.2828,
+            0.075,
+            -0.2828
+          ],
+          "rotation": [
+            0.0,
+            2.3562,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_willow_strand3",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.28,
+            0.025
+          ],
+          "position": [
+            -0.1035,
+            0.125,
+            -0.3864
+          ],
+          "rotation": [
+            0.0,
+            -2.8798,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_willow_strand4",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.36,
+            0.025
+          ],
+          "position": [
+            -0.3864,
+            0.085,
+            -0.1035
+          ],
+          "rotation": [
+            0.0,
+            -1.8326,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_willow_strand5",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.24,
+            0.025
+          ],
+          "position": [
+            -0.2828,
+            0.145,
+            0.2828
+          ],
+          "rotation": [
+            0.0,
+            -0.7854,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_willow_top",
+          "kind": "cone",
+          "params": [
+            0.3,
+            0.34,
+            8.0
+          ],
+          "position": [
+            0.02,
+            0.555,
+            -0.02
+          ],
+          "rotation": [
+            0.0,
+            0.384,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        }
+      ]
+    },
+    "reed_clump": {
+      "name": "tr_reed0",
+      "kind": "cone",
+      "params": [
+        0.045,
+        1.0,
+        4.0
+      ],
+      "position": [
+        0.0,
+        0.5,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "tree_foliage_dark",
+      "children": [
+        {
+          "name": "tr_reed1",
+          "kind": "cone",
+          "params": [
+            0.04,
+            0.82,
+            4.0
+          ],
+          "position": [
+            0.14,
+            -0.0884,
+            0.05
+          ],
+          "rotation": [
+            0.1396,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_reed2",
+          "kind": "cone",
+          "params": [
+            0.04,
+            0.9,
+            4.0
+          ],
+          "position": [
+            -0.12,
+            -0.0485,
+            0.08
+          ],
+          "rotation": [
+            -0.1222,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_reed3",
+          "kind": "cone",
+          "params": [
+            0.035,
+            0.7,
+            4.0
+          ],
+          "position": [
+            0.06,
+            -0.1498,
+            -0.14
+          ],
+          "rotation": [
+            -0.192,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_reed4",
+          "kind": "cone",
+          "params": [
+            0.04,
+            0.78,
+            4.0
+          ],
+          "position": [
+            -0.08,
+            -0.108,
+            -0.1
+          ],
+          "rotation": [
+            0.1047,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_reed5",
+          "kind": "cone",
+          "params": [
+            0.035,
+            0.62,
+            4.0
+          ],
+          "position": [
+            0.2,
+            -0.1883,
+            -0.06
+          ],
+          "rotation": [
+            -0.1571,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        },
+        {
+          "name": "tr_reed6",
+          "kind": "cone",
+          "params": [
+            0.035,
+            0.66,
+            4.0
+          ],
+          "position": [
+            -0.22,
+            -0.1699,
+            -0.02
+          ],
+          "rotation": [
+            0.2094,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_dark",
+          "children": null
+        },
+        {
+          "name": "tr_reed7",
+          "kind": "cone",
+          "params": [
+            0.035,
+            0.74,
+            4.0
+          ],
+          "position": [
+            0.03,
+            -0.1295,
+            0.18
+          ],
+          "rotation": [
+            0.1745,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "tree_foliage_light",
+          "children": null
+        }
+      ]
+    }
+  }
+}
