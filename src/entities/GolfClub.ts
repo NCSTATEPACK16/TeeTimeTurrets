@@ -3,8 +3,8 @@ import { CLUB_STATS, ClubType } from "../physics/Ballistics";
 import { CART_COLLIDER } from "../sim/entities/Cart";
 import { CART_GRAPH } from "./cartGraph";
 import { DRIVER_GRAPH } from "./driverGraph";
-import { buildGraph } from "./primitiveGraph";
-import type { BuiltGraph, SlotColors } from "./primitiveGraph";
+import { buildGraph, drawBySlot } from "./primitiveGraph";
+import type { BuiltGraph, SlotColors, SlotDraw } from "./primitiveGraph";
 import { BALL_RADIUS } from "./BallSwarm";
 
 /**
@@ -138,6 +138,20 @@ function backswingScale(charge01: number): number {
   return SWING.minBackswing + (1 - SWING.minBackswing) * c;
 }
 
+/**
+ * Every cart node something poses at runtime: the turret's yaw, the loft, the swing, the housing,
+ * the heads that swap `visible`, and the slot the loaded ball rides in. `drawBySlot` merges
+ * everything else into these, so a node missing from here would be drawn frozen at rest.
+ */
+const POSED_NODES: readonly string[] = [
+  TURRET_PIVOT,
+  BARREL_PITCH,
+  SWING_ARM,
+  HOUSING_PITCH,
+  HEAD_SLOT,
+  ...Object.values(HEAD_NODES),
+];
+
 export interface GolfClubOptions {
   /** A seated rider at the wheel. Off for a cart that is scenery rather than somebody's. */
   rider?: boolean;
@@ -146,6 +160,12 @@ export interface GolfClubOptions {
 export class GolfClub extends THREE.Group {
   private readonly graph: BuiltGraph;
   private readonly rider: BuiltGraph | null;
+  /**
+   * What is actually drawn: one mesh per material slot per posed part, from geometry every cart
+   * shares. The graphs above are the rig -- posed, named, measured by tests -- and are never drawn
+   * themselves (`drawBySlot`). About 18 draws a cart rather than 78.
+   */
+  private readonly draws: SlotDraw[] = [];
   private readonly turretPivot: THREE.Object3D;
   /** Pitches the barrel to the equipped club's loft. Separate from the yaw pivot above it. */
   private readonly barrelPitch: THREE.Object3D;
@@ -185,9 +205,13 @@ export class GolfClub extends THREE.Group {
     this.add(this.graph.root);
 
     // The rider is his own graph with his own four material slots, so a chassis repaint cannot
-    // reach his trousers and `cartGraph.test.ts`'s exact-eight-slots assertion still holds.
+    // reach his trousers and `cartGraph.test.ts`'s exact-nine-slots assertion still holds.
     this.rider = options.rider === false ? null : buildGraph(DRIVER_GRAPH);
     if (this.rider) this.add(this.rider.root);
+
+    this.draws.push(drawBySlot(CART_GRAPH, this.graph, POSED_NODES));
+    // The rider is never posed, so the whole of him merges into his root, one draw per slot.
+    if (this.rider) this.draws.push(drawBySlot(DRIVER_GRAPH, this.rider, []));
 
     this.turretPivot = this.requireNode(TURRET_PIVOT);
     this.barrelPitch = this.requireNode(BARREL_PITCH);
@@ -275,6 +299,7 @@ export class GolfClub extends THREE.Group {
 
   /** Call once before this instance is discarded: frees geometries/materials, per AGENTS.md. */
   dispose(): void {
+    for (const draw of this.draws) draw.dispose();
     this.graph.dispose();
     this.rider?.dispose();
     this.ballGeometry.dispose();

@@ -14,7 +14,7 @@
  * DOM-free, and the queries are the per-tick ones, so nothing here allocates.
  */
 import type { Bounds } from "./courseLayout";
-import type { CourseTerrain } from "./courseTerrain";
+import type { CourseGrids } from "./courseGrids";
 import type { Surfaces } from "./surfaces";
 import type { Terrain } from "./terrain";
 
@@ -61,20 +61,24 @@ export function holePlayfield(terrain: Terrain, surfaces: Surfaces): Playfield {
   };
 }
 
-/** The whole course as one piece of ground: what arena stands on. */
-export function coursePlayfield(terrain: CourseTerrain, surfaces: Surfaces): Playfield {
+/**
+ * The whole course as one piece of ground: what arena stands on. Answered from the baked grids,
+ * whose heights are also the collider's, so every `Sim` built on one bake shares one array.
+ */
+export function coursePlayfield(grids: CourseGrids): Playfield {
+  const { bounds } = grids;
   return {
-    heightAt: (x, z) => terrain.heightAt(x, z),
-    surfaces,
-    bounds: terrain.bounds,
+    heightAt: (x, z) => grids.heightAt(x, z),
+    surfaces: grids.surfaces,
+    bounds,
     buildHeightfield: () => ({
-      rows: terrain.rows,
-      cols: terrain.cols,
-      heights: terrain.buildHeightfield(),
-      extentX: terrain.bounds.maxX - terrain.bounds.minX,
-      extentZ: terrain.bounds.maxZ - terrain.bounds.minZ,
-      centreX: (terrain.bounds.minX + terrain.bounds.maxX) / 2,
-      centreZ: (terrain.bounds.minZ + terrain.bounds.maxZ) / 2,
+      rows: grids.rows,
+      cols: grids.cols,
+      heights: grids.heights,
+      extentX: bounds.maxX - bounds.minX,
+      extentZ: bounds.maxZ - bounds.minZ,
+      centreX: (bounds.minX + bounds.maxX) / 2,
+      centreZ: (bounds.minZ + bounds.maxZ) / 2,
     }),
   };
 }

@@ -184,12 +184,18 @@ function courseGroundSubject(): GateSubject {
  */
 const GATE_COURSE_SEED = 2026;
 
+/** What a default camera renders. A mesh off these layers is never drawn and is not counted. */
+const DRAWN_LAYERS = new THREE.Layers();
+
 function countGeometry(root: THREE.Object3D): { vertices: number; triangles: number } {
   let vertices = 0;
   let triangles = 0;
   root.traverse((child) => {
     const mesh = child as THREE.Mesh & { isMesh?: boolean; count?: number };
     if (!mesh.isMesh || !mesh.geometry) return;
+    // A graph drawn by `drawBySlot` keeps its own meshes as an undrawn rig (`RIG_LAYER`); the
+    // merged meshes are what is drawn, and counting both would count the cart twice.
+    if (!mesh.layers.test(DRAWN_LAYERS)) return;
     const position = mesh.geometry.getAttribute("position");
     if (!position) return;
     // An InstancedMesh draws its one geometry `count` times; counting it once would let a

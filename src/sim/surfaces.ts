@@ -32,6 +32,20 @@ export enum SurfaceId {
   Bridge = "bridge",
 }
 
+/**
+ * Every surface, in a fixed order, so a surface can be stored as a byte: the baked course grid
+ * (`courseGrids.ts`) keeps `SURFACE_CODES.indexOf(id)` per vertex and reads `SURFACE_CODES[code]`
+ * back. Append only -- reordering changes what a stored byte means.
+ */
+export const SURFACE_CODES: readonly SurfaceId[] = [
+  SurfaceId.Green,
+  SurfaceId.Fairway,
+  SurfaceId.Rough,
+  SurfaceId.Sand,
+  SurfaceId.Water,
+  SurfaceId.Bridge,
+];
+
 export interface SurfaceTuning {
   /**
    * Coefficient of rolling resistance for the ball. This is the dominant feel knob: applied as

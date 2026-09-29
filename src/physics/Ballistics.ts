@@ -111,16 +111,20 @@ export function chargeFraction(holdDurationSeconds: number, club: ClubType): num
  * Returns a launch velocity vector, before any aim-spread is applied.
  */
 export function computeLaunchVelocity(club: ClubType, charge01: number, yawRadians: number): Vec3 {
+  return computeLaunchVelocityInto(club, charge01, yawRadians, { x: 0, y: 0, z: 0 });
+}
+
+/** `computeLaunchVelocity`, written into `out`, for the fixed tick and the per-frame aim arc. */
+export function computeLaunchVelocityInto(club: ClubType, charge01: number, yawRadians: number, out: Vec3): Vec3 {
   const stats = CLUB_STATS[club];
   const speed = lerp(stats.minSpeed, stats.maxSpeed, clamp01(charge01));
   const loft = degToRad(stats.loftDeg);
   const horizontal = Math.cos(loft) * speed;
   const vertical = Math.sin(loft) * speed;
-  return {
-    x: Math.cos(yawRadians) * horizontal,
-    y: vertical,
-    z: Math.sin(yawRadians) * horizontal,
-  };
+  out.x = Math.cos(yawRadians) * horizontal;
+  out.y = vertical;
+  out.z = Math.sin(yawRadians) * horizontal;
+  return out;
 }
 
 /**

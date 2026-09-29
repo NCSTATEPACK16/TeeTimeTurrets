@@ -1,9 +1,10 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../physics/Ballistics";
+import { CLUB_STATS, ClubType, computeLaunchVelocityInto } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
 import { BUCKET_REFILL_AMMO, CART_COLLIDER, CART_HULL, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
+import type { PooledBall } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
 import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
 import type { Bucket } from "./entities/Pickup";
@@ -34,41 +35,34 @@ import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } 
 import type { SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
 import { NO_RIG, SimEventLog } from "./events";
+import {
+  FIXED_DT,
+  POOL_TRANSFORM_STRIDE,
+  PREVIEW_MAX_POINTS,
+  PREVIEW_MAX_TICKS,
+  PREVIEW_SAMPLE_STRIDE,
+} from "./tickConstants";
 
 export type { Vec3 } from "./course";
 
-/** DOM-free physics module. No rendering, no input handling, no globals — just state in, state out. */
-export const FIXED_DT = 1 / 60;
+/**
+ * The tick's constants, and the preview buffer, live in `tickConstants.ts`: the renderer needs
+ * them, and importing them from here would pull Rapier into every chunk that draws a ball.
+ */
+export {
+  FIXED_DT,
+  POOL_TRANSFORM_STRIDE,
+  PREVIEW_MAX_POINTS,
+  PREVIEW_SAMPLE_STRIDE,
+  TRANSFORM_STRIDE,
+  createPreviewBuffer,
+} from "./tickConstants";
 
 /**
  * Re-exported from `matchConfig.ts`, which is where it lives along with every other arena tunable.
  * Kept exported here because the smoke driver imports it from this module.
  */
 export { MATCH_DURATION_S };
-
-/** Floats per transform in the render snapshot buffers: x, y, z, qx, qy, qz, qw. */
-export const TRANSFORM_STRIDE = 7;
-
-/** As TRANSFORM_STRIDE, plus a trailing 1/0 active flag: an idle pool slot is parked far below
- *  the world and must not be drawn where it is parked. */
-export const POOL_TRANSFORM_STRIDE = 8;
-
-/** Aim-preview arc granularity: `Sim.previewTrajectory` writes one point every this many ticks. */
-export const PREVIEW_SAMPLE_STRIDE = 4;
-/** Hard cap on the ticks `previewTrajectory` integrates (~6 s at FIXED_DT), so a flat shot that
- *  never quite lands still terminates the loop. */
-const PREVIEW_MAX_TICKS = 360;
-/** Upper bound on points `previewTrajectory` writes: the tick cap over the stride, plus the muzzle
- *  point and a final landing point. Sizes `createPreviewBuffer`. */
-export const PREVIEW_MAX_POINTS = Math.ceil(PREVIEW_MAX_TICKS / PREVIEW_SAMPLE_STRIDE) + 2;
-
-/** A reusable buffer of `Vec3`s for `previewTrajectory` to fill, so the arc allocates nothing per
- *  frame. A caller holds one and passes it in every frame. */
-export function createPreviewBuffer(): Vec3[] {
-  const buffer: Vec3[] = [];
-  for (let i = 0; i < PREVIEW_MAX_POINTS; i++) buffer.push({ x: 0, y: 0, z: 0 });
-  return buffer;
-}
 
 function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
   const p = out[i]!;
@@ -181,7 +175,11 @@ export class Sim {
   private readonly playfield: Playfield;
   /** The playfield's collider heights, built by the first `buildGround` and reused after it. */
   private heightfield: PlayfieldHeightfield | null = null;
-  /** Cart state from the previous fixed step, for render interpolation. */
+  /**
+   * Cart state from the previous fixed step, for render interpolation. Two buffers for the player
+   * and two per bot, swapped every step and written in place: a render reads one pair while the
+   * next tick fills the other, and the tick allocates neither.
+   */
   previousCart: CartTransform;
   /** Cart state from the most recent fixed step. */
   currentCart: CartTransform;
@@ -214,6 +212,9 @@ export class Sim {
   lastShotWasStrike = false;
   /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
   private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  /** Landed balls in pickup range of one cart, filled by `BallPool.ballsNear`. */
+  private readonly nearScratch: PooledBall[] = [];
+  private readonly launchScratch: Vec3 = { x: 0, y: 0, z: 0 };
   /** Reused by `moveCartBody`'s barrier clamp: no per-tick allocation in the fixed loop. */
   private readonly clampScratch = { x: 0, z: 0 };
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
@@ -264,8 +265,8 @@ export class Sim {
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
-    this.currentCart = cartTransformOf(this.cart);
-    this.previousCart = this.currentCart;
+    this.currentCart = createCartTransform();
+    this.previousCart = createCartTransform();
   }
 
   /** The materials under everything. */
@@ -289,6 +290,8 @@ export class Sim {
 
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
+      sim.currentBotCarts.push(createCartTransform());
+      sim.previousBotCarts.push(createCartTransform());
       // Bots fire the putter, not the default driver. A fired ball launches at its club's loft
       // from a ~2.4 m muzzle, so a lofted club sails clean over a cart at any range a bot would
       // stand off at. The putter is flat, so its shot lands on the target at `BOT_STANDOFF`.
@@ -314,8 +317,8 @@ export class Sim {
     for (const rig of sim.rigs) sim.placeRig(rig, sim.openingPoint(rig.index));
 
     sim.syncCurrentCart();
-    sim.previousCart = sim.currentCart;
-    sim.previousBotCarts = sim.currentBotCarts.slice();
+    sim.holdPrevious();
+    sim.ballPool.sync();
     sim.syncCurrentPool();
     sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
@@ -517,10 +520,12 @@ export class Sim {
     this.previousPoolTransforms = this.currentPoolTransforms;
     this.currentPoolTransforms = swapPool;
 
+    const swapCart = this.previousCart;
     this.previousCart = this.currentCart;
-    for (let i = 0; i < this.currentBotCarts.length; i++) {
-      this.previousBotCarts[i] = this.currentBotCarts[i]!;
-    }
+    this.currentCart = swapCart;
+    const swapBots = this.previousBotCarts;
+    this.previousBotCarts = this.currentBotCarts;
+    this.currentBotCarts = swapBots;
     this.stepCarts(intent);
     this.syncCurrentCart();
 
@@ -528,6 +533,7 @@ export class Sim {
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
     processContacts(this.eventQueue, this.combatContext);
+    this.ballPool.sync();
     this.syncCurrentPool();
 
     // The tick that ends the match is still a whole tick -- carts move, balls fly, a hit lands and
@@ -535,9 +541,16 @@ export class Sim {
     // onto its current value, so a renderer lerping between them holds still rather than hanging
     // one tick apart forever.
     if (this.match.over) {
-      this.previousCart = this.currentCart;
-      this.previousBotCarts = this.currentBotCarts.slice();
+      this.holdPrevious();
       this.previousPoolTransforms.set(this.currentPoolTransforms);
+    }
+  }
+
+  /** Every previous cart transform made equal to its current one, so interpolation holds still. */
+  private holdPrevious(): void {
+    copyCartTransform(this.currentCart, this.previousCart);
+    for (let i = 0; i < this.currentBotCarts.length; i++) {
+      copyCartTransform(this.currentBotCarts[i]!, this.previousBotCarts[i]!);
     }
   }
 
@@ -550,9 +563,10 @@ export class Sim {
     // bucket cooldowns keep ticking. Only the cart is frozen.
     this.simTime += FIXED_DT;
     this.ballPool.step(FIXED_DT, this.simTime);
-    for (const bucket of this.buckets) stepBucket(bucket, FIXED_DT);
+    for (let i = 0; i < this.buckets.length; i++) stepBucket(this.buckets[i]!, FIXED_DT);
 
-    for (const rig of this.rigs) {
+    for (let i = 0; i < this.rigs.length; i++) {
+      const rig = this.rigs[i]!;
       this.stepRig(rig, this.intentFor(rig, intent));
     }
   }
@@ -582,9 +596,8 @@ export class Sim {
   /**
    * Writes the nearest ammo a cart could collect right now into `mind`: a bucket off cooldown or a
    * landed ball, whoever fired it -- the same two things `stepRig` refills from. Only while the
-   * magazine is empty, since that is the only time the bot reads it. Loops the pool directly rather
-   * than through `ballsNear`, which builds an array per call. Rapier's `translation()` still hands
-   * back a fresh vector per landed ball; that is the pool's own per-tick cost too, and Stage 3's.
+   * magazine is empty, since that is the only time the bot reads it. Reads the pool's cached
+   * positions (`BallPool.sync`) rather than asking Rapier, which hands back a fresh object per ask.
    */
   private findAmmoFor(cart: Cart, mind: BotMind): void {
     mind.hasAmmoTarget = false;
@@ -592,7 +605,8 @@ export class Sim {
     const px = cart.position.x;
     const pz = cart.position.z;
     let best = Infinity;
-    for (const bucket of this.buckets) {
+    for (let i = 0; i < this.buckets.length; i++) {
+      const bucket = this.buckets[i]!;
       if (bucket.cooldownRemaining > 0) continue;
       const d = Math.hypot(bucket.position.x - px, bucket.position.z - pz);
       if (d < best) {
@@ -601,14 +615,17 @@ export class Sim {
         mind.ammoZ = bucket.position.z;
       }
     }
-    for (const ball of this.ballPool.all) {
+    const balls = this.ballPool.all;
+    for (let i = 0; i < balls.length; i++) {
+      const ball = balls[i]!;
       if (ball.state !== "landed") continue;
-      const t = ball.body.translation();
-      const d = Math.hypot(t.x - px, t.z - pz);
+      const x = ball.position[0]!;
+      const z = ball.position[2]!;
+      const d = Math.hypot(x - px, z - pz);
       if (d < best) {
         best = d;
-        mind.ammoX = t.x;
-        mind.ammoZ = t.z;
+        mind.ammoX = x;
+        mind.ammoZ = z;
       }
     }
     mind.hasAmmoTarget = best < Infinity;
@@ -643,15 +660,16 @@ export class Sim {
     this.moveCartBody(rig);
     this.checkCartWater(rig);
 
-    for (const bucket of this.buckets) {
-      if (tryTakeBucket(bucket, c.x, c.z, PICKUP_RANGE)) {
+    for (let i = 0; i < this.buckets.length; i++) {
+      if (tryTakeBucket(this.buckets[i]!, c.x, c.z, PICKUP_RANGE)) {
         cart.addAmmo(BUCKET_REFILL_AMMO);
         this.events.push("pickup", this.tickCount, rig.index, NO_RIG, BUCKET_REFILL_AMMO, c.x, c.y, c.z);
       }
     }
-    for (const landed of this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE)) {
+    const near = this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE, this.nearScratch);
+    for (let i = 0; i < near; i++) {
       cart.addAmmo(1);
-      this.ballPool.release(landed);
+      this.ballPool.release(this.nearScratch[i]!);
       this.events.push("pickup", this.tickCount, rig.index, NO_RIG, 1, c.x, c.y, c.z);
     }
 
@@ -809,9 +827,12 @@ export class Sim {
     }
     computeMuzzle(cart, this.muzzleScratch);
     pooled.body.setTranslation(this.muzzleScratch, true);
-    pooled.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
-    pooled.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    pooled.body.setLinvel(computeLaunchVelocity(cart.shot.club, cart.shot.charge01, cart.shot.yaw), true);
+    pooled.body.setRotation(IDENTITY_ROTATION, true);
+    pooled.body.setAngvel(ZERO_VECTOR, true);
+    pooled.body.setLinvel(
+      computeLaunchVelocityInto(cart.shot.club, cart.shot.charge01, cart.shot.yaw, this.launchScratch),
+      true,
+    );
     // Set on every shot: the pool recycles bodies, so a putter ball may last have been a driver's.
     const stats = CLUB_STATS[cart.shot.club];
     pooled.body.setGravityScale(stats.gravityScale, true);
@@ -851,7 +872,7 @@ export class Sim {
     let py = this.previewScratch.y;
     let pz = this.previewScratch.z;
 
-    const v = computeLaunchVelocity(this.cart.equippedClub, charge01, yaw);
+    const v = computeLaunchVelocityInto(this.cart.equippedClub, charge01, yaw, this.launchScratch);
     let vx = v.x;
     let vy = v.y;
     let vz = v.z;
@@ -916,8 +937,8 @@ export class Sim {
     }
 
     this.syncCurrentCart();
-    this.previousCart = this.currentCart;
-    this.previousBotCarts = this.currentBotCarts.slice();
+    this.holdPrevious();
+    this.ballPool.sync();
     this.syncCurrentPool();
     this.previousPoolTransforms.set(this.currentPoolTransforms);
   }
@@ -938,9 +959,9 @@ export class Sim {
    * every cart one tick behind everything else.
    */
   private syncCurrentCart(): void {
-    this.currentCart = cartTransformOf(this.cart);
+    writeCartTransform(this.cart, this.currentCart);
     for (let i = 0; i < this.bots.length; i++) {
-      this.currentBotCarts[i] = cartTransformOf(this.bots[i]!);
+      writeCartTransform(this.bots[i]!, this.currentBotCarts[i]!);
     }
   }
 
@@ -963,11 +984,12 @@ export class Sim {
         continue;
       }
       const wasActive = previous[flat + 7] === 1;
-      const t = ball.body.translation();
+      // Position from the pool's cache, filled by `sync` a moment ago; the rotation is only drawn,
+      // so it is the one thing still asked of Rapier here.
       const r = ball.body.rotation();
-      buffer[flat] = t.x;
-      buffer[flat + 1] = t.y;
-      buffer[flat + 2] = t.z;
+      buffer[flat] = ball.position[0]!;
+      buffer[flat + 1] = ball.position[1]!;
+      buffer[flat + 2] = ball.position[2]!;
       buffer[flat + 3] = r.x;
       buffer[flat + 4] = r.y;
       buffer[flat + 5] = r.z;
@@ -983,11 +1005,27 @@ export class Sim {
 /** Neutral intent for callers that step without driving. Frozen: `Sim` never writes to it. */
 const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
 
-function cartTransformOf(cart: Cart): CartTransform {
+/** Handed to Rapier; read, never kept. */
+const IDENTITY_ROTATION = Object.freeze({ x: 0, y: 0, z: 0, w: 1 });
+const ZERO_VECTOR = Object.freeze({ x: 0, y: 0, z: 0 });
+
+function createCartTransform(): CartTransform {
+  return { position: { x: 0, y: 0, z: 0 }, heading: 0, turretYaw: 0 };
+}
+
+function writeCartTransform(cart: Cart, out: CartTransform): void {
   const p = cart.position;
-  return {
-    position: { x: p.x, y: p.y, z: p.z },
-    heading: cart.heading,
-    turretYaw: cart.turretYaw,
-  };
+  out.position.x = p.x;
+  out.position.y = p.y;
+  out.position.z = p.z;
+  out.heading = cart.heading;
+  out.turretYaw = cart.turretYaw;
+}
+
+function copyCartTransform(from: CartTransform, to: CartTransform): void {
+  to.position.x = from.position.x;
+  to.position.y = from.position.y;
+  to.position.z = from.position.z;
+  to.heading = from.heading;
+  to.turretYaw = from.turretYaw;
 }

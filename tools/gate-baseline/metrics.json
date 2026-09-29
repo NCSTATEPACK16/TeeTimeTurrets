@@ -90,8 +90,8 @@
     }
   },
   "course-ground": {
-    "vertices": 245637,
-    "triangles": 476238,
+    "vertices": 236244,
+    "triangles": 457838,
     "bbox": {
       "x": 1586.5581665039062,
       "y": 12.648736953735352,
