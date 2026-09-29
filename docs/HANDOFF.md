@@ -29,7 +29,7 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
   - #74: clubhouse complex, tee signs, and pickup visuals in the arena.
 - **Next:** once Stage 3 (#48) merges, rebase and do #75 (colliders and sightlines), then #76 (pickup collection and shield). The steps need a third clubhouse collider; see the "As built" note in `sim-slices.md`.
 - **Known:**
-  - The Scene Gate's cart baselines (`tools/gate-baseline/cart-*.png`) show the old cart. Re-baseline them after the user approves the look, with `npm run gate -- --update-baseline`. CI does not run the gate.
+  - The Scene Gate's six cart baselines were re-baselined for cart v2 in `f2890e6`, because Netlify's `npm run build` runs the gate. Revert that commit if the new look is rejected.
   - `driver.json` still carries the old Euler swap on four limbs (`art/README.md`, Rotations).
 
 ## Where things stand
