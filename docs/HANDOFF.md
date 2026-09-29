@@ -1,12 +1,12 @@
 # Handoff — next session
 
-Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and built Stage 2. Status updated 2026-09-28 when Stage 2 merged. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and built Stage 2. Status updated 2026-09-28 when Stage 2 merged, and again when Stage 7a (art) opened as a PR. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
 ## Read first
 
-1. `AGENTS.md`: the rules, the Claude of Tanks license note, and the "see red first" testing rule.
+1. `AGENTS.md`: the rules, the Claude of Tanks license note, and the testing policy (as of 28 Sep: one smoke check of 15 s or less per change, and human play-tests judge quality).
 2. **`docs/REVAMP-PLAN.md`: the master stage order and each stage's contents.** It supersedes older plans.
 3. `docs/DECISIONS.md`: the two newest sections are the 2026-09-27 revamp and "The golden fingerprint is Linux x64's".
 4. `docs/TEST-AND-SPEC-PITFALLS.md` before writing a test or a spec.
@@ -17,8 +17,20 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 - **Format:** 4v4 (the player plus 3 bot allies against 4 bots), 3 minutes. Reaching 0 HP costs your team a stroke; the fewest strokes wins.
 - **The arena zone is holes 1, 9, 10, 14, 15 and 18** around the clubhouse. It is marked with white stakes, and leaving it drains HP. This lands in Stage 4. Until then the whole course is playable.
 - **Friendly fire is off.** Carts are fast, and the putter is a close-range pistol.
-- Blender authors primitive-graph JSON only, in a **new** `.blend`. Never touch `art/clubhouse-and-cart.blend`.
+- Blender authors primitive-graph JSON only. `art/clubhouse-and-cart.blend` is frozen; the Stage 7 files are `art/cart-v2.blend` and `art/clubhouse-exterior.blend` (the latter built by `art/stage7_kit.py`).
 - **Cloud sessions:** work one stage, run the checkpoint, push, update the draft PR, rewrite this file, then **STOP** for the user's play-test. Never merge. Never re-baseline the gate without the user's approval. Never start the next stage without the user saying so.
+
+## Stage 7 (running ahead of Stages 3–6)
+
+- **Where:** worktree `../TeeTimeTurrets-stage7`, branch `stage-7-blender`, cut from `main`. The specs are in `docs/art/specs/`; the prompt is `docs/art/STAGE7-BUILD-PROMPT.md`.
+- **Done (PR "Stage 7a: art"):**
+  - #72: exporter in the repo, plus the `prism` kind.
+  - #73: cart v2, with team canopy and shirt and the shot-03 turret.
+  - #74: clubhouse complex, tee signs, and pickup visuals in the arena.
+- **Next:** once Stage 3 (#48) merges, rebase and do #75 (colliders and sightlines), then #76 (pickup collection and shield). The steps need a third clubhouse collider; see the "As built" note in `sim-slices.md`.
+- **Known:**
+  - The Scene Gate's cart baselines (`tools/gate-baseline/cart-*.png`) show the old cart. Re-baseline them after the user approves the look, with `npm run gate -- --update-baseline`. CI does not run the gate.
+  - `driver.json` still carries the old Euler swap on four limbs (`art/README.md`, Rotations).
 
 ## Where things stand
 
@@ -30,7 +42,7 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 | 4 | Handling feel and arena zone | `stage-4-handling-zone` | — |
 | 5 | Environment | `stage-5-environment` | — |
 | 6 | navGraph | `stage-6-navgraph` | — |
-| 7 | Clubhouse in Blender (**local only**) | `stage-7-clubhouse` | — |
+| 7 | Clubhouse in Blender (**local only**), re-specified in `docs/art/specs/` | `stage-7-blender` | **7a (art) in PR, awaiting play-test**; 7b (sim, #75–#76) waits for Stage 3 to merge |
 | 8 | Economy | `stage-8-economy` | — |
 | 9 | Refactor | `stage-9-refactor` | — |
 | 10 | Docs | `stage-10-docs` | — |
