@@ -10,6 +10,9 @@ not hand-edit a `cart.json` or a `.glb`, because the next export silently revert
 | `cart-v2.blend` | The Stage 7 cart: `Collection`, appended from the frozen file, plus the team `canopy` slot and the shot-03 turret → `src/entities/graphs/cart.json`. The rider was not appended; `driver.json` still comes from the frozen file. |
 | `clubhouse-exterior.blend` | **Build output of `stage7_kit.py`.** Collections: clubhouse, team barn, lot, lamp post and head, food cart (→ `clubhouse.json`, a set); pickups (→ `pickups.json`, a set); tee sign (→ `tee_sign.json`). |
 | `stage7_kit.py` | The source for `clubhouse-exterior.blend`. Every part is written in Three coordinates. Running it from an empty file reproduces all three exports byte for byte. |
+| `environment.blend` | **Build output of `stage5_kit.py`.** Collections: trees (→ `trees.json`), dressing (→ `dressing.json`), horizon (→ `horizon.json`), course kit (→ `course_kit.json`); each export is a set. |
+| `stage5_kit.py` | The source for `environment.blend` (specs in `docs/art/specs/stage5/`). Running it from an empty file reproduces all four exports byte for byte. |
+| `kit_common.py` | `B()`, `R()`, `Graph`, `hexrgb()` and `triangles()`, shared by both kit scripts. Each kit `exec`s it, so the caller only needs `REPO` defined. |
 | `ttt_authoring.py` | The exporter (see below). |
 
 `.blend1` is Blender's own rollback of the previous save. It is ignored, not tracked.
@@ -51,6 +54,16 @@ exec(open(REPO + '/art/ttt_authoring.py').read(), globals())
 exec(open(REPO + '/art/stage7_kit.py').read(), globals())
 build_all(); export_all(REPO)   # clubhouse.json, pickups.json, tee_sign.json
 ```
+
+**Stage 5a kit**, the same way; `save_blend` writes `environment.blend`:
+
+```python
+exec(open(REPO + '/art/ttt_authoring.py').read(), globals())
+exec(open(REPO + '/art/stage5_kit.py').read(), globals())
+build_all(); export_all(REPO); save_blend(REPO)   # trees, dressing, horizon, course_kit .json
+```
+
+Both kits `exec` `art/kit_common.py` themselves, so `REPO` must be defined before either runs.
 
 **Cart** from `cart-v2.blend`: `export('chassis_pan', REPO + '/src/entities/graphs/cart.json', graph_name='cart')`.
 
