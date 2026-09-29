@@ -235,21 +235,32 @@ Techniques are named here; write the code from scratch.
   - the build time is within budget
 
 ### Stage 7: clubhouse and pickups (Blender, **local session only**)
-- **New `art/clubhouse-exterior.blend`**, never the old one. Authoring is primitive-graph JSON only.
+**Re-specified on 28 Sep 2026.** The specs are in `docs/art/specs/`, and the build prompt is `docs/art/STAGE7-BUILD-PROMPT.md`. Those files are the authority; this entry is only a summary.
+
+The stage runs **ahead of Stages 3–6**, on branch `stage-7-blender`. The art slices land first. The sim slices wait until Stage 3 has merged, then rebase.
+
+- **Blender files:**
+  - New `art/clubhouse-exterior.blend` and `art/cart-v2.blend`.
+  - `art/clubhouse-and-cart.blend` is frozen.
+  - The exporter is extracted to `art/ttt_authoring.py`.
+  - Authoring is primitive-graph JSON only, plus a new `prism` kind.
 - **Assets:**
-  - Clubhouse, about 24×14 m.
-  - Cart barn, about 16×10 m.
-  - Lot striping and lamps.
+  - Clubhouse: 24×14 m, 7.6 m to the cupola, long axis E–W, front facing +z.
+  - **Two team barns** (instead of one 16×10 m barn), outboard of each spawn row.
+  - South lot: striping, plus 4 lamps with colliders.
+  - Food cart as the depot centrepiece, with a collider.
   - Pickups: bucket, hot dog, drink.
-  - Food cart and tee signs.
+  - 18 tee signs, placed by their own course-wide pass.
+  - Cart v2: a team `canopy` slot (orange vs blue), a team-coloured rider shirt, and the shot-03 turret.
 - **Sim and render:**
-  - `sim/clubhouse.ts`: footprints and colliders, with a guard that each is within 0.1 m of the graph bounds.
-  - `render/clubhouse.ts`, placed at `AUTHORED_CLUBHOUSE`. Compare the archived `cb039b6`.
+  - `sim/clubhouse.ts`: static colliders, with the 0.1 m bounds guard.
+  - `lineOfSight.ts` gains footprint obstacles.
+  - `render/clubhouse.ts` at `AUTHORED_CLUBHOUSE` replaces the decor stand-in from `cb039b6`.
 - **`sim/pickups.ts`:**
-  - Bucket gives ammo, hot dog gives `heal(3)`, drink gives shield plates.
-  - Respawn timers.
-  - A depot ring of 2 of each at the clubhouse, plus a seeded scatter inside the zone.
-- **Gate:** add a `clubhouse` subject.
+  - Uses the Stage D spec's numbers.
+  - A depot ring of 6 at the clubhouse, plus blue-noise scatter with an optional `zone` hook for Stage 4.
+  - The drink gives a 2-plate shield.
+- **Testing:** one smoke check of 15 s or less per slice. No new gate subject. Human play-tests at STOP A (art) and STOP B (sim).
 
 ### Stage 8: economy
 - **`sim/scoring.ts`:**

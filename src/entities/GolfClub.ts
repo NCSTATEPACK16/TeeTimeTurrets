@@ -205,7 +205,7 @@ export class GolfClub extends THREE.Group {
     this.add(this.graph.root);
 
     // The rider is his own graph with his own four material slots, so a chassis repaint cannot
-    // reach his trousers and `cartGraph.test.ts`'s exact-eight-slots assertion still holds.
+    // reach his trousers and `cartGraph.test.ts`'s exact-nine-slots assertion still holds.
     this.rider = options.rider === false ? null : buildGraph(DRIVER_GRAPH);
     if (this.rider) this.add(this.rider.root);
 
@@ -281,6 +281,15 @@ export class GolfClub extends THREE.Group {
    */
   setSlotColor(slot: string, color: number): void {
     this.graph.setSlotColor(slot, color);
+  }
+
+  /**
+   * Paints this cart as one team's: the canopy and the rider's shirt, the two surfaces no
+   * cosmetic owns (`src/render/teamColors.ts`). A rider-less cart just gets the canopy.
+   */
+  setTeamColors(canopy: number, shirt: number): void {
+    this.graph.setSlotColor("canopy", canopy);
+    this.rider?.setSlotColor("shirt", shirt);
   }
 
   /** Applies a whole cosmetic at once. Slots the graph does not declare are ignored. */

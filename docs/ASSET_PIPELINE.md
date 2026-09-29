@@ -98,7 +98,7 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 
 | Asset | Route | Budget | Notes |
 |---|---|---|---|
-| Golf cart | primitive-graph | 2,000–3,000 tri | 8 material slots (§2.1). Wheels separate for rotation. |
+| Golf cart | primitive-graph | 2,000–3,000 tri | 9 material slots (§2.1). Wheels separate for rotation. |
 | Turret housing + barrel | primitive-graph | 300 | Child of cart; Y-rotation for aim. |
 | Club heads (driver, iron, putter) | primitive | 150 each | The barrel *is* the club, per image 03. |
 | Ragdoll target mannequin | **primitive** | ~600 | ~15 parts, one per rigid body. §2.2. |
@@ -130,7 +130,9 @@ paint and skin variants must apply to both.
 The customisation menu implies **separable material slots**, authored as distinct slots on one
 model so a paint swap is a material-index change rather than a mesh swap:
 
-`chassis` · `roof` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
+`chassis` · `roof` · `canopy` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
+
+`canopy` (added in Stage 7, `docs/art/specs/cart-v2.md`) is the **team colour** and no loadout cosmetic touches it. `roof` is now the posts and windscreen rails only.
 
 ### 2.2 The mannequin is a ragdoll, not a model — except the one who is driving
 
@@ -220,7 +222,7 @@ line into the game — **only parameters cross.**
 ### 4.1 Format
 
 ```ts
-export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'capsule' | 'torus';
+export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'capsule' | 'torus' | 'prism';
 
 export interface PrimitiveNode {
   readonly name: string;
@@ -262,8 +264,11 @@ translation layer:
 | `sphere` | `[radius, widthSegments, heightSegments]` |
 | `capsule` | `[radius, length, capSegments, radialSegments]` |
 | `torus` | `[radius, tube, radialSegments, tubularSegments]` |
+| `prism` | `[depth, x0, y0, x1, y1, …]`: a polygon (≥3 points) in local XY, extruded along +Z by `depth` and centred on z. `ExtrudeGeometry` with no bevel. Added in Stage 7 for roofs, wedges and scallops; see `docs/art/specs/00-pipeline.md`. |
 
 ### 4.3 The Blender-side exporter
+
+> **The working exporter is `art/ttt_authoring.py`** (extracted from the `.blend` in Stage 7, and it supports `prism`). The listing below is the original design and is kept for its reasoning.
 
 Objects are tagged with custom properties and the exporter walks the selection. Run via
 `execute_blender_code`, or saved as an addon operator.

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GolfClub } from "../entities/GolfClub";
+import { teamColors } from "./teamColors";
 import { loadDecor } from "./decor";
 import type { Decor } from "./decor";
 import type { ClubType } from "../physics/Ballistics";
@@ -46,6 +47,9 @@ export function createShowroom(initialClub: ClubType, initialColors: SlotColors 
   scene.background = new THREE.Color(0x1a1f26);
 
   const cart = new GolfClub(initialClub, initialColors);
+  // The player's own side: team 0 (`teamColors.ts`).
+  const own = teamColors(0);
+  cart.setTeamColors(own.canopy, own.shirt);
   const turntable = new THREE.Group();
   turntable.add(cart);
   scene.add(turntable);

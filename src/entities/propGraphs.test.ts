@@ -129,6 +129,6 @@ describe("the prop set", () => {
   });
 
   it("refuses a prop name the export does not carry, rather than drawing nothing", () => {
-    expect(() => graphFor("boardwalk" as never)).toThrow(/props\.json has no prop named/);
+    expect(() => graphFor("boardwalk" as never)).toThrow(/props\.json has no graph named "boardwalk"/);
   });
 });

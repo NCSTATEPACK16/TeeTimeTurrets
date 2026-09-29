@@ -119,6 +119,8 @@ async function main(): Promise<void> {
         surfaces: courseWorld.surfaces,
         southBoundary: courseWorld.southBoundary,
         seed: COURSE_SEED,
+        clubhouse: path.AUTHORED_CLUBHOUSE,
+        pickupSites: path.placePickupSites(path.courseSiteGround(courseWorld), path.AUTHORED_CLUBHOUSE, COURSE_SEED),
       };
       // The M map's holes, sampled now, while PLAY is already loading, rather than on first open
       // in the middle of a fight. Cached for the page, like the course.

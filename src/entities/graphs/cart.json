@@ -3,6 +3,11 @@
   "version": 1,
   "units": "m",
   "slots": {
+    "canopy": {
+      "color": 16119023,
+      "roughness": 0.55,
+      "metalness": 0.05
+    },
     "chassis": {
       "color": 15723744,
       "roughness": 0.62,
@@ -383,7 +388,7 @@
           1.0,
           1.0
         ],
-        "slot": "roof",
+        "slot": "canopy",
         "children": null
       },
       {
@@ -1052,12 +1057,11 @@
           },
           {
             "name": "housing_pitch",
-            "kind": "cylinder",
+            "kind": "box",
             "params": [
-              0.26,
+              0.36,
               0.3,
-              0.4,
-              10.0
+              0.78
             ],
             "position": [
               0.0,
@@ -1078,20 +1082,26 @@
             "children": [
               {
                 "name": "turret_mantlet",
-                "kind": "box",
+                "kind": "prism",
                 "params": [
                   0.34,
-                  0.26,
-                  0.24
+                  0.0,
+                  -0.15,
+                  0.0,
+                  0.15,
+                  -0.16,
+                  0.06,
+                  -0.16,
+                  -0.08
                 ],
                 "position": [
                   0.0,
                   0.0,
-                  0.28
+                  0.39
                 ],
                 "rotation": [
                   0.0,
-                  0.0,
+                  1.5708,
                   0.0
                 ],
                 "scale": [
@@ -1105,17 +1115,101 @@
             ]
           },
           {
+            "name": "turret_cheek_l",
+            "kind": "prism",
+            "params": [
+              0.05,
+              -0.2,
+              -0.3,
+              0.2,
+              -0.3,
+              0.2,
+              0.0,
+              0.1732,
+              0.1,
+              0.1,
+              0.1732,
+              0.0,
+              0.2,
+              -0.1,
+              0.1732,
+              -0.1732,
+              0.1,
+              -0.2,
+              0.0
+            ],
+            "position": [
+              0.215,
+              0.55,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              1.5708,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "turret_barrel",
+            "children": null
+          },
+          {
+            "name": "turret_cheek_r",
+            "kind": "prism",
+            "params": [
+              0.05,
+              -0.2,
+              -0.3,
+              0.2,
+              -0.3,
+              0.2,
+              0.0,
+              0.1732,
+              0.1,
+              0.1,
+              0.1732,
+              0.0,
+              0.2,
+              -0.1,
+              0.1732,
+              -0.1732,
+              0.1,
+              -0.2,
+              0.0
+            ],
+            "position": [
+              -0.215,
+              0.55,
+              -0.0
+            ],
+            "rotation": [
+              0.0,
+              1.5708,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "slot": "turret_barrel",
+            "children": null
+          },
+          {
             "name": "turret_pedestal",
             "kind": "cylinder",
             "params": [
-              0.17,
-              0.22,
-              0.55,
+              0.16,
+              0.2,
+              0.4,
               10.0
             ],
             "position": [
               0.0,
-              0.275,
+              0.2,
               -0.0
             ],
             "rotation": [

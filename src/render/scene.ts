@@ -4,6 +4,13 @@ import { AimArc } from "../entities/AimArc";
 import { EffectsLayer } from "./effects";
 import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, placeCart } from "../entities/GolfClub";
+import { teamOf } from "../sim/matchConfig";
+import { teamColors } from "./teamColors";
+import { createClubhouseKit, type ClubhouseKit } from "./clubhouse";
+import { createTeeSigns, type TeeSigns } from "./teeSigns";
+import { createPickupView, type PickupView } from "./pickups";
+import type { PickupSite } from "../sim/pickupSites";
+import type { Vec2 as GroundVec2 } from "../sim/mapGeometry";
 import { ClubType } from "../physics/Ballistics";
 import type { Surfaces } from "../sim/surfaces";
 import type { CartTransform, Vec3 } from "../sim/world";
@@ -43,6 +50,13 @@ export interface ArenaSource {
    * its own seed, so it is passed beside it.
    */
   readonly seed?: number;
+  /**
+   * Where the clubhouse stands, when the course has one: the clubhouse complex is built around it
+   * (`render/clubhouse.ts`). Absent on a generated or single-hole course.
+   */
+  readonly clubhouse?: GroundVec2;
+  /** Pickup sites (`sim/pickupSites.ts`), computed once per course. None drawn when absent. */
+  readonly pickupSites?: readonly PickupSite[];
 }
 
 /**
@@ -107,6 +121,9 @@ export class RenderScene {
   private readonly courseGround: CourseGround;
   /** The band of trees beyond the road, on a course that has one. Borrowed, like the ground. */
   private readonly treeline: Treeline | null;
+  private readonly clubhouseKit: ClubhouseKit | null;
+  private readonly teeSigns: TeeSigns;
+  private readonly pickups: PickupView | null;
   /** Ground height under the chase camera, so the eye never dips into a hillside. */
   private readonly groundHeightAt: (x: number, z: number) => number;
   private readonly cameraTarget = new THREE.Vector3();
@@ -158,13 +175,26 @@ export class RenderScene {
     if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
     this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
+    // Stage 7: the clubhouse complex, a sign on every tee, and the pickups.
+    const heightAt = this.groundHeightAt;
+    this.clubhouseKit = arena.clubhouse ? createClubhouseKit(arena.clubhouse, heightAt) : null;
+    if (this.clubhouseKit) this.scene.add(this.clubhouseKit.group);
+    this.teeSigns = createTeeSigns(arena.course.holes, heightAt);
+    for (const object of this.teeSigns.objects) this.scene.add(object);
+    this.pickups = arena.pickupSites ? createPickupView(arena.pickupSites, heightAt) : null;
+    if (this.pickups) for (const object of this.pickups.objects) this.scene.add(object);
+
     this.cart = new GolfClub();
+    const own = teamColors(teamOf(0));
+    this.cart.setTeamColors(own.canopy, own.shirt);
     this.scene.add(this.cart);
 
     // A bot is physically a cart, so it is visually one too -- the same procedural model, no
-    // cheaper stand-in. Team colour is Phase 5's; today the nameplate is what tells them apart.
+    // cheaper stand-in. Bot i is cart index i + 1, so `teamOf(i + 1)` is its side.
     for (let i = 0; i < botCount; i++) {
       const bot = new GolfClub();
+      const colours = teamColors(teamOf(i + 1));
+      bot.setTeamColors(colours.canopy, colours.shirt);
       this.botCarts.push(bot);
       this.scene.add(bot);
     }
@@ -187,6 +217,7 @@ export class RenderScene {
   }
 
   draw(view: FrameView): void {
+    this.pickups?.update(view.elapsedSeconds);
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
     // A dead cart has burst (`EffectsLayer.death`) and is out of the world until it respawns.
     this.cart.visible = !view.playerDead;
@@ -226,6 +257,9 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.aimArc.dispose();
     this.effects.dispose();
+    this.clubhouseKit?.dispose();
+    this.teeSigns.dispose();
+    this.pickups?.dispose();
     // The ground and treeline are the course's, not this match's: taken out of the scene and kept.
     // `scene.clear()` below only detaches, so they come out intact for the next match to add.
     this.scene.clear();

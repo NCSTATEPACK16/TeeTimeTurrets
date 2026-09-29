@@ -141,8 +141,9 @@ describe("the club heads hang off a hosel at the heel", () => {
 });
 
 describe("material slots", () => {
-  it("declares exactly the eight slots ASSET_PIPELINE.md section 2.1 names", () => {
+  it("declares exactly the nine slots ASSET_PIPELINE.md section 2.1 names", () => {
     expect(Object.keys(CART_GRAPH.slots).sort()).toEqual([
+      "canopy",
       "chassis",
       "club_bag",
       "rims",
@@ -167,7 +168,7 @@ describe("material slots", () => {
   it("exposes the slot names as a typed constant the loadout can key off", () => {
     expect(CART_SLOTS).toContain("chassis");
     expect(CART_SLOTS).toContain("turret_housing");
-    expect(CART_SLOTS).toHaveLength(8);
+    expect(CART_SLOTS).toHaveLength(9);
   });
 });
 

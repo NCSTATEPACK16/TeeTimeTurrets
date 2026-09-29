@@ -83,24 +83,23 @@ now has a repository and agents may commit. Two rules replace the prohibition:
   executable, so a stray `three`/`window`/`document` import into `src/sim/**` or
   `src/physics/**` fails the suite instead of quietly working. Rapier itself runs fine there,
   so integration tests against a real `Sim` are cheap — see `src/sim/world.cart.test.ts`.
-- Three verification layers, and they answer different questions. Do not substitute one for
-  another: `npm test` (rules and state machines), `npm run probe` (feel and trajectory numbers,
-  `tools/feelProbe.ts`), `npm run smoke` (the real browser path from a key event through
-  `KeyboardMouseSource` into `Sim` and back out to the HUD, `tools/smoke.mjs`). The smoke check
-  is **not** the Scene Gate below — it has no geometry baseline and no perceptual diff.
+- **Testing policy (28 Sep 2026): few, fast smoke tests; human testers judge quality.** Each
+  change gets **one small smoke check that runs in 15 s or less**. That check is a single
+  targeted Vitest file, an export diff, or a quick headless load. Do not add new Scene Gate
+  subjects, feel probes or broad suites for new work. Look, feel, balance and quality-of-life
+  are judged by human play-testers at each stage stop, not by automated checks. Existing CI
+  must stay green. The older tools (`npm run probe`, `npm run smoke`, `npm run gate`) still
+  exist, but no new work is required to extend them.
 - `tsc --noEmit` (aliased as part of `npm run build`) must be clean before any change is
   considered finished. `strict: true`, `noUnusedLocals`, `noUnusedParameters` are all on —
   don't relax them to make an error go away.
 
 ## Testing invariants & failure conditions
 
-- **See every new test fail before you make it pass, and keep the output.** For a test that
-  guards against rot rather than driving new code, break the guarded thing deliberately and
-  watch it fail. A test you have never seen red is a claim, not evidence. This repo's
-  recurring defect is the test that passes for a reason unrelated to its name — six caught so
-  far, each one green while the bug it was named for was fully present. The instances, and
-  the other ways specs and tests have lied here, are in `docs/TEST-AND-SPEC-PITFALLS.md`;
-  read it before writing a spec, a plan, or a test.
+- **Keep smoke checks honest.** A smoke check must assert what it is named for. This repo's
+  recurring defect has been the test that passes for an unrelated reason. Read
+  `docs/TEST-AND-SPEC-PITFALLS.md` before writing one. Show the check's output when you report
+  it; a claim without output is not evidence.
 - A change to `src/sim/**` or `src/physics/**` that makes `tsc --noEmit` fail, or that
   introduces a `three`/DOM import into either directory, is a failed change — revert or fix,
   don't ship it.
