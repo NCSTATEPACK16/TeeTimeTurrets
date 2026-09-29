@@ -1,0 +1,482 @@
+{
+  "name": "pickups",
+  "version": 1,
+  "units": "m",
+  "slots": {
+    "pickup_accent": {
+      "color": 15909424,
+      "roughness": 0.6,
+      "metalness": 0.0
+    },
+    "pickup_fill": {
+      "color": 16053486,
+      "roughness": 0.7,
+      "metalness": 0.0
+    },
+    "pickup_metal": {
+      "color": 12106944,
+      "roughness": 0.4,
+      "metalness": 0.6
+    },
+    "pickup_shell": {
+      "color": 3055178,
+      "roughness": 0.6,
+      "metalness": 0.0
+    }
+  },
+  "props": {
+    "bucket": {
+      "name": "pk_bucket",
+      "kind": "cylinder",
+      "params": [
+        0.3,
+        0.22,
+        0.55,
+        10.0
+      ],
+      "position": [
+        0.0,
+        -0.125,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "pickup_shell",
+      "children": [
+        {
+          "name": "pk_ball0",
+          "kind": "sphere",
+          "params": [
+            0.09,
+            6.0,
+            3.0
+          ],
+          "position": [
+            0.099,
+            0.325,
+            0.099
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_fill",
+          "children": null
+        },
+        {
+          "name": "pk_ball1",
+          "kind": "sphere",
+          "params": [
+            0.09,
+            6.0,
+            3.0
+          ],
+          "position": [
+            -0.099,
+            0.325,
+            0.099
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_fill",
+          "children": null
+        },
+        {
+          "name": "pk_ball2",
+          "kind": "sphere",
+          "params": [
+            0.09,
+            6.0,
+            3.0
+          ],
+          "position": [
+            -0.099,
+            0.325,
+            -0.099
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_fill",
+          "children": null
+        },
+        {
+          "name": "pk_ball3",
+          "kind": "sphere",
+          "params": [
+            0.09,
+            6.0,
+            3.0
+          ],
+          "position": [
+            0.099,
+            0.325,
+            -0.099
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_fill",
+          "children": null
+        },
+        {
+          "name": "pk_ball4",
+          "kind": "sphere",
+          "params": [
+            0.09,
+            6.0,
+            3.0
+          ],
+          "position": [
+            0.0,
+            0.425,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_fill",
+          "children": null
+        },
+        {
+          "name": "pk_bucket_handle",
+          "kind": "torus",
+          "params": [
+            0.3,
+            0.015,
+            3.0,
+            6.0
+          ],
+          "position": [
+            0.0,
+            0.225,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_metal",
+          "children": null
+        }
+      ]
+    },
+    "hot_dog": {
+      "name": "pk_hotdog",
+      "kind": "capsule",
+      "params": [
+        0.07,
+        0.62,
+        1.0,
+        6.0
+      ],
+      "position": [
+        -0.05,
+        0.0,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "pickup_fill",
+      "children": [
+        {
+          "name": "pk_bun_b",
+          "kind": "capsule",
+          "params": [
+            0.11,
+            0.5,
+            1.0,
+            6.0
+          ],
+          "position": [
+            0.07,
+            0.0,
+            -0.08
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_shell",
+          "children": null
+        },
+        {
+          "name": "pk_bun_f",
+          "kind": "capsule",
+          "params": [
+            0.11,
+            0.5,
+            1.0,
+            6.0
+          ],
+          "position": [
+            0.07,
+            0.0,
+            0.08
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_shell",
+          "children": null
+        },
+        {
+          "name": "pk_mustard0",
+          "kind": "box",
+          "params": [
+            0.02,
+            0.14,
+            0.03
+          ],
+          "position": [
+            -0.075,
+            -0.2,
+            -0.0
+          ],
+          "rotation": [
+            -0.5236,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_accent",
+          "children": null
+        },
+        {
+          "name": "pk_mustard1",
+          "kind": "box",
+          "params": [
+            0.02,
+            0.14,
+            0.03
+          ],
+          "position": [
+            -0.075,
+            0.0,
+            -0.0
+          ],
+          "rotation": [
+            0.5236,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_accent",
+          "children": null
+        },
+        {
+          "name": "pk_mustard2",
+          "kind": "box",
+          "params": [
+            0.02,
+            0.14,
+            0.03
+          ],
+          "position": [
+            -0.075,
+            0.2,
+            -0.0
+          ],
+          "rotation": [
+            -0.5236,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_accent",
+          "children": null
+        }
+      ]
+    },
+    "drink": {
+      "name": "pk_drink",
+      "kind": "cylinder",
+      "params": [
+        0.2,
+        0.15,
+        0.5,
+        10.0
+      ],
+      "position": [
+        0.0,
+        -0.15,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "pickup_shell",
+      "children": [
+        {
+          "name": "pk_lid",
+          "kind": "sphere",
+          "params": [
+            0.2,
+            8.0,
+            4.0
+          ],
+          "position": [
+            0.0,
+            0.25,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_fill",
+          "children": null
+        },
+        {
+          "name": "pk_straw",
+          "kind": "cylinder",
+          "params": [
+            0.02,
+            0.02,
+            0.22,
+            5.0
+          ],
+          "position": [
+            0.04,
+            0.39,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_accent",
+          "children": null
+        },
+        {
+          "name": "pk_straw_tip",
+          "kind": "cylinder",
+          "params": [
+            0.02,
+            0.02,
+            0.12,
+            5.0
+          ],
+          "position": [
+            0.08,
+            0.52,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -0.6981
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "pickup_accent",
+          "children": null
+        }
+      ]
+    }
+  }
+}

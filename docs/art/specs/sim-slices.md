@@ -72,3 +72,8 @@ The human play-test covers:
 - Buildings block shots and sight.
 - Pickups are findable and worth the detour.
 - The shield is legible.
+
+## As built (28 Sep 2026)
+
+- **The clubhouse needs 3 colliders, not 2.** Add one for the entrance steps: 3.0 × 0.6 × 0.9 at z +7.45. The steps protrude past the plinth, and the 0.1 m guard compares against the full graph AABB.
+- **Shared placement table:** `src/sim/clubhouseLayout.ts` holds the placements. The renderer already reads it, and the colliders must read the same table.

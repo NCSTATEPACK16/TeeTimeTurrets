@@ -78,6 +78,11 @@ def make(name, kind, params, slot, collection, parent=None, loc=(0,0,0), rot=(0,
         bpy.ops.mesh.primitive_torus_add(major_radius=params[0], minor_radius=params[1],
                                          major_segments=int(params[3]), minor_segments=int(params[2]))
         obj = bpy.context.active_object
+        # THREE.TorusGeometry lies in Three's XY plane (axis along Three Z = Blender -Y); Blender's
+        # primitive lies flat around Blender Z. Stand the mesh data up so the viewport shows what
+        # the game builds. Only the preview changes: params and the object's rotation do not.
+        import mathutils
+        obj.data.transform(mathutils.Matrix.Rotation(math.pi / 2, 4, 'X'))
     elif kind == 'capsule':
         r, length, capseg, radseg = params[0], params[1], int(params[2]), int(params[3])
         bpy.ops.mesh.primitive_cone_add(radius1=r, radius2=r, depth=length, vertices=radseg)
@@ -137,6 +142,36 @@ def make(name, kind, params, slot, collection, parent=None, loc=(0,0,0), rot=(0,
     obj.scale = scale
     return obj
 
+def _three_euler(quat):
+    """Blender rotation -> Three Euler 'XYZ', through the matrix.
+
+    The two Euler conventions are not the same product. Blender's XYZ is Rz @ Ry @ Rx; Three's
+    XYZ is Rx * Ry * Rz. A component swap (x, z, -y) is therefore exact only for a rotation about
+    a single axis, and a two-axis rotation (a hip roof plane) would export plausible and wrong.
+    Changing basis on the matrix and reading Three's own decomposition is exact for any rotation.
+    Single-axis rotations keep the swap, which is exact for them."""
+    e = quat.to_euler('XYZ')
+    if sum(abs(v) > 1e-9 for v in e) <= 1:
+        # Single axis: the swap is exact, and keeps every existing export byte-identical
+        # (including its signed zeros).
+        return e.x, e.z, -e.y
+    m = quat.to_matrix()
+    # Basis change Blender (x, y, z) -> Three (x, z, -y): P @ m @ P^-1, written out element-wise.
+    # Row/column order in Three space is (X_t, Y_t, Z_t) = (X_b, Z_b, -Y_b).
+    idx = (0, 2, 1)
+    sgn = (1, 1, -1)
+    t = [[sgn[i] * sgn[j] * m[idx[i]][idx[j]] for j in range(3)] for i in range(3)]
+    # THREE.Euler.setFromRotationMatrix, order 'XYZ'.
+    m13 = max(-1.0, min(1.0, t[0][2]))
+    y = math.asin(m13)
+    if abs(m13) < 0.9999999:
+        x = math.atan2(-t[1][2], t[2][2])
+        z = math.atan2(-t[0][1], t[0][0])
+    else:
+        x = math.atan2(t[2][1], t[1][1])
+        z = 0.0
+    return x, y, z
+
 KINDS = {'box', 'cylinder', 'cone', 'sphere', 'capsule', 'torus', 'prism'}
 
 def node(obj):
@@ -147,14 +182,14 @@ def node(obj):
     if params is None:
         raise ValueError(obj.name + ': ttt_params missing')
     loc, rot, scale = obj.matrix_local.decompose()
-    euler = rot.to_euler('XYZ')
+    rx, ry, rz = _three_euler(rot)
     return {
         'name': obj.name,
         'kind': kind,
         'params': [round(float(p), 4) for p in params],
         # Blender is Z-up, Three is Y-up: (x, y, z)_blender -> (x, z, -y)_three.
         'position': [round(loc.x, 4), round(loc.z, 4), round(-loc.y, 4)],
-        'rotation': [round(euler.x, 4), round(euler.z, 4), round(-euler.y, 4)],
+        'rotation': [round(rx, 4), round(ry, 4), round(rz, 4)],
         'scale': [round(scale.x, 4), round(scale.z, 4), round(scale.y, 4)],
         'slot': obj.get('ttt_slot', 'default'),
         'children': [node(c) for c in sorted(obj.children, key=lambda o: o.name)] or None,

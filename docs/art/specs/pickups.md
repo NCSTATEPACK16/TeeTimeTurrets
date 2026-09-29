@@ -75,3 +75,11 @@
 - Pillars read as landmarks across a fairway.
 
 A human play-tester judges both.
+
+## As built (28 Sep 2026)
+
+- **Budget:** each item is at most **200** triangles, not 150. The bucket is 196, the hot dog 144 and the drink 128.
+- **Size check:** the "0.80 m" applies to the *largest* dimension. The hot dog is authored standing up and the renderer tilts it 70°.
+- **Drink cup:** ships **cyan `0x2EC4D0`**, not blue, so it can't be read as team-0 blue.
+- **Scatter exclusion:** it keeps **45 m** clear of the clubhouse centre (`COMPLEX_CLEAR_M`), which covers the barns, the lot and the depot, rather than 20 m around the depot.
+- **Code:** `placePickupSites` lives in `src/sim/pickupSites.ts`. `courseSiteGround(world)` treats ground as drivable when it is not water and is at least 5 m north of the road.

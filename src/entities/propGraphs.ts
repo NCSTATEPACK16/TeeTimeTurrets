@@ -74,18 +74,21 @@ export const PROP_SLOTS = [
  * and this catches early.
  */
 export function graphFor(name: PropName): PrimitiveGraph {
-  const root = PROP_SET.props[name];
+  return graphFromSet(PROP_SET, name, "art/clubhouse-and-cart.blend");
+}
+
+/**
+ * One member of any exported set as a standalone `PrimitiveGraph`. `source` names the `.blend`
+ * to re-export from, for the error message. Shared by the course props and the Stage 7 kit
+ * (`kitGraphs.ts`), which use the same set shape.
+ */
+export function graphFromSet(set: PrimitiveGraphSet, name: string, source: string): PrimitiveGraph {
+  const root = set.props[name];
   if (!root) {
     throw new Error(
-      `props.json has no prop named "${name}" (have: ${Object.keys(PROP_SET.props).join(", ")}). ` +
-        `Re-export the props collection from art/clubhouse-and-cart.blend.`,
+      `${set.name}.json has no graph named "${name}" (have: ${Object.keys(set.props).join(", ")}). ` +
+        `Re-export it from ${source}.`,
     );
   }
-  return {
-    name,
-    version: PROP_SET.version,
-    units: PROP_SET.units,
-    slots: PROP_SET.slots,
-    root,
-  };
+  return { name, version: set.version, units: set.units, slots: set.slots, root };
 }

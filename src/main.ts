@@ -6,6 +6,8 @@ import { authoredCourse } from "./sim/authoredCourse";
 import { buildCourseWorld } from "./sim/courseWorld";
 import type { CourseWorld } from "./sim/courseWorld";
 import { arenaFromCourse } from "./sim/arena";
+import { AUTHORED_CLUBHOUSE } from "./sim/authoredLayout";
+import { courseSiteGround, placePickupSites } from "./sim/pickupSites";
 import { ARENA_BOTS } from "./sim/matchConfig";
 import { createLoadout, tireTypeFor } from "./sim/loadout";
 import type { ArenaSource } from "./render/scene";
@@ -94,6 +96,8 @@ async function main(): Promise<void> {
         surfaces: courseWorld.surfaces,
         southBoundary: courseWorld.southBoundary,
         seed: COURSE_SEED,
+        clubhouse: AUTHORED_CLUBHOUSE,
+        pickupSites: placePickupSites(courseSiteGround(courseWorld), AUTHORED_CLUBHOUSE, COURSE_SEED),
       };
       // The M map's holes, sampled now, while PLAY is already loading, rather than on first open
       // in the middle of a fight. Cached for the page, like the course.

@@ -92,3 +92,10 @@ One Vitest file, `src/entities/clubhouseGraph.test.ts`, checks four things:
 
 - Front, side and top viewport screenshots sit beside the sheet. The proportions read as the sheet's pavilion, and the cupola is visible.
 - In-game it is visible from the far tees. The human play-tester judges this.
+
+## As built (28 Sep 2026)
+
+- **Built by `art/stage7_kit.py`** (`build_clubhouse`), which is the source to edit. The model is 696 triangles.
+- **Roof:** pitch 17°, from an eave at 4.6 to a ridge at 6.4, as the dimensions above imply. The hip planes use X-then-Y rotations, which exposed an exporter bug that is now fixed (`art/README.md`, Rotations).
+- **Steps** stand outside the 14 m plinth, so the AABB is x ±12.2 (verandah eaves), z −7.4 … +7.9. That needs a **third collider for the steps**; see `sim-slices.md`.
+- **Posts:** 14 in all: six across the front, and four more down each end.

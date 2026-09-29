@@ -6,7 +6,11 @@ not hand-edit a `cart.json` or a `.glb`, because the next export silently revert
 
 | File | Contains |
 |---|---|
-| `clubhouse-and-cart.blend` | Four collections: `Collection` — the 52-object cart (§4 primitive graph → `src/entities/graphs/cart.json`); `driver` — the 26-object seated rider (§4 primitive graph → `src/entities/graphs/driver.json`); `backdrop` — the 29-object clubhouse interior (§6 decorative GLB → `public/models/clubhouse.glb`); `props` — the course props (§4 primitive graph **set** → `src/entities/graphs/props.json`). |
+| `clubhouse-and-cart.blend` | **Frozen since Stage 7; append from it, never save it.** Four collections: `Collection` — the 52-object cart (§4 primitive graph → `src/entities/graphs/cart.json`); `driver` — the 26-object seated rider (§4 primitive graph → `src/entities/graphs/driver.json`); `backdrop` — the 29-object clubhouse interior (§6 decorative GLB → `public/models/clubhouse.glb`); `props` — the course props (§4 primitive graph **set** → `src/entities/graphs/props.json`). |
+| `cart-v2.blend` | The Stage 7 cart: `Collection`, appended from the frozen file, plus the team `canopy` slot and the shot-03 turret → `src/entities/graphs/cart.json`. The rider was not appended; `driver.json` still comes from the frozen file. |
+| `clubhouse-exterior.blend` | **Build output of `stage7_kit.py`.** Collections: clubhouse, team barn, lot, lamp post and head, food cart (→ `clubhouse.json`, a set); pickups (→ `pickups.json`, a set); tee sign (→ `tee_sign.json`). |
+| `stage7_kit.py` | The source for `clubhouse-exterior.blend`. Every part is written in Three coordinates. Running it from an empty file reproduces all three exports byte for byte. |
+| `ttt_authoring.py` | The exporter (see below). |
 
 `.blend1` is Blender's own rollback of the previous save. It is ignored, not tracked.
 
@@ -40,7 +44,17 @@ It was extracted from the Text datablock inside `clubhouse-and-cart.blend` in St
 
 ## Re-exporting
 
-Both graph exports run from a Claude Code session over the Blender MCP:
+**Stage 7 kit** (headless or over the MCP; the `.blend` is rebuilt from the script):
+
+```python
+exec(open(REPO + '/art/ttt_authoring.py').read(), globals())
+exec(open(REPO + '/art/stage7_kit.py').read(), globals())
+build_all(); export_all(REPO)   # clubhouse.json, pickups.json, tee_sign.json
+```
+
+**Cart** from `cart-v2.blend`: `export('chassis_pan', REPO + '/src/entities/graphs/cart.json', graph_name='cart')`.
+
+The rider and the course props still export from the frozen file (read it, never save it):
 
 ```python
 export('chassis_pan',   '.../src/entities/graphs/cart.json',   graph_name='cart')
@@ -86,11 +100,17 @@ The clubhouse GLB is a different path — the step list in `ASSET_PIPELINE.md` �
   `cartGraph.test.ts` addresses `wheel_fl`/`rim_fl` by name, so renaming costs a test edit and a
   gate re-baseline for nothing a player can see.
 - Object scale stays `(1,1,1)` on anything with children; size lives in the mesh data.
-- **Rotations use X plus at most one of Y or Z.** Not style: the §4.3 exporter converts a Blender
-  Euler to Three's by component swap, `(x, y, z) → (x, z, −y)`, and that is only *exact* for those
-  shapes. Blender XYZ order builds `Rz·Ry·Rx` and the basis change turns it into `Ry(c)·Rz(−b)·Rx(a)`,
-  where the Three Euler it is written as evaluates `Rz(−b)·Ry(c)·Rx(a)` — equal only when `b` or `c`
-  is zero. A limb needing all three exports to a pose that is plausible and wrong.
+- **Rotations: any rotation now exports exactly (Stage 7).** Three's Euler `XYZ` is the product
+  `Rx·Ry·Rz`, while Blender's is `Rz·Ry·Rx`. Verified numerically. So the old component swap
+  `(x, y, z) → (x, z, −y)` was exact **only for a rotation about a single axis**; the earlier
+  note here, which said "X plus one other" was safe, was wrong. `node()` now keeps the swap for
+  single-axis rotations (so every existing export stays byte-identical) and converts anything
+  else through the rotation matrix (`_three_euler`, max error 7e-7 over random rotations).
+  *Consequence for the rider:* four limbs in `driver.json` (X plus one other) were exported by the
+  old swap, so the in-game rider is posed slightly differently from `clubhouse-and-cart.blend`
+  (up to 0.30 rad on one joint). `driver.json` has not been re-exported. A future re-export will
+  move those limbs to the Blender pose, so check the swing-clearance tests in
+  `GolfClub.test.ts` when that happens.
 - **A graph root carries its own world offset.** `chassis_pan` sits at Three `(0, 0.4, −0.02)`, so
   a coordinate read out of `cart.json` is *local to it* and 0.4 m below where the part actually
   sits. The rider was first authored against those local numbers and came out sitting on the floor.

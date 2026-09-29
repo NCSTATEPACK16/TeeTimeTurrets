@@ -58,3 +58,10 @@ This is covered by the same `clubhouseGraph.test.ts`, with one added assertion: 
 ## Optional sheet prompt (only if the blockout looks wrong)
 
 > Orthographic modelling sheet on flat mid-grey. Four panels: FRONT, SIDE, REAR, TOP-DOWN, on a shared ground line with no perspective. The subject is a low-poly flat-shaded open-fronted golf cart barn: 24 m long and 8 m deep, with a cream rendered back wall on a brick plinth, a sage-green gable roof with a 30° pitch, five square timber posts along the open front, and a coloured fascia board above the opening with large numbers 1 2 3 4. It matches a colonial golf clubhouse. Include no carts, no people, no terrain and no text other than the panel labels and the fascia numbers.
+
+## As built (28 Sep 2026)
+
+- **Roof pitch:** 17°, to match the clubhouse. The ridge is at about 4.85, not the 5.4 above.
+- **Floor:** grey paving (`lot_paving`), not brick. In game a brick floor read as a big red slab.
+- **Bay numbers:** not built. The fascia colour carries the team.
+- **Triangles:** 160.

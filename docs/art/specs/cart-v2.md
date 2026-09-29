@@ -63,3 +63,9 @@ export('chassis_pan', REPO + '/src/entities/graphs/cart.json', graph_name='cart'
 - A viewport screenshot beside shot 03: the turret reads as block-on-pivot.
 - Cart triangles within 2,000–3,000; turret at 300 or fewer.
 - In a match, orange and blue canopies can be told apart at chase-cam distance. A human play-tester judges this at the stop.
+
+## As built (28 Sep 2026)
+
+- `housing_pitch` is the body box **centred on the pivot** (0.36 × 0.30 × 0.78). A node can't offset its own geometry, and the swing poses `housing_pitch` about its origin. The prism nose sits on the front. The cheeks use the `turret_barrel` slot, the blue-grey of shot 03's yoke.
+- The turret, counting the unchanged swing chain and the pivot sphere, is 372 triangles (Blender count). The cart is 1,944.
+- The team colours are applied by `GolfClub.setTeamColors(canopy, shirt)`.

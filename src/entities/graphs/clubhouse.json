@@ -1,0 +1,3059 @@
+{
+  "name": "clubhouse",
+  "version": 1,
+  "units": "m",
+  "slots": {
+    "cb_brick": {
+      "color": 11032634,
+      "roughness": 0.9,
+      "metalness": 0.0
+    },
+    "cb_door": {
+      "color": 7031342,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "cb_glass": {
+      "color": 3030866,
+      "roughness": 0.25,
+      "metalness": 0.1
+    },
+    "cb_roof": {
+      "color": 8362632,
+      "roughness": 0.7,
+      "metalness": 0.05
+    },
+    "cb_trim": {
+      "color": 15986396,
+      "roughness": 0.7,
+      "metalness": 0.0
+    },
+    "cb_wall": {
+      "color": 15326640,
+      "roughness": 0.85,
+      "metalness": 0.0
+    },
+    "fc_body": {
+      "color": 4177818,
+      "roughness": 0.6,
+      "metalness": 0.05
+    },
+    "fc_metal": {
+      "color": 12106944,
+      "roughness": 0.4,
+      "metalness": 0.6
+    },
+    "fc_stripe_a": {
+      "color": 14693227,
+      "roughness": 0.7,
+      "metalness": 0.0
+    },
+    "fc_stripe_b": {
+      "color": 16183520,
+      "roughness": 0.7,
+      "metalness": 0.0
+    },
+    "fc_timber": {
+      "color": 9067058,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "fc_tire": {
+      "color": 2039583,
+      "roughness": 0.9,
+      "metalness": 0.0
+    },
+    "lamp_glow": {
+      "color": 16769952,
+      "roughness": 0.4,
+      "metalness": 0.0
+    },
+    "lamp_metal": {
+      "color": 3093302,
+      "roughness": 0.5,
+      "metalness": 0.6
+    },
+    "lot_paint": {
+      "color": 15921898,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "lot_paving": {
+      "color": 6053731,
+      "roughness": 0.95,
+      "metalness": 0.0
+    },
+    "team_trim": {
+      "color": 8947848,
+      "roughness": 0.6,
+      "metalness": 0.0
+    }
+  },
+  "props": {
+    "clubhouse": {
+      "name": "cb_plinth",
+      "kind": "box",
+      "params": [
+        24.0,
+        1.6,
+        14.0
+      ],
+      "position": [
+        0.0,
+        -0.2,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "cb_brick",
+      "children": [
+        {
+          "name": "cb_band_b",
+          "kind": "box",
+          "params": [
+            16.0,
+            0.5,
+            0.06
+          ],
+          "position": [
+            0.0,
+            4.3,
+            -7.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_band_e",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.5,
+            8.0
+          ],
+          "position": [
+            10.03,
+            4.3,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_band_f",
+          "kind": "box",
+          "params": [
+            16.0,
+            0.5,
+            0.06
+          ],
+          "position": [
+            0.0,
+            4.3,
+            4.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_band_w",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.5,
+            8.0
+          ],
+          "position": [
+            -10.03,
+            4.3,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_chimney",
+          "kind": "box",
+          "params": [
+            1.0,
+            2.2,
+            1.0
+          ],
+          "position": [
+            6.0,
+            6.3,
+            -3.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_brick",
+          "children": null
+        },
+        {
+          "name": "cb_chimney_cap",
+          "kind": "box",
+          "params": [
+            1.2,
+            0.15,
+            1.2
+          ],
+          "position": [
+            6.0,
+            7.47,
+            -3.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_brick",
+          "children": null
+        },
+        {
+          "name": "cb_cupola",
+          "kind": "box",
+          "params": [
+            1.6,
+            0.8,
+            1.6
+          ],
+          "position": [
+            0.0,
+            6.8,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_cupola_roof",
+          "kind": "cone",
+          "params": [
+            1.2,
+            0.6,
+            4.0
+          ],
+          "position": [
+            0.0,
+            7.5,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            0.7854,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_door",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.6,
+            0.06
+          ],
+          "position": [
+            0.0,
+            2.1,
+            4.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_door",
+          "children": null
+        },
+        {
+          "name": "cb_door_trim",
+          "kind": "box",
+          "params": [
+            2.0,
+            2.8,
+            0.06
+          ],
+          "position": [
+            0.0,
+            2.2,
+            4.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post00",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            -11.85,
+            2.05,
+            6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post01",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            -7.2,
+            2.05,
+            6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post02",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            -2.4,
+            2.05,
+            6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post03",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            2.4,
+            2.05,
+            6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post04",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            7.2,
+            2.05,
+            6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post05",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            11.85,
+            2.05,
+            6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post06",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            -11.85,
+            2.05,
+            -6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post07",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            -11.85,
+            2.05,
+            -3.3
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post08",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            -11.85,
+            2.05,
+            0.3
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post09",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            -11.85,
+            2.05,
+            3.6
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post10",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            11.85,
+            2.05,
+            -6.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post11",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            11.85,
+            2.05,
+            -3.3
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post12",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            11.85,
+            2.05,
+            0.3
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_post13",
+          "kind": "box",
+          "params": [
+            0.22,
+            2.5,
+            0.22
+          ],
+          "position": [
+            11.85,
+            2.05,
+            3.6
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_roof_b",
+          "kind": "prism",
+          "params": [
+            0.12,
+            -10.4,
+            0.0,
+            10.4,
+            0.0,
+            4.5,
+            6.1685,
+            -4.5,
+            6.1685
+          ],
+          "position": [
+            0.0,
+            4.8,
+            -7.4
+          ],
+          "rotation": [
+            1.2747,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_roof_e",
+          "kind": "prism",
+          "params": [
+            0.12,
+            0.0,
+            -5.9,
+            0.0,
+            5.9,
+            6.1685,
+            0.0
+          ],
+          "position": [
+            10.4,
+            4.8,
+            -1.5
+          ],
+          "rotation": [
+            -1.5708,
+            0.2961,
+            -3.1416
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_roof_f",
+          "kind": "prism",
+          "params": [
+            0.12,
+            -10.4,
+            0.0,
+            10.4,
+            0.0,
+            4.5,
+            6.1685,
+            -4.5,
+            6.1685
+          ],
+          "position": [
+            0.0,
+            4.8,
+            4.4
+          ],
+          "rotation": [
+            -1.2747,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_roof_w",
+          "kind": "prism",
+          "params": [
+            0.12,
+            0.0,
+            -5.9,
+            0.0,
+            5.9,
+            6.1685,
+            0.0
+          ],
+          "position": [
+            -10.4,
+            4.8,
+            -1.5
+          ],
+          "rotation": [
+            1.5708,
+            0.2961,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_soffit",
+          "kind": "box",
+          "params": [
+            20.8,
+            0.05,
+            11.8
+          ],
+          "position": [
+            0.0,
+            4.8,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_step0",
+          "kind": "box",
+          "params": [
+            3.0,
+            0.6,
+            0.3
+          ],
+          "position": [
+            0.0,
+            0.5,
+            7.15
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_step1",
+          "kind": "box",
+          "params": [
+            3.0,
+            0.4,
+            0.3
+          ],
+          "position": [
+            0.0,
+            0.4,
+            7.45
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_step2",
+          "kind": "box",
+          "params": [
+            3.0,
+            0.2,
+            0.3
+          ],
+          "position": [
+            0.0,
+            0.3,
+            7.75
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_ver_roof_e",
+          "kind": "box",
+          "params": [
+            2.24,
+            0.1,
+            11.2
+          ],
+          "position": [
+            11.1,
+            3.55,
+            -1.6
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -0.155
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_ver_roof_f",
+          "kind": "box",
+          "params": [
+            24.4,
+            0.1,
+            3.24
+          ],
+          "position": [
+            0.0,
+            3.55,
+            5.6
+          ],
+          "rotation": [
+            0.155,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_ver_roof_w",
+          "kind": "box",
+          "params": [
+            2.24,
+            0.1,
+            11.2
+          ],
+          "position": [
+            -11.1,
+            3.55,
+            -1.6
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.155
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "cb_walls",
+          "kind": "box",
+          "params": [
+            20.0,
+            4.0,
+            11.0
+          ],
+          "position": [
+            0.0,
+            2.8,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_wall",
+          "children": null
+        },
+        {
+          "name": "cb_win_b0",
+          "kind": "box",
+          "params": [
+            1.6,
+            1.8,
+            0.06
+          ],
+          "position": [
+            -6.0,
+            2.5,
+            -7.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_b0_trim",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.0,
+            0.06
+          ],
+          "position": [
+            -6.0,
+            2.5,
+            -7.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_b1",
+          "kind": "box",
+          "params": [
+            1.6,
+            1.8,
+            0.06
+          ],
+          "position": [
+            0.0,
+            2.5,
+            -7.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_b1_trim",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.0,
+            0.06
+          ],
+          "position": [
+            0.0,
+            2.5,
+            -7.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_b2",
+          "kind": "box",
+          "params": [
+            1.6,
+            1.8,
+            0.06
+          ],
+          "position": [
+            6.0,
+            2.5,
+            -7.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_b2_trim",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.0,
+            0.06
+          ],
+          "position": [
+            6.0,
+            2.5,
+            -7.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_e0",
+          "kind": "box",
+          "params": [
+            0.06,
+            1.8,
+            1.6
+          ],
+          "position": [
+            10.05,
+            2.5,
+            -4.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_e0_trim",
+          "kind": "box",
+          "params": [
+            0.06,
+            2.0,
+            1.8
+          ],
+          "position": [
+            10.03,
+            2.5,
+            -4.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_e1",
+          "kind": "box",
+          "params": [
+            0.06,
+            1.8,
+            1.6
+          ],
+          "position": [
+            10.05,
+            2.5,
+            0.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_e1_trim",
+          "kind": "box",
+          "params": [
+            0.06,
+            2.0,
+            1.8
+          ],
+          "position": [
+            10.03,
+            2.5,
+            0.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_f0",
+          "kind": "box",
+          "params": [
+            1.6,
+            1.8,
+            0.06
+          ],
+          "position": [
+            -7.2,
+            2.5,
+            4.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_f0_trim",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.0,
+            0.06
+          ],
+          "position": [
+            -7.2,
+            2.5,
+            4.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_f1",
+          "kind": "box",
+          "params": [
+            1.6,
+            1.8,
+            0.06
+          ],
+          "position": [
+            -3.6,
+            2.5,
+            4.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_f1_trim",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.0,
+            0.06
+          ],
+          "position": [
+            -3.6,
+            2.5,
+            4.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_f2",
+          "kind": "box",
+          "params": [
+            1.6,
+            1.8,
+            0.06
+          ],
+          "position": [
+            3.6,
+            2.5,
+            4.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_f2_trim",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.0,
+            0.06
+          ],
+          "position": [
+            3.6,
+            2.5,
+            4.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_f3",
+          "kind": "box",
+          "params": [
+            1.6,
+            1.8,
+            0.06
+          ],
+          "position": [
+            7.2,
+            2.5,
+            4.05
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_f3_trim",
+          "kind": "box",
+          "params": [
+            1.8,
+            2.0,
+            0.06
+          ],
+          "position": [
+            7.2,
+            2.5,
+            4.03
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_w0",
+          "kind": "box",
+          "params": [
+            0.06,
+            1.8,
+            1.6
+          ],
+          "position": [
+            -10.05,
+            2.5,
+            -4.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_w0_trim",
+          "kind": "box",
+          "params": [
+            0.06,
+            2.0,
+            1.8
+          ],
+          "position": [
+            -10.03,
+            2.5,
+            -4.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "cb_win_w1",
+          "kind": "box",
+          "params": [
+            0.06,
+            1.8,
+            1.6
+          ],
+          "position": [
+            -10.05,
+            2.5,
+            0.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_glass",
+          "children": null
+        },
+        {
+          "name": "cb_win_w1_trim",
+          "kind": "box",
+          "params": [
+            0.06,
+            2.0,
+            1.8
+          ],
+          "position": [
+            -10.03,
+            2.5,
+            0.5
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        }
+      ]
+    },
+    "team_barn": {
+      "name": "tb_plinth",
+      "kind": "box",
+      "params": [
+        8.0,
+        0.3,
+        24.0
+      ],
+      "position": [
+        0.0,
+        0.15,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "lot_paving",
+      "children": [
+        {
+          "name": "tb_fascia",
+          "kind": "box",
+          "params": [
+            0.1,
+            0.5,
+            24.8
+          ],
+          "position": [
+            4.4,
+            3.1,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "team_trim",
+          "children": null
+        },
+        {
+          "name": "tb_gable_n",
+          "kind": "prism",
+          "params": [
+            0.2,
+            -4.0,
+            0.0,
+            4.0,
+            0.0,
+            0.0,
+            1.2203
+          ],
+          "position": [
+            0.0,
+            3.35,
+            11.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_wall",
+          "children": null
+        },
+        {
+          "name": "tb_gable_s",
+          "kind": "prism",
+          "params": [
+            0.2,
+            -4.0,
+            0.0,
+            4.0,
+            0.0,
+            0.0,
+            1.2203
+          ],
+          "position": [
+            0.0,
+            3.35,
+            -11.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_wall",
+          "children": null
+        },
+        {
+          "name": "tb_post0",
+          "kind": "box",
+          "params": [
+            0.25,
+            3.2,
+            0.25
+          ],
+          "position": [
+            3.85,
+            1.75,
+            -11.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "tb_post1",
+          "kind": "box",
+          "params": [
+            0.25,
+            3.2,
+            0.25
+          ],
+          "position": [
+            3.85,
+            1.75,
+            -6.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "tb_post2",
+          "kind": "box",
+          "params": [
+            0.25,
+            3.2,
+            0.25
+          ],
+          "position": [
+            3.85,
+            1.75,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "tb_post3",
+          "kind": "box",
+          "params": [
+            0.25,
+            3.2,
+            0.25
+          ],
+          "position": [
+            3.85,
+            1.75,
+            6.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "tb_post4",
+          "kind": "box",
+          "params": [
+            0.25,
+            3.2,
+            0.25
+          ],
+          "position": [
+            3.85,
+            1.75,
+            11.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_trim",
+          "children": null
+        },
+        {
+          "name": "tb_roof_e",
+          "kind": "box",
+          "params": [
+            4.6002,
+            0.12,
+            24.8
+          ],
+          "position": [
+            2.2,
+            4.0212,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            -0.2961
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "tb_roof_w",
+          "kind": "box",
+          "params": [
+            4.6002,
+            0.12,
+            24.8
+          ],
+          "position": [
+            -2.2,
+            4.0212,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.2961
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_roof",
+          "children": null
+        },
+        {
+          "name": "tb_wall_back",
+          "kind": "box",
+          "params": [
+            0.3,
+            3.2,
+            24.0
+          ],
+          "position": [
+            -3.85,
+            1.75,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_wall",
+          "children": null
+        },
+        {
+          "name": "tb_wall_n",
+          "kind": "box",
+          "params": [
+            8.0,
+            3.2,
+            0.3
+          ],
+          "position": [
+            0.0,
+            1.75,
+            11.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_wall",
+          "children": null
+        },
+        {
+          "name": "tb_wall_s",
+          "kind": "box",
+          "params": [
+            8.0,
+            3.2,
+            0.3
+          ],
+          "position": [
+            0.0,
+            1.75,
+            -11.85
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "cb_wall",
+          "children": null
+        }
+      ]
+    },
+    "lot_stripes": {
+      "name": "lot_paving",
+      "kind": "box",
+      "params": [
+        21.0,
+        0.04,
+        6.0
+      ],
+      "position": [
+        0.0,
+        0.0,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "lot_paving",
+      "children": [
+        {
+          "name": "lot_line0",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            -10.0,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line1",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            -7.5,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line2",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            -5.0,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line3",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            -2.5,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line4",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            0.0,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line5",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            2.5,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line6",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            5.0,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line7",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            7.5,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        },
+        {
+          "name": "lot_line8",
+          "kind": "box",
+          "params": [
+            0.12,
+            0.02,
+            4.6
+          ],
+          "position": [
+            10.0,
+            0.03,
+            -0.4
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lot_paint",
+          "children": null
+        }
+      ]
+    },
+    "lamp_post": {
+      "name": "lamp_base",
+      "kind": "cylinder",
+      "params": [
+        0.18,
+        0.18,
+        0.4,
+        8.0
+      ],
+      "position": [
+        0.0,
+        0.2,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "lamp_metal",
+      "children": [
+        {
+          "name": "lamp_arm",
+          "kind": "box",
+          "params": [
+            0.08,
+            0.08,
+            0.6
+          ],
+          "position": [
+            0.0,
+            5.14,
+            0.3
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lamp_metal",
+          "children": null
+        },
+        {
+          "name": "lamp_pole",
+          "kind": "cylinder",
+          "params": [
+            0.07,
+            0.07,
+            5.0,
+            6.0
+          ],
+          "position": [
+            0.0,
+            2.7,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "lamp_metal",
+          "children": null
+        }
+      ]
+    },
+    "lamp_head": {
+      "name": "lamp_head",
+      "kind": "box",
+      "params": [
+        0.3,
+        0.18,
+        0.5
+      ],
+      "position": [
+        0.0,
+        5.2,
+        0.6
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "lamp_glow",
+      "children": null
+    },
+    "food_cart": {
+      "name": "fc_chassis",
+      "kind": "box",
+      "params": [
+        2.4,
+        0.7,
+        1.3
+      ],
+      "position": [
+        0.0,
+        0.65,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "fc_body",
+      "children": [
+        {
+          "name": "fc_bumper_e",
+          "kind": "box",
+          "params": [
+            0.1,
+            0.12,
+            1.3
+          ],
+          "position": [
+            1.25,
+            -0.3,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_metal",
+          "children": null
+        },
+        {
+          "name": "fc_bumper_w",
+          "kind": "box",
+          "params": [
+            0.1,
+            0.12,
+            1.3
+          ],
+          "position": [
+            -1.25,
+            -0.3,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_metal",
+          "children": null
+        },
+        {
+          "name": "fc_canopy0",
+          "kind": "prism",
+          "params": [
+            0.3714,
+            -0.8,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+            0.24
+          ],
+          "position": [
+            -1.1143,
+            1.21,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_a",
+          "children": null
+        },
+        {
+          "name": "fc_canopy1",
+          "kind": "prism",
+          "params": [
+            0.3714,
+            -0.8,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+            0.24
+          ],
+          "position": [
+            -0.7429,
+            1.21,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_b",
+          "children": null
+        },
+        {
+          "name": "fc_canopy2",
+          "kind": "prism",
+          "params": [
+            0.3714,
+            -0.8,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+            0.24
+          ],
+          "position": [
+            -0.3714,
+            1.21,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_a",
+          "children": null
+        },
+        {
+          "name": "fc_canopy3",
+          "kind": "prism",
+          "params": [
+            0.3714,
+            -0.8,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+            0.24
+          ],
+          "position": [
+            0.0,
+            1.21,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_b",
+          "children": null
+        },
+        {
+          "name": "fc_canopy4",
+          "kind": "prism",
+          "params": [
+            0.3714,
+            -0.8,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+            0.24
+          ],
+          "position": [
+            0.3714,
+            1.21,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_a",
+          "children": null
+        },
+        {
+          "name": "fc_canopy5",
+          "kind": "prism",
+          "params": [
+            0.3714,
+            -0.8,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+            0.24
+          ],
+          "position": [
+            0.7429,
+            1.21,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_b",
+          "children": null
+        },
+        {
+          "name": "fc_canopy6",
+          "kind": "prism",
+          "params": [
+            0.3714,
+            -0.8,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+            0.24
+          ],
+          "position": [
+            1.1143,
+            1.21,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_a",
+          "children": null
+        },
+        {
+          "name": "fc_cooler",
+          "kind": "box",
+          "params": [
+            0.9,
+            0.45,
+            0.12
+          ],
+          "position": [
+            0.1,
+            -0.03,
+            0.68
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_metal",
+          "children": null
+        },
+        {
+          "name": "fc_counter",
+          "kind": "box",
+          "params": [
+            2.6,
+            0.06,
+            1.45
+          ],
+          "position": [
+            0.0,
+            0.38,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_timber",
+          "children": null
+        },
+        {
+          "name": "fc_post0",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.8,
+            0.06
+          ],
+          "position": [
+            1.2,
+            0.81,
+            0.62
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_timber",
+          "children": null
+        },
+        {
+          "name": "fc_post1",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.8,
+            0.06
+          ],
+          "position": [
+            -1.2,
+            0.81,
+            0.62
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_timber",
+          "children": null
+        },
+        {
+          "name": "fc_post2",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.8,
+            0.06
+          ],
+          "position": [
+            1.2,
+            0.81,
+            -0.62
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_timber",
+          "children": null
+        },
+        {
+          "name": "fc_post3",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.8,
+            0.06
+          ],
+          "position": [
+            -1.2,
+            0.81,
+            -0.62
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_timber",
+          "children": null
+        },
+        {
+          "name": "fc_valance_b",
+          "kind": "prism",
+          "params": [
+            0.03,
+            -1.3,
+            0.0,
+            1.3,
+            0.0,
+            1.3,
+            -0.06,
+            1.1143,
+            -0.16,
+            0.9286,
+            -0.06,
+            0.7429,
+            -0.16,
+            0.5571,
+            -0.06,
+            0.3714,
+            -0.16,
+            0.1857,
+            -0.06,
+            0.0,
+            -0.16,
+            -0.1857,
+            -0.06,
+            -0.3714,
+            -0.16,
+            -0.5571,
+            -0.06,
+            -0.7429,
+            -0.16,
+            -0.9286,
+            -0.06,
+            -1.1143,
+            -0.16,
+            -1.3,
+            -0.06
+          ],
+          "position": [
+            0.0,
+            1.21,
+            -0.8
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_a",
+          "children": null
+        },
+        {
+          "name": "fc_valance_f",
+          "kind": "prism",
+          "params": [
+            0.03,
+            -1.3,
+            0.0,
+            1.3,
+            0.0,
+            1.3,
+            -0.06,
+            1.1143,
+            -0.16,
+            0.9286,
+            -0.06,
+            0.7429,
+            -0.16,
+            0.5571,
+            -0.06,
+            0.3714,
+            -0.16,
+            0.1857,
+            -0.06,
+            0.0,
+            -0.16,
+            -0.1857,
+            -0.06,
+            -0.3714,
+            -0.16,
+            -0.5571,
+            -0.06,
+            -0.7429,
+            -0.16,
+            -0.9286,
+            -0.06,
+            -1.1143,
+            -0.16,
+            -1.3,
+            -0.06
+          ],
+          "position": [
+            0.0,
+            1.21,
+            0.8
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_stripe_a",
+          "children": null
+        },
+        {
+          "name": "fc_wheel0",
+          "kind": "cylinder",
+          "params": [
+            0.25,
+            0.25,
+            0.15,
+            6.0
+          ],
+          "position": [
+            0.8,
+            -0.4,
+            0.6
+          ],
+          "rotation": [
+            1.5708,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_tire",
+          "children": null
+        },
+        {
+          "name": "fc_wheel1",
+          "kind": "cylinder",
+          "params": [
+            0.25,
+            0.25,
+            0.15,
+            6.0
+          ],
+          "position": [
+            -0.8,
+            -0.4,
+            0.6
+          ],
+          "rotation": [
+            1.5708,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_tire",
+          "children": null
+        },
+        {
+          "name": "fc_wheel2",
+          "kind": "cylinder",
+          "params": [
+            0.25,
+            0.25,
+            0.15,
+            6.0
+          ],
+          "position": [
+            0.8,
+            -0.4,
+            -0.6
+          ],
+          "rotation": [
+            1.5708,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_tire",
+          "children": null
+        },
+        {
+          "name": "fc_wheel3",
+          "kind": "cylinder",
+          "params": [
+            0.25,
+            0.25,
+            0.15,
+            6.0
+          ],
+          "position": [
+            -0.8,
+            -0.4,
+            -0.6
+          ],
+          "rotation": [
+            1.5708,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "fc_tire",
+          "children": null
+        }
+      ]
+    }
+  }
+}

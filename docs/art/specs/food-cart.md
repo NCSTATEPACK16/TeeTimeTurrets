@@ -54,3 +54,8 @@ Covered by `clubhouseGraph.test.ts`: the AABB is 1.4 × 2.1 × 2.6 within 0.1, a
 ## Acceptance
 
 A screenshot beside the sheet reads as the same cart, and the scallops are visible from chase-cam.
+
+## As built (28 Sep 2026)
+
+- **Size:** the canopy and valance overhang the 1.4 m body, which makes the AABB 2.6 × 2.1 × 1.62.
+- **Triangles:** 388.

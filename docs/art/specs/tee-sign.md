@@ -59,3 +59,9 @@ The sheet is sound. Two changes:
 ## Acceptance
 
 A play-tester can read the hole number from a cart stopped at the tee.
+
+## As built (28 Sep 2026)
+
+- **Frame:** 48 triangles, made of 4 boxes.
+- **Face:** the atlas is 6 × 3 cells of 170 × 119 px.
+- **Placement:** in `src/render/teeSigns.ts`. It uses the heading toward `control[1]` in the course frame, the same heading `props.ts` uses.

@@ -44,3 +44,8 @@ Covered by `clubhouseGraph.test.ts`: the lamp has 120 triangles or fewer, and it
 
 - The lot reads as a parking lot from chase-cam.
 - Carts stop on lamp posts instead of passing through them.
+
+## As built (28 Sep 2026)
+
+- **Triangles:** the stripes and paving come to 120, because each box is 12. It is still 1 draw.
+- **Lamp:** the post is 68 triangles. The head is a one-node `lamp_head` graph, so only it takes the emissive.
