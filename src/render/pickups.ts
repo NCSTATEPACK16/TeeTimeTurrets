@@ -13,7 +13,7 @@ import { PICKUP_TYPES, type PickupSite, type PickupType } from "../sim/pickupSit
  * the Stage D rule that the cylinder outlives the item.
  */
 
-const PILLAR_RADIUS_M = 1.5;
+export const PILLAR_RADIUS_M = 1.5;
 const PILLAR_HEIGHT_M = 2.6;
 const ITEM_HEIGHT_M = 1.3;
 const SPIN_RAD_PER_S = 1.2;

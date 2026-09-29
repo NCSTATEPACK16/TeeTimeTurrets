@@ -49,6 +49,30 @@ export const LAMP_PLACEMENTS: readonly KitPlacement[] = [
   { dx: 11, dz: -15, yaw: 0 },
 ];
 
+/**
+ * The clubhouse dressing (`docs/art/specs/stage5/clubhouse-dressing.md`): small decoration with no
+ * collider, which carts pass through. Each piece is authored front-facing +z, so yaw 0 faces the
+ * course. The planters stand against the plinth front, flanking the steps, 1.7 m clear of the
+ * nearest depot pillar's edge; `dressingGraphs.test.ts` holds every piece 1.5 m clear.
+ */
+export const DRESSING_KINDS = ["bench", "flagpole", "planter", "bag_rack", "welcome_sign"] as const;
+export type DressingKind = (typeof DRESSING_KINDS)[number];
+
+export interface DressingPlacement extends KitPlacement {
+  readonly kind: DressingKind;
+}
+
+export const DRESSING_PLACEMENTS: readonly DressingPlacement[] = [
+  { kind: "bench", dx: -7.5, dz: 8.5, yaw: 0 },
+  { kind: "bench", dx: 7.5, dz: 8.5, yaw: 0 },
+  { kind: "planter", dx: -2.6, dz: 7.6, yaw: 0 },
+  { kind: "planter", dx: 2.6, dz: 7.6, yaw: 0 },
+  { kind: "flagpole", dx: -10, dz: 11, yaw: 0 },
+  { kind: "bag_rack", dx: 10, dz: 10, yaw: Math.PI },
+  // Lettered face toward the course.
+  { kind: "welcome_sign", dx: 0, dz: 30, yaw: 0 },
+];
+
 /** Pickup depot ring: radius and centre (`docs/art/specs/pickups.md`). */
 export const DEPOT_RADIUS_M = 6;
 /** The scatter keeps this far from the depot centre, so it doesn't crowd the ring. */

@@ -22,6 +22,12 @@ def materials():
         # trees (trees.md): parkland defaults; every biome overrides all three at merge time
         ('tree_trunk', 0x654E3E, 0.9, 0.0), ('tree_foliage_dark', 0x446327, 0.9, 0.0),
         ('tree_foliage_light', 0x669F34, 0.9, 0.0),
+        # clubhouse dressing (clubhouse-dressing.md), following the clubhouse's cb_* palette
+        ('dr_timber', 0x8A5A32, 0.8, 0.0), ('dr_iron', 0x2F3336, 0.5, 0.6),
+        ('dr_white', 0xF3EEDC, 0.7, 0.0), ('dr_flag', 0x7F9A88, 0.8, 0.0),
+        ('dr_flag_stripe', 0xF3EEDC, 0.8, 0.0), ('dr_shrub', 0x446327, 0.9, 0.0),
+        ('dr_bag_a', 0xB0352A, 0.7, 0.0), ('dr_bag_b', 0x23355E, 0.7, 0.0),
+        ('dr_board', 0x1F4D2E, 0.8, 0.0),
     ]:
         material(name, hexrgb(colour), rough, metal)
 
@@ -121,6 +127,87 @@ def build_reed_clump():
     return g
 
 
+# --- clubhouse dressing (clubhouse-dressing.md) ---------------------------------------------------
+# Origin at ground contact, front facing +z. No colliders: carts pass through these.
+
+BENCH_SEAT_Y = 0.45
+
+
+def build_bench():
+    t = 0.035
+    # Root: the middle seat slat, top face at the seat height.
+    g = Graph('dressing', 'dr_bench_seat1', 'box', [1.6, t, 0.1], 'dr_timber', (0, BENCH_SEAT_Y - t / 2, 0))
+    for i, z in ((0, 0.12), (2, -0.12)):
+        g.add('dr_bench_seat%d' % i, 'box', [1.6, t, 0.1], 'dr_timber', (0, BENCH_SEAT_Y - t / 2, z))
+    # Back slats, leaning back 12 degrees with the end frames' backrest.
+    for i, (y, z) in enumerate(((0.6, -0.215), (0.76, -0.25))):
+        g.add('dr_bench_back%d' % i, 'box', [1.6, 0.1, t], 'dr_timber', (0, y, z), rot=(-12, 0, 0))
+    # Cast-iron end frames: a side-profile prism (front foot, seat, backrest, back foot) turned about
+    # Y so the profile stands in the bench's YZ plane, plus an armrest box. Profile is (-z, y).
+    profile = [(0.24, 0.0), (0.16, 0.42), (-0.18, 0.42), (-0.3, 0.86), (-0.26, 0.0)]
+    flat = [v for z, y in profile for v in (-z, y)]
+    for s, n in ((1, 'e'), (-1, 'w')):
+        g.add('dr_bench_frame_' + n, 'prism', [0.05] + flat, 'dr_iron', (s * 0.74, 0, 0), rot=(0, 90, 0))
+        g.add('dr_bench_arm_' + n, 'box', [0.06, 0.05, 0.46], 'dr_iron', (s * 0.74, 0.64, -0.02))
+    return g
+
+
+FLAGPOLE_H = 8.0
+
+
+def build_flagpole():
+    g = Graph('dressing', 'dr_pole', 'cylinder', [0.045, 0.06, FLAGPOLE_H - 0.15, 6], 'dr_white',
+              (0, (FLAGPOLE_H - 0.15) / 2, 0))
+    g.add('dr_pole_finial', 'sphere', [0.1, 5, 3], 'dr_white', (0, FLAGPOLE_H - 0.1, 0))
+    # The club flag: a swallowtail 1.4 x 0.9, flown along +x from the pole, not a national flag.
+    tail = [0, 0, 1.4, 0, 1.05, 0.45, 1.4, 0.9, 0, 0.9]
+    g.add('dr_flag', 'prism', [0.02] + tail, 'dr_flag', (0.06, 6.8, 0))
+    # Cream stripe across its middle, a touch thicker so it shows on both faces.
+    stripe = [0, 0.38, 1.104, 0.38, 1.05, 0.45, 1.104, 0.52, 0, 0.52]
+    g.add('dr_flag_stripe', 'prism', [0.03] + stripe, 'dr_flag_stripe', (0.06, 6.8, 0))
+    return g
+
+
+def build_planter():
+    g = Graph('dressing', 'dr_planter_box', 'box', [1.2, 0.5, 1.2], 'dr_timber', (0, 0.25, 0))
+    g.add('dr_planter_rim', 'box', [1.3, 0.06, 1.3], 'dr_timber', (0, 0.5, 0))
+    g.add('dr_planter_shrub', 'sphere', [0.55, 8, 5], 'dr_shrub', (0, 0.9, 0), rot=(0, 20, 0))
+    return g
+
+
+BAG_LEAN = 10
+
+
+def build_bag_rack():
+    g = Graph('dressing', 'dr_rack_rail_top', 'box', [1.6, 0.05, 0.05], 'dr_iron', (0, 0.78, 0))
+    g.add('dr_rack_rail_low', 'box', [1.6, 0.05, 0.05], 'dr_iron', (0, 0.15, 0))
+    for s, n in ((1, 'e'), (-1, 'w')):
+        g.add('dr_rack_post_' + n, 'box', [0.05, 0.8, 0.05], 'dr_iron', (s * 0.78, 0.4, 0))
+    # Two bags standing in front of the rack (+z), leaning back 10 degrees onto the top rail.
+    h, rt, rb = 0.9, 0.15, 0.12
+    lean = D(BAG_LEAN)
+    ay, az = math.cos(lean), -math.sin(lean)        # the bag's axis after a -10 degree tilt about X
+    base_z = 0.24
+    for x, slot, n in ((-0.4, 'dr_bag_a', 'a'), (0.4, 'dr_bag_b', 'b')):
+        y = _tilted_base_y(h / 2, rb, BAG_LEAN)
+        cz = base_z + (h / 2) * az
+        g.add('dr_bag_' + n, 'cylinder', [rt, rb, h, 8], slot, (x, y, cz), rot=(-BAG_LEAN, 0, 0))
+        # Three club heads poking out of the mouth, tilted with the bag.
+        for k, (dx, dz) in enumerate(((-0.06, 0.03), (0.05, 0.04), (0.0, -0.05))):
+            d = h / 2 + 0.06
+            g.add('dr_bag_%s_club%d' % (n, k), 'box', [0.05, 0.1, 0.08], 'dr_white',
+                  (x + dx, y + d * ay, cz + d * az + dz), rot=(-BAG_LEAN, 0, 0))
+    return g
+
+
+def build_welcome_sign():
+    g = Graph('dressing', 'dr_sign_board', 'box', [1.6, 0.6, 0.06], 'dr_board', (0, 1.2, 0))
+    for s, n in ((1, 'e'), (-1, 'w')):
+        g.add('dr_sign_post_' + n, 'box', [0.1, 1.6, 0.1], 'dr_timber', (s * 0.85, 0.8, 0))
+    g.add('dr_sign_cap', 'box', [1.8, 0.06, 0.12], 'dr_timber', (0, 1.63, 0))
+    return g
+
+
 def build_all():
     import bpy
     materials()
@@ -131,6 +218,11 @@ def build_all():
         'pine_windbent': build_pine_windbent(),
         'willow_weeping': build_willow_weeping(),
         'reed_clump': build_reed_clump(),
+        'bench': build_bench(),
+        'flagpole': build_flagpole(),
+        'planter': build_planter(),
+        'bag_rack': build_bag_rack(),
+        'welcome_sign': build_welcome_sign(),
     }
     bpy.context.view_layer.update()
     return built
@@ -139,8 +231,11 @@ def build_all():
 TREES = ('conifer_tall', 'broadleaf_oak', 'gorse_mound', 'pine_windbent', 'willow_weeping', 'reed_clump')
 
 # Each exported set: the graph names in it, which are also the keys build_all() returns.
+DRESSING = ('bench', 'flagpole', 'planter', 'bag_rack', 'welcome_sign')
+
 SETS = {
     'trees': TREES,
+    'dressing': DRESSING,
 }
 
 
