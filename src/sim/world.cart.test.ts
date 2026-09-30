@@ -333,7 +333,7 @@ describe("a rematch", () => {
     // swapped club, a spent magazine and a shot charging.
     play(sim, [{ ticks: seconds(1.5), intent: { fire: true } }, { ticks: seconds(4), intent: {} }]);
     const bucket = sim.pickups[0]!;
-    bucket.cooldownRemaining = 45;
+    bucket.readyAt = 45;
     const mind = inside.rigs[1]!.mind!;
     mind.stuckFor = 1.5;
     mind.hasAmmoTarget = true;
@@ -348,7 +348,7 @@ describe("a rematch", () => {
     sim.reset();
 
     expect(inside.ballPool.all.every((b) => b.state === "idle")).toBe(true);
-    expect(bucket.cooldownRemaining).toBe(0);
+    expect(bucket.readyAt).toBe(0);
     expect(inside.simTime).toBe(0);
     expect(inside.rigs[1]!.mind).toEqual(createBotMind(skill));
     const fresh = await holeSim(fixedHoleSpec(), 1);

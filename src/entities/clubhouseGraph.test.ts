@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { buildGraph } from "./primitiveGraph";
 import { kitGraph, KIT_NAMES, type KitName } from "./kitGraphs";
+import { KIT_FOOTPRINTS, type CollidingPiece } from "../sim/clubhouse";
 
 /** Smoke check for the clubhouse kit export (`docs/art/specs/clubhouse.md` and siblings). */
 
@@ -52,5 +53,31 @@ describe("clubhouse kit", () => {
     expect(size(box)[0]).toBeCloseTo(2.6, 1);
     expect(box.max.y).toBeCloseTo(2.1, 1);
     expect(triangles).toBeLessThanOrEqual(400);
+  });
+
+  it("the ground footprints the colliders are held to match the export within 0.1 m", () => {
+    // Every mesh reaching within 0.5 m of the ground, by its own geometry, not its children's:
+    // roof overhangs a cart drives under are left out.
+    for (const piece of Object.keys(KIT_FOOTPRINTS) as CollidingPiece[]) {
+      const built = buildGraph(kitGraph(piece));
+      built.root.updateMatrixWorld(true);
+      const low = new THREE.Box3();
+      built.root.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        o.geometry.computeBoundingBox();
+        const b = o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld);
+        if (b.min.y < 0.5) low.union(b);
+      });
+      built.dispose();
+      const fp = KIT_FOOTPRINTS[piece];
+      for (const [got, want, what] of [
+        [low.min.x, fp.minX, "minX"],
+        [low.max.x, fp.maxX, "maxX"],
+        [low.min.z, fp.minZ, "minZ"],
+        [low.max.z, fp.maxZ, "maxZ"],
+      ] as const) {
+        expect(Math.abs(got - want), `${piece} ${what}`).toBeLessThanOrEqual(0.1);
+      }
+    }
   });
 });

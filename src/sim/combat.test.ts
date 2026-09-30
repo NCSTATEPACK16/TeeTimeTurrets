@@ -110,6 +110,22 @@ describe("combat contact resolution", () => {
     expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
   });
 
+  it("a two-plate shield takes two hits whole, and the third hurts", () => {
+    cart.grantShield(2, 10);
+    const shots = [ball, makeBall(30), makeBall(30)];
+    const handles = [ballHandle];
+    for (const shot of shots.slice(1) as { ball: PooledBall; handle: number }[]) {
+      registry.registerBall(shot.handle, shot.ball);
+      handles.push(shot.handle);
+    }
+    processContacts(queueOf([handles[0]!, cartHandle, true]), ctx());
+    processContacts(queueOf([handles[1]!, cartHandle, true]), ctx());
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH);
+    expect(cart.shield).toBe(0);
+    processContacts(queueOf([handles[2]!, cartHandle, true]), ctx());
+    expect(cart.health.hp).toBe(ARENA_MAX_HEALTH - STROKE_DAMAGE);
+  });
+
   it("reports where the ball was at impact, so a hit marker can float there", () => {
     processContacts(queueOf([ballHandle, cartHandle, true]), ctx());
 

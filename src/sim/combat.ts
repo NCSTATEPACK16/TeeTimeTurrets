@@ -96,6 +96,12 @@ export interface CombatContext {
    */
   onRamDamage: (rammer: number, victim: number, damage: number, x: number, y: number, z: number) => void;
   /**
+   * A shield plate took a hit or a ram whole: `attacker` landed it, `victim` lost the plate and no
+   * damage. `byBall` tells a shot from a ram, since only a shot counts toward accuracy. Optional so
+   * a test context that never meets a shield need not supply it.
+   */
+  onShieldHit?: (attacker: number, victim: number, byBall: boolean, x: number, y: number, z: number) => void;
+  /**
    * Called once, on the contact that takes a cart from above zero HP to zero.
    *
    * `victim` and `killer` are rig indices; `killer` is `NO_KILLER` for a death nobody caused.
@@ -168,6 +174,12 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
 
   ball.spent = true;
   const at = ball.body.translation();
+  // A shield plate takes the shot whole, with the same guards as a hit: a protected or dead cart
+  // never gets this far, so it never loses a plate to a shot that could not have hurt it.
+  if (cart.absorbHit()) {
+    ctx.onShieldHit?.(ball.firedBy, victim.index, true, at.x, at.y, at.z);
+    return;
+  }
   ctx.onBallHit(ball.firedBy, victim.index, ball.damage, at.x, at.y, at.z);
   if (applyDamage(cart.health, ball.damage)) ctx.onCartKilled(cart, victim.index, ball.firedBy);
 }
@@ -208,12 +220,16 @@ function cartsShunt(
     const bApproach = -(velB.x * lx + velB.z * lz) / l;
     const toA = aApproach > bApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
     const toB = bApproach > aApproach + RAMMER_MARGIN_MPS ? Math.floor(damage / 2) : damage;
-    if (toA > 0) {
+    if (toA > 0 && a.absorbHit()) {
+      ctx.onShieldHit?.(second.index, first.index, false, a.position.x, a.position.y, a.position.z);
+    } else if (toA > 0) {
       const lethal = applyDamage(a.health, toA);
       ctx.onRamDamage(second.index, first.index, toA, a.position.x, a.position.y, a.position.z);
       if (lethal) ctx.onCartKilled(a, first.index, second.index);
     }
-    if (toB > 0) {
+    if (toB > 0 && b.absorbHit()) {
+      ctx.onShieldHit?.(first.index, second.index, false, b.position.x, b.position.y, b.position.z);
+    } else if (toB > 0) {
       const lethal = applyDamage(b.health, toB);
       ctx.onRamDamage(first.index, second.index, toB, b.position.x, b.position.y, b.position.z);
       if (lethal) ctx.onCartKilled(b, second.index, first.index);

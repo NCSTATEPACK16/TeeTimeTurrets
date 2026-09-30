@@ -1,4 +1,6 @@
 import { AUTHORED_CLUBHOUSE } from "./authoredLayout";
+import { courseSiteGround, placePickupSites } from "./pickupSites";
+import type { PickupSite } from "./pickupSites";
 import type { CourseWorld } from "./courseWorld";
 import type { Vec2 } from "./mapGeometry";
 import type { HoleSpec } from "./course";
@@ -30,6 +32,11 @@ export interface ArenaGround {
    */
   readonly clubhouse: Vec2 | null;
   /**
+   * Where pickups stand (`pickupSites.ts`), in the order the renderer draws them, so a site's index
+   * is the same on both sides. Empty on a ground with none.
+   */
+  readonly pickupSites: readonly PickupSite[];
+  /**
    * Root of every seeded stream in the match -- each bot's and the respawn draw. Taken from the
    * ground rather than the clock, per the AGENTS.md no-`Math.random`-in-the-sim rule, so the same
    * ground replays the same match.
@@ -43,8 +50,14 @@ export interface ArenaGround {
  * The seed is hole 1's. That is not a coincidence to tidy away -- it is the seed every arena match
  * has been played from since arena was built on top of a hole-1 `Sim`, and keeping it means the
  * recorded fingerprint in `arenaGolden.test.ts` still describes the same match.
+ *
+ * `pickupSites` is the renderer's list when the page already has one, so both sides draw from the
+ * same sites; left out, it is placed here.
  */
-export function arenaFromCourse(world: CourseWorld): ArenaGround {
+export function arenaFromCourse(
+  world: CourseWorld,
+  pickupSites: readonly PickupSite[] = placePickupSites(courseSiteGround(world), AUTHORED_CLUBHOUSE, world.holes[0]?.spec.seed ?? 0),
+): ArenaGround {
   const first = world.holes.find((h) => h.spec.index === 0) ?? world.holes[0];
   if (!first) throw new Error("arenaFromCourse: the course has no holes");
   return {
@@ -52,6 +65,7 @@ export function arenaFromCourse(world: CourseWorld): ArenaGround {
     holes: world.holes,
     southBoundary: world.southBoundary,
     clubhouse: AUTHORED_CLUBHOUSE,
+    pickupSites,
     seed: first.spec.seed,
   };
 }
@@ -73,6 +87,9 @@ export function arenaFromHole(spec: HoleSpec): ArenaGround {
     ],
     southBoundary: null,
     clubhouse: null,
+    // The one bucket a hole arena has always had, 10 m past the tee: the bot and reset tests
+    // stand on it.
+    pickupSites: [{ x: spec.tee.x + 10, z: spec.tee.z, type: "bucket", depot: false }],
     seed: spec.seed,
   };
 }

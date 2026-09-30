@@ -1,6 +1,6 @@
 import { CLUB_STATS, ClubType } from "../../physics/Ballistics";
 import type { Vec3 } from "../../physics/Ballistics";
-import { createHealth, setMaxHealth } from "../health";
+import { createHealth, heal, setMaxHealth } from "../health";
 import type { Health } from "../health";
 import type { SurfaceTuning } from "../surfaces";
 import { ARENA_MAX_HEALTH } from "../matchConfig";
@@ -256,6 +256,14 @@ export class Cart {
    */
   protectedFor: number;
   /**
+   * Shield plates, 0..2, from a drink (`sim/pickups.ts`). Each absorbs one hit or ram whole
+   * (`combat.ts`), and one decays by itself every `shieldDecayIn` seconds. Cleared by `revive()`,
+   * so neither a death nor a rematch carries one over.
+   */
+  shield: number;
+  /** Seconds until the next plate decays. Meaningful only while `shield > 0`. */
+  shieldDecayIn: number;
+  /**
    * True while this cart is standing on a hazard surface. The edge into water is what costs a
    * stroke, not the state -- a cart parked in the shallows must not be drained every tick.
    * Owned here rather than in a parallel array in `world.ts` so it cannot fall out of step with
@@ -295,6 +303,8 @@ export class Cart {
     this.dead = false;
     this.respawnTimer = 0;
     this.protectedFor = 0;
+    this.shield = 0;
+    this.shieldDecayIn = 0;
     this.wasInWater = false;
     this.lastSafePosition = { x: start.x, y: start.y, z: start.z };
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
@@ -348,6 +358,8 @@ export class Cart {
     // Cleared, not granted. `Sim.stepRespawn` grants protection after calling this; `Sim.reset`
     // calls it too, and a fresh hole must not start behind a shield left over from a death.
     this.protectedFor = 0;
+    this.shield = 0;
+    this.shieldDecayIn = 0;
     this.speed = 0;
     this.recoil.x = 0;
     this.recoil.z = 0;
@@ -382,6 +394,41 @@ export class Cart {
   /** Resize the health bar -- an armour upgrade. Refills, so the change never leaves a half bar. */
   setMaxHealth(max: number): void {
     setMaxHealth(this.health, max);
+  }
+
+  /** Restores HP, never past the bar. A hot dog's effect. */
+  heal(amount: number): void {
+    heal(this.health, amount);
+  }
+
+  /** A drink: the shield topped up to `plates`, and the decay clock restarted. */
+  grantShield(plates: number, decayS: number): void {
+    this.shield = plates;
+    this.shieldDecayIn = decayS;
+  }
+
+  /**
+   * A hit or a ram landed. With a plate up, the plate takes it whole and this returns true: no
+   * damage. The decay clock runs on regardless, so a plate knocked off does not buy the other one
+   * time.
+   */
+  absorbHit(): boolean {
+    if (this.shield <= 0) return false;
+    this.shield -= 1;
+    return true;
+  }
+
+  /**
+   * Counts the shield's decay down; true on the tick a plate decays by itself, restarting the
+   * clock for the next one. `world.ts` steps it, so it can log the break.
+   */
+  stepShield(dt: number, decayS: number): boolean {
+    if (this.shield <= 0) return false;
+    this.shieldDecayIn -= dt;
+    if (this.shieldDecayIn > 1e-9) return false;
+    this.shield -= 1;
+    this.shieldDecayIn = decayS;
+    return true;
   }
 
   /** Clamps to MAX_AMMO. Used by bucket refills and landed-ball pickups alike. */
