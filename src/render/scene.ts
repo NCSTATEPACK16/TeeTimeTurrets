@@ -9,6 +9,7 @@ import { teamColors } from "./teamColors";
 import { createClubhouseKit, type ClubhouseKit } from "./clubhouse";
 import { createTeeSigns, type TeeSigns } from "./teeSigns";
 import { createPickupView, type PickupView } from "./pickups";
+import { ShieldPlates } from "./shieldPlates";
 import type { PickupSite } from "../sim/pickupSites";
 import type { Vec2 as GroundVec2 } from "../sim/mapGeometry";
 import { ClubType } from "../physics/Ballistics";
@@ -99,6 +100,10 @@ export interface FrameView {
   botDead: boolean[];
   /** The player's forward speed as a fraction of top speed, for the FOV kick. */
   speed01: number;
+  /** Per pickup site, in `ArenaSource.pickupSites` order: charged right now. Absent: all charged. */
+  pickupCharged?: boolean[];
+  /** Shield plates per cart: the player's, then each bot's. Absent: none. */
+  shields?: number[];
 }
 
 /** Pure consumer of sim state: builds the scene once, then reads interpolated transforms every frame. */
@@ -124,6 +129,8 @@ export class RenderScene {
   private readonly clubhouseKit: ClubhouseKit | null;
   private readonly teeSigns: TeeSigns;
   private readonly pickups: PickupView | null;
+  private readonly shieldPlates: ShieldPlates;
+  private readonly takenScratch = new THREE.Vector3();
   /** Ground height under the chase camera, so the eye never dips into a hillside. */
   private readonly groundHeightAt: (x: number, z: number) => number;
   private readonly cameraTarget = new THREE.Vector3();
@@ -199,6 +206,9 @@ export class RenderScene {
       this.scene.add(bot);
     }
 
+    this.shieldPlates = new ShieldPlates(botCount + 1);
+    this.scene.add(this.shieldPlates.mesh);
+
     this.pooledBalls = new BallSwarm();
     this.scene.add(this.pooledBalls);
 
@@ -216,7 +226,20 @@ export class RenderScene {
     window.addEventListener("resize", this.resizeListener);
   }
 
+  /** Each pillar to its site's state, bursting where an item was just taken. */
+  private syncPickups(view: FrameView): void {
+    const charged = view.pickupCharged;
+    if (!this.pickups || !charged) return;
+    for (let i = 0; i < charged.length; i++) {
+      if (this.pickups.setReady(i, charged[i]!)) {
+        const at = this.pickups.itemPosition(i, this.takenScratch);
+        this.effects.pickupTaken(at.x, at.y, at.z);
+      }
+    }
+  }
+
   draw(view: FrameView): void {
+    this.syncPickups(view);
     this.pickups?.update(view.elapsedSeconds);
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
     // A dead cart has burst (`EffectsLayer.death`) and is out of the world until it respawns.
@@ -230,6 +253,12 @@ export class RenderScene {
       // bot that looks like it is shooting when it is not.
       this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, 1, false);
     }
+    const shields = view.shields;
+    this.shieldPlates.place(0, view.cart, shields?.[0] ?? 0, view.playerDead, view.elapsedSeconds);
+    for (let i = 0; i < view.botCarts.length; i++) {
+      this.shieldPlates.place(i + 1, view.botCarts[i]!, shields?.[i + 1] ?? 0, view.botDead[i] === true, view.elapsedSeconds);
+    }
+    this.shieldPlates.commit();
     this.pooledBalls.setFromTransforms(view.poolTransforms);
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
     this.effects.update(view.frameSeconds);
@@ -260,6 +289,7 @@ export class RenderScene {
     this.clubhouseKit?.dispose();
     this.teeSigns.dispose();
     this.pickups?.dispose();
+    this.shieldPlates.dispose();
     // The ground and treeline are the course's, not this match's: taken out of the scene and kept.
     // `scene.clear()` below only detaches, so they come out intact for the next match to add.
     this.scene.clear();

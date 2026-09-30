@@ -23,6 +23,8 @@ const RAM_SPARKS: BurstSpec = { count: 10, speed: 7, life: 0.35, gravity: 9, siz
 const DEATH_BODY: BurstSpec = { count: 26, speed: 9, life: 1.3, gravity: 9.8, size: 0.32, color: 0xeeeeea, lift: 5 };
 const DEATH_FIRE: BurstSpec = { count: 18, speed: 5, life: 0.9, gravity: -2, size: 0.3, color: 0xff6a2a, lift: 2.5 };
 const DEATH_SMOKE: BurstSpec = { count: 14, speed: 2, life: 2, gravity: -1.2, size: 0.55, color: 0x3a3a3a, lift: 2 };
+const PICKUP_TAKEN: BurstSpec = { count: 14, speed: 4, life: 0.3, gravity: 2, size: 0.12, color: 0xffc24a, lift: 1.5 };
+const PLATE_BREAK: BurstSpec = { count: 12, speed: 5, life: 0.45, gravity: 6, size: 0.14, color: 0x2ec4d0, lift: 1.5 };
 const SPLASH_DROPS: BurstSpec = { count: 16, speed: 3.5, life: 0.8, gravity: 9.8, size: 0.12, color: 0xcfe8ff, lift: 4 };
 
 interface SplashRing {
@@ -84,6 +86,16 @@ export class EffectsLayer {
     this.shards.burst(x, y + 0.8, z, DEATH_BODY);
     this.shards.burst(x, y + 0.8, z, DEATH_FIRE);
     this.shards.burst(x, y + 1.2, z, DEATH_SMOKE);
+  }
+
+  /** A pickup's item taken: a short gold burst where it floated. */
+  pickupTaken(x: number, y: number, z: number): void {
+    this.shards.burst(x, y, z, PICKUP_TAKEN);
+  }
+
+  /** A shield plate shattered, at the cart (`y` is its body centre). */
+  plateBreak(x: number, y: number, z: number): void {
+    this.shards.burst(x, y + 0.55, z, PLATE_BREAK);
   }
 
   splash(x: number, y: number, z: number): void {
