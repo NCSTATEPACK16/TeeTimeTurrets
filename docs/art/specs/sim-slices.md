@@ -77,3 +77,12 @@ The human play-test covers:
 
 - **The clubhouse needs 3 colliders, not 2.** Add one for the entrance steps: 3.0 × 0.6 × 0.9 at z +7.45. The steps protrude past the plinth, and the 0.1 m guard compares against the full graph AABB.
 - **Shared placement table:** `src/sim/clubhouseLayout.ts` holds the placements. The renderer already reads it, and the colliders must read the same table.
+
+## As built, Stage 7b (29 Sep 2026)
+
+- **Colliders:** `src/sim/clubhouse.ts` holds the shapes in graph space (`KIT_SHAPES`) and places them from `clubhouseLayout.ts`, exactly as the renderer places the meshes: each piece at the terrain height under its own centre, every shape sunk 1 m below it. `world.ts` (`addStaticColliders`) adds them to every fresh Rapier world as fixed colliders with the ground's friction and bounce; they are freed with the world.
+- **The 0.1 m guard** compares against each piece's *ground* footprint (meshes reaching within 0.5 m of the ground), so roof overhangs a cart drives under are left out. `KIT_FOOTPRINTS` is the one table: `clubhouseGraph.test.ts` holds it to the export, `clubhouse.test.ts` holds the colliders to it.
+- **Sightlines:** `hasLineOfSight` takes the obstacles as an optional last argument (`clearOfObstacles`). A barn is one solid rectangle, so a cart parked in one is hidden and sees no one. Bots get the same check: a hidden target is closed on and aimed at, but not fired at.
+- **Pickups:** `ArenaGround.pickupSites` carries the sites, so the sim and the renderer read one list. A single-hole test arena keeps its one bucket 10 m past the tee. **A cart cannot take what it cannot use** (full ammo, full health, full shield): it passes through and the site stays charged.
+- **Bots:** an empty bot heads for the nearest charged bucket or landed ball, as before. A bot at a third of its health or less, with its enemy out of firing range, heads for a charged hot dog within 60 m.
+- **Shield:** it absorbs ball hits and rams whole, not water. The decay clock keeps running when a hit knocks a plate off. Events: `shieldGained`, `plateBroken`; sounds `shield` and `plate` are synthesised like the rest.

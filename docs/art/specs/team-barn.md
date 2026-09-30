@@ -63,5 +63,5 @@ This is covered by the same `clubhouseGraph.test.ts`, with one added assertion: 
 
 - **Roof pitch:** 17°, to match the clubhouse. The ridge is at about 4.85, not the 5.4 above.
 - **Floor:** grey paving (`lot_paving`), not brick. In game a brick floor read as a big red slab.
-- **Bay numbers:** not built. The fascia colour carries the team.
+- **Bay numbers:** dropped for good (29 Sep 2026). Nothing in the game names a pad, so a number would label nothing; the fascia colour carries the team.
 - **Triangles:** 160.

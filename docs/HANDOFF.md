@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and built Stage 2. Status updated 2026-09-28 when Stage 2 merged, and again when Stage 7a (art) opened as a PR. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and built Stage 2. Status updated 2026-09-28 when Stage 2 merged and Stage 7a (art) opened, and 2026-09-29 when Stage 7b (sim) opened as a PR. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
@@ -20,17 +20,15 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 - Blender authors primitive-graph JSON only. `art/clubhouse-and-cart.blend` is frozen; the Stage 7 files are `art/cart-v2.blend` and `art/clubhouse-exterior.blend` (the latter built by `art/stage7_kit.py`).
 - **Cloud sessions:** work one stage, run the checkpoint, push, update the draft PR, rewrite this file, then **STOP** for the user's play-test. Never merge. Never re-baseline the gate without the user's approval. Never start the next stage without the user saying so.
 
-## Stage 7 (running ahead of Stages 3–6)
+## Stage 7 (running ahead of Stages 4–6)
 
-- **Where:** worktree `../TeeTimeTurrets-stage7`, branch `stage-7-blender`, cut from `main`. The specs are in `docs/art/specs/`; the prompt is `docs/art/STAGE7-BUILD-PROMPT.md`.
-- **Done (PR "Stage 7a: art"):**
-  - #72: exporter in the repo, plus the `prism` kind.
-  - #73: cart v2, with team canopy and shirt and the shot-03 turret.
-  - #74: clubhouse complex, tee signs, and pickup visuals in the arena.
-- **Next:** once Stage 3 (#48) merges, rebase and do #75 (colliders and sightlines), then #76 (pickup collection and shield). The steps need a third clubhouse collider; see the "As built" note in `sim-slices.md`.
+- **Where:** worktree `../TeeTimeTurrets-stage7`. The specs are in `docs/art/specs/`.
+- **Done:**
+  - Stage 7a (art), merged in PR #77: #72 exporter and `prism`, #73 cart v2 (kept after the user's play-test), #74 the clubhouse complex, tee signs and pickup visuals.
+  - Stage 7b (sim), branch `stage-7b-sim`, in a draft PR awaiting play-test: #75 colliders and sightlines, #76 pickup collection and the drink shield, the rider rebuilt as `art/rider_kit.py`, and barn bay numbers dropped for good. The "As built, Stage 7b" note in `sim-slices.md` has the details.
 - **Known:**
-  - The Scene Gate's six cart baselines were re-baselined for cart v2 in `f2890e6`, because Netlify's `npm run build` runs the gate. Revert that commit if the new look is rejected.
-  - `driver.json` still carries the old Euler swap on four limbs (`art/README.md`, Rotations).
+  - The golden fingerprint moved (colliders and pickups change every arena match). Its value is taken from the failing Linux x64 CI run, per `DECISIONS.md`.
+  - **Follow-up, after Stage 5 (user, 29 Sep):** push the carts' spawn positions further out; at the clubhouse they start far too close together.
 
 ## Where things stand
 
@@ -38,11 +36,11 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 |---|---|---|---|
 | 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only`, merged in PR #28 | **done** |
 | 2 | Juice and audio (#32–#39) | `stage-2-juice`, merged in PR #69 | **done** |
-| 3 | Foundations: performance and render base (#40–#48) | `stage-3-foundations` | **next** |
-| 4 | Handling feel and arena zone | `stage-4-handling-zone` | — |
+| 3 | Foundations: performance and render base (#40–#48) | `stage-3-foundations`, merged in PR #71 | **done** |
+| 4 | Handling feel and arena zone | `stage-4-handling-zone` | **next** |
 | 5 | Environment | `stage-5-environment` | — |
 | 6 | navGraph | `stage-6-navgraph` | — |
-| 7 | Clubhouse in Blender (**local only**), re-specified in `docs/art/specs/` | `stage-7-blender` | **7a (art) in PR, awaiting play-test**; 7b (sim, #75–#76) waits for Stage 3 to merge |
+| 7 | Clubhouse in Blender (**local only**), re-specified in `docs/art/specs/` | `stage-7-blender`, `stage-7b-sim` | 7a merged in PR #77; **7b in a draft PR, awaiting play-test** |
 | 8 | Economy | `stage-8-economy` | — |
 | 9 | Refactor | `stage-9-refactor` | — |
 | 10 | Docs | `stage-10-docs` | — |
@@ -104,12 +102,11 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
   - The holes are sampled per hole: 0.5 s, against 3.9 s for sampling the blended course.
   - They are built during PLAY's loading step, so opening the map mid-match does not stall.
 
-## Next session: Stage 3
+## Next session: Stage 4, after the Stage 7b play-test
 
-`REVAMP-PLAN.md` "Stage 3: foundations". Branch `stage-3-foundations` from `main` (#69 has merged). Three things in this repo bear on it:
+`REVAMP-PLAN.md` "Stage 4". Branch `stage-4-handling-zone` from `main` once 7b has merged. What bears on it:
 - **The golden is Linux-only.** A sim change needs its new value from CI: push, read the `expected N to be M` line from the failing CI run, record N in a follow-up commit, and say so in both commit messages.
-- **Baked grids unblock two things.** The map samples each hole's own surfaces because blended `surfaceAt` is slow (3.9 s for the map). Nameplate line of sight has the same cost.
-- **Measure the frame after Stage 2.** The effects layer adds one draw call. The motor and synth nodes are cheap, but take numbers rather than assuming.
+- **The six-hole zone (#52) feeds the pickup scatter.** `placePickupSites` already takes an optional `zone` polygon; pass it in from `arenaFromCourse` and `main.ts` together, since both must place the same sites.
 
 ## Audit findings still open (from 2026-09-26)
 
