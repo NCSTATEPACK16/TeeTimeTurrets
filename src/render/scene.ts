@@ -16,12 +16,20 @@ import { ClubType } from "../physics/Ballistics";
 import type { Surfaces } from "../sim/surfaces";
 import type { CartTransform, Vec3 } from "../sim/world";
 import type { CourseTerrain } from "../sim/courseTerrain";
-import { BIOMES } from "./biomes";
+import { PARKLAND_SKY, Sky } from "./sky";
+import { createSunShadows, type SunShadows } from "./shadows";
+import { createPostChain, type PostChain } from "./post";
+import { QUALITY_PRESETS, type QualityPreset } from "./quality";
 import { CHASE_POSITION_LERP, CHASE_TARGET_LERP, chasePose, chaseSmoothing } from "./chaseCamera";
 import { courseDressingFor } from "./courseDressing";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
+
+/** Linear sun intensity under ACES; the sky's environment adds the rest. */
+const SUN_INTENSITY = 3.1;
+/** FogExp2 density times the course's diagonal: the far holes are haze, the near ones are clear. */
+const FOG_DENSITY_X_FIELD = 0.75;
 
 /** Keeps the chase eye out of the terrain when the cart backs toward a slope. */
 const CHASE_MIN_GROUND_CLEARANCE = 1.5;
@@ -139,6 +147,9 @@ export class RenderScene {
   private readonly projectScratch = new THREE.Vector3();
   private readonly sizeScratch = new THREE.Vector2();
   private readonly resizeListener: () => void;
+  private readonly sky: Sky;
+  private readonly shadows: SunShadows;
+  private readonly post: PostChain | null;
 
   /**
    * `renderer` is passed in rather than created here. One WebGL context is shared by every screen
@@ -146,22 +157,25 @@ export class RenderScene {
    * a hard browser limit and a guaranteed leak across transitions. `ScreenManager` owns its
    * lifetime; this class only borrows it, and `dispose()` below deliberately does not free it.
    */
-  constructor(renderer: THREE.WebGLRenderer, arena: ArenaSource, botCount: number) {
+  constructor(
+    renderer: THREE.WebGLRenderer,
+    arena: ArenaSource,
+    botCount: number,
+    quality: QualityPreset = QUALITY_PRESETS.med,
+  ) {
     // The draw distance the fog and far plane are cut to: the diagonal of the course's bounds, so
     // the far plane still reaches the horizon from any tee.
     const fieldSize = Math.hypot(
       arena.course.bounds.maxX - arena.course.bounds.minX,
       arena.course.bounds.maxZ - arena.course.bounds.minZ,
     );
-    // The course opens and closes in parkland, and the clubhouse sits in it: that is its sky.
-    const palette = BIOMES.parkland;
-
     this.renderer = renderer;
 
     this.scene = new THREE.Scene();
-    // Sky and fog share one colour, so the horizon dissolves rather than banding.
-    this.scene.background = new THREE.Color(palette.sky);
-    this.scene.fog = new THREE.Fog(palette.sky, fieldSize * 0.5, fieldSize * 2);
+    // The course opens and closes in parkland, and the clubhouse sits in it: that is its sky. The
+    // dome lights the scene through its baked environment, and the fog is its horizon colour.
+    this.sky = new Sky(PARKLAND_SKY, renderer);
+    this.sky.install(this.scene, FOG_DENSITY_X_FIELD / fieldSize);
 
     this.camera = new THREE.PerspectiveCamera(
       BASE_FOV_DEG,
@@ -170,10 +184,11 @@ export class RenderScene {
       fieldSize * 2.5,
     );
 
-    const sun = new THREE.DirectionalLight(0xffffff, 2.4);
-    sun.position.set(12, 18, 8);
+    const sun = new THREE.DirectionalLight(this.sky.sunColour, SUN_INTENSITY);
+    sun.position.copy(this.sky.sunDir).multiplyScalar(100);
     this.scene.add(sun);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    this.scene.add(sun.target);
+    this.shadows = createSunShadows(this.scene, this.camera, sun, this.sky.sunDir, quality);
 
     const dressing = courseDressingFor(arena);
     this.courseGround = dressing.ground;
@@ -217,6 +232,24 @@ export class RenderScene {
 
     this.effects = new EffectsLayer();
     this.scene.add(this.effects.group);
+
+    // Everything solid casts onto the ground; the ground and the buildings receive.
+    const cast = (root: THREE.Object3D, receive: boolean): void =>
+      root.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = receive;
+        }
+      });
+    cast(this.cart, false);
+    for (const bot of this.botCarts) cast(bot, false);
+    if (this.clubhouseKit) cast(this.clubhouseKit.group, true);
+    for (const object of this.teeSigns.objects) cast(object, false);
+    // High's cascades patch every lit material before the first frame compiles any of them, and
+    // every ground tile built later.
+    this.shadows.setupMaterials(this.scene);
+    this.courseGround.decorateMaterial = (material) => this.shadows.patchMaterial(material);
+    this.post = createPostChain(renderer, this.scene, this.camera, quality);
 
     this.cameraTarget.set(0, 0, 0);
     this.onResize();
@@ -270,7 +303,10 @@ export class RenderScene {
     // frame however far the cart has driven.
     this.courseGround.update(this.camera.position.x, this.camera.position.z);
 
-    this.renderer.render(this.scene, this.camera);
+    this.sky.update(view.elapsedSeconds);
+    this.shadows.update(this.cameraTarget);
+    if (this.post) this.post.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   /**
@@ -290,6 +326,10 @@ export class RenderScene {
     this.teeSigns.dispose();
     this.pickups?.dispose();
     this.shieldPlates.dispose();
+    this.courseGround.decorateMaterial = null;
+    this.shadows.dispose();
+    this.post?.dispose();
+    this.sky.dispose();
     // The ground and treeline are the course's, not this match's: taken out of the scene and kept.
     // `scene.clear()` below only detaches, so they come out intact for the next match to add.
     this.scene.clear();
@@ -359,6 +399,7 @@ export class RenderScene {
     if (Math.abs(nextFov - this.camera.fov) > 0.01) {
       this.camera.fov = nextFov;
       this.camera.updateProjectionMatrix();
+      this.shadows.projectionChanged();
     }
   }
 
@@ -366,5 +407,7 @@ export class RenderScene {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.post?.setSize(window.innerWidth, window.innerHeight);
+    this.shadows.projectionChanged();
   }
 }

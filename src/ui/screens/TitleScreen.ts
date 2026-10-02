@@ -44,7 +44,7 @@ export class TitleScreen implements Screen {
   enter(): void {
     const { root, renderer, backdropHole, version, actions } = this.options;
 
-    this.backdrop = createBackdrop(backdropHole);
+    this.backdrop = createBackdrop(backdropHole, renderer);
     const size = renderer.getSize(new THREE.Vector2());
     this.backdrop.resize(size.x, size.y);
 

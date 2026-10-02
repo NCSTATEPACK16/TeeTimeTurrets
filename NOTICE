@@ -68,6 +68,14 @@ Ported code
     Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
     Ported verbatim.
 
+  src/render/quality.ts, src/render/sky.ts
+    Adapted from src/engine/quality.ts and src/engine/sky.ts in Claude of
+    Tanks: the preset-ladder pattern and device heuristic, and the approach of
+    a procedural dome baked to a PMREM environment with horizon-matched fog and
+    an invalid-bake guard. The values, shader and guard mechanism are this
+    project's own.
+    Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
+
   reference/claude-of-tanks/*.ts.txt
     Copied from src/engine/{sky,lighting,quality,cameraRig,post}.ts in Claude of
     Tanks as reading material; not compiled or shipped.
