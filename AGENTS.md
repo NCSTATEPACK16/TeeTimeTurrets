@@ -90,6 +90,11 @@ now has a repository and agents may commit. Two rules replace the prohibition:
   are judged by human play-testers at each stage stop, not by automated checks. Existing CI
   must stay green. The older tools (`npm run probe`, `npm run smoke`, `npm run gate`) still
   exist, but no new work is required to extend them.
+- **60-second cap (1 Oct 2026).** Every automated check finishes in under 60 s: `npm test` runs
+  in about 33 s, and if it grows past 60 s the slowest file is trimmed. Smoke, gate and probe are
+  opt-in, never part of a stage checkpoint, and `npm run build` no longer runs the gate. The
+  user tests by playing: each play-test item in a PR takes 60 s or less, at `?match=60` (a
+  1-minute match; `?match=N` takes 15–180 s).
 - `tsc --noEmit` (aliased as part of `npm run build`) must be clean before any change is
   considered finished. `strict: true`, `noUnusedLocals`, `noUnusedParameters` are all on —
   don't relax them to make an error go away.

@@ -44,13 +44,14 @@ Claude of Tanks (CoT) was reviewed for techniques. What we took and what we may 
 | 9 | Refactor | cloud | Stage 9 |
 | 10 | Docs | cloud | Stage 10 |
 
-**Every stage ends the same way:**
+**Every stage ends the same way** (user, 2026-10-01: every automated check under 60 s; the user tests by playing):
 1. `npx tsc --noEmit`
-2. `npm test -- --testTimeout=30000`
-3. `npm run smoke`
-4. `npm run build` (this includes the gate)
-5. `npm run probe`
-6. Paste the output into the PR description, rewrite `docs/HANDOFF.md`, push, and **stop**.
+2. `npm test` (about 33 s on the Mac; if it passes 60 s, trim the slowest file)
+3. The stage's one smoke check per slice, 15 s or less each.
+4. A play-test list in the PR where every item takes 60 s or less, run at `http://localhost:5173/?match=60` (a 1-minute match).
+5. Paste the output into the PR description, rewrite `docs/HANDOFF.md`, push, and **stop**.
+
+`npm run smoke`, `npm run gate` and `npm run probe` are opt-in tools now, not checkpoint steps, and `npm run build` no longer runs the gate. Older "Accept" lines below that name a gate subject, the smoke course or the probe are superseded by this.
 
 ### Stage 1: finish (on `arena-only`)
 `docs/HANDOFF.md` has the full detail under "Pick up here".

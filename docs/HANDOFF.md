@@ -6,7 +6,7 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 
 ## Read first
 
-1. `AGENTS.md`: the rules, the Claude of Tanks license note, and the testing policy (as of 28 Sep: one smoke check of 15 s or less per change, and human play-tests judge quality).
+1. `AGENTS.md`: the rules, the Claude of Tanks license note, and the testing policy (as of 1 Oct: one smoke check of 15 s or less per change, every automated check under 60 s, smoke/gate/probe opt-in, and the user play-tests at `?match=60` with items of 60 s or less).
 2. **`docs/REVAMP-PLAN.md`: the master stage order and each stage's contents.** It supersedes older plans.
 3. `docs/DECISIONS.md`: the two newest sections are the 2026-09-27 revamp and "The golden fingerprint is Linux x64's".
 4. `docs/TEST-AND-SPEC-PITFALLS.md` before writing a test or a spec.
@@ -36,8 +36,8 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 |---|---|---|---|
 | 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only`, merged in PR #28 | **done** |
 | 2 | Juice and audio (#32–#39) | `stage-2-juice`, merged in PR #69 | **done** |
-| 3 | Foundations: performance and render base (#40–#48) | `stage-3-foundations`, merged in PR #71 | **done** |
-| 4 | Handling feel and arena zone | `stage-4-handling-zone` | **next** |
+| 3 | Foundations: performance (#40–#44) and render base (#45–#48) | 3a `stage-3-foundations`, merged in PR #71; 3b `stage-3b-render` | 3a **done**; 3b **next**: #45 quality presets is written but uncommitted in the main checkout |
+| 4 | Handling feel and arena zone | `stage-4-handling-zone` | after 3b and Stage 5a art |
 | 5 | Environment | `stage-5-environment` | — |
 | 6 | navGraph | `stage-6-navgraph` | — |
 | 7 | Clubhouse in Blender (**local only**), re-specified in `docs/art/specs/` | `stage-7-blender`, `stage-7b-sim` | 7a merged in PR #77; **7b in a draft PR, awaiting play-test** |
@@ -102,9 +102,11 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
   - The holes are sampled per hole: 0.5 s, against 3.9 s for sampling the blended course.
   - They are built during PLAY's loading step, so opening the map mid-match does not stall.
 
-## Next session: Stage 4, after the Stage 7b play-test
+## Next session: Stage 3b, after the Stage 7b play-test
 
-`REVAMP-PLAN.md` "Stage 4". Branch `stage-4-handling-zone` from `main` once 7b has merged. What bears on it:
+Order agreed 2026-10-01: 7b merges, then **Stage 3b** (#45–#48) on `stage-3b-render` from `main`, carrying the uncommitted #45 files from the main checkout (`render/quality.ts`, `render/renderer.ts` and their tests, settings v2, the settings-panel select, `main.ts`, `tools/gate/gateScene.ts`). Then **Stage 5a art** in `../TeeTimeTurrets-stage5` (rebase on main; horizon is WIP, course kit left; the rider fix is probably covered by 7b's `art/rider_kit.py`). Then Stage 4, 5, 6, 8, 9, 10.
+
+For Stage 4, what bears on it:
 - **The golden is Linux-only.** A sim change needs its new value from CI: push, read the `expected N to be M` line from the failing CI run, record N in a follow-up commit, and say so in both commit messages.
 - **The six-hole zone (#52) feeds the pickup scatter.** `placePickupSites` already takes an optional `zone` polygon; pass it in from `arenaFromCourse` and `main.ts` together, since both must place the same sites.
 
