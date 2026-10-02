@@ -38,7 +38,7 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 | 2 | Juice and audio (#32–#39) | `stage-2-juice`, merged in PR #69 | **done** |
 | 3 | Foundations: performance (#40–#44) and render base (#45–#48) | 3a `stage-3-foundations`, merged in PR #71; 3b `stage-3b-render`, draft PR | 3a **done**; 3b **built, awaiting play-test** |
 | 4 | Handling feel and arena zone | `stage-4-handling-zone` | after 3b and Stage 5a art |
-| 5 | Environment | `stage-5-environment` | — |
+| 5 | Environment | 5a art: `stage-5-art`, draft PR; the rest: `stage-5-environment` | **5a built, awaiting play-test**; #54–#61 after Stage 4 |
 | 6 | navGraph | `stage-6-navgraph` | — |
 | 7 | Clubhouse in Blender (**local only**), re-specified in `docs/art/specs/` | `stage-7-blender`, `stage-7b-sim` | **done**: 7a merged in PR #77, 7b in PR #78 |
 | 8 | Economy | `stage-8-economy` | — |
@@ -102,9 +102,9 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
   - The holes are sampled per hole: 0.5 s, against 3.9 s for sampling the blended course.
   - They are built during PLAY's loading step, so opening the map mid-match does not stall.
 
-## Next session: Stage 5a art, then Stage 4
+## Next session: Stage 4, after the Stage 3b and 5a play-tests
 
-Stage 3b is built (`render/quality.ts`, `sky.ts`, `shadows.ts`, `post.ts`) and awaits the user's play-test. **Stage 5a art** runs next in `../TeeTimeTurrets-stage5`: rebase `stage-5-art` on main once 3b merges (both touch `render/scene.ts`); horizon is in progress, the course kit is left, and the rider fix is covered by 7b's `art/rider_kit.py`. Then Stage 4, 5, 6, 8, 9, 10.
+Stage 3b (PR #79) and Stage 5a art (branch `stage-5-art`, built on 3b) both await the user's play-test; merge 3b first. 5a shipped six tree species and woods in the match, clubhouse dressing, a ring of horizon hills, and the course kit (`course_kit.json`, exported only; hand-off comments are on #52, #55, #58 and #59). The rider fix was superseded by 7b's `art/rider_kit.py`. Then Stage 4, 5, 6, 8, 9, 10.
 
 What 3b leaves for later stages:
 - The sky (`PARKLAND_SKY`) is the parkland look for the whole match. Its horizon colour is the fog colour, so anything far away (Stage 5a's horizon hills) should be tinted toward `PARKLAND_SKY.horizon`, not the old `BIOMES.parkland.sky`.

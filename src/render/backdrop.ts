@@ -80,9 +80,9 @@ export function createBackdrop(spec: HoleSpec, renderer: THREE.WebGLRenderer | n
   scene.add(ground.mesh);
 
   const trees = createTrees(terrain, surfaces);
-  if (trees.mesh !== null) {
-    trees.mesh.castShadow = true;
-    scene.add(trees.mesh);
+  for (const mesh of trees.meshes) {
+    mesh.castShadow = true;
+    scene.add(mesh);
   }
 
   // The same factory the round uses, placed from the same `terrain.cupPosition`. This is the
@@ -127,7 +127,7 @@ export function createBackdrop(spec: HoleSpec, renderer: THREE.WebGLRenderer | n
       // each entry, so anything missed accumulates once per visit to the title screen.
       scene.remove(ground.mesh);
       ground.dispose();
-      if (trees.mesh !== null) scene.remove(trees.mesh);
+      for (const mesh of trees.meshes) scene.remove(mesh);
       trees.dispose();
       scene.remove(flagstick);
       flagstick.dispose();

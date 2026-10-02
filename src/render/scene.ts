@@ -17,6 +17,7 @@ import type { Surfaces } from "../sim/surfaces";
 import type { CartTransform, Vec3 } from "../sim/world";
 import type { CourseTerrain } from "../sim/courseTerrain";
 import { PARKLAND_SKY, Sky } from "./sky";
+import { createHorizon, type Horizon } from "./horizon";
 import { createSunShadows, type SunShadows } from "./shadows";
 import { createPostChain, type PostChain } from "./post";
 import { QUALITY_PRESETS, type QualityPreset } from "./quality";
@@ -148,6 +149,8 @@ export class RenderScene {
   private readonly sizeScratch = new THREE.Vector2();
   private readonly resizeListener: () => void;
   private readonly sky: Sky;
+  /** Hill cards past the course bounds, so the fog meets a skyline (Stage 5a). */
+  private readonly horizon: Horizon;
   private readonly shadows: SunShadows;
   private readonly post: PostChain | null;
 
@@ -176,6 +179,8 @@ export class RenderScene {
     // dome lights the scene through its baked environment, and the fog is its horizon colour.
     this.sky = new Sky(PARKLAND_SKY, renderer);
     this.sky.install(this.scene, FOG_DENSITY_X_FIELD / fieldSize);
+    this.horizon = createHorizon(arena.course.bounds, (x, z) => arena.course.heightAt(x, z), arena.seed ?? 0);
+    this.scene.add(this.horizon.mesh);
 
     this.camera = new THREE.PerspectiveCamera(
       BASE_FOV_DEG,
@@ -194,7 +199,8 @@ export class RenderScene {
     this.courseGround = dressing.ground;
     this.scene.add(this.courseGround.group);
     this.treeline = dressing.treeline;
-    if (this.treeline?.mesh) this.scene.add(this.treeline.mesh);
+    for (const mesh of this.treeline?.meshes ?? []) this.scene.add(mesh);
+    for (const mesh of dressing.woods.meshes) this.scene.add(mesh);
     this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
     // Stage 7: the clubhouse complex, a sign on every tee, and the pickups.
@@ -245,6 +251,7 @@ export class RenderScene {
     for (const bot of this.botCarts) cast(bot, false);
     if (this.clubhouseKit) cast(this.clubhouseKit.group, true);
     for (const object of this.teeSigns.objects) cast(object, false);
+    for (const mesh of dressing.woods.meshes) mesh.castShadow = true;
     // High's cascades patch every lit material before the first frame compiles any of them, and
     // every ground tile built later.
     this.shadows.setupMaterials(this.scene);
@@ -330,7 +337,8 @@ export class RenderScene {
     this.shadows.dispose();
     this.post?.dispose();
     this.sky.dispose();
-    // The ground and treeline are the course's, not this match's: taken out of the scene and kept.
+    this.horizon.dispose();
+    // The ground, woods and treeline are the course's, not this match's: taken out of the scene and kept.
     // `scene.clear()` below only detaches, so they come out intact for the next match to add.
     this.scene.clear();
   }

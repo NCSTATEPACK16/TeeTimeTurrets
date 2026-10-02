@@ -9,14 +9,15 @@
  * Without it the course ends at a mown edge with sky behind it: the barrier stops the cart at a
  * line the player cannot see a reason for. Trees are the reason.
  *
- * Follows `Trees.ts` exactly -- one merged geometry, one `InstancedMesh`, one `dispose()` freeing
- * geometry, material and mesh -- and grows the same tree by importing its builder rather than
- * describing a second one.
+ * Follows `Trees.ts` exactly -- the biome's two species, an `InstancedMesh` each, one `dispose()`
+ * freeing geometries, material and meshes -- and grows the same trees by handing its placements to
+ * `plantTrees` rather than describing a second wood.
  */
 
 import * as THREE from "three";
 import { BIOMES } from "./biomes";
-import { buildTreeGeometry } from "./Trees";
+import { plantTrees } from "./Trees";
+import type { Trees } from "./Trees";
 import { hashChannel, mulberry32 } from "../sim/rng";
 import { metresNorthOf } from "../sim/courseBarrier";
 import type { SouthBoundary } from "../sim/courseBarrier";
@@ -40,12 +41,10 @@ const MAX_TREES = 1400;
 
 /** The channel the band draws from. 0..3 belong to the hole (height, sand, layout, trees). */
 const TREELINE_CHANNEL = 6;
+/** The species bit's own stream, so choosing a species never moves a tree the band already had. */
+const TREELINE_SPECIES_CHANNEL = 8;
 
-export interface Treeline {
-  readonly mesh: THREE.InstancedMesh | null;
-  readonly count: number;
-  dispose(): void;
-}
+export type Treeline = Trees;
 
 /**
  * `heightAt` is the course's, so the band sits on the same ground the player drives to the edge of.
@@ -62,6 +61,7 @@ export function createTreeline(
   // against holes 1, 9, 10 and 18.
   const palette = BIOMES.parkland;
   const random = mulberry32(hashChannel(seed, 0, TREELINE_CHANNEL));
+  const speciesRandom = mulberry32(hashChannel(seed, 0, TREELINE_SPECIES_CHANNEL));
 
   const dx = line.b.x - line.a.x;
   const dz = line.b.z - line.a.z;
@@ -73,6 +73,7 @@ export function createTreeline(
   const nz = -dx / length;
 
   const matrices: THREE.Matrix4[] = [];
+  const species: number[] = [];
   const matrix = new THREE.Matrix4();
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
@@ -103,30 +104,9 @@ export function createTreeline(
       quaternion.setFromAxisAngle(axis, random() * Math.PI * 2);
       scale.set(height, height, height);
       matrices.push(matrix.clone().compose(position, quaternion, scale));
+      species.push(speciesRandom() < 0.5 ? 0 : 1);
     }
   }
 
-  if (matrices.length === 0) return { mesh: null, count: 0, dispose: () => {} };
-
-  const geometry = buildTreeGeometry(palette);
-  const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.9,
-    flatShading: true,
-  });
-  const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
-  for (let i = 0; i < matrices.length; i++) mesh.setMatrixAt(i, matrices[i]!);
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-  mesh.computeBoundingSphere();
-
-  return {
-    mesh,
-    count: matrices.length,
-    dispose: () => {
-      geometry.dispose();
-      material.dispose();
-      mesh.dispose();
-    },
-  };
+  return plantTrees(palette, matrices, species);
 }

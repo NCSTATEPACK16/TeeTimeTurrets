@@ -104,7 +104,7 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 | Ragdoll target mannequin | **primitive** | ~600 | ~15 parts, one per rigid body. §2.2. |
 | **Cart rider** | **primitive-graph** | 2,600 | 26 parts, no rigid bodies, four slots of its own. Built, then given the ball joints, neck and fists §2.2 always described. §2.2. |
 | Golf ball | primitive | 80 | Built (`entities/ballShape.ts`). |
-| Trees, 2–3 per biome | primitive-graph | 200 each | **Must be GPU-instanced.** Silhouettes from `COURSE_PIPELINE.md` §7.1. |
+| Trees | primitive-graph | 200 each | **6 species, primitive graph, built** (Stage 5a: `art/stage5_kit.py` → `src/entities/graphs/trees.json`), two per biome, 62–164 tris each. Each species is merged with `mergeGraph` and GPU-instanced: one `InstancedMesh` per species (`src/render/Trees.ts`). Silhouettes from `COURSE_PIPELINE.md` §7.1; spec `docs/art/specs/stage5/trees.md`. |
 | Flag + pin | primitive | 60 | **Built** (`src/entities/Flagstick.ts`). Procedural TypeScript, not a graph: it owns a collider and a sim-side felled state, so §2.2's route rule puts it with the ragdolls — and a graph cannot express the vertex-animated pennant this row asks for. Pole, ferrule, cup ring and pennant; `PIN_SHAPE` in `src/sim/entities/Pin.ts` is the one set of numbers both sides read. |
 | Course props (rake, tee marker, bridge, boardwalk) | primitive-graph | 100–400 | **Six built** (`art/clubhouse-and-cart.blend` `props` collection → `src/entities/graphs/props.json`): tee marker, bunker rake, ball washer, distance post, cart-path sign, footbridge. The boardwalk belongs to the crossing work. The flagstick is the row above and is *not* a graph. 36–348 tris each, one merged draw call apiece via `mergeGraph`. Scale is per-cell on the sheet, not uniform — every one of these was sized against cart height. |
 | Terrain | procedural heightfield | — | Built (`sim/terrain.ts`). |
@@ -1107,10 +1107,10 @@ border, or any 3/4 or perspective "hero" view.
    baseline updated without anyone looking at it.
 4. ~~**Model the cart** (§5).~~ **Done.** 47 objects, eight material slots, exported to
    `src/entities/graphs/cart.json`. Source is `art/clubhouse-and-cart.blend`.
-5. **Trees, per biome** — **superseded.** They ship as `src/render/Trees.ts`: one merged geometry
-   with baked vertex colours, one `InstancedMesh`, one draw call per hole. Authoring them in
-   Blender would cost the instancing the manifest asks for, since the graph assembler builds an
-   `Object3D` per node. The manifest row stays as a record of the decision, not as work.
+5. ~~**Trees, per biome**~~ **Done in Stage 5a.** Six species authored in Blender
+   (`art/stage5_kit.py` → `trees.json`). Instancing survives because each species is flattened by
+   `mergeGraph` before it is instanced, so no `Object3D` is built per node: one `InstancedMesh` per
+   species, two draw calls per biome in view.
 6. **The mannequin and ragdoll** (§2.2) as a standalone test scene. Procedural TypeScript, not
    Blender — the physics rig is the character rig. It is the game's signature moment and the
    tuning takes real iteration; budget for it.

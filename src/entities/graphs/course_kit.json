@@ -1,0 +1,779 @@
+{
+  "name": "course_kit",
+  "version": 1,
+  "units": "m",
+  "slots": {
+    "kerb_concrete": {
+      "color": 12170926,
+      "roughness": 0.95,
+      "metalness": 0.0
+    },
+    "prop_timber": {
+      "color": 10120000,
+      "roughness": 0.85,
+      "metalness": 0.0
+    },
+    "prop_timber_dark": {
+      "color": 6176548,
+      "roughness": 0.85,
+      "metalness": 0.0
+    },
+    "reed_green": {
+      "color": 7309882,
+      "roughness": 0.9,
+      "metalness": 0.0
+    },
+    "reed_tan": {
+      "color": 11901788,
+      "roughness": 0.9,
+      "metalness": 0.0
+    },
+    "rock": {
+      "color": 9078136,
+      "roughness": 0.95,
+      "metalness": 0.0
+    },
+    "stake_band": {
+      "color": 1710618,
+      "roughness": 0.6,
+      "metalness": 0.0
+    },
+    "stake_white": {
+      "color": 16053486,
+      "roughness": 0.6,
+      "metalness": 0.0
+    }
+  },
+  "props": {
+    "zone_stake": {
+      "name": "ck_stake_post",
+      "kind": "box",
+      "params": [
+        0.07,
+        0.92,
+        0.07
+      ],
+      "position": [
+        0.0,
+        0.46,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "stake_white",
+      "children": [
+        {
+          "name": "ck_stake_band",
+          "kind": "box",
+          "params": [
+            0.076,
+            0.07,
+            0.076
+          ],
+          "position": [
+            0.0,
+            0.41,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "stake_band",
+          "children": null
+        },
+        {
+          "name": "ck_stake_eye",
+          "kind": "torus",
+          "params": [
+            0.028,
+            0.008,
+            4.0,
+            10.0
+          ],
+          "position": [
+            0.0,
+            0.34,
+            0.057
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "stake_band",
+          "children": null
+        },
+        {
+          "name": "ck_stake_point",
+          "kind": "prism",
+          "params": [
+            0.07,
+            -0.035,
+            0.0,
+            0.035,
+            0.0,
+            0.0,
+            0.08
+          ],
+          "position": [
+            0.0,
+            0.46,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "stake_white",
+          "children": null
+        }
+      ]
+    },
+    "tee_riser": {
+      "name": "ck_riser_sleeper",
+      "kind": "box",
+      "params": [
+        0.2,
+        0.25,
+        2.0
+      ],
+      "position": [
+        0.0,
+        0.125,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "prop_timber_dark",
+      "children": [
+        {
+          "name": "ck_riser_groove0",
+          "kind": "box",
+          "params": [
+            0.204,
+            0.012,
+            0.06
+          ],
+          "position": [
+            0.0,
+            0.045,
+            -0.55
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "prop_timber",
+          "children": null
+        },
+        {
+          "name": "ck_riser_groove1",
+          "kind": "box",
+          "params": [
+            0.204,
+            0.012,
+            0.06
+          ],
+          "position": [
+            0.0,
+            0.075,
+            0.45
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "prop_timber",
+          "children": null
+        }
+      ]
+    },
+    "path_kerb": {
+      "name": "ck_kerb",
+      "kind": "prism",
+      "params": [
+        2.0,
+        0.0,
+        0.0,
+        0.15,
+        0.0,
+        0.15,
+        0.09,
+        0.12,
+        0.12,
+        0.0,
+        0.12
+      ],
+      "position": [
+        0.0,
+        0.0,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "kerb_concrete",
+      "children": null
+    },
+    "path_bollard": {
+      "name": "ck_bollard_post",
+      "kind": "cylinder",
+      "params": [
+        0.075,
+        0.08,
+        0.84,
+        8.0
+      ],
+      "position": [
+        0.0,
+        0.42,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "prop_timber",
+      "children": [
+        {
+          "name": "ck_bollard_band",
+          "kind": "cylinder",
+          "params": [
+            0.081,
+            0.081,
+            0.07,
+            8.0
+          ],
+          "position": [
+            0.0,
+            0.24,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "stake_white",
+          "children": null
+        },
+        {
+          "name": "ck_bollard_cap",
+          "kind": "cone",
+          "params": [
+            0.078,
+            0.06,
+            8.0
+          ],
+          "position": [
+            0.0,
+            0.45,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "prop_timber",
+          "children": null
+        }
+      ]
+    },
+    "pond_reeds": {
+      "name": "ck_reed0",
+      "kind": "cone",
+      "params": [
+        0.035,
+        1.4,
+        4.0
+      ],
+      "position": [
+        0.0,
+        0.7,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "reed_green",
+      "children": [
+        {
+          "name": "ck_reed1",
+          "kind": "cone",
+          "params": [
+            0.03,
+            1.1,
+            4.0
+          ],
+          "position": [
+            0.12,
+            -0.1512,
+            0.05
+          ],
+          "rotation": [
+            0.1396,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "reed_green",
+          "children": null
+        },
+        {
+          "name": "ck_reed2",
+          "kind": "cone",
+          "params": [
+            0.03,
+            0.95,
+            4.0
+          ],
+          "position": [
+            -0.1,
+            -0.227,
+            0.08
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "reed_tan",
+          "children": null
+        },
+        {
+          "name": "ck_reed3",
+          "kind": "cone",
+          "params": [
+            0.032,
+            1.2,
+            4.0
+          ],
+          "position": [
+            0.05,
+            -0.0999,
+            -0.12
+          ],
+          "rotation": [
+            -0.1047,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "reed_green",
+          "children": null
+        },
+        {
+          "name": "ck_reed4",
+          "kind": "cone",
+          "params": [
+            0.028,
+            0.75,
+            4.0
+          ],
+          "position": [
+            -0.14,
+            -0.3274,
+            -0.06
+          ],
+          "rotation": [
+            0.2094,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "reed_tan",
+          "children": null
+        },
+        {
+          "name": "ck_reed5",
+          "kind": "cone",
+          "params": [
+            0.025,
+            0.6,
+            4.0
+          ],
+          "position": [
+            0.2,
+            -0.4029,
+            -0.04
+          ],
+          "rotation": [
+            0.2443,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "reed_tan",
+          "children": null
+        },
+        {
+          "name": "ck_reed6",
+          "kind": "cone",
+          "params": [
+            0.028,
+            0.85,
+            4.0
+          ],
+          "position": [
+            -0.04,
+            -0.2759,
+            0.17
+          ],
+          "rotation": [
+            0.1571,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "reed_green",
+          "children": null
+        }
+      ]
+    },
+    "rock_a": {
+      "name": "ck_rock_a0",
+      "kind": "prism",
+      "params": [
+        0.85,
+        -0.55,
+        -0.08,
+        0.5,
+        -0.08,
+        0.6,
+        0.27,
+        0.3,
+        0.64,
+        -0.15,
+        0.72,
+        -0.5,
+        0.37
+      ],
+      "position": [
+        0.0,
+        0.0,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "rock",
+      "children": [
+        {
+          "name": "ck_rock_a1",
+          "kind": "prism",
+          "params": [
+            0.8,
+            -0.4,
+            -0.08,
+            0.4,
+            -0.08,
+            0.42,
+            0.3,
+            0.05,
+            0.54,
+            -0.32,
+            0.32
+          ],
+          "position": [
+            0.2,
+            0.0,
+            -0.05
+          ],
+          "rotation": [
+            0.0,
+            0.9599,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "rock",
+          "children": null
+        }
+      ]
+    },
+    "rock_b": {
+      "name": "ck_rock_b0",
+      "kind": "prism",
+      "params": [
+        0.5,
+        -0.3,
+        -0.042,
+        0.32,
+        -0.042,
+        0.28,
+        0.208,
+        0.05,
+        0.378,
+        -0.25,
+        0.258
+      ],
+      "position": [
+        0.0,
+        0.0,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "rock",
+      "children": [
+        {
+          "name": "ck_rock_b1",
+          "kind": "prism",
+          "params": [
+            0.42,
+            -0.22,
+            -0.042,
+            0.22,
+            -0.042,
+            0.17,
+            0.178,
+            -0.12,
+            0.238
+          ],
+          "position": [
+            -0.16,
+            0.0,
+            0.05
+          ],
+          "rotation": [
+            0.0,
+            -0.8727,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "rock",
+          "children": null
+        }
+      ]
+    },
+    "rock_c": {
+      "name": "ck_rock_c0",
+      "kind": "prism",
+      "params": [
+        1.05,
+        -0.7,
+        -0.12,
+        0.75,
+        -0.12,
+        0.7,
+        0.43,
+        0.4,
+        0.93,
+        -0.1,
+        1.08,
+        -0.55,
+        0.78,
+        -0.72,
+        0.28
+      ],
+      "position": [
+        0.0,
+        0.0,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "rock",
+      "children": [
+        {
+          "name": "ck_rock_c1",
+          "kind": "prism",
+          "params": [
+            0.95,
+            -0.5,
+            -0.12,
+            0.55,
+            -0.12,
+            0.45,
+            0.48,
+            0.0,
+            0.73,
+            -0.45,
+            0.38
+          ],
+          "position": [
+            0.3,
+            0.0,
+            -0.1
+          ],
+          "rotation": [
+            0.0,
+            1.0472,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "rock",
+          "children": null
+        },
+        {
+          "name": "ck_rock_c2",
+          "kind": "prism",
+          "params": [
+            0.6,
+            -0.32,
+            -0.12,
+            0.32,
+            -0.12,
+            0.27,
+            0.24,
+            -0.2,
+            0.3
+          ],
+          "position": [
+            -0.5,
+            0.0,
+            0.1
+          ],
+          "rotation": [
+            0.0,
+            -0.6109,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "rock",
+          "children": null
+        }
+      ]
+    }
+  }
+}
