@@ -18,3 +18,6 @@ Three's Euler XYZ is `Rx·Ry·Rz`; Blender's is `Rz·Ry·Rx`. The old exporter c
 ## Acceptance
 
 The rider's hands sit on the wheel the way the Blender file shows, and a play-tester notices nothing wrong.
+
+## As built (superseded)
+Not done here. Stage 7b (PR #78) rebuilt the rider as `art/rider_kit.py`, authored in the game's own pose, and re-exported `driver.json` from it: the re-export matches the shipped graph in all 330 values. The game's pose is now the source, so there is nothing left to correct against the frozen file, and the cart gate baselines stay as they are.
