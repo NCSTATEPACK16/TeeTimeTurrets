@@ -79,6 +79,11 @@ export interface CourseGround {
    * `BUILD_BUDGET_MS` on whatever building that implies. Call once per rendered frame.
    */
   update(cameraX: number, cameraZ: number): void;
+  /**
+   * Called on every tile material built from now on: High's shadow cascades patch it
+   * (`render/shadows.ts`). Set by the match scene that borrows the ground, cleared when it goes.
+   */
+  decorateMaterial: ((material: THREE.MeshStandardMaterial) => void) | null;
   /** Tiles currently drawn at near detail. For tests and the smoke check. */
   readonly nearTileCount: number;
   /** Tiles holding a near level, drawn or not. Never more than `NEAR_TILE_CAP`. */
@@ -133,6 +138,7 @@ function paletteVector(field: "green" | "fairway" | "rough" | "sand" | "water"):
 }
 
 export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): CourseGround {
+  let decorate: ((material: THREE.MeshStandardMaterial) => void) | null = null;
   const group = new THREE.Group();
   const extentX = terrain.bounds.maxX - terrain.bounds.minX;
   const extentZ = terrain.bounds.maxZ - terrain.bounds.minZ;
@@ -400,8 +406,11 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
   ): TileLevel {
     const mask = makeMask(maskData, maskSize);
     const material = buildMaterial(mask);
+    decorate?.(material);
     const geometry = buildGeometry(cells, positions, biome, mow);
     const mesh = new THREE.Mesh(geometry, material);
+    // Harmless with shadows off: no shadow map, nothing to receive.
+    mesh.receiveShadow = true;
     return { mesh, geometry, material, mask };
   }
 
@@ -582,6 +591,12 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     group,
     update,
     tileAt,
+    get decorateMaterial() {
+      return decorate;
+    },
+    set decorateMaterial(fn) {
+      decorate = fn;
+    },
     get nearTileCount(): number {
       let count = 0;
       for (const tile of tiles) if (tile.near !== null && tile.near.mesh.visible) count++;

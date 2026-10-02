@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { configureRenderer } from "../../src/render/renderer";
 import { BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS } from "../../src/entities/BallSwarm";
 import { Flagstick } from "../../src/entities/Flagstick";
 import { GolfClub } from "../../src/entities/GolfClub";
@@ -218,6 +219,8 @@ function main(): void {
   // Pixel ratio is pinned to 1, never devicePixelRatio: the signature must not depend on the
   // display the gate happens to run against.
   renderer.setPixelRatio(1);
+  // The game's own colour pipeline, so a subject is drawn as the player sees it.
+  configureRenderer(renderer);
   renderer.setSize(VIEW_WIDTH, VIEW_HEIGHT);
   document.body.appendChild(renderer.domElement);
 

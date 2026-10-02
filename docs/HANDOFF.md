@@ -36,11 +36,11 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
 |---|---|---|---|
 | 1 | Finish: 1.8 wiring, 1.9 rematch, checkpoint (#29–#31) | `arena-only`, merged in PR #28 | **done** |
 | 2 | Juice and audio (#32–#39) | `stage-2-juice`, merged in PR #69 | **done** |
-| 3 | Foundations: performance (#40–#44) and render base (#45–#48) | 3a `stage-3-foundations`, merged in PR #71; 3b `stage-3b-render` | 3a **done**; 3b **next**: #45 quality presets is written but uncommitted in the main checkout |
+| 3 | Foundations: performance (#40–#44) and render base (#45–#48) | 3a `stage-3-foundations`, merged in PR #71; 3b `stage-3b-render`, draft PR | 3a **done**; 3b **built, awaiting play-test** |
 | 4 | Handling feel and arena zone | `stage-4-handling-zone` | after 3b and Stage 5a art |
 | 5 | Environment | `stage-5-environment` | — |
 | 6 | navGraph | `stage-6-navgraph` | — |
-| 7 | Clubhouse in Blender (**local only**), re-specified in `docs/art/specs/` | `stage-7-blender`, `stage-7b-sim` | 7a merged in PR #77; **7b in a draft PR, awaiting play-test** |
+| 7 | Clubhouse in Blender (**local only**), re-specified in `docs/art/specs/` | `stage-7-blender`, `stage-7b-sim` | **done**: 7a merged in PR #77, 7b in PR #78 |
 | 8 | Economy | `stage-8-economy` | — |
 | 9 | Refactor | `stage-9-refactor` | — |
 | 10 | Docs | `stage-10-docs` | — |
@@ -102,9 +102,14 @@ Rewritten 2026-09-27, at the end of the local session that closed Stage 1 and bu
   - The holes are sampled per hole: 0.5 s, against 3.9 s for sampling the blended course.
   - They are built during PLAY's loading step, so opening the map mid-match does not stall.
 
-## Next session: Stage 3b, after the Stage 7b play-test
+## Next session: Stage 5a art, then Stage 4
 
-Order agreed 2026-10-01: 7b merges, then **Stage 3b** (#45–#48) on `stage-3b-render` from `main`, carrying the uncommitted #45 files from the main checkout (`render/quality.ts`, `render/renderer.ts` and their tests, settings v2, the settings-panel select, `main.ts`, `tools/gate/gateScene.ts`). Then **Stage 5a art** in `../TeeTimeTurrets-stage5` (rebase on main; horizon is WIP, course kit left; the rider fix is probably covered by 7b's `art/rider_kit.py`). Then Stage 4, 5, 6, 8, 9, 10.
+Stage 3b is built (`render/quality.ts`, `sky.ts`, `shadows.ts`, `post.ts`) and awaits the user's play-test. **Stage 5a art** runs next in `../TeeTimeTurrets-stage5`: rebase `stage-5-art` on main once 3b merges (both touch `render/scene.ts`); horizon is in progress, the course kit is left, and the rider fix is covered by 7b's `art/rider_kit.py`. Then Stage 4, 5, 6, 8, 9, 10.
+
+What 3b leaves for later stages:
+- The sky (`PARKLAND_SKY`) is the parkland look for the whole match. Its horizon colour is the fog colour, so anything far away (Stage 5a's horizon hills) should be tinted toward `PARKLAND_SKY.horizon`, not the old `BIOMES.parkland.sky`.
+- `QualityPreset.grassDensity`, `treeCap` and `water` are read by nothing yet: Stage 5 reads them.
+- High's CSM patches every `MeshStandardMaterial` in the match scene at build time, and ground tiles through `CourseGround.decorateMaterial`. Anything lit that is added to the scene after the constructor must go through `SunShadows.patchMaterial`, or under High it is lit three times over.
 
 For Stage 4, what bears on it:
 - **The golden is Linux-only.** A sim change needs its new value from CI: push, read the `expected N to be M` line from the failing CI run, record N in a follow-up commit, and say so in both commit messages.

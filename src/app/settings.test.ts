@@ -49,6 +49,32 @@ describe("settings", () => {
     expect(s.sensitivity).toBe(0.25);
   });
 
+  it("round-trips a quality choice, and reads an unknown one as auto", () => {
+    const storage = memoryStorage();
+    saveSettings(storage, { ...DEFAULT_SETTINGS, quality: "high" });
+    expect(loadSettings(storage).quality).toBe("high");
+    const bad = memoryStorage({ [SETTINGS_KEY]: JSON.stringify({ version: 2, quality: "ultra" }) });
+    expect(loadSettings(bad).quality).toBe("auto");
+    expect(DEFAULT_SETTINGS.quality).toBe("auto");
+  });
+
+  /**
+   * Version 1 had no `quality`. A player's save from before it must keep every setting it held --
+   * the volumes, the sensitivity and, above all, `seenControls`, or every returning player is shown
+   * the controls card again -- and simply get the automatic quality.
+   */
+  it("keeps everything in a version-1 save, and gives it the automatic quality", () => {
+    const v1 = { version: 1, master: 0.3, sfx: 0.4, music: 0.2, muted: true, sensitivity: 2, seenControls: true };
+    const loaded = loadSettings(memoryStorage({ [SETTINGS_KEY]: JSON.stringify(v1) }));
+    expect(loaded).toEqual({ master: 0.3, sfx: 0.4, music: 0.2, muted: true, sensitivity: 2, seenControls: true, quality: "auto" });
+  });
+
+  it("writes the current version", () => {
+    const storage = memoryStorage();
+    saveSettings(storage, DEFAULT_SETTINGS);
+    expect(JSON.parse(storage.getItem(SETTINGS_KEY)!).version).toBe(2);
+  });
+
   it("ignores a save from a different version rather than misreading it", () => {
     const storage = memoryStorage({ [SETTINGS_KEY]: JSON.stringify({ version: 99, master: 0.1 }) });
     expect(loadSettings(storage)).toEqual(DEFAULT_SETTINGS);

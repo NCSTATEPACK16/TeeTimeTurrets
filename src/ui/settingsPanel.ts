@@ -1,9 +1,12 @@
 import { SENSITIVITY_MAX, SENSITIVITY_MIN } from "../app/settings";
 import type { Settings } from "../app/settings";
+import { QUALITY_CHOICES, QUALITY_PRESETS } from "../render/quality";
+import type { QualityChoice } from "../render/quality";
 import { el } from "./dom";
 
 /**
- * The settings form: master, effects and music volume, mute, and mouse sensitivity. One builder,
+ * The settings form: master, effects and music volume, mute, mouse sensitivity and graphics
+ * quality. One builder,
  * used by the title's SETTINGS screen and by the pause menu, so the two cannot drift apart.
  * `onChange` gets a fresh copy after every edit; the caller applies it and saves it.
  */
@@ -40,11 +43,26 @@ export function buildSettingsPanel(initial: Settings, onChange: (next: Settings)
     emit();
   });
 
+  const quality = el("select", { class: "settings__select", attrs: { "aria-label": "Quality" } });
+  for (const choice of QUALITY_CHOICES) {
+    const option = el("option", {
+      text: choice === "auto" ? "AUTO" : QUALITY_PRESETS[choice].label.toUpperCase(),
+      attrs: { value: choice },
+    });
+    quality.appendChild(option);
+  }
+  quality.value = current.quality;
+  quality.addEventListener("change", () => {
+    current.quality = quality.value as QualityChoice;
+    emit();
+  });
+
   return el("div", { class: "settings" }, [
     slider("MASTER", "master", 0, 1, 0.05, percent),
     slider("EFFECTS", "sfx", 0, 1, 0.05, percent),
     slider("MUSIC", "music", 0, 1, 0.05, percent),
     el("label", { class: "settings__row" }, [el("span", { class: "settings__label", text: "MUTE" }), mute]),
     slider("MOUSE", "sensitivity", SENSITIVITY_MIN, SENSITIVITY_MAX, 0.05, (v) => `${v.toFixed(2)}x`),
+    el("label", { class: "settings__row" }, [el("span", { class: "settings__label", text: "QUALITY" }), quality]),
   ]);
 }
