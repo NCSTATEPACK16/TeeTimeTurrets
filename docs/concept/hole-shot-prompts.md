@@ -11,7 +11,7 @@
 > plan from the same functions the physics reads. Gemini's remaining jobs, with prompt blocks, are
 > `COURSE_PIPELINE.md` §7.
 >
-> **The art-style spec in §1 below survives and is still used verbatim** in every image prompt. The
+> **The art-style spec in §1 below is superseded for asset sheets** by the style block in `../art/GEMINI-PROMPTS-v2.md` (2 Oct 2026). It asked for flat facets, outlines and no soft shadows, which shots 01 and 03 do not have; see `../art/STYLE-RESEARCH.md`. Before that date it was used verbatim in every image prompt. The
 > camera specs and the 18-biome table in §3 are retired — the biome table assigned 18 different
 > climates to one round; the replacement uses three in contiguous stretches.
 >

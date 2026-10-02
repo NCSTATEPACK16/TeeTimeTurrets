@@ -49,7 +49,7 @@ This is a 2D polygon extruded straight. It covers hip roofs, gables, wedges, sca
 - **Update before reading:** call `bpy.context.view_layer.update()` before reading `matrix_local` or `matrix_world`, and before placing a child against a parent made in the same script.
 - **Origins:** at ground contact for every static asset, and at the pivot for anything that moves.
 - **Slot names are unique per graph set.** New slot sets are listed in each spec. `export()` writes only the slots a graph actually uses.
-- **Style:** match `docs/concept/03CartTurretChasecam.jpg`.
+- **Style:** match `docs/concept/03CartTurretChasecam.jpg`. *(Under review since 2 Oct 2026: `../STYLE-RESEARCH.md` P1 proposes replacing the two sub-points below with a soft-bevelled rule. They stand until the user approves it.)*
   - Flat shading, deliberately large facets, no textures, no bevels, and never decimate.
   - The premium look comes from lighting, not from geometry.
 
