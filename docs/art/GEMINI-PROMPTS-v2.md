@@ -13,7 +13,7 @@ What changes from the earlier sheets:
 1. **App and model:** in the Gemini app, use **Nano Banana Pro (Gemini 3 Pro Image)**. It renders label text best and accepts up to 6 object reference images. The Gemini API's image models need billing, so use the web app; `docs/concept/reference/README.md` says the same.
 2. **One chat thread per sheet group** (S1, S2–S4, S5–S7, S8–S9). Gemini keeps a design consistent across turns in one thread, and loses it across threads.
 3. **On every first turn, attach:** `docs/concept/01Formlanguagesheet.jpg` and `docs/concept/03CartTurretChasecam.jpg`. Attach any further images each prompt names.
-4. **Paste the style block, then the sheet prompt**, in one message.
+4. **Paste the style block, then the turret block if the sheet shows the cart, then the sheet prompt**, in one message.
 5. **Aspect ratio 16:9**, at the highest resolution offered.
 6. **If a result misses,** reply in the same thread with a single correction ("same image, but the canopy covers only the seats"). Don't regenerate from scratch; that loses consistency.
 7. **File the keeper:**
@@ -30,6 +30,19 @@ sips -Z 2048 -s format jpeg -s formatOptions 88 IN.png --out docs/concept/refere
 > **Style:** match the two attached reference images exactly. This is a stylized 3D game render in a soft **"vinyl toy" low-poly** style. Objects are built from a small number of chunky, simple shapes: rounded boxes, cylinders and wedges. **Every exposed edge has a visible soft bevel** that catches a thin highlight line. Shading is smooth within each part, with clean solid colours and no textures. Lighting: a warm sun from the upper left, a soft sky fill, gentle ambient occlusion darkening creases and the undersides of overhangs, and soft contact shadows where things meet the ground. Palette: cream white, signal red, slate blue-grey, golf-course greens, warm sand tan, brick red and sage green, saturated but not neon. Detail comes from a few mid-sized features (lights, bumpers, cushions, trim), never from small clutter.
 >
 > **Avoid:** black outlines or cel-shading ink lines, photographic textures, hard faceted flat-shaded surfaces, tiny greebles, bolts or panel lines, lens flare, depth-of-field blur, and any text, logos or wordmarks other than the labels this prompt asks for.
+
+## The turret block (paste after the style block on every sheet that shows the cart)
+
+Added 2 October 2026, after the first S2 run put the club on the back of the turret. The block describes the **shipped** mechanism (`docs/superpowers/specs/2026-09-08-turret-geometry-and-swing-plane-design.md`; `SWING` in `src/entities/GolfClub.ts`: backswing 1.75 rad, follow-through 0.65 rad, plane tilt 0.25 rad). It is not a new design. Use it in S2, S2b, S3, S4 and S8.
+
+> TURRET (draw exactly this): the turret sits on the canopy roof, slightly forward of the roof's centre. From the bottom up:
+> 1. A short, round, slate blue-grey pedestal with a yaw ring. The whole turret can turn 360° on it.
+> 2. Above the pedestal, a horizontal pivot pin held between two slate side cheeks, like a small cannon on its mount.
+> 3. On the pin, a red rounded-box housing about 0.8 m long, 0.36 m wide and 0.30 m tall, lying lengthways and pointing the same way as the cart's nose.
+> 4. ONE golf club, coming straight out of the FRONT end of the housing and continuing its line: a 1.75 m steel shaft that reaches out past the cart's front bumper, ending in an iron club head mounted at its heel, face square to the direction of aim.
+> Nothing sticks out of the back of the housing, and the club is never on the rear of the cart. The rider does not hold this club; the turret is its only mount.
+>
+> How it moves: to shoot, the whole housing tilts back on its pivot pin and swings the club up and back over the turret in a near-vertical plane along the aim line, about 100° back. It then whips forward and down through the start position, and the ball flies forward from the club head along the aim line. The follow-through stops about 37° below horizontal, above the canopy. It is a centre-line swing like a pendulum or catapult. It never swings sideways around the rider, and it has no left- or right-handed version.
 
 ---
 
@@ -56,7 +69,7 @@ sips -Z 2048 -s format jpeg -s formatOptions 88 IN.png --out docs/concept/refere
 
 **Consumer:** P5 (re-proportion and the team-colour question). **File:** `cart-v3-hero-01.jpg`. **Also attach:** `.scratch/shots-2026-10-01/parkland-woods.png` from the main checkout, which is our current in-game frame.
 
-> The third attached image is our current in-game screenshot. Our cart in it looks bulky and blocky, and the large blue roof dominates. Redesign the cart in the style of the first two references, keeping its layout: a golf cart about 2.4 m long and 1.5 m wide, wheels 0.68 m in diameter, canopy top at 1.65 m, and a turret on the canopy. The turret is a red rounded box about 0.8 m long on a round slate-blue-grey pivot, with a 1.75 m golf-club shaft coming straight out of the front and a club head at its tip. Make the body one low rounded tub with a rounded hood and nose, two soft seat cushions, a steering wheel and a navy golf bag standing on the open rear deck. The canopy is thin (about 9 cm) with rounded edges and covers the seats only.
+> The third attached image is our current in-game screenshot. Our cart in it looks bulky and blocky, and the large blue roof dominates. Redesign the cart in the style of the first two references, keeping its layout: a golf cart about 2.4 m long and 1.5 m wide, wheels 0.68 m in diameter, canopy top at 1.65 m, and the turret described in the TURRET block above. The body is CART WHITE with a slate blue-grey chassis and bumpers, as in the attached form-language cart; only the team-colour parts change between panels. Make the body one low rounded tub with a rounded hood and nose, two soft seat cushions, a steering wheel and a navy golf bag standing on the open rear deck. The canopy is thin (about 9 cm) with rounded edges and covers the seats only.
 >
 > Show **four panels in a 2×2 grid** on a fairway background, all from the same chase-camera angle: behind the cart and slightly to its right, about 3 m up and 6 m back, looking down about 15°. Label each panel underneath:
 > - **A: TEAM BLUE, FULL CANOPY:** the whole canopy in team blue.
@@ -64,10 +77,27 @@ sips -Z 2048 -s format jpeg -s formatOptions 88 IN.png --out docs/concept/refere
 > - **C: TEAM ORANGE, FULL CANOPY**
 > - **D: TEAM ORANGE, TRIM ONLY**
 
+**If the club comes out of the back** (it did on the first run):
+> Fix: the golf club is on the back of the turret. Same four panels, but the club must come out of the FRONT of the red housing, pointing the same way as the cart's nose, with the shaft reaching out past the front bumper and the club head at its far end. Nothing sticks out of the back of the housing. Make the cart body white with a slate blue-grey chassis, as in the form-language reference.
+
 **Follow-up turns:**
 > Same four panels from 40 m away, as a small figure in the middle of a fairway, so I can judge which team reading survives at distance.
 
 > Same image in greyscale.
+
+---
+
+## S2b. Turret swing sequence (thread B, after S2)
+
+**Consumer:** confirms the club's mount and motion before the cart is re-blocked. It replaces `swing-sequence-01.jpg` as the look of the swing; the angles are the shipped ones. **File:** `turret-swing-02.jpg`.
+
+> Using the same cart and the same chosen colours, make a 4-panel swing sequence in one row, all seen from the cart's right side at the same scale (SIDE view, nose pointing right), on a plain mid-grey background with a simple ground line. Show the turret mechanism described in the TURRET block, with a dashed arc for the club head's path. Label each panel underneath:
+> - **AIM:** the club level and pointing forward past the front bumper.
+> - **TOP OF BACKSWING:** the housing tilted back on its pivot pin, the club raised up and back over the turret about 100° in a vertical plane, head high above and behind the pivot.
+> - **IMPACT:** the club back at the aim position, a golf ball just leaving the club head, flying forward.
+> - **FOLLOW-THROUGH:** the club about 37° below horizontal, still above the canopy roof.
+>
+> The rider stays seated and does not move.
 
 ---
 
