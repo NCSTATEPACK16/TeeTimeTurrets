@@ -1,5 +1,5 @@
 import { hasLineOfSight } from "../sim/lineOfSight";
-import type { HeightSampler } from "../sim/lineOfSight";
+import type { HeightSampler, Obstacle } from "../sim/lineOfSight";
 import { COARSE_RANGE_M } from "./plateState";
 
 /**
@@ -46,7 +46,11 @@ export class Sightlines {
   private readonly nextMs: number[];
   private readonly offsetMs: number[];
 
-  constructor(count: number) {
+  /** `obstacles` are the buildings (`Sim.obstacles`): a plate is hidden behind one as behind a hill. */
+  constructor(
+    count: number,
+    private readonly obstacles: readonly Obstacle[] = [],
+  ) {
     this.seen = new Array<boolean>(count).fill(false);
     this.nextMs = new Array<number>(count).fill(Number.NEGATIVE_INFINITY);
     this.offsetMs = Array.from({ length: count }, (_, i) => (i / Math.max(1, count)) * SIGHT_INTERVAL_MS);
@@ -60,7 +64,7 @@ export class Sightlines {
     }
     if (nowMs < this.nextMs[plate]!) return this.seen[plate]!;
 
-    this.seen[plate] = hasLineOfSight(ground, q.fromX, q.fromY, q.fromZ, q.toX, q.toY, q.toZ);
+    this.seen[plate] = hasLineOfSight(ground, q.fromX, q.fromY, q.fromZ, q.toX, q.toY, q.toZ, this.obstacles);
     // The next of this plate's own slots after now: slots sit at offset + k * interval, so a plate
     // stays on its slot however late or early it was asked.
     const offset = this.offsetMs[plate]!;

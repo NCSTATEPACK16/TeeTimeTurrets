@@ -31,11 +31,24 @@ import { NO_KILLER } from "./matchConfig";
  *   damage.
  * - `kill`: a cart reached 0 HP. This **is** the stroke charged to `target`'s team. `actor` is the
  *   killer, or `NO_RIG` for a death nobody caused (drowning).
- * - `pickup`: `actor` collected ammo; `amount` is how many rounds.
+ * - `pickup`: `actor` collected ammo or a hot dog; `amount` is the rounds, or the HP for a hot dog.
+ * - `shieldGained`: `actor` drank a drink; `amount` is the plates it now has.
+ * - `plateBroken`: `target` lost a shield plate. `actor` hit or rammed it off, or is `NO_RIG` when
+ *   it decayed by itself; `amount` is the plates left.
  * - `splash`: `actor`'s cart went into water.
  * - `respawn`: `actor` came back.
  */
-export type SimEventKind = "shot" | "dry" | "hit" | "ram" | "kill" | "pickup" | "splash" | "respawn";
+export type SimEventKind =
+  | "shot"
+  | "dry"
+  | "hit"
+  | "ram"
+  | "kill"
+  | "pickup"
+  | "shieldGained"
+  | "plateBroken"
+  | "splash"
+  | "respawn";
 
 /** A rig index that is no rig: the killer of a drowned cart, the target of an event without one. */
 export const NO_RIG = NO_KILLER;

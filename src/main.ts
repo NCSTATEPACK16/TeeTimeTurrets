@@ -17,6 +17,7 @@ import { loadSettings, pageStorage, saveSettings } from "./app/settings";
 import type { Settings } from "./app/settings";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
 import { mountPerfOverlay } from "./ui/perfOverlay";
+import { matchSecondsFromQuery } from "./app/matchQuery";
 
 type MatchPath = typeof import("./app/matchPath");
 
@@ -130,9 +131,10 @@ async function main(): Promise<void> {
     // match's has to be freed by hand or every rematch leaks a whole course.
     sim?.dispose();
     // The tire the player bought is the tire the physics uses: the one purchase that is a stat.
-    sim = await path.Sim.create(path.arenaFromCourse(courseWorld), {
+    sim = await path.Sim.create(path.arenaFromCourse(courseWorld, arenaSource?.pickupSites), {
       tire: tireTypeFor(loadout),
       botCount: ARENA_BOTS,
+      matchDurationS: matchSecondsFromQuery(window.location.search),
     });
     screens.show("match");
   };

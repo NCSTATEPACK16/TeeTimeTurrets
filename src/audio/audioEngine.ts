@@ -184,6 +184,17 @@ const SYNTHS: Record<Cue, Synth> = {
     tone(ctx, out, "sine", 1175, 1175, t + 0.06, 0.06, 0.25);
     tone(ctx, out, "sine", 1568, 1568, t + 0.12, 0.1, 0.25);
   },
+  // A drink: the pickup arpeggio a fourth higher.
+  shield: (ctx, out, _noise, t) => {
+    tone(ctx, out, "sine", 1175, 1175, t, 0.06, 0.25);
+    tone(ctx, out, "sine", 1568, 1568, t + 0.06, 0.06, 0.25);
+    tone(ctx, out, "sine", 2093, 2093, t + 0.12, 0.12, 0.25);
+  },
+  // A shield plate broke: the hit ding, shorter and higher, with a glassy tick.
+  plate: (ctx, out, noise, t) => {
+    tone(ctx, out, "square", 1760, 1480, t, 0.06, 0.16);
+    burst(ctx, out, noise, t, 0.04, "highpass", 5000, 0.3);
+  },
   // A trigger pull with nothing in the barrel.
   dry: (ctx, out, noise, t) => {
     burst(ctx, out, noise, t, 0.018, "highpass", 4500, 0.35);

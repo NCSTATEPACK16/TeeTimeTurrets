@@ -33,7 +33,7 @@ describe("bot minds in the world", () => {
     // looking. Not directly behind the player: its straight run to the bucket would then go
     // through the player's cart and shove the player onto the bucket first, which puts the bucket
     // on cooldown with the bot still empty. Teleported once.
-    const bucket = sim.pickups[0]!.position;
+    const bucket = sim.pickups[0]!.site;
     const p = sim.cart.position;
     const away = Math.atan2(p.z - bucket.z, p.x - bucket.x) + Math.PI / 2;
     const x = p.x + Math.cos(away) * 20;
@@ -60,7 +60,7 @@ describe("bot minds in the world", () => {
 
     // The bucket is the other ammo on the ground, so it is out of the picture from the first tick,
     // and the bot starts empty so none of its own shots end up on the ground as well.
-    sim.pickups[0]!.cooldownRemaining = 60;
+    sim.pickups[0]!.readyAt = 60;
     bot.ammo = 0;
 
     // The player puts one short putt on the ground.
@@ -80,7 +80,7 @@ describe("bot minds in the world", () => {
     // and neither its run to the ball nor fighting the player takes it within reach of the ball
     // by accident.
     const ball = landed!.body.translation();
-    const bucket = sim.pickups[0]!.position;
+    const bucket = sim.pickups[0]!.site;
     const p = sim.cart.position;
     const along = Math.atan2(ball.z - bucket.z, ball.x - bucket.x);
     // Which side of the bucket-ball line the player is on: positive is the side `along + PI/2` faces.

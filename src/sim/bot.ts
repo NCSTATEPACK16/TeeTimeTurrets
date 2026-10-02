@@ -78,6 +78,8 @@ const MIN_RELEASE_CHARGE = 0.01;
  *   tree between a bot and its target used to hold it there for the rest of the match.
  * - `hasAmmoTarget`/`ammoX`/`ammoZ`: the nearest ammo, written by `world.ts` each tick, which a
  *   bot with an empty magazine drives to instead of at the enemy.
+ * - `hasHealTarget`/`healX`/`healZ`: a hot dog for a hurt bot out of the fight to drive to,
+ *   written by `world.ts` each tick (`BOT_HEAL_FRACTION`, `BOT_HEAL_RANGE_M`). Ammo comes first.
  */
 export interface BotMind {
   skill: number;
@@ -88,10 +90,30 @@ export interface BotMind {
   hasAmmoTarget: boolean;
   ammoX: number;
   ammoZ: number;
+  hasHealTarget: boolean;
+  healX: number;
+  healZ: number;
 }
 
+/** A bot at or below this fraction of its health goes for a hot dog, if it is out of the fight. */
+export const BOT_HEAL_FRACTION = 1 / 3;
+/** Metres. The farthest hot dog a hurt bot will detour to. */
+export const BOT_HEAL_RANGE_M = 60;
+
 export function createBotMind(skill: number): BotMind {
-  return { skill, stuckFor: 0, unstickFor: 0, anchorX: 0, anchorZ: 0, hasAmmoTarget: false, ammoX: 0, ammoZ: 0 };
+  return {
+    skill,
+    stuckFor: 0,
+    unstickFor: 0,
+    anchorX: 0,
+    anchorZ: 0,
+    hasAmmoTarget: false,
+    ammoX: 0,
+    ammoZ: 0,
+    hasHealTarget: false,
+    healX: 0,
+    healZ: 0,
+  };
 }
 
 /**
@@ -111,6 +133,11 @@ export interface BotTarget {
   readonly z: number;
   /** A dead target is not engaged at all: that is what stops a bot camping a respawn point. */
   readonly dead: boolean;
+  /**
+   * A building stands between them (`clearOfObstacles`). The bot still closes and aims, but holds
+   * its fire: a shot into a wall is a round wasted. Optional, and false when left out.
+   */
+  readonly hidden?: boolean;
 }
 
 /** `pickTarget`'s answer when there is no living enemy to fight. */
@@ -158,8 +185,9 @@ export function pickTarget(self: number, current: number, carts: readonly Target
  * Writes this tick's intent for `bot` into `out`.
  *
  * Aim, drive and fire, and nothing else -- no pathfinding, no hazard avoidance beyond what
- * `cartSpeedScale` already does for free through the shared `Cart.step`, no seeking out an ammo
- * bucket when it runs dry. Those are real navigation problems and are deliberately deferred.
+ * `cartSpeedScale` already does for free through the shared `Cart.step`. It does head straight for
+ * ammo when its magazine is empty, and for a hot dog when it is hurt and out of the fight (see
+ * `BotMind`), in a straight line like everything else it drives.
  *
  * The firing model is the interesting part. `Cart.step` charges while `fire` is held and shoots
  * on the *release* edge, so a bot that simply held the trigger would never fire. Instead the bot
@@ -207,6 +235,16 @@ export function computeBotIntent(
     return;
   }
 
+  // A hurt bot out of the fight goes for a hot dog; `world.ts` only offers one when that holds.
+  if (mind !== null && mind.hasHealTarget) {
+    const hx = mind.healX - bot.position.x;
+    const hz = mind.healZ - bot.position.z;
+    out.steer = clampSigned(wrapAngle(Math.atan2(hz, hx) - bot.heading) / BOT_STEER_FULL);
+    out.throttle = 1;
+    trackProgress(bot, mind, dt, out);
+    return;
+  }
+
   const dx = target.x - bot.position.x;
   const dz = target.z - bot.position.z;
   const distance = Math.hypot(dx, dz);
@@ -244,7 +282,7 @@ export function computeBotIntent(
   // `BOT_FIRE_RANGE` for why a bot that shot the moment it had a bearing would just waste its
   // magazine. It lets go at the charge `solveShot` gives for this range.
   const wantsToFire =
-    distance <= BOT_FIRE_RANGE && Math.abs(aimError) < BOT_FIRE_TOLERANCE && bot.ammo > 0;
+    distance <= BOT_FIRE_RANGE && Math.abs(aimError) < BOT_FIRE_TOLERANCE && bot.ammo > 0 && target.hidden !== true;
   const release = Math.max(MIN_RELEASE_CHARGE, solveShot(bot.equippedClub, distance));
   out.fire = wantsToFire && bot.charge < release;
 

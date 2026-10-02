@@ -7,9 +7,10 @@ import { PICKUP_TYPES, type PickupSite, type PickupType } from "../sim/pickupSit
  * Pickup presentation (`docs/art/specs/pickups.md`): one instanced mesh per item type and one for
  * every glow pillar, so four draws for all sites. Items spin and bob inside their pillar.
  *
- * `setReady(i, false)` hides a site's item and dims nothing else yet. The pillar stays, per the
- * Stage D rule that the cylinder outlives the item; the dimmed "recharging" state and the take
- * burst come with collection in issue #76.
+ * States, as on the pedestal sheet: **charged** is the full pillar with the item in it; **taken**
+ * hides the item and the scene bursts shards where it was (`EffectsLayer.pickupTaken`);
+ * **recharging** leaves the pillar at a quarter of its brightness. The pillar never goes away, per
+ * the Stage D rule that the cylinder outlives the item.
  */
 
 const PILLAR_RADIUS_M = 1.5;
@@ -20,10 +21,15 @@ const BOB_M = 0.08;
 const BOB_HZ = 0.8;
 /** The hot dog is authored standing up; it floats lying most of the way down. */
 const HOT_DOG_TILT = THREE.MathUtils.degToRad(70);
+/** A recharging pillar's brightness against a charged one's. Additive, so colour is brightness. */
+const RECHARGING_GLOW = 0.25;
 
 export interface PickupView {
   readonly objects: readonly THREE.Object3D[];
-  setReady(site: number, ready: boolean): void;
+  /** Sets a site's state; true when that took a charged site's item away, for the take burst. */
+  setReady(site: number, ready: boolean): boolean;
+  /** Where site `i`'s item floats, for the take burst. */
+  itemPosition(site: number, out: THREE.Vector3): THREE.Vector3;
   update(elapsedSeconds: number): void;
   dispose(): void;
 }
@@ -73,7 +79,11 @@ export function createPickupView(
   pillars.count = sites.length;
   pillars.frustumCulled = false;
   const m = new THREE.Matrix4();
-  sites.forEach((s, i) => pillars.setMatrixAt(i, m.makeTranslation(s.x, ground[i]!, s.z)));
+  const glow = new THREE.Color();
+  sites.forEach((s, i) => {
+    pillars.setMatrixAt(i, m.makeTranslation(s.x, ground[i]!, s.z));
+    pillars.setColorAt(i, glow.setScalar(1));
+  });
   pillars.instanceMatrix.needsUpdate = true;
 
   // Frame scratch: `update` runs every frame, so it allocates nothing.
@@ -105,7 +115,15 @@ export function createPickupView(
   return {
     objects: [pillars, ...items.map((v) => v.mesh)],
     setReady(site, isReady) {
+      if (ready[site] === isReady) return false;
       ready[site] = isReady;
+      pillars.setColorAt(site, glow.setScalar(isReady ? 1 : RECHARGING_GLOW));
+      if (pillars.instanceColor) pillars.instanceColor.needsUpdate = true;
+      return !isReady;
+    },
+    itemPosition(site, out) {
+      const s = sites[site]!;
+      return out.set(s.x, ground[site]! + ITEM_HEIGHT_M, s.z);
     },
     update,
     dispose() {

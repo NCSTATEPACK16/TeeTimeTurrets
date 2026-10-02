@@ -156,7 +156,7 @@ export class MatchScreen implements Screen {
       sim.bots.map((_, i) => plateTeamOf(i + 1, 0)),
     );
     this.lastSeenAtMs.length = 0;
-    this.sightlines = new Sightlines(sim.bots.length);
+    this.sightlines = new Sightlines(sim.bots.length, sim.obstacles);
     this.input = new KeyboardMouseSource(renderer.domElement);
     this.settings = { ...this.options.settings };
     this.input.sensitivity = this.settings.sensitivity;
@@ -202,6 +202,8 @@ export class MatchScreen implements Screen {
       playerDead: sim.cart.dead,
       botDead: sim.bots.map((b) => b.dead),
       speed01: 0,
+      pickupCharged: sim.pickups.map(() => true),
+      shields: [sim.cart, ...sim.bots].map(() => 0),
     };
     this.lastDrawMs = performance.now();
   }
@@ -242,6 +244,11 @@ export class MatchScreen implements Screen {
     view.playerDead = sim.cart.dead;
     view.speed01 = sim.cart.speed / CART_TUNING.topSpeed;
     for (let i = 0; i < view.botDead.length; i++) view.botDead[i] = sim.bots[i]!.dead;
+    const charged = view.pickupCharged!;
+    for (let i = 0; i < charged.length; i++) charged[i] = sim.pickupCharged(i);
+    const shields = view.shields!;
+    shields[0] = sim.cart.shield;
+    for (let i = 0; i < sim.bots.length; i++) shields[i + 1] = sim.bots[i]!.shield;
     view.elapsedSeconds = this.elapsedSeconds;
     const now = performance.now();
     // Capped, so a frame after the tab was hidden does not snap the camera across the course.
@@ -429,9 +436,11 @@ export class MatchScreen implements Screen {
       const kind = teamOf(i + 1) === teamOf(0) ? "ally" : "enemy";
       markers.push({ x: bot.position.x, z: bot.position.z, kind, heading: 0 });
     }
-    for (const bucket of sim.pickups) {
-      if (bucket.cooldownRemaining > 0) continue;
-      markers.push({ x: bucket.position.x, z: bucket.position.z, kind: "pickup", heading: 0 });
+    const pickups = sim.pickups;
+    for (let i = 0; i < pickups.length; i++) {
+      if (!sim.pickupCharged(i)) continue;
+      const site = pickups[i]!.site;
+      markers.push({ x: site.x, z: site.z, kind: "pickup", heading: 0 });
     }
     const holes = courseMapHoles(this.options.arena);
     map.draw(markers, nearestHoleNumber(holes, view.cart.position.x, view.cart.position.z));
@@ -519,6 +528,7 @@ export class MatchScreen implements Screen {
     else if (kind === "hit") fx.impact(x, y, z);
     else if (kind === "ram") fx.ram(x, y, z);
     else if (kind === "kill") fx.death(x, y, z);
+    else if (kind === "plateBroken") fx.plateBreak(x, y, z);
     // A splash event is at the cart's body centre; the water is drawn on the ground under it.
     else if (kind === "splash") fx.splash(x, this.options.sim.heightAt(x, z), z);
   }

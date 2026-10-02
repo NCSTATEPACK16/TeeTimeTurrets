@@ -106,11 +106,11 @@ The clubhouse GLB is a different path — the step list in `ASSET_PIPELINE.md` �
   note here, which said "X plus one other" was safe, was wrong. `node()` now keeps the swap for
   single-axis rotations (so every existing export stays byte-identical) and converts anything
   else through the rotation matrix (`_three_euler`, max error 7e-7 over random rotations).
-  *Consequence for the rider:* four limbs in `driver.json` (X plus one other) were exported by the
-  old swap, so the in-game rider is posed slightly differently from `clubhouse-and-cart.blend`
-  (up to 0.30 rad on one joint). `driver.json` has not been re-exported. A future re-export will
-  move those limbs to the Blender pose, so check the swing-clearance tests in
-  `GolfClub.test.ts` when that happens.
+  *The rider:* four limbs in `driver.json` (X plus one other) were first exported by the old
+  swap, so the game's pose and the frozen `clubhouse-and-cart.blend` disagreed (up to 0.30 rad on
+  one joint). The game's pose was kept: `art/rider_kit.py` now builds the rider from the shipped
+  numbers (output `art/rider.blend`), and its export matches the old `driver.json` in every value.
+  Only five signed zeros changed. Edit the script, not the frozen file.
 - **A graph root carries its own world offset.** `chassis_pan` sits at Three `(0, 0.4, −0.02)`, so
   a coordinate read out of `cart.json` is *local to it* and 0.4 m below where the part actually
   sits. The rider was first authored against those local numbers and came out sitting on the floor.

@@ -6,8 +6,21 @@ import { BUCKET_REFILL_AMMO, CART_COLLIDER, CART_HULL, Cart, RESPAWN_DELAY_S, Ti
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import type { PooledBall } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
-import { createBucket, stepBucket, tryTakeBucket } from "./entities/Pickup";
-import type { Bucket } from "./entities/Pickup";
+import {
+  HOT_DOG_HEAL,
+  SHIELD_DECAY_S,
+  createPickupStates,
+  isCharged,
+  nearestCharged,
+  resetPickups,
+  siteInReach,
+  take,
+} from "./pickups";
+import type { PickupState } from "./pickups";
+import { clubhouseObstacles, clubhouseShapes } from "./clubhouse";
+import type { StaticShape } from "./clubhouse";
+import { clearOfObstacles } from "./lineOfSight";
+import type { Obstacle } from "./lineOfSight";
 import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
 import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
@@ -21,7 +34,17 @@ import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
-import { BOT_CHANNEL, BOT_SKILL_CHANNEL, NO_TARGET, computeBotIntent, createBotMind, pickTarget } from "./bot";
+import {
+  BOT_CHANNEL,
+  BOT_FIRE_RANGE,
+  BOT_HEAL_FRACTION,
+  BOT_HEAL_RANGE_M,
+  BOT_SKILL_CHANNEL,
+  NO_TARGET,
+  computeBotIntent,
+  createBotMind,
+  pickTarget,
+} from "./bot";
 import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
 import {
@@ -81,10 +104,17 @@ const LINEAR_DAMPING = 0.05;
 export const GRAVITY = 9.81;
 
 /**
- * How close a cart has to be to a landed ball or a bucket to collect it. Ammo is the only thing a
- * landed ball is for, so driving over your own spent rounds is how a cart reloads between buckets.
+ * How close a cart has to be to a landed ball to collect it. Ammo is the only thing a landed ball
+ * is for, so driving over your own spent rounds is how a cart reloads between buckets. Pickup
+ * sites have their own radius, `PICKUP_GRAB_RADIUS_M`.
  */
 const PICKUP_RANGE = 3.0;
+
+/**
+ * Height above a cart's position a sight line is taken from and to, for bots: the hull's middle,
+ * about where a putter ball flies. `clearOfObstacles` compares it against building tops.
+ */
+const BOT_EYE_M = 1;
 
 /**
  * KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one.
@@ -192,8 +222,12 @@ export class Sim {
   /** Bot cart transforms from the most recent fixed step. One per bot. */
   currentBotCarts: CartTransform[] = [];
   private ballPool!: BallPool;
-  /** Ammo buckets. One for now; course-scale supply placement is Stage D's. */
-  private readonly buckets: Bucket[] = [];
+  /** Every pickup site's live state, in `ArenaGround.pickupSites` order. */
+  private readonly pickupStates: PickupState[];
+  /** The clubhouse complex's colliders, rebuilt into every fresh Rapier world. */
+  private readonly staticShapes: readonly StaticShape[];
+  /** The buildings as sight-line blockers, for bots here and for the nameplates. */
+  readonly obstacles: readonly Obstacle[];
   /** Pooled ball transforms from the previous fixed step, for render interpolation. */
   previousPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** Pooled ball transforms from the most recent fixed step. */
@@ -219,7 +253,8 @@ export class Sim {
   private readonly clampScratch = { x: 0, z: 0 };
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  private readonly botTarget = { x: 0, z: 0, dead: false };
+  private readonly botTarget = { x: 0, z: 0, dead: false, hidden: false };
+  private readonly seekScratch = { x: 0, z: 0 };
   /**
    * Everything that happened, for whatever reacts to it: markers, the kill feed, effects, audio.
    * Every cart's events, not just the player's; a reader filters. See `events.ts`.
@@ -260,8 +295,11 @@ export class Sim {
     this.southBoundary = ground.southBoundary;
     this.seed = ground.seed;
     this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
-    this.teamPads =
-      ground.clubhouse === null ? null : createTeamPads(ground.clubhouse, (x, z) => ground.playfield.heightAt(x, z));
+    const heightAt = (x: number, z: number): number => ground.playfield.heightAt(x, z);
+    this.teamPads = ground.clubhouse === null ? null : createTeamPads(ground.clubhouse, heightAt);
+    this.staticShapes = ground.clubhouse === null ? [] : clubhouseShapes(ground.clubhouse, heightAt);
+    this.obstacles = ground.clubhouse === null ? [] : clubhouseObstacles(ground.clubhouse, heightAt);
+    this.pickupStates = createPickupStates(ground.pickupSites);
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
@@ -299,18 +337,16 @@ export class Sim {
     }
     sim.buildPhysics();
 
-    // KNOWN MISPLACEMENT, kept for one commit so the refactor around it can be shown to change
-    // nothing: this is hole 1's *local* tee plus 10 m, read as a course coordinate, which is where
-    // the arena has always put its bucket. The next change moves it and says so.
-    const firstHole = ground.holes.find((h) => h.spec.index === 0) ?? ground.holes[0]!;
-    sim.buckets.push(createBucket(firstHole.spec.tee.x + 10, firstHole.spec.tee.z));
-
     sim.combatContext = {
       registry: sim.registry,
       onBallHit: (shooter, victim, damage, x, y, z) => sim.creditHit(shooter, victim, damage, x, y, z),
       onRamDamage: (rammer, victim, damage, x, y, z) =>
         sim.events.push("ram", sim.tickCount, rammer, victim, damage, x, y, z),
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
+      onShieldHit: (attacker, victim, byBall, x, y, z) => {
+        if (byBall && attacker === 0) sim.stats.directHits += 1;
+        sim.events.push("plateBroken", sim.tickCount, attacker, victim, sim.rigs[victim]!.cart.shield, x, y, z);
+      },
     };
     // Now that every rig exists. The scoreboard is indexed by rig index.
     sim.match.setRoster(sim.rigs.length);
@@ -354,6 +390,7 @@ export class Sim {
     this.world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
     this.world.timestep = FIXED_DT;
     this.buildGround();
+    addStaticColliders(this.world, this.staticShapes);
 
     this.controller = this.world.createCharacterController(CHARACTER_OFFSET);
     this.controller.setUp({ x: 0, y: 1, z: 0 });
@@ -407,11 +444,16 @@ export class Sim {
   }
 
   /**
-   * The buckets on the ground, for the map to mark. Readonly, and the array is the live one rather
-   * than a copy: UI is a pure consumer of sim state, so handing it the array grants nothing.
+   * Every pickup site and when it recharges, in `ArenaGround.pickupSites` order, for the map and
+   * the pillars. The live array rather than a copy: UI is a pure consumer of sim state.
    */
-  get pickups(): readonly Bucket[] {
-    return this.buckets;
+  get pickups(): readonly PickupState[] {
+    return this.pickupStates;
+  }
+
+  /** Whether pickup site `i` is charged right now. */
+  pickupCharged(i: number): boolean {
+    return isCharged(this.pickupStates[i]!, this.simTime);
   }
 
   /**
@@ -560,10 +602,9 @@ export class Sim {
    */
   private stepCarts(intent: PlayerIntent): void {
     // The world keeps running while a cart is out of it: balls already in flight land, and
-    // bucket cooldowns keep ticking. Only the cart is frozen.
+    // pickups keep recharging (against `simTime`). Only the cart is frozen.
     this.simTime += FIXED_DT;
     this.ballPool.step(FIXED_DT, this.simTime);
-    for (let i = 0; i < this.buckets.length; i++) stepBucket(this.buckets[i]!, FIXED_DT);
 
     for (let i = 0; i < this.rigs.length; i++) {
       const rig = this.rigs[i]!;
@@ -581,10 +622,14 @@ export class Sim {
     // bot's RNG stream on a throwaway draw and make the draw count depend on death timing.
     if (rig.cart.dead) return IDLE_INTENT;
     rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
-    if (rig.mind !== null) this.findAmmoFor(rig.cart, rig.mind);
+    const target = this.botTargetScratch(rig.cart, rig.targetIndex);
+    if (rig.mind !== null) {
+      this.findAmmoFor(rig.cart, rig.mind);
+      this.findHealFor(rig.cart, rig.mind, target);
+    }
     computeBotIntent(
       rig.cart,
-      this.botTargetScratch(rig.targetIndex),
+      target,
       FIXED_DT,
       rig.random,
       rig.intentScratch,
@@ -594,7 +639,7 @@ export class Sim {
   }
 
   /**
-   * Writes the nearest ammo a cart could collect right now into `mind`: a bucket off cooldown or a
+   * Writes the nearest ammo a cart could collect right now into `mind`: a charged bucket or a
    * landed ball, whoever fired it -- the same two things `stepRig` refills from. Only while the
    * magazine is empty, since that is the only time the bot reads it. Reads the pool's cached
    * positions (`BallPool.sync`) rather than asking Rapier, which hands back a fresh object per ask.
@@ -605,15 +650,11 @@ export class Sim {
     const px = cart.position.x;
     const pz = cart.position.z;
     let best = Infinity;
-    for (let i = 0; i < this.buckets.length; i++) {
-      const bucket = this.buckets[i]!;
-      if (bucket.cooldownRemaining > 0) continue;
-      const d = Math.hypot(bucket.position.x - px, bucket.position.z - pz);
-      if (d < best) {
-        best = d;
-        mind.ammoX = bucket.position.x;
-        mind.ammoZ = bucket.position.z;
-      }
+    const bucket = this.seekScratch;
+    if (nearestCharged(this.pickupStates, "bucket", this.simTime, px, pz, Infinity, bucket)) {
+      best = Math.hypot(bucket.x - px, bucket.z - pz);
+      mind.ammoX = bucket.x;
+      mind.ammoZ = bucket.z;
     }
     const balls = this.ballPool.all;
     for (let i = 0; i < balls.length; i++) {
@@ -632,16 +673,47 @@ export class Sim {
   }
 
   /**
-   * The enemy a bot is fighting, written into one reused object per the no-allocation rule; a bot
-   * never sees its target's `Cart` itself. With no living enemy it reads as a dead target, which
-   * the bot idles against.
+   * Writes a hot dog into `mind` for a hurt bot to head for: at `BOT_HEAL_FRACTION` of its health
+   * or below, a charged one within `BOT_HEAL_RANGE_M`, and only while its enemy is out of firing
+   * range. A bot that broke off mid-fight to heal would read as cowardly and be easy to farm.
    */
-  private botTargetScratch(targetIndex: number): BotTarget {
+  private findHealFor(cart: Cart, mind: BotMind, target: BotTarget): void {
+    mind.hasHealTarget = false;
+    if (cart.health.hp > cart.health.max * BOT_HEAL_FRACTION) return;
+    const px = cart.position.x;
+    const pz = cart.position.z;
+    if (!target.dead && Math.hypot(target.x - px, target.z - pz) <= BOT_FIRE_RANGE) return;
+    const at = this.seekScratch;
+    if (!nearestCharged(this.pickupStates, "hot_dog", this.simTime, px, pz, BOT_HEAL_RANGE_M, at)) return;
+    mind.hasHealTarget = true;
+    mind.healX = at.x;
+    mind.healZ = at.z;
+  }
+
+  /**
+   * The enemy `self` is fighting, written into one reused object per the no-allocation rule; a bot
+   * never sees its target's `Cart` itself. With no living enemy it reads as a dead target, which
+   * the bot idles against. `hidden` is true when a building stands between them: the bot still
+   * closes, but holds its fire rather than shooting a wall.
+   */
+  private botTargetScratch(self: Cart, targetIndex: number): BotTarget {
     const target = targetIndex === NO_TARGET ? null : this.rigs[targetIndex]!.cart;
-    this.botTarget.x = target?.position.x ?? 0;
-    this.botTarget.z = target?.position.z ?? 0;
-    this.botTarget.dead = target === null || target.dead;
-    return this.botTarget;
+    const t = this.botTarget;
+    t.x = target?.position.x ?? 0;
+    t.z = target?.position.z ?? 0;
+    t.dead = target === null || target.dead;
+    t.hidden =
+      target !== null &&
+      !clearOfObstacles(
+        this.obstacles,
+        self.position.x,
+        self.position.y + BOT_EYE_M,
+        self.position.z,
+        target.position.x,
+        target.position.y + BOT_EYE_M,
+        target.position.z,
+      );
+    return t;
   }
 
   /** Intent -> cart state -> body movement -> shot resolution, for exactly one cart. */
@@ -657,13 +729,23 @@ export class Sim {
     const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
     cart.step(intent, FIXED_DT, this.cartTuningScratch);
+    if (cart.stepShield(FIXED_DT, SHIELD_DECAY_S)) {
+      this.events.push("plateBroken", this.tickCount, NO_RIG, rig.index, cart.shield, c.x, c.y, c.z);
+    }
     this.moveCartBody(rig);
     this.checkCartWater(rig);
 
-    for (let i = 0; i < this.buckets.length; i++) {
-      if (tryTakeBucket(this.buckets[i]!, c.x, c.z, PICKUP_RANGE)) {
-        cart.addAmmo(BUCKET_REFILL_AMMO);
-        this.events.push("pickup", this.tickCount, rig.index, NO_RIG, BUCKET_REFILL_AMMO, c.x, c.y, c.z);
+    // Rigs are stepped in order, and a take starts the site's cooldown at once, so two carts on
+    // one site in one tick yield exactly one take: the lower rig index's.
+    const site = siteInReach(this.pickupStates, cart, this.simTime);
+    if (site >= 0) {
+      const type = this.pickupStates[site]!.site.type;
+      take(this.pickupStates, site, cart, this.simTime);
+      if (type === "drink") {
+        this.events.push("shieldGained", this.tickCount, rig.index, NO_RIG, cart.shield, c.x, c.y, c.z);
+      } else {
+        const amount = type === "bucket" ? BUCKET_REFILL_AMMO : HOT_DOG_HEAL;
+        this.events.push("pickup", this.tickCount, rig.index, NO_RIG, amount, c.x, c.y, c.z);
       }
     }
     const near = this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE, this.nearScratch);
@@ -917,7 +999,7 @@ export class Sim {
    * (`arenaGolden.test.ts`), so nothing the last match left behind may survive:
    * - The physics world is rebuilt (`buildPhysics`), which also empties the ball pool and gives
    *   each bot a fresh stream and mind with the same skill.
-   * - Every bucket is off cooldown, and the pool's despawn clock (`simTime`) starts from zero.
+   * - Every pickup is charged, and the pool's despawn clock (`simTime`) starts from zero.
    * - Every cart is rearmed as well as revived: starting club and ammo, no reload, no charge.
    */
   reset(): void {
@@ -926,7 +1008,7 @@ export class Sim {
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.freePhysics();
     this.buildPhysics();
-    for (const bucket of this.buckets) bucket.cooldownRemaining = 0;
+    resetPickups(this.pickupStates);
     this.simTime = 0;
     this.tickCount = 0;
 
@@ -999,6 +1081,25 @@ export class Sim {
         for (let k = 0; k < POOL_TRANSFORM_STRIDE; k++) previous[flat + k] = buffer[flat + k]!;
       }
     }
+  }
+}
+
+/**
+ * The clubhouse complex into a fresh Rapier world: fixed colliders with no body, like the ground,
+ * and the same friction and bounce as the ground, so a ball off a wall behaves like one off the
+ * turf. Default collision groups: carts and balls both hit them, and a hull's ball-only filter
+ * already keeps it out. Freed with the world (`freePhysics`), which is their removal path.
+ */
+export function addStaticColliders(world: RAPIER.World, shapes: readonly StaticShape[]): void {
+  for (const s of shapes) {
+    const desc =
+      s.kind === "box" ? RAPIER.ColliderDesc.cuboid(s.hx, s.hy, s.hz) : RAPIER.ColliderDesc.cylinder(s.hy, s.hx);
+    desc
+      .setTranslation(s.x, s.y, s.z)
+      .setRotation({ x: 0, y: Math.sin(s.yaw / 2), z: 0, w: Math.cos(s.yaw / 2) })
+      .setFriction(0.8)
+      .setRestitution(0.15);
+    world.createCollider(desc);
   }
 }
 

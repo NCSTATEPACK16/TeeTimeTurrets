@@ -20,6 +20,8 @@ export type Cue =
   | "death"
   | "blast"
   | "pickup"
+  | "shield"
+  | "plate"
   | "dry"
   | "splash";
 
@@ -62,6 +64,11 @@ export function cueFor(e: SimEvent, listener: Listener): CuePlay | null {
       return placed("blast", e, listener);
     case "pickup":
       return e.actor === PLAYER ? centre("pickup") : null;
+    case "shieldGained":
+      return e.actor === PLAYER ? centre("shield") : null;
+    case "plateBroken":
+      // The player's own plate, or one the player knocked off; anyone else's is heard in place.
+      return e.target === PLAYER || e.actor === PLAYER ? centre("plate") : placed("plate", e, listener);
     case "dry":
       return e.actor === PLAYER ? centre("dry") : null;
     case "splash":

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hasLineOfSight, LOS_STEP_M } from "./lineOfSight";
+import { clubhouseObstacles } from "./clubhouse";
+import { PAD_OFFSET_M } from "./spawn";
 import type { HeightSampler } from "./lineOfSight";
 
 /**
@@ -65,5 +67,20 @@ describe("grazing", () => {
   it("treats terrain exactly at the ray height as visible, and just above it as blocked", () => {
     expect(hasLineOfSight({ heightAt: () => 2 }, 0, 2, 0, 100, 2, 0)).toBe(true);
     expect(hasLineOfSight({ heightAt: () => 2.01 }, 0, 2, 0, 100, 2, 0)).toBe(false);
+  });
+});
+
+describe("buildings between the endpoints", () => {
+  // The complex on flat ground at the origin. The pad rows are at x = +/-25; the clubhouse spans
+  // z -7..7, the food cart stands at z 16, and nothing stands at z 10 between the rows.
+  const obstacles = clubhouseObstacles({ x: 0, z: 0 }, () => 0);
+
+  it("the clubhouse blocks a sight line straight across between the spawn rows", () => {
+    expect(hasLineOfSight(flat, -PAD_OFFSET_M, 1, 0, PAD_OFFSET_M, 1, 0)).toBe(true);
+    expect(hasLineOfSight(flat, -PAD_OFFSET_M, 1, 0, PAD_OFFSET_M, 1, 0, obstacles)).toBe(false);
+  });
+
+  it("a sight line past the clubhouse corner is clear", () => {
+    expect(hasLineOfSight(flat, -PAD_OFFSET_M, 1, 10, PAD_OFFSET_M, 1, 10, obstacles)).toBe(true);
   });
 });
