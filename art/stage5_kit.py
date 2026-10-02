@@ -28,6 +28,9 @@ def materials():
         ('dr_flag_stripe', 0xF3EEDC, 0.8, 0.0), ('dr_shrub', 0x446327, 0.9, 0.0),
         ('dr_bag_a', 0xB0352A, 0.7, 0.0), ('dr_bag_b', 0x23355E, 0.7, 0.0),
         ('dr_board', 0x1F4D2E, 0.8, 0.0),
+        # horizon hills (horizon-hills.md): parkland foliageDark 70% toward the parkland sky; the
+        # renderer recomputes this override from biomes.ts, so this is only the file's default
+        ('hill', 0x509AB3, 1.0, 0.0),
     ]:
         material(name, hexrgb(colour), rough, metal)
 
@@ -208,6 +211,29 @@ def build_welcome_sign():
     return g
 
 
+# --- horizon hills (horizon-hills.md) -------------------------------------------------------------
+# Each card is one prism: a ridge line in local XY over a flat base, extruded 12 m along z, origin at
+# the base centre. The polygon runs base-left, base-right, then the ridge from right to left (CCW).
+
+HILL_DEPTH = 12.0
+HILLS = {
+    # A long low ridge, 220 x 35, eight ridge vertices.
+    'hill_a': (220, [(110, 4), (75, 18), (40, 27), (10, 35), (-25, 30), (-55, 22), (-85, 12), (-110, 3)]),
+    # A rounded double hump, 180 x 55.
+    'hill_b': (180, [(90, 5), (70, 30), (48, 52), (30, 55), (12, 44), (-5, 38), (-22, 46), (-40, 50),
+                     (-58, 40), (-75, 22), (-90, 4)]),
+    # A flat-topped mesa, 260 x 28, its top very slightly uneven so it isn't ruled.
+    'hill_c': (260, [(130, 3), (110, 10), (92, 24), (80, 28), (15, 27.2), (-60, 28), (-78, 25),
+                     (-95, 12), (-115, 6), (-130, 2)]),
+}
+
+
+def build_hill(name):
+    width, ridge = HILLS[name]
+    pts = [(-width / 2, 0), (width / 2, 0)] + ridge
+    return Graph('horizon', name, 'prism', [HILL_DEPTH] + [v for p in pts for v in p], 'hill', (0, 0, 0))
+
+
 def build_all():
     import bpy
     materials()
@@ -224,6 +250,8 @@ def build_all():
         'bag_rack': build_bag_rack(),
         'welcome_sign': build_welcome_sign(),
     }
+    for name in HILLS:
+        built[name] = build_hill(name)
     bpy.context.view_layer.update()
     return built
 
@@ -236,6 +264,7 @@ DRESSING = ('bench', 'flagpole', 'planter', 'bag_rack', 'welcome_sign')
 SETS = {
     'trees': TREES,
     'dressing': DRESSING,
+    'horizon': tuple(HILLS),
 }
 
 

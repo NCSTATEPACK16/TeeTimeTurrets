@@ -33,3 +33,7 @@ Each card uses one slot, `hill`. Its colour is overridden at runtime: a blend 70
 ## Acceptance
 
 A play-tester looking across the course sees hills, not fog meeting grass.
+
+## As built
+- **Card count follows the radius.** Sixteen cards leave gaps of hundreds of metres on the shipped course, so `placeHorizon` takes as many as the narrowest card needs (at its smallest scale and full yaw jitter) to reach both neighbours, and never fewer than 16.
+- **Haze toward the sky's horizon.** Stage 3b replaced the flat `BIOMES.parkland.sky` background with a gradient dome whose horizon is the fog colour (`render/sky.ts`). The cards blend 70 % from `foliageDark` toward `PARKLAND_SKY.horizon`, so they sit in the same haze as the far terrain.

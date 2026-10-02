@@ -1,5 +1,6 @@
 import treesRaw from "./graphs/trees.json";
 import dressingRaw from "./graphs/dressing.json";
+import horizonRaw from "./graphs/horizon.json";
 import { graphFromSet, type PrimitiveGraphSet } from "./propGraphs";
 import type { PrimitiveGraph } from "./primitiveGraph";
 import type { DressingKind } from "../sim/clubhouseLayout";
@@ -36,4 +37,14 @@ export const DRESSING_SET = dressingRaw as unknown as PrimitiveGraphSet;
 
 export function dressingGraph(kind: DressingKind): PrimitiveGraph {
   return graphFromSet(DRESSING_SET, kind, SOURCE);
+}
+
+/** The horizon hill cards (`horizon-hills.md`): one prism each, origin at the base centre. */
+export const HORIZON_SET = horizonRaw as unknown as PrimitiveGraphSet;
+
+export const HILL_NAMES = ["hill_a", "hill_b", "hill_c"] as const;
+export type HillName = (typeof HILL_NAMES)[number];
+
+export function hillGraph(name: HillName): PrimitiveGraph {
+  return graphFromSet(HORIZON_SET, name, SOURCE);
 }
