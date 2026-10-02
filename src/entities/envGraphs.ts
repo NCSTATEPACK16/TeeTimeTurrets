@@ -1,6 +1,7 @@
 import treesRaw from "./graphs/trees.json";
 import dressingRaw from "./graphs/dressing.json";
 import horizonRaw from "./graphs/horizon.json";
+import courseKitRaw from "./graphs/course_kit.json";
 import { graphFromSet, type PrimitiveGraphSet } from "./propGraphs";
 import type { PrimitiveGraph } from "./primitiveGraph";
 import type { DressingKind } from "../sim/clubhouseLayout";
@@ -47,4 +48,27 @@ export type HillName = (typeof HILL_NAMES)[number];
 
 export function hillGraph(name: HillName): PrimitiveGraph {
   return graphFromSet(HORIZON_SET, name, SOURCE);
+}
+
+/**
+ * The course kit (`course-kit.md`), exported here and placed by later issues: stakes by #52, risers
+ * by #58, kerbs and bollards by #59, reeds and rocks by #55. Origin at ground contact; the tiled
+ * modules run 2.0 m along z, centred on the origin.
+ */
+export const COURSE_KIT_SET = courseKitRaw as unknown as PrimitiveGraphSet;
+
+export const COURSE_KIT_NAMES = [
+  "zone_stake",
+  "tee_riser",
+  "path_kerb",
+  "path_bollard",
+  "pond_reeds",
+  "rock_a",
+  "rock_b",
+  "rock_c",
+] as const;
+export type CourseKitName = (typeof COURSE_KIT_NAMES)[number];
+
+export function courseKitGraph(name: CourseKitName): PrimitiveGraph {
+  return graphFromSet(COURSE_KIT_SET, name, SOURCE);
 }

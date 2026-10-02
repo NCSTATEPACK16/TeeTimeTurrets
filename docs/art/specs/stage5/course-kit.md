@@ -41,3 +41,8 @@ Post one comment per owning issue (#52, #55, #58, #59) that lists:
 - the graph name(s)
 - the origin and tiling conventions
 - the smoke test that covers them
+
+## As built
+- **`pond_reeds`, not `reed_clump`.** The marsh tree species from `trees.md` already owns the name `reed_clump` (and Blender object names are unique), so the pond-edge clump is `pond_reeds`: 7 cones, 0.6–1.4 m, in `reed_green` and `reed_tan`.
+- **Rocks are prisms turned about Y only.** Each is two or three irregular outlines extruded through 0.4–1.05 m, overlapping into one boulder, and dropped by 10 % of its height.
+- **Budget:** 150 triangles per graph. The stake is the largest at 112.

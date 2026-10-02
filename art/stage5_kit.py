@@ -31,6 +31,11 @@ def materials():
         # horizon hills (horizon-hills.md): parkland foliageDark 70% toward the parkland sky; the
         # renderer recomputes this override from biomes.ts, so this is only the file's default
         ('hill', 0x509AB3, 1.0, 0.0),
+        # course kit (course-kit.md)
+        ('stake_white', 0xF4F4EE, 0.6, 0.0), ('stake_band', 0x1A1A1A, 0.6, 0.0),
+        ('kerb_concrete', 0xB9B6AE, 0.95, 0.0), ('reed_green', 0x6F8A3A, 0.9, 0.0),
+        ('reed_tan', 0xB59B5C, 0.9, 0.0), ('rock', 0x8A8578, 0.95, 0.0),
+        ('prop_timber', 0x9A6B40, 0.85, 0.0), ('prop_timber_dark', 0x5E3F24, 0.85, 0.0),
     ]:
         material(name, hexrgb(colour), rough, metal)
 
@@ -234,6 +239,117 @@ def build_hill(name):
     return Graph('horizon', name, 'prism', [HILL_DEPTH] + [v for p in pts for v in p], 'hill', (0, 0, 0))
 
 
+# --- course kit (course-kit.md) -------------------------------------------------------------------
+# Export only: #52, #55, #58 and #59 place these. Origin at ground contact; a tiled module runs 2.0 m
+# along z, centred on its origin, so instances 2.0 m apart butt exactly.
+
+STAKE_H = 1.0
+STAKE_EYE_Y = 0.8
+STAKE_W = 0.07
+
+
+def build_zone_stake():
+    post_h = STAKE_H - 0.08
+    g = Graph('course_kit', 'ck_stake_post', 'box', [STAKE_W, post_h, STAKE_W], 'stake_white', (0, post_h / 2, 0))
+    # A pointed cap: a triangle across the post's width, extruded through its depth.
+    half = STAKE_W / 2
+    g.add('ck_stake_point', 'prism', [STAKE_W, -half, 0, half, 0, 0, 0.08], 'stake_white', (0, post_h, 0))
+    # The black band under the point, a hair proud of the post so it doesn't z-fight.
+    g.add('ck_stake_band', 'box', [STAKE_W + 0.006, 0.07, STAKE_W + 0.006], 'stake_band', (0, post_h - 0.05, 0))
+    # The rope eye, standing out of the +z face with its hole along x, where #52's rope runs.
+    g.add('ck_stake_eye', 'torus', [0.028, 0.008, 4, 10], 'stake_band', (0, STAKE_EYE_Y, half + 0.022), rot=(0, 90, 0))
+    return g
+
+
+def build_tee_riser():
+    # One sleeper, its long axis along z. Two shallow saw-cut grooves break up the face when tiled.
+    g = Graph('course_kit', 'ck_riser_sleeper', 'box', [0.2, 0.25, 2.0], 'prop_timber_dark', (0, 0.125, 0))
+    for i, z in enumerate((-0.55, 0.45)):
+        g.add('ck_riser_groove%d' % i, 'box', [0.204, 0.012, 0.06], 'prop_timber', (0, 0.17 + 0.03 * i, z))
+    return g
+
+
+KERB_W = 0.15
+KERB_H = 0.12
+
+
+def build_path_kerb():
+    # Cross-section in local XY (x out from the path's edge, y up), extruded 2.0 m along z. The outer
+    # top corner is chamfered; the origin is the inner edge at ground level.
+    profile = [(0, 0), (KERB_W, 0), (KERB_W, KERB_H - 0.03), (KERB_W - 0.03, KERB_H), (0, KERB_H)]
+    return Graph('course_kit', 'ck_kerb', 'prism', [2.0] + [v for p in profile for v in p], 'kerb_concrete', (0, 0, 0))
+
+
+def build_path_bollard():
+    post_h = 0.84
+    g = Graph('course_kit', 'ck_bollard_post', 'cylinder', [0.075, 0.08, post_h, 8], 'prop_timber', (0, post_h / 2, 0))
+    g.add('ck_bollard_cap', 'cone', [0.078, 0.06, 8], 'prop_timber', (0, post_h + 0.03, 0))
+    g.add('ck_bollard_band', 'cylinder', [0.081, 0.081, 0.07, 8], 'stake_white', (0, 0.66, 0))
+    return g
+
+
+# Pond-edge reeds: smaller and denser than the marsh tree species (tr_reed*). (x, z, height, radius,
+# tilt about X in degrees, slot).
+POND_REEDS = [
+    (0.0, 0.0, 1.4, 0.035, 0, 'reed_green'), (0.12, 0.05, 1.1, 0.03, 8, 'reed_green'),
+    (-0.1, 0.08, 0.95, 0.03, -10, 'reed_tan'), (0.05, -0.12, 1.2, 0.032, -6, 'reed_green'),
+    (-0.14, -0.06, 0.75, 0.028, 12, 'reed_tan'), (0.2, -0.04, 0.6, 0.025, 14, 'reed_tan'),
+    (-0.04, 0.17, 0.85, 0.028, 9, 'reed_green'),
+]
+
+
+def build_pond_reeds():
+    g = None
+    for i, (x, z, h, r, tilt, slot) in enumerate(POND_REEDS):
+        y = _tilted_base_y(h / 2, r, tilt)
+        if g is None:
+            g = Graph('course_kit', 'ck_reed0', 'cone', [r, h, 4], slot, (x, y, z))
+        else:
+            g.add('ck_reed%d' % i, 'cone', [r, h, 4], slot, (x, y, z), rot=(tilt, 0, 0))
+    return g
+
+
+def _rock_lump(points, sink):
+    """A boulder lump's outline in local XY, dropped by `sink` so 10 % sits below the ground."""
+    return [v for x, y in points for v in (x, y - sink)]
+
+
+# Each rock: up to three irregular prisms, each turned only about Y, overlapping into one silhouette.
+# (name, [(outline in XY, depth, (x, z), yaw)]). Heights 0.4-1.2 m before the 10 % sink.
+ROCKS = {
+    'rock_a': [
+        ([(-0.55, 0), (0.5, 0), (0.6, 0.35), (0.3, 0.72), (-0.15, 0.8), (-0.5, 0.45)], 0.85, (0, 0), 0),
+        ([(-0.4, 0), (0.4, 0), (0.42, 0.38), (0.05, 0.62), (-0.32, 0.4)], 0.8, (0.2, -0.05), 55),
+    ],
+    'rock_b': [
+        ([(-0.3, 0), (0.32, 0), (0.28, 0.25), (0.05, 0.42), (-0.25, 0.3)], 0.5, (0, 0), 20),
+        ([(-0.22, 0), (0.22, 0), (0.17, 0.22), (-0.12, 0.28)], 0.42, (-0.16, 0.05), -50),
+    ],
+    'rock_c': [
+        ([(-0.7, 0), (0.75, 0), (0.7, 0.55), (0.4, 1.05), (-0.1, 1.2), (-0.55, 0.9), (-0.72, 0.4)], 1.05, (0, 0), 0),
+        ([(-0.5, 0), (0.55, 0), (0.45, 0.6), (0.0, 0.85), (-0.45, 0.5)], 0.95, (0.3, -0.1), 60),
+        ([(-0.32, 0), (0.32, 0), (0.27, 0.36), (-0.2, 0.42)], 0.6, (-0.5, 0.1), -35),
+    ],
+}
+
+
+def build_rock(name):
+    parts = ROCKS[name]
+    top = max(y for outline, _, _, _ in parts for _, y in outline)
+    sink = 0.1 * top
+    g = None
+    for i, (outline, depth, (x, z), yaw) in enumerate(parts):
+        params = [depth] + _rock_lump(outline, sink)
+        if g is None:
+            g = Graph('course_kit', 'ck_%s0' % name, 'prism', params, 'rock', (x, 0, z))
+        else:
+            g.add('ck_%s%d' % (name, i), 'prism', params, 'rock', (x, 0, z), rot=(0, yaw, 0))
+    return g
+
+
+COURSE_KIT = ('zone_stake', 'tee_riser', 'path_kerb', 'path_bollard', 'pond_reeds', 'rock_a', 'rock_b', 'rock_c')
+
+
 def build_all():
     import bpy
     materials()
@@ -252,6 +368,15 @@ def build_all():
     }
     for name in HILLS:
         built[name] = build_hill(name)
+    built.update({
+        'zone_stake': build_zone_stake(),
+        'tee_riser': build_tee_riser(),
+        'path_kerb': build_path_kerb(),
+        'path_bollard': build_path_bollard(),
+        'pond_reeds': build_pond_reeds(),
+    })
+    for name in ROCKS:
+        built[name] = build_rock(name)
     bpy.context.view_layer.update()
     return built
 
@@ -265,6 +390,7 @@ SETS = {
     'trees': TREES,
     'dressing': DRESSING,
     'horizon': tuple(HILLS),
+    'course_kit': COURSE_KIT,
 }
 
 
