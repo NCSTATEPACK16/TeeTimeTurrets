@@ -267,6 +267,7 @@ translation layer:
 | `capsule` | `[radius, length, capSegments, radialSegments]` |
 | `torus` | `[radius, tube, radialSegments, tubularSegments]` |
 | `prism` | `[depth, x0, y0, x1, y1, …]`: a polygon (≥3 points) in local XY, extruded along +Z by `depth` and centred on z. `ExtrudeGeometry` with no bevel. Added in Stage 7 for roofs, wedges and scallops; see `docs/art/specs/00-pipeline.md`. |
+| `rbox` | `[w, h, d, radius]`: a box with every edge rounded, `RoundedBoxGeometry(w, h, d, 1, radius)`, 108 triangles. `0 < radius < min(w, h, d) / 2`, checked when the graph loads. Added 3 Oct 2026 for the soft-bevelled style; see `docs/art/STYLE-RESEARCH.md` P2. |
 
 ### 4.3 The Blender-side exporter
 
