@@ -66,7 +66,7 @@ This is covered by the same `clubhouseGraph.test.ts`, with one added assertion: 
 - **Bay numbers:** dropped for good (29 Sep 2026). Nothing in the game names a pad, so a number would label nothing; the fascia colour carries the team.
 - **Triangles:** 160.
 
-## v3 amendments (draft, 3 Oct 2026; awaiting approval of P1–P4)
+## v3 amendments (approved 3 Oct 2026)
 
 Source: `docs/concept/reference/hub-kit-01.jpg` for its details only. The sheet draws a 3-bay barn open at the gable end; this spec's 4-bay barn, open along its long side and facing the clubhouse, stays.
 

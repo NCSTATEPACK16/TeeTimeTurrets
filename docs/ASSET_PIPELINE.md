@@ -114,6 +114,8 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 
 ### 2.1 The art-style conflict, and the cart's material slots
 
+> **Superseded on 3 October 2026 for shading:** the table below misreads shot 03. Shot 03 is soft-bevelled and smooth-shaded, not flat-faceted; see `art/STYLE-RESEARCH.md` and the approved rule in `art/specs/00-pipeline.md`. The one-mesh, separable-slots decision still stands. In cart v3, slot `roof` becomes `frame` (`art/specs/cart-v3.md`).
+
 The concept art contains **two different art styles**, and one must be chosen before anyone models:
 
 | | `11ClubhouseLoadout.jpg` (menu) | `03CartTurretChasecam.jpg` (gameplay) |

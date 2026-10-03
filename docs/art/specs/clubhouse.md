@@ -100,7 +100,7 @@ One Vitest file, `src/entities/clubhouseGraph.test.ts`, checks four things:
 - **Steps** stand outside the 14 m plinth, so the AABB is x ±12.2 (verandah eaves), z −7.4 … +7.9. That needs a **third collider for the steps**; see `sim-slices.md`.
 - **Posts:** 14 in all: six across the front, and four more down each end.
 
-## v3 amendments (draft, 3 Oct 2026; awaiting approval of P1–P4)
+## v3 amendments (approved 3 Oct 2026)
 
 Source: `docs/concept/reference/clubhouse-hero-01.jpg` (target), `clubhouse-breakdown-01.jpg` (modules) and `clubhouse-distance-01.jpg` (silhouette at 150 m). The hero confirms the layout above, so only these change. See `../SHEET-REVIEW-2026-10-03.md`.
 

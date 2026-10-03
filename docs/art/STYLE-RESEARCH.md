@@ -1,6 +1,6 @@
 # Style research: why the build looks bulky next to the concept art
 
-Written 2 October 2026. **Sheets reviewed 3 October 2026:** see `SHEET-REVIEW-2026-10-03.md` for the recommended verdicts on P1–P6. This is research plus **proposals**. Nothing here changes a rule until the user approves it; the proposals are marked **P1–P6** so they can be accepted one at a time. The image prompts that follow from it are in `GEMINI-PROMPTS-v2.md`.
+Written 2 October 2026. It is research plus proposals, marked **P1–P6**. **All six were approved on 3 October 2026**, with the amendments in `SHEET-REVIEW-2026-10-03.md`, which also reviews the sheets. The image prompts that follow from it are in `GEMINI-PROMPTS-v2.md`.
 
 ## Summary
 

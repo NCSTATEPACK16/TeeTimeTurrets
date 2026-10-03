@@ -1,6 +1,6 @@
 # Cart v3: soft-bevelled body, shorter canopy, slate frame
 
-**Status:** draft, 3 October 2026. It depends on proposals P1–P5 in `../STYLE-RESEARCH.md`, as amended by `../SHEET-REVIEW-2026-10-03.md`. Do not build it until the user approves those.
+**Status:** approved 3 October 2026, with P1–P5 (`../SHEET-REVIEW-2026-10-03.md`). Build it after the code slice lands: the `rbox` kind, creased smooth shading and AO.
 **Route:** primitive graph → `src/entities/graphs/cart.json`, the same file, re-exported. **Source:** `art/cart-v2.blend`, saved as a new `art/cart-v3.blend`. Never write to the v2 file again.
 **Style target:** `docs/concept/reference/cart-v3-hero-01.jpg`, panel A. **Proportion:** `cart-v3-ortho-01.jpg`. **Parts:** `cart-v3-breakdown-01.jpg`. **Turret motion:** `turret-swing-02.jpg`.
 **Supersedes:** `cart-v2.md` for the body, canopy, seats, wheels and turret housing. Everything cart-v2 lists under "Must not change" still holds and is repeated below.

@@ -1,6 +1,6 @@
 # Sheet review, 3 October 2026
 
-This reviews the 16 images generated from `GEMINI-PROMPTS-v2.md` and gives a verdict on proposals P1–P6 in `STYLE-RESEARCH.md`. **The verdicts are recommendations. A proposal is approved only when the user says so.** The specs that follow from them are `specs/cart-v3.md` and the v3 amendments at the end of `specs/clubhouse.md` and `specs/team-barn.md`.
+This reviews the 16 images generated from `GEMINI-PROMPTS-v2.md` and gives a verdict on proposals P1–P6 in `STYLE-RESEARCH.md`. **Approved by the user on 3 October 2026, all as recommended.** The specs that follow from them are `specs/cart-v3.md` and the v3 amendments at the end of `specs/clubhouse.md` and `specs/team-barn.md`.
 
 The images are filed in `docs/concept/reference/` (2048 px, quality 88). The originals are in `../concept-originals-fullres/` under the names they were saved with; the mapping is in `docs/concept/reference/README.md`.
 
@@ -29,7 +29,7 @@ The images are filed in `docs/concept/reference/` (2048 px, quality 88). The ori
 | `restyle-chase-golden-01.jpg` | S8 golden hour | Keep: a title-screen mood | A target for #60 (backdrop and title), not for the match |
 | `chase-target-01.jpg` | Saved as "option clubhouse" | Keep: the chase-camera target | It is shot 03 redrawn with the club pointing forward. It is the framing reference for P6 (#51) |
 
-## Proposal verdicts (recommended)
+## Proposal verdicts (approved 3 Oct 2026)
 
 | | Proposal | Recommendation |
 |---|---|---|
