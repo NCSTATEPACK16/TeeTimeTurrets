@@ -18,13 +18,14 @@ export const CART_GRAPH = raw as unknown as PrimitiveGraph;
 
 /**
  * The nine material slots from `ASSET_PIPELINE.md` section 2.1. `canopy` is the team colour
- * (`src/render/teamColors.ts`) and is deliberately in no loadout cosmetic; the other eight are. This is the vocabulary the
+ * (`src/render/teamColors.ts`) and `frame` is the slate two-tone under every paint
+ * (`docs/art/specs/cart-v3.md`); both are deliberately in no loadout cosmetic, and the other seven are. This is the vocabulary the
  * clubhouse loadout paints in: a cosmetic is a map from these names to colours, so anything the
  * player can recolour has to be its own slot here.
  */
 export const CART_SLOTS = [
   "chassis",
-  "roof",
+  "frame",
   "canopy",
   "turret_housing",
   "turret_barrel",

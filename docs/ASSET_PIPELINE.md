@@ -130,9 +130,9 @@ paint and skin variants must apply to both.
 The customisation menu implies **separable material slots**, authored as distinct slots on one
 model so a paint swap is a material-index change rather than a mesh swap:
 
-`chassis` · `roof` · `canopy` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
+`chassis` · `frame` · `canopy` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
 
-`canopy` (added in Stage 7, `docs/art/specs/cart-v2.md`) is the **team colour** and no loadout cosmetic touches it. `roof` is now the posts and windscreen rails only.
+`canopy` (added in Stage 7, `docs/art/specs/cart-v2.md`) is the **team colour** and no loadout cosmetic touches it. Cart v3 renamed `roof` to **`frame`**: the slate posts, windscreen, floor, bumpers and turret base, which no paint touches (`docs/art/specs/cart-v3.md`).
 
 ### 2.2 The mannequin is a ragdoll, not a model — except the one who is driving
 
