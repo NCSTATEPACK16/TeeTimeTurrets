@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 /**
  * The runtime half of `docs/ASSET_PIPELINE.md` section 4: Blender is a *design* tool for playable
@@ -17,7 +18,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
  * clubhouse loadout drives (`UI-SPEC.md` S3).
  */
 
-export type PrimitiveKind = "box" | "cylinder" | "cone" | "sphere" | "capsule" | "torus" | "prism";
+export type PrimitiveKind = "box" | "rbox" | "cylinder" | "cone" | "sphere" | "capsule" | "torus" | "prism";
 
 export interface PrimitiveNode {
   readonly name: string;
@@ -37,6 +38,12 @@ export interface SlotSpec {
   readonly color: number; // 0xRRGGBB
   readonly roughness: number;
   readonly metalness: number;
+  /**
+   * Facet this slot. Smooth is the default (`docs/art/specs/00-pipeline.md`, Style): every kind's
+   * own normals are already smooth inside a part and crisp where its faces turn a corner, which is
+   * the soft-bevelled look. `flat` is the opt-in for a slot that should read faceted.
+   */
+  readonly flat?: boolean;
 }
 
 export interface PrimitiveGraph {
@@ -87,6 +94,7 @@ export function buildGraph(graph: PrimitiveGraph, slotOverrides: SlotColors = {}
       color: slotOverrides[slot] ?? spec.color,
       roughness: spec.roughness,
       metalness: spec.metalness,
+      flatShading: spec.flat === true,
     });
     material.name = slot;
     materials.set(slot, material);
@@ -272,7 +280,20 @@ export interface MergedGraph {
  * Node names do not survive either, for the same reason: there is nothing left to address. A graph
  * with a pivot something poses by name belongs in `buildGraph`.
  */
-export function mergeGraph(graph: PrimitiveGraph, slotOverrides: SlotColors = {}): MergedGraph {
+export interface MergeOptions {
+  /**
+   * Darken the base where the graph meets the ground (`groundContactShade`). On by default, because
+   * a merged graph is static dressing authored with its origin at ground contact. Off for anything
+   * that floats, such as a pickup hovering over its pedestal.
+   */
+  readonly contactShade?: boolean;
+}
+
+export function mergeGraph(
+  graph: PrimitiveGraph,
+  slotOverrides: SlotColors = {},
+  options: MergeOptions = {},
+): MergedGraph {
   // Built with `buildGraph` rather than by walking the tree again, so the transforms, the slot
   // lookup and the parameter mapping are the *same* code the unmerged path uses. A second walk
   // here is exactly where a merged prop would quietly stop matching its own gate subject.
@@ -280,7 +301,7 @@ export function mergeGraph(graph: PrimitiveGraph, slotOverrides: SlotColors = {}
   const parts: THREE.BufferGeometry[] = [];
   const colours: number[] = [];
 
-  bakeInto(built, null, parts, colours);
+  bakeInto(graph, built, null, parts, colours, options.contactShade !== false);
   built.dispose();
 
   return meshFrom(graph.name, parts, colours);
@@ -306,6 +327,7 @@ export function mergeGraphInstances(
   graph: PrimitiveGraph,
   instances: readonly THREE.Matrix4[],
   slotOverrides: SlotColors = {},
+  options: MergeOptions = {},
 ): MergedGraph {
   if (instances.length === 0) {
     throw new Error(`primitive graph "${graph.name}": needs at least one instance matrix`);
@@ -315,7 +337,8 @@ export function mergeGraphInstances(
   const parts: THREE.BufferGeometry[] = [];
   const colours: number[] = [];
 
-  for (const instance of instances) bakeInto(built, instance, parts, colours);
+  const shade = options.contactShade !== false;
+  for (const instance of instances) bakeInto(graph, built, instance, parts, colours, shade);
   built.dispose();
 
   return meshFrom(graph.name, parts, colours);
@@ -329,10 +352,12 @@ export function mergeGraphInstances(
  * single one its own gate subject draws.
  */
 function bakeInto(
+  graph: PrimitiveGraph,
   built: BuiltGraph,
   instance: THREE.Matrix4 | null,
   parts: THREE.BufferGeometry[],
   colours: number[],
+  contactShade: boolean,
 ): void {
   built.root.updateMatrixWorld(true);
   const rgb = new THREE.Color();
@@ -341,16 +366,55 @@ function bakeInto(
     if (!(child instanceof THREE.Mesh)) return;
     // Baked into world space: the merged mesh has no tree left to carry a node's parent transform,
     // so each node's own matrix has to be applied before its vertices are concatenated.
-    const geometry = child.geometry.clone().applyMatrix4(child.matrixWorld);
-    // And then the instance's own placement on top of it, which is what makes copy n land somewhere
-    // copy 0 does not.
-    if (instance !== null) geometry.applyMatrix4(instance);
+    const slot = (child.material as THREE.MeshStandardMaterial).name;
+    const posed = child.geometry.clone().applyMatrix4(child.matrixWorld);
+    // A merged mesh has one material, so a flat slot is faceted in its normals instead.
+    const geometry = graph.slots[slot]?.flat === true ? facetted(posed) : posed;
+    // The instance's own placement goes on after the shading below reads graph-space height; it is
+    // what makes copy n land somewhere copy 0 does not.
     parts.push(geometry);
 
     rgb.copy((child.material as THREE.MeshStandardMaterial).color);
-    const count = geometry.getAttribute("position").count;
-    for (let i = 0; i < count; i++) colours.push(rgb.r, rgb.g, rgb.b);
+    // Graph space, before any instance placement: every merged graph is authored with its origin
+    // at ground contact, so y is height above the ground it stands on.
+    const position = geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) {
+      const ao = contactShade ? groundContactShade(position.getY(i)) : 1;
+      colours.push(rgb.r * ao, rgb.g * ao, rgb.b * ao);
+    }
+    if (instance !== null) geometry.applyMatrix4(instance);
   });
+}
+
+/** How dark a merged graph is where it meets the ground, and how high above it the darkening fades. */
+const CONTACT_SHADE = 0.72;
+const CONTACT_FADE_M = 0.6;
+
+/**
+ * Cheap ambient occlusion for static merged graphs on every preset (`STYLE-RESEARCH.md` P4): the
+ * base of a building or prop darkens where it meets the ground, fading out over 0.6 m. High also
+ * runs a screen-space AO pass (`post.ts`); this is what Low and Med get, baked into the vertex
+ * colours at load for nothing per frame.
+ */
+export function groundContactShade(heightM: number): number {
+  const t = Math.min(Math.max(heightM / CONTACT_FADE_M, 0), 1);
+  return CONTACT_SHADE + (1 - CONTACT_SHADE) * t * t * (3 - 2 * t);
+}
+
+/** Face normals, re-indexed: `mergeGeometries` refuses to mix indexed and non-indexed parts. */
+function facetted(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  const flat = geometry.index === null ? geometry : geometry.toNonIndexed();
+  if (flat !== geometry) geometry.dispose();
+  flat.computeVertexNormals();
+  return withSequentialIndex(flat);
+}
+
+function withSequentialIndex(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  const count = geometry.getAttribute("position").count;
+  const index: number[] = [];
+  for (let i = 0; i < count; i++) index.push(i);
+  geometry.setIndex(index);
+  return geometry;
 }
 
 /** Concatenates the baked parts into the single vertex-coloured mesh both merges return. */
@@ -363,10 +427,10 @@ function meshFrom(name: string, parts: THREE.BufferGeometry[], colours: number[]
   }
   merged.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
 
+  // Smooth: a flat slot's facets are already in its normals (`bakeInto`).
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.85,
-    flatShading: true,
   });
   const mesh = new THREE.Mesh(merged, material);
   mesh.name = name;
@@ -390,6 +454,8 @@ function geometryFor(node: PrimitiveNode, graphName: string): THREE.BufferGeomet
   switch (node.kind) {
     case "box":
       return new THREE.BoxGeometry(p[0], p[1], p[2]);
+    case "rbox":
+      return roundedBoxGeometry(node, graphName);
     case "cylinder":
       return new THREE.CylinderGeometry(p[0], p[1], p[2], p[3]);
     case "cone":
@@ -407,6 +473,27 @@ function geometryFor(node: PrimitiveNode, graphName: string): THREE.BufferGeomet
         `primitive graph "${graphName}": node "${node.name}" has unknown kind "${String(node.kind)}"`,
       );
   }
+}
+
+/**
+ * `rbox`: `[w, h, d, radius]`, a box with every edge rounded -- the soft-bevelled look
+ * (`docs/art/STYLE-RESEARCH.md` P2). One rounding segment: 108 triangles against a box's 12, with
+ * the bevel's own smooth normals, so its edges catch a highlight line.
+ *
+ * The radius is checked here because `RoundedBoxGeometry` clamps a too-large one silently, which
+ * would ship a different shape from the one authored. Indexed for the same reason `prism` is.
+ */
+function roundedBoxGeometry(node: PrimitiveNode, graphName: string): THREE.BufferGeometry {
+  const [w = 0, h = 0, d = 0, radius = 0] = node.params;
+  if (node.params.length !== 4 || !(w > 0 && h > 0 && d > 0) || !(radius > 0 && radius < Math.min(w, h, d) / 2)) {
+    throw new Error(
+      `primitive graph "${graphName}": rbox "${node.name}" needs [w, h, d > 0, 0 < radius < half the ` +
+        `shortest side] (got [${node.params.join(", ")}])`,
+    );
+  }
+  const geometry = new RoundedBoxGeometry(w, h, d, 1, radius);
+  geometry.clearGroups();
+  return withSequentialIndex(geometry);
 }
 
 /**
@@ -438,9 +525,5 @@ function prismGeometry(node: PrimitiveNode, graphName: string): THREE.BufferGeom
   });
   geometry.translate(0, 0, -depth / 2);
   geometry.clearGroups();
-  const count = geometry.getAttribute("position").count;
-  const index: number[] = [];
-  for (let i = 0; i < count; i++) index.push(i);
-  geometry.setIndex(index);
-  return geometry;
+  return withSequentialIndex(geometry);
 }

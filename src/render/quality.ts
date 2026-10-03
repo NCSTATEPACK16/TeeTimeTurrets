@@ -11,7 +11,7 @@
  * `quality.ts` (MIT, `reference/claude-of-tanks/quality.ts.txt`; see `NOTICE`). The values are this
  * game's own.
  *
- * Some levers have no consumer yet and say so: ambient occlusion has no pass, and grass, the tree
+ * Some levers have no consumer yet and say so: grass, the tree
  * cap and water belong to Stage 5's environment. They are here so a preset describes the whole
  * budget from the start, and so Stage 5 reads a number rather than inventing one.
  */
@@ -36,7 +36,10 @@ export interface QualityPreset {
   readonly shadowMapSize: number;
   /** Shadow maps: 0 with shadows off, 1 for the single map, more for cascades. */
   readonly shadowCascades: number;
-  /** Reserved: no ambient-occlusion pass exists yet. */
+  /**
+   * Screen-space ambient occlusion on the post chain (`post.ts`). High only: Low and Med get the
+   * contact shade baked into static merged graphs instead (`groundContactShade`).
+   */
   readonly ambientOcclusion: boolean;
   /** Reserved for Stage 5's grass carpet: blades per square metre near the camera. */
   readonly grassDensity: number;
@@ -84,7 +87,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     shadows: "cascaded",
     shadowMapSize: 2048,
     shadowCascades: 3,
-    ambientOcclusion: false,
+    ambientOcclusion: true,
     grassDensity: 16,
     treeCap: 3000,
     smaa: true,

@@ -47,7 +47,8 @@ export function createPickupView(
   for (const type of PICKUP_TYPES) {
     const ofType = sites.flatMap((s, i) => (s.type === type ? [i] : []));
     if (ofType.length === 0) continue;
-    const source = mergeGraph(pickupGraph(type), PICKUP_COLOURS[type]);
+    // Floats over its pedestal: no ground under it to shade against.
+    const source = mergeGraph(pickupGraph(type), PICKUP_COLOURS[type], { contactShade: false });
     merged.push(source);
     const mesh = new THREE.InstancedMesh(source.mesh.geometry, source.mesh.material, ofType.length);
     mesh.name = `pickup-${type}`;

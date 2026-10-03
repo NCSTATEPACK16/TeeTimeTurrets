@@ -73,7 +73,9 @@ export function buildTreeGeometries(palette: BiomePalette): [THREE.BufferGeometr
     tree_foliage_light: palette.foliageLight,
   };
   const geometryOf = (name: (typeof TREE_SPECIES)[typeof palette.treeForm][number]): THREE.BufferGeometry => {
-    const merged = mergeGraph(treeGraph(name), overrides);
+    // No contact shade: a species is authored at unit height and scaled to metres later, so graph
+    // space is not metres above the ground and the shade would darken most of the tree.
+    const merged = mergeGraph(treeGraph(name), overrides, { contactShade: false });
     // Only the geometry is kept: the instanced meshes below bring their own material.
     (merged.mesh.material as THREE.Material).dispose();
     return merged.mesh.geometry;
