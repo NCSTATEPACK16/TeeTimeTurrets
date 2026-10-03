@@ -99,3 +99,22 @@ One Vitest file, `src/entities/clubhouseGraph.test.ts`, checks four things:
 - **Roof:** pitch 17°, from an eave at 4.6 to a ridge at 6.4, as the dimensions above imply. The hip planes use X-then-Y rotations, which exposed an exporter bug that is now fixed (`art/README.md`, Rotations).
 - **Steps** stand outside the 14 m plinth, so the AABB is x ±12.2 (verandah eaves), z −7.4 … +7.9. That needs a **third collider for the steps**; see `sim-slices.md`.
 - **Posts:** 14 in all: six across the front, and four more down each end.
+
+## v3 amendments (approved 3 Oct 2026)
+
+Source: `docs/concept/reference/clubhouse-hero-01.jpg` (target), `clubhouse-breakdown-01.jpg` (modules) and `clubhouse-distance-01.jpg` (silhouette at 150 m). The hero confirms the layout above, so only these change. See `../SHEET-REVIEW-2026-10-03.md`.
+
+- **Bevels:** these become `rbox`:
+  - the plinth (r 0.10)
+  - the wall block (r 0.08)
+  - the cupola base (r 0.06)
+  - the chimney and its cap (r 0.05)
+  - all 14 posts (r 0.03)
+  - the 3 steps (r 0.04)
+- **Fascia boards** carry the roof's highlight lines. Roof planes stay `prism`, because a prism can't be rounded. Under every exposed roof edge, add a thin `rbox` board: 0.08 × 0.24 × the edge's length, r 0.03, slot `cb_trim`. There are 4 for the main hip roof and 3 for the verandahs. This is what makes the hero's roof edges read soft.
+- **Posts** get a square base block as in the breakdown sheet: a plain `box`, 0.32 × 0.30 × 0.32, because a bevel there would cost 96 triangles × 14 for nothing visible. There are no caps; the fascia board does that job.
+- **Roof pitch:** the as-built 17° reads flat beside the hero, whose hip roof is the dominant mass. Raise it toward **about 25°**: the ridge goes to about 7.2 and the cupola rides up with it. Collision doesn't change, because the colliders stop at 6.4 and the roof was never collidable above that. Judge the result in the viewport beside the hero.
+- **Windows and trim** stay plain `box`. At game distance a bevel on a 0.06 m trim is invisible, and there are 15 of them.
+- **Weathervane:** still cut, although 3 of the 4 sheets drew it.
+- **Budget:** the as-built clubhouse is 696 triangles. 29 `rbox` nodes (+96 each) and 14 plain base boxes land near 3,650. **Raise the clubhouse budget from 3,000 to 4,000.** It is still 1 draw call (`mergeGraph`).
+- **Smoke check:** the same `clubhouseGraph.test.ts`, with its triangle bound raised to 4,000.
