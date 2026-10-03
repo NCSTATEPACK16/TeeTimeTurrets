@@ -89,3 +89,15 @@ The three files cover the turret contract, the muzzle-to-head alignment, the rid
 - A Blender viewport screenshot beside `cart-v3-hero-01.jpg` A: the body reads as one rounded white form on a slate frame, not a stack of blocks.
 - In a match at `?match=60` (High preset): the bag and rear deck show from the chase camera, and the canopy is no longer the biggest shape on screen.
 - Blue and orange canopies can be told apart at 40 m, as in `cart-v3-distance-01.jpg`.
+
+## As built (3 Oct 2026)
+
+- **Built by `art/cart_v3_kit.py`** (`build_cart_v3`, then `refine_cart_v3`), which is the source to edit. It edits the v2 cart in place in `art/cart-v3.blend`, so every node keeps its parent and children. Before any edit, a re-export of the untouched v2 cart was byte-identical to the shipped `cart.json`, which proves the exporter on Blender 5.2 and the `ttt_flat` refactor.
+- **Triangles: 3,376** (three.js count), inside the 3,000–4,500 budget.
+- **Widths:** the hood, tub, rear deck and dash are 1.10 wide rather than 1.20 or 1.32, so the tyres (inner faces at x ±0.56) sit outboard of the white body instead of through it. Before, the deleted arches hid that overlap.
+- **Changes beyond the spec, from the first viewport review beside hero A:**
+  - `turret_pivot` and `turret_pedestal` moved from `turret_housing` to **`frame`**. Every sheet draws the turret base slate, and red was only ever the housing; a red ring and pedestal read as one tall red stack. The loadout's turret skin still paints the housing and collar.
+  - The cheeks shrink from a 0.20 to a **0.13 m** half-disc on the pin and move to `frame`. The 0.40 m cheeks hid the housing from a three-quarter view.
+  - **Headlights:** `headlight_l/_r`, `rbox` 0.16 × 0.09 × 0.04, slot `rims`, on the hood's nose. Every sheet draws them.
+  - `steer_wheel` and `steer_column` move from `seats` (now tan) to `tires`, so the controls read dark.
+- **Loadout:** `CHASSIS_PAINTS` no longer sets a second slot, so a paint changes only the white body.
