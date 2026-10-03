@@ -36,10 +36,28 @@ tree, because they are regenerable.
 | `food-cart-01.jpg` | `../../ASSET_PIPELINE.md` §8.5c | The refreshment cart → the `props` collection. Its collider question is still open and the sheet does not depend on it |
 | `clubhouse-exterior-01.jpg` | `../../ASSET_PIPELINE.md` §8.5d | Stage E's clubhouse → a new `exterior` collection and `public/models/clubhouse-exterior.glb`. The only sheet here whose asset ships as a mesh |
 | `tee-sign-01.jpg` | `../../ASSET_PIPELINE.md` §8.5e | Stage E's tee sign **frame**. The board face is a runtime `CanvasTexture` from `HoleSpec`, so the sheet is about the post and mount, not the face |
+| `style-bible-01.jpg` | `../../art/GEMINI-PROMPTS-v2.md` S1 | The style anchor for every v2 asset (`../../art/STYLE-RESEARCH.md` P1) |
+| `style-bible-grey-01.jpg` | S1 greyscale turn | Value check: the turret, pivot, fairway and roof share a mid-grey |
+| `cart-v3-hero-01.jpg` | S2 | **Cart target, panel A** → `../../art/specs/cart-v3.md` |
+| `cart-v3-hero-02.jpg` | S2 (variant) | Grey-body variant, rejected; kept as the record |
+| `cart-v3-distance-01.jpg` | S2 40 m turn | Decided the team colour: full canopy |
+| `turret-swing-02.jpg` | S2b | Turret mount and motion. **Its follow-through panel is wrong** (above horizontal; the game ships 37° below) |
+| `cart-v3-breakdown-01.jpg` | S3 | Cart part list → cart-v3. Original saved as `cart-v3-breadown-01.jpg` |
+| `cart-v3-ortho-01.jpg` | S4 | Cart proportion. Labels, facing and baseline correct |
+| `clubhouse-hero-01.jpg` | S5 | **Clubhouse target** → `../../art/specs/clubhouse.md` v3. Original `clubhouse-hero-1.jpg` |
+| `clubhouse-distance-01.jpg` | S5 150 m turn | Silhouette proof only; off-style. Original `clubhouse-hero-2.jpg` |
+| `clubhouse-breakdown-01.jpg` | S6 | Clubhouse modules → clubhouse v3 |
+| `hub-kit-01.jpg` | S7 | Barn details (knee braces, knee wall) → `../../art/specs/team-barn.md` v3; lamp, food cart, tee sign. Original `hub-kit.jpg` |
+| `restyle-chase-01.jpg` | S8 | **Stage 5 environment target.** Camera and cart drifted; don't copy its grey water |
+| `restyle-chase-grey-01.jpg` | S8 greyscale turn | Stage 5 value structure. Original `restyle-chase-02-greyscale.jpg` |
+| `restyle-chase-golden-01.jpg` | S8 golden-hour turn | Title-screen mood (#60). Original `restyle-chase-03-golden hour.jpg` |
+| `chase-target-01.jpg` | S8 (alternate) | Shot 03 redrawn with the club forward: the chase-camera framing for #51. Original `option clubhouse.jpg` |
 
 Note for anyone planning to automate this: **image models are not on Google's free API tier.** Every
 sheet here came from the Gemini / AI Studio web UI by hand, which is free; the API path needs
 billing. See `../../ASSET_PIPELINE.md` §8.4.
+
+The sixteen v2 sheets (3 October 2026) are reviewed in `../../art/SHEET-REVIEW-2026-10-03.md`, which carries their known deviations.
 
 ---
 

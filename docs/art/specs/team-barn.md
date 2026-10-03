@@ -65,3 +65,13 @@ This is covered by the same `clubhouseGraph.test.ts`, with one added assertion: 
 - **Floor:** grey paving (`lot_paving`), not brick. In game a brick floor read as a big red slab.
 - **Bay numbers:** dropped for good (29 Sep 2026). Nothing in the game names a pad, so a number would label nothing; the fascia colour carries the team.
 - **Triangles:** 160.
+
+## v3 amendments (draft, 3 Oct 2026; awaiting approval of P1–P4)
+
+Source: `docs/concept/reference/hub-kit-01.jpg` for its details only. The sheet draws a 3-bay barn open at the gable end; this spec's 4-bay barn, open along its long side and facing the clubhouse, stays.
+
+- **Posts:** the 5 front posts become `rbox` (r 0.03), each on a 0.34 square base block (plain `box`).
+- **Knee braces:** two 45° timber braces per post, from about 0.8 m below the eave to the fascia, each a thin `prism` wedge, slot `cb_door` (the timber brown). The end posts take one brace, on their inner side, so there are 8 braces in all.
+- **Brick knee wall:** a 0.9 m-high `cb_brick` band along the inside of the back wall and both end walls, proud of the wall by 0.04.
+- **Fascia:** `team_trim`, now an `rbox` (r 0.04) so it catches the edge highlight that carries the team colour.
+- **Budget:** about 160 → 830. **Raise the barn budget from 800 to 900**, and the assertion in `clubhouseGraph.test.ts` with it. It is still 1 draw call per barn.
