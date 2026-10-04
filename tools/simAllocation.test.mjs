@@ -33,6 +33,18 @@ import { Sim } from "../src/sim/world";
  * tick is traced over two separate windows, and a function is at fault only if it made more than
  * `MAX_EXTRA_BYTES_PER_TICK` beyond boxed doubles in **both**.
  *
+ * **No re-optimizing in the windows.** The warm-up runs with V8's optimizer on, as the game does,
+ * so the windows measure optimized code. During the windows, tiering is capped at the baseline
+ * compiler. A function whose optimized code is thrown away can then run on, but it cannot be
+ * optimized again. That matters because a deopt-and-reoptimize cycle allocates V8 bookkeeping
+ * charged to the function, and the cycle can repeat. `syncCurrentPool` showed it on CI
+ * (4 Oct 2026, "30.0 and 38.3 bytes a tick" in both windows): optimized while no ball was active,
+ * it deoptimizes when one goes active ("insufficient type feedback" at `r.x`), and a GC then
+ * deoptimizes it again ("weak objects"). A trace of one local run showed seven such cycles. Which
+ * window a cycle lands in depends on concurrent compilation and GC timing, so the test failed only
+ * sometimes. Capped, a function deoptimizes at most once and lands in at most one window. A
+ * construction in the tick still happens on every tick, in both windows.
+ *
  * **Inlining is off for the run**, so each allocation stays in the frame that made it. With it on,
  * Rapier's glue -- which wraps every vector it hands back in a fresh object -- is folded into
  * whichever sim function called it and would be charged to the sim. Rapier's own allocations are
@@ -57,6 +69,8 @@ beforeAll(async () => {
   const world = buildCourseWorld(authoredCourse(2026), 2026);
   const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
   for (let i = 0; i < WARM_TICKS; i++) sim.step();
+  // Freeze tiering for the windows (see the header, "No re-optimizing in the windows").
+  v8.setFlagsFromString("--max-opt=1");
 
   const session = new Session();
   session.connect();
