@@ -118,3 +118,17 @@ Source: `docs/concept/reference/clubhouse-hero-01.jpg` (target), `clubhouse-brea
 - **Weathervane:** still cut, although 3 of the 4 sheets drew it.
 - **Budget:** the as-built clubhouse is 696 triangles. 29 `rbox` nodes (+96 each) and 14 plain base boxes land near 3,650. **Raise the clubhouse budget from 3,000 to 4,000.** It is still 1 draw call (`mergeGraph`).
 - **Smoke check:** the same `clubhouseGraph.test.ts`, with its triangle bound raised to 4,000.
+
+## As built, v3 (4 Oct 2026)
+
+Built by `art/stage7_kit.py` (`build_clubhouse`), exported to `src/entities/graphs/clubhouse.json`. Before any edit, the unchanged kit was rebuilt into a fresh file and re-exported; every graph came out byte-identical.
+
+- **Triangles:** 3,732 (budget 4,000; was 696). Still one `mergeGraph`.
+- **Pitch and ridge:** `RIDGE_Y` 7.35, so the pitch is 24.99° (`RUN` 5.9 × tan 25° = 2.75). The spec's "about 7.2" would be 23.6°; the prompt's 25° target won.
+- **rbox:** the plinth, walls, cupola, chimney and cap, 14 posts and 3 steps at the radii above.
+- **Fascia:** 7 boards (`cb_fascia_f/b/e/w` on the hip, `cb_fascia_vf/ve/vw` on the verandahs), 0.08 × 0.24, r 0.03. Each hangs 0.08 below its edge and sits flush *inside* it, so the footprint the smoke check pins (24.4 wide, rear −7.4) doesn't move.
+- **Post bases:** 14 plain boxes 0.32 × 0.30 × 0.32 on the deck (y 0.6–0.9).
+- **Changes from the spec, with reasons:**
+  - **Cupola base 1.0 tall (was 0.8)**, centred at ridge + 0.1, so it reaches 0.4 below the ridge. At 25° the slopes fall 0.37 across its half-width, and the old 0.2 embed left a gap under its front and back faces. The top stays at ridge + 0.6, the roof cone at ridge + 0.9, and the tip at **8.55** (the smoke check's `max.y`; was 7.6).
+  - **Chimney raised with the ridge (+0.95, centre 7.05, cap top 8.30).** At the old height it still cleared the hip (6.65 at its centre), but stood only 0.55 proud and read as a stub behind the steeper roof. It keeps its old 0.8 above the ridge.
+- **Colliders unchanged** (`src/sim/clubhouse.ts` stops at 6.4 m; the roof was never collidable).
