@@ -43,8 +43,10 @@ Rewritten 2026-10-04, at the end of the clubhouse and barn v3 pass (branch `club
 
 ## Just done: clubhouse and barn v3 (awaiting play-test)
 
-- **Clubhouse:** 3,732 triangles (budget 4,000). It has rbox masses, 7 fascia boards and plain post bases. The ridge is 7.35, which makes a 25° pitch. The cupola tip is at 8.55, and the chimney rose with the ridge.
-- **Barn:** 896 triangles (budget 900). It has rbox posts on bases, 8 triangular knee braces, a 0.9 m brick knee wall and an rbox team fascia.
+- **Clubhouse:** 4,632 triangles (budget 5,000). It has rbox masses, 7 fascia boards, plain post bases, and the detail pass: ridge and hip caps, window mullions, a double door and cupola louvres. The ridge is 7.35, which makes a 25° pitch. The cupola tip is at 8.55, and the chimney rose with the ridge.
+- **Barn:** 1,004 triangles (budget 1,100). It has rbox posts on bases, 8 triangular knee braces, a 0.9 m brick knee wall, an rbox team fascia and a ridge cap.
+- **The detail pass came from a 3× A/B test** (local worktree `TeeTimeTurrets-ab3x`, never pushed; safe to delete). Only these items read at play distance. Rounder bevels (more `rbox` segments) showed in no shot.
+- **CI:** `tools/simAllocation.test.mjs` timed out on Node 22. #84's tiering cap is process-wide and ran ahead of the Rapier-reads test. The fix (8d801ad, cherry-picked to #84) runs that test first.
 - The smoke check (`clubhouseGraph.test.ts`) bounds were raised on purpose.
 - The "As built, v3" sections of both specs record two deviations from the spec, each with its reason:
   - the braces start 0.8 below the *fascia*, because measured from the eave they hid behind it;

@@ -80,7 +80,7 @@ Source: `docs/concept/reference/hub-kit-01.jpg` for its details only. The sheet 
 
 Built by `art/stage7_kit.py` (`build_team_barn`).
 
-- **Triangles:** 896 per barn (budget 900; was 160). Still one `mergeGraph` with the team-slot override.
+- **Triangles:** 1,004 per barn after the detail pass (budget raised to 1,100; it was 896 before that pass and 160 before v3). Still one `mergeGraph` with the team-slot override.
 - **Roof:** shares the clubhouse `PITCH`, now 24.99°, so the ridge is at 5.55 (was 4.84).
 - **Posts:** 5 `rbox` r 0.03, each on a plain box base 0.34 × 0.30 × 0.34.
 - **Brick knee wall:** `tb_brick_back` and `tb_brick_n/s`, 0.9 high and 0.04 proud of the inside faces. The end pieces stop short of the end posts.
@@ -88,3 +88,4 @@ Built by `art/stage7_kit.py` (`build_team_barn`).
 - **Changes from the spec, with reasons:**
   - **The knee braces are triangles, not four-point strips.** A strip prism costs 12 tris, which put the barn at 928. The triangle wedge (8 tris) tapers from 0.25 m on the post to a tip.
   - **The braces leave the post 0.8 below the fascia's bottom edge (y 2.2), not 0.8 below the eave (2.7).** The fascia covers 3.0–3.5 in front of the post line, so a brace from 2.7 hid almost entirely behind it. Each runs at 45° up behind the fascia to the eave (3.5), so from the yard it reads as meeting the fascia, as in `hub-kit-01.jpg`.
+- **Detail pass (4 Oct 2026):** a rounded ridge cap (`rbox` r 0.06, 24.8 long, `cb_roof`), matching the clubhouse's. The 3× A/B test also tried a rounder roof, barge boards and coping on the knee wall; none of them read at play distance.
