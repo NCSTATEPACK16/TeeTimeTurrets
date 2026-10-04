@@ -43,7 +43,7 @@ def materials():
 # --- clubhouse (clubhouse.md) -------------------------------------------------------------------
 
 EAVE_Y = 4.6
-RIDGE_Y = 6.4
+RIDGE_Y = 7.35         # v3: 25 degree pitch (RUN * tan 25 = 2.75); was 6.4, 17 degrees
 ROOF_X = 10.4          # eave half-width with 0.4 overhang over the 20 m block
 ROOF_Z0, ROOF_Z1 = -7.4, 4.4
 ROOF_ZC = (ROOF_Z0 + ROOF_Z1) / 2      # -1.5, the block's centre line
@@ -52,11 +52,12 @@ RISE = RIDGE_Y - EAVE_Y
 SLOPE = math.hypot(RUN, RISE)
 PITCH = math.degrees(math.atan2(RISE, RUN))
 RIDGE_HALF = ROOF_X - RUN               # 4.5
+CHIMNEY_Y = 7.05       # v3: was 6.1; rides up with the ridge (+0.95) so it still stands 0.8 proud of it
 
 
 def build_clubhouse():
-    g = Graph('clubhouse', 'cb_plinth', 'box', [24, 1.6, 14], 'cb_brick', (0, -0.2, 0))
-    g.add('cb_walls', 'box', [20, 4.0, 11], 'cb_wall', (0, 2.6, -1.5))
+    g = Graph('clubhouse', 'cb_plinth', 'rbox', [24, 1.6, 14, 0.10], 'cb_brick', (0, -0.2, 0))
+    g.add('cb_walls', 'rbox', [20, 4.0, 11, 0.08], 'cb_wall', (0, 2.6, -1.5))
 
     # Clerestory bands, one dark strip per face, proud of the wall.
     g.add('cb_band_f', 'box', [16, 0.5, 0.06], 'cb_glass', (0, 4.1, 4.03))
@@ -95,27 +96,45 @@ def build_clubhouse():
     g.add('cb_roof_e', 'prism', hip, 'cb_roof', (ROOF_X, EAVE_Y, ROOF_ZC), rot=(90, 180 - PITCH, 0))
     g.add('cb_roof_w', 'prism', hip, 'cb_roof', (-ROOF_X, EAVE_Y, ROOF_ZC), rot=(90, PITCH, 0))
     g.add('cb_soffit', 'box', [2 * ROOF_X, 0.05, ROOF_Z1 - ROOF_Z0], 'cb_trim', (0, EAVE_Y, ROOF_ZC))
+    # Fascia boards (v3): 0.08 x 0.24 rounded boards flush inside every exposed eave edge, hanging
+    # just below the roof plane. A prism can't be rounded; these carry the soft highlight line.
+    fy = EAVE_Y - 0.08
+    for n, z in (('f', ROOF_Z1 - 0.04), ('b', ROOF_Z0 + 0.04)):
+        g.add('cb_fascia_' + n, 'rbox', [2 * ROOF_X, 0.24, 0.08, 0.03], 'cb_trim', (0, fy, z))
+    for n, s in (('e', 1), ('w', -1)):
+        g.add('cb_fascia_' + n, 'rbox', [0.08, 0.24, ROOF_Z1 - ROOF_Z0 - 0.16, 0.03], 'cb_trim',
+              (s * (ROOF_X - 0.04), fy, ROOF_ZC))
 
     # Verandah: lean-to roofs over the front (3 m) and both ends (2 m), posts on the deck.
     vp = 8.88   # 0.5 m fall over 3.2 m
     g.add('cb_ver_roof_f', 'box', [24.4, 0.1, 3.24], 'cb_roof', (0, 3.35, 5.6), rot=(vp, 0, 0))
     g.add('cb_ver_roof_e', 'box', [2.24, 0.1, 11.2], 'cb_roof', (11.1, 3.35, -1.6), rot=(0, 0, -vp))
     g.add('cb_ver_roof_w', 'box', [2.24, 0.1, 11.2], 'cb_roof', (-11.1, 3.35, -1.6), rot=(0, 0, vp))
+    # Their fascia boards, flush inside each lean-to's outer edge so the footprint doesn't grow.
+    fall = math.sin(D(vp))
+    g.add('cb_fascia_vf', 'rbox', [24.4, 0.24, 0.08, 0.03], 'cb_trim',
+          (0, 3.35 - 1.62 * fall - 0.08, 5.6 + 1.62 * math.cos(D(vp)) - 0.04))
+    for n, s in (('ve', 1), ('vw', -1)):
+        g.add('cb_fascia_' + n, 'rbox', [0.08, 0.24, 11.2, 0.03], 'cb_trim',
+              (s * (11.1 + 1.12 * math.cos(D(vp)) - 0.04), 3.35 - 1.12 * fall - 0.08, -1.6))
     posts = [(x, 6.85) for x in (-11.85, -7.2, -2.4, 2.4, 7.2, 11.85)]
     posts += [(x, z) for x in (-11.85, 11.85) for z in (-6.85, -3.3, 0.3, 3.6)]
     for i, (x, z) in enumerate(posts):
-        g.add('cb_post%02d' % i, 'box', [0.22, 2.5, 0.22], 'cb_trim', (x, 1.85, z))
+        g.add('cb_post%02d' % i, 'rbox', [0.22, 2.5, 0.22, 0.03], 'cb_trim', (x, 1.85, z))
+        # A plain base block on the deck (0.6): a bevel here costs 96 tris x 14 for nothing visible.
+        g.add('cb_post%02d_base' % i, 'box', [0.32, 0.30, 0.32], 'cb_trim', (x, 0.75, z))
 
     # Entrance steps, three treads down from the deck, outside the 14 m plinth.
     for i in range(3):
-        g.add('cb_step%d' % i, 'box', [3.0, 0.2 * (3 - i), 0.3], 'cb_trim',
+        g.add('cb_step%d' % i, 'rbox', [3.0, 0.2 * (3 - i), 0.3, 0.04], 'cb_trim',
               (0, 0.1 * (3 - i), 7.15 + 0.3 * i))
 
-    # Cupola on the ridge centre, chimney rear-right.
-    g.add('cb_cupola', 'box', [1.6, 0.8, 1.6], 'cb_trim', (0, 6.6, ROOF_ZC))
-    g.add('cb_cupola_roof', 'cone', [1.2, 0.6, 4], 'cb_roof', (0, 7.3, ROOF_ZC), rot=(0, 45, 0))
-    g.add('cb_chimney', 'box', [1.0, 2.2, 1.0], 'cb_brick', (6.0, 6.1, -3.0))
-    g.add('cb_chimney_cap', 'box', [1.2, 0.15, 1.2], 'cb_brick', (6.0, 7.27, -3.0))
+    # Cupola on the ridge centre, riding with it; chimney rear-right. The cupola's base reaches
+    # 0.4 below the ridge so the steeper slopes don't open a gap under its front and back faces.
+    g.add('cb_cupola', 'rbox', [1.6, 1.0, 1.6, 0.06], 'cb_trim', (0, RIDGE_Y + 0.1, ROOF_ZC))
+    g.add('cb_cupola_roof', 'cone', [1.2, 0.6, 4], 'cb_roof', (0, RIDGE_Y + 0.9, ROOF_ZC), rot=(0, 45, 0))
+    g.add('cb_chimney', 'rbox', [1.0, 2.2, 1.0, 0.05], 'cb_brick', (6.0, CHIMNEY_Y, -3.0))
+    g.add('cb_chimney_cap', 'rbox', [1.2, 0.15, 1.2, 0.05], 'cb_brick', (6.0, CHIMNEY_Y + 1.17, -3.0))
     return g
 
 
@@ -123,22 +142,42 @@ def build_clubhouse():
 
 def build_team_barn():
     g = Graph('team_barn', 'tb_plinth', 'box', [8, 0.3, 24], 'lot_paving', (0, 0.15, 0))
+    eave = 3.5
     g.add('tb_wall_back', 'box', [0.3, 3.2, 24], 'cb_wall', (-3.85, 1.9, 0))
     for s, n in ((1, 'n'), (-1, 's')):
         g.add('tb_wall_' + n, 'box', [8, 3.2, 0.3], 'cb_wall', (0, 1.9, s * 11.85))
-    for i, z in enumerate((-11.85, -6.0, 0.0, 6.0, 11.85)):
-        g.add('tb_post%d' % i, 'box', [0.25, 3.2, 0.25], 'cb_trim', (3.85, 1.9, z))
+    # Brick knee wall (v3), 0.9 m high and 0.04 proud of the inside of the back and end walls.
+    g.add('tb_brick_back', 'box', [0.04, 0.9, 23.4], 'cb_brick', (-3.68, 0.75, 0))
+    for s, n in ((1, 'n'), (-1, 's')):
+        g.add('tb_brick_' + n, 'box', [7.38, 0.9, 0.04], 'cb_brick', (0.03, 0.75, s * 11.68))
+    posts = (-11.85, -6.0, 0.0, 6.0, 11.85)
+    for i, z in enumerate(posts):
+        g.add('tb_post%d' % i, 'rbox', [0.25, 3.2, 0.25, 0.03], 'cb_trim', (3.85, 1.9, z))
+        g.add('tb_post%d_base' % i, 'box', [0.34, 0.30, 0.34], 'cb_trim', (3.85, 0.45, z))
+    # Knee braces (v3): a thin 45 degree wedge in the posts' plane, two per inner post and one on
+    # the inner side of each end post. It leaves the post 0.8 below the fascia's bottom edge (the
+    # eave line as seen from the yard) and runs up behind the fascia to the eave, tapering to a
+    # hidden tip; measured from the eave itself it would hide behind the fascia entirely. A
+    # triangle, not a four-point strip: the strip's 4 extra tris x 8 put the barn over 900. The
+    # polygon's +x runs along +z under ry -90 (along -z under +90).
+    brace = [0.12, 0, 0, 1.3, 1.3, 0, 0.25]
+    k = 0
+    for z in posts:
+        for s in (1, -1):
+            if abs(z + s * 0.125) > 11.85:
+                continue
+            g.add('tb_brace%d' % k, 'prism', brace, 'cb_door', (3.85, eave - 1.3, z + s * 0.125), rot=(0, -90 * s, 0))
+            k += 1
     # Gable roof at the clubhouse pitch, ridge along z, 0.4 m overhang.
     half = 4.4
     rise = half * math.tan(D(PITCH))
     slope = math.hypot(half, rise)
-    eave = 3.5
     g.add('tb_roof_w', 'box', [slope, 0.12, 24.8], 'cb_roof', (-half / 2, eave + rise / 2, 0), rot=(0, 0, PITCH))
     g.add('tb_roof_e', 'box', [slope, 0.12, 24.8], 'cb_roof', (half / 2, eave + rise / 2, 0), rot=(0, 0, -PITCH))
     gable = [0.2, -4.0, 0, 4.0, 0, 0, rise * 4.0 / half]
     for s, n in ((1, 'n'), (-1, 's')):
         g.add('tb_gable_' + n, 'prism', gable, 'cb_wall', (0, eave, s * 11.85))
-    g.add('tb_fascia', 'box', [0.1, 0.5, 24.8], 'team_trim', (half, eave - 0.25, 0))
+    g.add('tb_fascia', 'rbox', [0.1, 0.5, 24.8, 0.04], 'team_trim', (half, eave - 0.25, 0))
     return g
 
 
