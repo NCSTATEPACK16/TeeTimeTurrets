@@ -13,7 +13,7 @@ import { PICKUP_TYPES, type PickupSite, type PickupType } from "../sim/pickupSit
  * the Stage D rule that the cylinder outlives the item.
  */
 
-const PILLAR_RADIUS_M = 1.5;
+export const PILLAR_RADIUS_M = 1.5;
 const PILLAR_HEIGHT_M = 2.6;
 const ITEM_HEIGHT_M = 1.3;
 const SPIN_RAD_PER_S = 1.2;
@@ -47,7 +47,8 @@ export function createPickupView(
   for (const type of PICKUP_TYPES) {
     const ofType = sites.flatMap((s, i) => (s.type === type ? [i] : []));
     if (ofType.length === 0) continue;
-    const source = mergeGraph(pickupGraph(type), PICKUP_COLOURS[type]);
+    // Floats over its pedestal: no ground under it to shade against.
+    const source = mergeGraph(pickupGraph(type), PICKUP_COLOURS[type], { contactShade: false });
     merged.push(source);
     const mesh = new THREE.InstancedMesh(source.mesh.geometry, source.mesh.material, ofType.length);
     mesh.name = `pickup-${type}`;

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Flagstick, placeFlagstick } from "../entities/Flagstick";
-import { BIOMES } from "./biomes";
+import { GOLDEN_HOUR_SKY, Sky } from "./sky";
 import { createGround } from "./ground";
 import { createProps } from "./props";
 import { createTrees } from "./Trees";
@@ -21,8 +21,10 @@ import type { HoleSpec } from "../sim/course";
 
 /** Radians per second. Slow enough to read as a living scene, not as a rotating turntable. */
 const ORBIT_RATE = 0.035;
-/** Low sun for the golden-hour look image 10 is lit with. */
-const SUN_ELEVATION = 0.22;
+/** Linear sun intensity: the golden-hour sun, a little under the match's noon one. */
+const SUN_INTENSITY = 2.9;
+/** FogExp2 density times the hole's field size: a softer haze than the match, for depth. */
+const FOG_DENSITY_X_FIELD = 0.9;
 
 export interface Backdrop {
   readonly scene: THREE.Scene;
@@ -33,30 +35,55 @@ export interface Backdrop {
   dispose(): void;
 }
 
-export function createBackdrop(spec: HoleSpec): Backdrop {
+/**
+ * `renderer` bakes the sky's environment light and sizes the sun's shadow; without one (the tests,
+ * in Node) the sky is drawn but lights through its hemisphere fill alone, and nothing casts.
+ */
+export function createBackdrop(spec: HoleSpec, renderer: THREE.WebGLRenderer | null = null): Backdrop {
   const terrain = createTerrain(spec);
   const surfaces = createSurfaces(spec, terrain);
-  const palette = BIOMES[spec.biome];
   const fieldSize = spec.fieldSize;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(palette.sky);
-  scene.fog = new THREE.Fog(palette.sky, fieldSize * 0.5, fieldSize * 2);
+  // Image 10's golden hour: the same course late in the day, which is most of what makes the menu
+  // read as a different place from the game.
+  const sky = new Sky(GOLDEN_HOUR_SKY, renderer);
+  sky.install(scene, FOG_DENSITY_X_FIELD / fieldSize);
 
   const camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.1, fieldSize * 2.5);
 
-  // Warmer and lower than the round's sun: this is the same course at a different hour, which is
-  // most of what makes the menu read as a different place from the game.
-  const sun = new THREE.DirectionalLight(0xffe6c0, 2.1);
-  sun.position.set(fieldSize * 0.4, fieldSize * SUN_ELEVATION, fieldSize * 0.25);
+  const sun = new THREE.DirectionalLight(sky.sunColour, SUN_INTENSITY);
+  sun.position.copy(sky.sunDir).multiplyScalar(fieldSize);
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xbfd4ff, 0.5));
+  scene.add(sun.target);
+  // Long low shadows across the fairway are the shot. One fixed map over the whole hole: nothing
+  // moves but the camera, so there is nothing to snap.
+  if (renderer?.shadowMap.enabled) {
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    const half = fieldSize * 0.55;
+    const cam = sun.shadow.camera;
+    cam.left = -half;
+    cam.right = half;
+    cam.top = half;
+    cam.bottom = -half;
+    cam.near = 1;
+    cam.far = fieldSize * 2.5;
+    cam.updateProjectionMatrix();
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.25;
+    sun.shadow.radius = 3;
+  }
 
   const ground = createGround(terrain, surfaces);
+  ground.mesh.receiveShadow = true;
   scene.add(ground.mesh);
 
   const trees = createTrees(terrain, surfaces);
-  if (trees.mesh !== null) scene.add(trees.mesh);
+  for (const mesh of trees.meshes) {
+    mesh.castShadow = true;
+    scene.add(mesh);
+  }
 
   // The same factory the round uses, placed from the same `terrain.cupPosition`. This is the
   // second consumer `backdrop.test.ts` exists to keep honest: the title screen shows a real hole,
@@ -83,6 +110,7 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
     );
     camera.lookAt(centre);
     flagstick.update(elapsed);
+    sky.update(elapsed);
   };
   update(0);
 
@@ -99,12 +127,14 @@ export function createBackdrop(spec: HoleSpec): Backdrop {
       // each entry, so anything missed accumulates once per visit to the title screen.
       scene.remove(ground.mesh);
       ground.dispose();
-      if (trees.mesh !== null) scene.remove(trees.mesh);
+      for (const mesh of trees.meshes) scene.remove(mesh);
       trees.dispose();
       scene.remove(flagstick);
       flagstick.dispose();
       for (const object of props.objects) scene.remove(object);
       props.dispose();
+      sky.dispose();
+      sun.shadow.map?.dispose();
       scene.clear();
     },
   };

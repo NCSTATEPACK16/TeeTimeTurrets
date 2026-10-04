@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { buildGraph, mergeGraph, mergeGraphInstances } from "./primitiveGraph";
-import type { PrimitiveGraph, PrimitiveNode } from "./primitiveGraph";
+import { buildGraph, groundContactShade, mergeGraph, mergeGraphInstances } from "./primitiveGraph";
+import type { MergeOptions, PrimitiveGraph, PrimitiveNode } from "./primitiveGraph";
+
+/** The colour-baking tests check slot colours exactly, so they leave out the contact shade. */
+const UNSHADED: MergeOptions = { contactShade: false };
 
 /**
  * The assembler is the one piece of the ASSET_PIPELINE.md section 4 pipeline that runs in the
@@ -295,7 +298,7 @@ describe("mergeGraph", () => {
   });
 
   it("bakes each node's slot colour into the vertices, not a uniform average", () => {
-    const merged = mergeGraph(multiSlot());
+    const merged = mergeGraph(multiSlot(), {}, UNSHADED);
     const colour = merged.mesh.geometry.getAttribute("color");
     expect(colour).toBeDefined();
     expect(colour.count).toBe(merged.mesh.geometry.getAttribute("position").count);
@@ -321,6 +324,8 @@ describe("mergeGraph", () => {
     // geometries would still produce two distinct colours and the wrong cart.
     const merged = mergeGraph(
       graph(node({ name: "body", children: [node({ name: "wheel", slot: "tires", position: [0, -5, 0] })] })),
+      {},
+      UNSHADED,
     );
     const geometry = merged.mesh.geometry;
     const position = geometry.getAttribute("position");
@@ -356,7 +361,7 @@ describe("mergeGraph", () => {
   });
 
   it("takes slot overrides at build time, the same as buildGraph", () => {
-    const merged = mergeGraph(multiSlot(), { tires: 0x00ff00 });
+    const merged = mergeGraph(multiSlot(), { tires: 0x00ff00 }, UNSHADED);
     const colour = merged.mesh.geometry.getAttribute("color");
     const seen = new Set<string>();
     for (let i = 0; i < colour.count; i++) {
@@ -452,7 +457,7 @@ describe("mergeGraphInstances", () => {
   });
 
   it("bakes slot colours per instance, the same as mergeGraph does per node", () => {
-    const merged = mergeGraphInstances(section(), [at(0, 0, 0), at(0, 0, 2)]);
+    const merged = mergeGraphInstances(section(), [at(0, 0, 0), at(0, 0, 2)], {}, UNSHADED);
     const colour = merged.mesh.geometry.getAttribute("color");
     expect(colour.count).toBe(merged.mesh.geometry.getAttribute("position").count);
 
@@ -487,5 +492,60 @@ describe("mergeGraphInstances", () => {
     }
     merged.dispose();
     expect(freed).toBe(2);
+  });
+});
+
+describe("soft-bevelled style (STYLE-RESEARCH.md P2-P4)", () => {
+  it("builds an rbox to its authored size in 108 triangles, and refuses a radius it would clamp", () => {
+    const built = buildGraph(graph(node({ kind: "rbox", params: [1.2, 0.4, 0.9, 0.08] })));
+    const mesh = built.root as THREE.Mesh;
+    const size = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3());
+    expect(size.x).toBeCloseTo(1.2, 5);
+    expect(size.y).toBeCloseTo(0.4, 5);
+    expect(size.z).toBeCloseTo(0.9, 5);
+    expect(mesh.geometry.index!.count / 3).toBe(108);
+    built.dispose();
+
+    // 0.2 is half of 0.4: RoundedBoxGeometry would clamp it silently and ship another shape.
+    expect(() => buildGraph(graph(node({ kind: "rbox", params: [1.2, 0.4, 0.9, 0.2] })))).toThrow(/rbox/);
+    expect(() => buildGraph(graph(node({ kind: "rbox", params: [1, 1, 1] })))).toThrow(/rbox/);
+  });
+
+  it("merges an rbox beside indexed kinds, which mergeGeometries refuses unless both are indexed", () => {
+    const merged = mergeGraph(
+      graph(node({ kind: "rbox", params: [1, 1, 1, 0.1], children: [node({ name: "wheel", slot: "tires" })] })),
+    );
+    expect(merged.mesh.geometry.index).not.toBeNull();
+    merged.dispose();
+  });
+
+  it("shades smooth by default and facets only a slot that opts in with flat", () => {
+    const slots = { ...SLOTS, tires: { ...SLOTS.tires!, flat: true } };
+    const built = buildGraph(graph(node({ children: [node({ name: "wheel", slot: "tires" })] }), slots));
+    expect(built.materials.get("chassis")!.flatShading).toBe(false);
+    expect(built.materials.get("tires")!.flatShading).toBe(true);
+    built.dispose();
+
+    const merged = mergeGraph(graph(node()));
+    expect((merged.mesh.material as THREE.MeshStandardMaterial).flatShading).toBe(false);
+    merged.dispose();
+  });
+
+  it("darkens a merged graph where it meets the ground and not 0.6 m above it", () => {
+    expect(groundContactShade(0)).toBeCloseTo(0.72, 5);
+    expect(groundContactShade(-1)).toBeCloseTo(0.72, 5);
+    expect(groundContactShade(0.6)).toBe(1);
+    expect(groundContactShade(0.3)).toBeGreaterThan(0.72);
+    expect(groundContactShade(0.3)).toBeLessThan(1);
+
+    // A 2 m box standing on the ground: its bottom vertices darker than its top ones.
+    const merged = mergeGraph(graph(node({ kind: "box", params: [1, 2, 1], position: [0, 1, 0] })));
+    const position = merged.mesh.geometry.getAttribute("position");
+    const colour = merged.mesh.geometry.getAttribute("color");
+    for (let i = 0; i < position.count; i++) {
+      const expected = groundContactShade(position.getY(i));
+      expect(colour.getX(i) / expected).toBeCloseTo(new THREE.Color(SLOTS.chassis!.color).r, 4);
+    }
+    merged.dispose();
   });
 });

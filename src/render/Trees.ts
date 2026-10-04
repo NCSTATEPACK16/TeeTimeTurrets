@@ -1,5 +1,11 @@
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGraph } from "../entities/primitiveGraph";
+import { TREE_SPECIES, treeGraph } from "../entities/envGraphs";
+import { biomeForIndex } from "../sim/course";
+import { metresNorthOf } from "../sim/courseBarrier";
+import type { SouthBoundary } from "../sim/courseBarrier";
+import type { CourseTerrain } from "../sim/courseTerrain";
+import type { Vec2 } from "../sim/mapGeometry";
 import { hashChannel, mulberry32 } from "../sim/rng";
 import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
@@ -7,18 +13,19 @@ import { WOODS_WEIGHT } from "../sim/terrain";
 import type { Terrain } from "../sim/terrain";
 import { BIOMES } from "./biomes";
 import type { BiomePalette } from "./biomes";
+import type { BiomeId } from "../sim/course";
 
 /**
- * The rough's tree cover, as a single instanced draw.
+ * The rough's tree cover, as one instanced draw per species.
  *
  * Trees are what make a corridor read as a corridor -- without them a fairway is a colour change
  * on a field, and the concept art's sense of a mown lane cut through woodland comes almost
  * entirely from the treeline. They are also the asset most likely to wreck the frame budget if
  * done naively, which is why AGENTS.md calls out instancing for them specifically.
  *
- * One merged geometry with baked vertex colours, one InstancedMesh, one draw call for every tree
- * on the hole. Trunk and foliage are separate objects in Blender terms but there is no reason for
- * them to be separate draws.
+ * Each biome has two authored species (`src/entities/envGraphs.ts`, `docs/art/specs/stage5/trees.md`),
+ * so a wood is two merged geometries with baked vertex colours and two InstancedMeshes: two draw
+ * calls for every tree on the hole, rather than one silhouette copied a thousand times.
  */
 
 /** Placement grid pitch, metres. Trees are jittered within their cell rather than placed freely:
@@ -44,64 +51,91 @@ const MAX_TREES = 4000;
 const SCALE_MIN = 0.75;
 const SCALE_MAX = 1.3;
 
+/** Hash channel for the species bit. A stream of its own rather than one more draw from placement's
+ *  channel 3: an extra draw per tree there would shift every later cell's draws, and move the wood. */
+const SPECIES_CHANNEL = 7;
+
+/** The course woods' own channel, beside the treeline's 6. */
+const COURSE_WOODS_CHANNEL = 9;
+
 /**
- * Builds one tree's geometry, merged and vertex-coloured.
+ * The biome's two species, each merged into one geometry with the biome's colours baked in.
  *
- * The three forms are the biome's whole silhouette vocabulary -- a conifer stack for parkland, a
- * low wide shrub for links, a tall thin reed clump for marsh. They are deliberately crude: this
- * is the flat-shaded low-poly register, and the radial segment counts are low so the facets read.
- */
-/**
- * Exported so `treeline.ts` can grow the same tree rather than a second one that drifts from it.
+ * Exported so `treeline.ts` grows the same trees rather than a second pair that drifts from them.
  * The horizon band beyond the road is the same species as the wood inside it, or the edge of the
- * course reads as a change of continent.
+ * course reads as a change of continent. Each species is authored at unit height, so the caller's
+ * `palette.treeHeight` scale is the tree's height in metres.
  */
-export function buildTreeGeometry(palette: BiomePalette): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  const colours: number[][] = [];
-
-  const push = (geometry: THREE.BufferGeometry, y: number, colour: number): void => {
-    geometry.translate(0, y, 0);
-    parts.push(geometry);
-    const rgb = new THREE.Color(colour);
-    const count = geometry.attributes.position!.count;
-    const flat: number[] = [];
-    for (let i = 0; i < count; i++) flat.push(rgb.r, rgb.g, rgb.b);
-    colours.push(flat);
+export function buildTreeGeometries(palette: BiomePalette): [THREE.BufferGeometry, THREE.BufferGeometry] {
+  const overrides = {
+    tree_trunk: palette.trunk,
+    tree_foliage_dark: palette.foliageDark,
+    tree_foliage_light: palette.foliageLight,
   };
-
-  if (palette.treeForm === "conifer") {
-    push(new THREE.CylinderGeometry(0.09, 0.13, 0.34, 5), 0.17, palette.trunk);
-    push(new THREE.ConeGeometry(0.34, 0.52, 7), 0.5, palette.foliageDark);
-    push(new THREE.ConeGeometry(0.26, 0.42, 7), 0.79, palette.foliageLight);
-  } else if (palette.treeForm === "shrub") {
-    push(new THREE.CylinderGeometry(0.07, 0.1, 0.16, 5), 0.08, palette.trunk);
-    // Wider than it is tall: marram-and-gorse scrub, not a tree.
-    const bush = new THREE.ConeGeometry(0.55, 0.5, 7);
-    push(bush, 0.38, palette.foliageDark);
-    push(new THREE.ConeGeometry(0.34, 0.34, 7), 0.68, palette.foliageLight);
-  } else {
-    push(new THREE.CylinderGeometry(0.05, 0.09, 0.55, 5), 0.27, palette.trunk);
-    push(new THREE.ConeGeometry(0.2, 0.62, 6), 0.72, palette.foliageDark);
-    push(new THREE.ConeGeometry(0.13, 0.4, 6), 1.05, palette.foliageLight);
-  }
-
-  const merged = mergeGeometries(parts, false);
-  if (merged === null) throw new Error("tree geometry parts failed to merge");
-  for (const part of parts) part.dispose();
-
-  merged.setAttribute(
-    "color",
-    new THREE.Float32BufferAttribute(colours.flat(), 3),
-  );
-  return merged;
+  const geometryOf = (name: (typeof TREE_SPECIES)[typeof palette.treeForm][number]): THREE.BufferGeometry => {
+    // No contact shade: a species is authored at unit height and scaled to metres later, so graph
+    // space is not metres above the ground and the shade would darken most of the tree.
+    const merged = mergeGraph(treeGraph(name), overrides, { contactShade: false });
+    // Only the geometry is kept: the instanced meshes below bring their own material.
+    (merged.mesh.material as THREE.Material).dispose();
+    return merged.mesh.geometry;
+  };
+  const [a, b] = TREE_SPECIES[palette.treeForm];
+  return [geometryOf(a), geometryOf(b)];
 }
 
 export interface Trees {
-  readonly mesh: THREE.InstancedMesh | null;
+  /** One per species that has at least one tree; empty when nothing was planted. */
+  readonly meshes: readonly THREE.InstancedMesh[];
   readonly count: number;
   dispose(): void;
 }
+
+const NO_TREES: Trees = { meshes: [], count: 0, dispose: () => {} };
+
+/**
+ * Instances already-placed trees: `species[i]` (0 or 1) picks which of the biome's two forms
+ * `matrices[i]` grows. Shared by `createTrees`, the course woods and `treeline.ts`, so all three
+ * build, instance and free trees the same way.
+ */
+export function plantTrees(
+  palette: BiomePalette,
+  matrices: readonly THREE.Matrix4[],
+  species: readonly number[],
+): Trees {
+  if (matrices.length === 0) return NO_TREES;
+
+  const geometries = buildTreeGeometries(palette);
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
+  const meshes: THREE.InstancedMesh[] = [];
+  for (let s = 0; s < 2; s++) {
+    let count = 0;
+    for (let i = 0; i < species.length; i++) if (species[i] === s) count++;
+    if (count === 0) continue;
+    const mesh = new THREE.InstancedMesh(geometries[s]!, material, count);
+    let slot = 0;
+    for (let i = 0; i < matrices.length; i++) if (species[i] === s) mesh.setMatrixAt(slot++, matrices[i]!);
+    mesh.instanceMatrix.needsUpdate = true;
+    // The trees never move, so three can skip re-uploading the matrix buffer every frame.
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    // Frustum culling on an InstancedMesh tests one bounding volume for the whole wood; three
+    // computes it from the instance matrices, so it has to be asked for after they are set.
+    mesh.computeBoundingSphere();
+    meshes.push(mesh);
+  }
+
+  return {
+    meshes,
+    count: matrices.length,
+    dispose: () => {
+      // Both geometries, including a species that planted nothing and so has no mesh.
+      for (const geometry of geometries) geometry.dispose();
+      material.dispose();
+      for (const mesh of meshes) mesh.dispose();
+    },
+  };
+}
+
 
 /**
  * Placement is deterministic in the hole's seed (channel 3, alongside height at 0, sand at 1 and
@@ -113,6 +147,7 @@ export function createTrees(terrain: Terrain, surfaces: Surfaces): Trees {
   const spec = terrain.spec;
   const palette = BIOMES[spec.biome];
   const random = mulberry32(hashChannel(spec.seed, spec.index, 3));
+  const speciesRandom = mulberry32(hashChannel(spec.seed, spec.index, SPECIES_CHANNEL));
   const weights = createSurfaceWeights();
 
   const half = spec.fieldSize / 2;
@@ -122,6 +157,7 @@ export function createTrees(terrain: Terrain, surfaces: Surfaces): Trees {
   const perCell = (palette.treeDensity * CELL_M * CELL_M) / 1000;
 
   const matrices: THREE.Matrix4[] = [];
+  const species: number[] = [];
   const matrix = new THREE.Matrix4();
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
@@ -155,29 +191,109 @@ export function createTrees(terrain: Terrain, surfaces: Surfaces): Trees {
       quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI * 2);
       scale.set(height, height, height);
       matrices.push(matrix.clone().compose(position, quaternion, scale));
+      species.push(speciesRandom() < 0.5 ? 0 : 1);
     }
   }
 
-  if (matrices.length === 0) return { mesh: null, count: 0, dispose: () => {} };
+  return plantTrees(palette, matrices, species);
+}
 
-  const geometry = buildTreeGeometry(palette);
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
-  const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
-  for (let i = 0; i < matrices.length; i++) mesh.setMatrixAt(i, matrices[i]!);
-  mesh.instanceMatrix.needsUpdate = true;
-  // The trees never move, so three can skip re-uploading the matrix buffer every frame.
-  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-  // Frustum culling on an InstancedMesh tests one bounding volume for the whole wood; three
-  // computes it from the instance matrices, so it has to be asked for after they are set.
-  mesh.computeBoundingSphere();
+/** How far from the clubhouse centre the course woods stay clear: the complex, its barns and spawn
+ *  pads, the lot behind it and the welcome sign in front all sit inside this. */
+const CLUBHOUSE_CLEAR_M = 55;
 
+export interface CourseWoodsOptions {
+  /** The course seed; placement is deterministic in it. */
+  readonly seed: number;
+  /** Trees stay on the playing side of the road; the treeline owns the far side. */
+  readonly southBoundary?: SouthBoundary | undefined;
+  readonly clubhouse?: Vec2 | undefined;
+}
+
+/**
+ * The woods of an eighteen-hole course, in the match. The same planting rule as `createTrees` --
+ * the same cell, density, deep-rough threshold and scale spread -- asked of the course's blended
+ * ground rather than of one hole's.
+ *
+ * **Only where a hole reaches.** Each cell takes the biome of the hole with the largest share of
+ * it (`CourseTerrain.weightsInto`), and ground no hole reaches has no biome, so it is left open.
+ * Water on the course is painted by surface weight, not drawn as a plane at a height, so the
+ * shoreline test is any water weight at all rather than `createTrees`' freeboard height.
+ *
+ * Up to six InstancedMeshes, two per biome present. Decorative: no collider, never read by the sim.
+ */
+export function createCourseTrees(course: CourseTerrain, surfaces: Surfaces, options: CourseWoodsOptions): Trees {
+  const random = mulberry32(hashChannel(options.seed, 0, COURSE_WOODS_CHANNEL));
+  const weights = createSurfaceWeights();
+  const shares = new Float32Array(course.holes.length);
+  const holeBiome = course.holes.map((hole) => biomeForIndex(hole.spec.index));
+  const { bounds } = course;
+
+  const byBiome = new Map<BiomeId, { matrices: THREE.Matrix4[]; species: number[] }>();
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
+  const clear2 = CLUBHOUSE_CLEAR_M * CLUBHOUSE_CLEAR_M;
+
+  const cols = Math.floor((bounds.maxX - bounds.minX) / CELL_M);
+  const rows = Math.floor((bounds.maxZ - bounds.minZ) / CELL_M);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      // A fixed number of draws per cell, whatever it decides, so one cell's rules never move the
+      // next cell's tree.
+      const occupancy = random();
+      const x = bounds.minX + (col + random()) * CELL_M;
+      const z = bounds.minZ + (row + random()) * CELL_M;
+      const size = random();
+      const turn = random();
+      const pick = random();
+
+      course.weightsInto(x, z, shares);
+      let owner = -1;
+      let best = 0;
+      for (let i = 0; i < shares.length; i++) {
+        if (shares[i]! > best) {
+          best = shares[i]!;
+          owner = i;
+        }
+      }
+      if (owner < 0) continue;
+      const biome = holeBiome[owner]!;
+      const palette = BIOMES[biome];
+      if (occupancy > (palette.treeDensity * CELL_M * CELL_M) / 1000) continue;
+
+      surfaces.weightsAt(x, z, weights);
+      if (weights.corridor < MIN_ROUGH_WEIGHT) continue;
+      if (weights.sand === 1 || weights.water > 0) continue;
+      if (options.southBoundary && metresNorthOf(options.southBoundary, x, z) <= 0) continue;
+      if (options.clubhouse) {
+        const dx = x - options.clubhouse.x;
+        const dz = z - options.clubhouse.z;
+        if (dx * dx + dz * dz < clear2) continue;
+      }
+
+      const height = palette.treeHeight * (SCALE_MIN + size * (SCALE_MAX - SCALE_MIN));
+      position.set(x, course.heightAt(x, z), z);
+      quaternion.setFromAxisAngle(up, turn * Math.PI * 2);
+      scale.set(height, height, height);
+      let wood = byBiome.get(biome);
+      if (wood === undefined) {
+        wood = { matrices: [], species: [] };
+        byBiome.set(biome, wood);
+      }
+      wood.matrices.push(matrix.clone().compose(position, quaternion, scale));
+      wood.species.push(pick < 0.5 ? 0 : 1);
+    }
+  }
+
+  const woods = [...byBiome.entries()].map(([biome, wood]) => plantTrees(BIOMES[biome], wood.matrices, wood.species));
   return {
-    mesh,
-    count: matrices.length,
+    meshes: woods.flatMap((wood) => wood.meshes),
+    count: woods.reduce((sum, wood) => sum + wood.count, 0),
     dispose: () => {
-      geometry.dispose();
-      material.dispose();
-      mesh.dispose();
+      for (const wood of woods) wood.dispose();
     },
   };
 }

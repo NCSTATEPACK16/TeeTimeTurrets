@@ -104,7 +104,7 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 | Ragdoll target mannequin | **primitive** | ~600 | ~15 parts, one per rigid body. §2.2. |
 | **Cart rider** | **primitive-graph** | 2,600 | 26 parts, no rigid bodies, four slots of its own. Built, then given the ball joints, neck and fists §2.2 always described. §2.2. |
 | Golf ball | primitive | 80 | Built (`entities/ballShape.ts`). |
-| Trees, 2–3 per biome | primitive-graph | 200 each | **Must be GPU-instanced.** Silhouettes from `COURSE_PIPELINE.md` §7.1. |
+| Trees | primitive-graph | 200 each | **6 species, primitive graph, built** (Stage 5a: `art/stage5_kit.py` → `src/entities/graphs/trees.json`), two per biome, 62–164 tris each. Each species is merged with `mergeGraph` and GPU-instanced: one `InstancedMesh` per species (`src/render/Trees.ts`). Silhouettes from `COURSE_PIPELINE.md` §7.1; spec `docs/art/specs/stage5/trees.md`. |
 | Flag + pin | primitive | 60 | **Built** (`src/entities/Flagstick.ts`). Procedural TypeScript, not a graph: it owns a collider and a sim-side felled state, so §2.2's route rule puts it with the ragdolls — and a graph cannot express the vertex-animated pennant this row asks for. Pole, ferrule, cup ring and pennant; `PIN_SHAPE` in `src/sim/entities/Pin.ts` is the one set of numbers both sides read. |
 | Course props (rake, tee marker, bridge, boardwalk) | primitive-graph | 100–400 | **Six built** (`art/clubhouse-and-cart.blend` `props` collection → `src/entities/graphs/props.json`): tee marker, bunker rake, ball washer, distance post, cart-path sign, footbridge. The boardwalk belongs to the crossing work. The flagstick is the row above and is *not* a graph. 36–348 tris each, one merged draw call apiece via `mergeGraph`. Scale is per-cell on the sheet, not uniform — every one of these was sized against cart height. |
 | Terrain | procedural heightfield | — | Built (`sim/terrain.ts`). |
@@ -113,6 +113,8 @@ Three routes. **Primitive** = hand-written TypeScript, as `GolfClub.ts` is today
 | Menu podium | decorative GLB | 500 | Clubhouse screen only. |
 
 ### 2.1 The art-style conflict, and the cart's material slots
+
+> **Superseded on 3 October 2026 for shading:** the table below misreads shot 03. Shot 03 is soft-bevelled and smooth-shaded, not flat-faceted; see `art/STYLE-RESEARCH.md` and the approved rule in `art/specs/00-pipeline.md`. The one-mesh, separable-slots decision still stands. In cart v3, slot `roof` becomes `frame` (`art/specs/cart-v3.md`).
 
 The concept art contains **two different art styles**, and one must be chosen before anyone models:
 
@@ -130,9 +132,9 @@ paint and skin variants must apply to both.
 The customisation menu implies **separable material slots**, authored as distinct slots on one
 model so a paint swap is a material-index change rather than a mesh swap:
 
-`chassis` · `roof` · `canopy` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
+`chassis` · `frame` · `canopy` · `turret_housing` · `turret_barrel` · `tires` · `rims` · `seats` · `club_bag`
 
-`canopy` (added in Stage 7, `docs/art/specs/cart-v2.md`) is the **team colour** and no loadout cosmetic touches it. `roof` is now the posts and windscreen rails only.
+`canopy` (added in Stage 7, `docs/art/specs/cart-v2.md`) is the **team colour** and no loadout cosmetic touches it. Cart v3 renamed `roof` to **`frame`**: the slate posts, windscreen, floor, bumpers and turret base, which no paint touches (`docs/art/specs/cart-v3.md`).
 
 ### 2.2 The mannequin is a ragdoll, not a model — except the one who is driving
 
@@ -265,6 +267,7 @@ translation layer:
 | `capsule` | `[radius, length, capSegments, radialSegments]` |
 | `torus` | `[radius, tube, radialSegments, tubularSegments]` |
 | `prism` | `[depth, x0, y0, x1, y1, …]`: a polygon (≥3 points) in local XY, extruded along +Z by `depth` and centred on z. `ExtrudeGeometry` with no bevel. Added in Stage 7 for roofs, wedges and scallops; see `docs/art/specs/00-pipeline.md`. |
+| `rbox` | `[w, h, d, radius]`: a box with every edge rounded, `RoundedBoxGeometry(w, h, d, 1, radius)`, 108 triangles. `0 < radius < min(w, h, d) / 2`, checked when the graph loads. Added 3 Oct 2026 for the soft-bevelled style; see `docs/art/STYLE-RESEARCH.md` P2. |
 
 ### 4.3 The Blender-side exporter
 
@@ -1107,10 +1110,10 @@ border, or any 3/4 or perspective "hero" view.
    baseline updated without anyone looking at it.
 4. ~~**Model the cart** (§5).~~ **Done.** 47 objects, eight material slots, exported to
    `src/entities/graphs/cart.json`. Source is `art/clubhouse-and-cart.blend`.
-5. **Trees, per biome** — **superseded.** They ship as `src/render/Trees.ts`: one merged geometry
-   with baked vertex colours, one `InstancedMesh`, one draw call per hole. Authoring them in
-   Blender would cost the instancing the manifest asks for, since the graph assembler builds an
-   `Object3D` per node. The manifest row stays as a record of the decision, not as work.
+5. ~~**Trees, per biome**~~ **Done in Stage 5a.** Six species authored in Blender
+   (`art/stage5_kit.py` → `trees.json`). Instancing survives because each species is flattened by
+   `mergeGraph` before it is instanced, so no `Object3D` is built per node: one `InstancedMesh` per
+   species, two draw calls per biome in view.
 6. **The mannequin and ragdoll** (§2.2) as a standalone test scene. Procedural TypeScript, not
    Blender — the physics rig is the character rig. It is the game's signature moment and the
    tuning takes real iteration; budget for it.

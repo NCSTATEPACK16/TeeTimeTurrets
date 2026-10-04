@@ -41,28 +41,28 @@ export const CHASSIS_PAINTS: readonly CosmeticOption[] = [
     label: "CLUBHOUSE CREAM",
     price: 0,
     swatch: 0xefecdf,
-    slots: { chassis: 0xefecdf, roof: 0xf5f4ef },
+    slots: { chassis: 0xefecdf },
   },
   {
     id: "sunset",
     label: "SUNSET ORANGE",
     price: 900,
     swatch: 0xef8a2b,
-    slots: { chassis: 0xef8a2b, roof: 0xf3d9a4 },
+    slots: { chassis: 0xef8a2b },
   },
   {
     id: "fairway",
     label: "FAIRWAY GREEN",
     price: 900,
     swatch: 0x2f6f4f,
-    slots: { chassis: 0x2f6f4f, roof: 0xdfe8dc },
+    slots: { chassis: 0x2f6f4f },
   },
   {
     id: "marshal",
     label: "MARSHAL BLUE",
     price: 1400,
     swatch: 0x2d5fa8,
-    slots: { chassis: 0x2d5fa8, roof: 0xe6ecf5 },
+    slots: { chassis: 0x2d5fa8 },
   },
 ];
 

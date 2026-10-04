@@ -49,9 +49,10 @@ This is a 2D polygon extruded straight. It covers hip roofs, gables, wedges, sca
 - **Update before reading:** call `bpy.context.view_layer.update()` before reading `matrix_local` or `matrix_world`, and before placing a child against a parent made in the same script.
 - **Origins:** at ground contact for every static asset, and at the pivot for anything that moves.
 - **Slot names are unique per graph set.** New slot sets are listed in each spec. `export()` writes only the slots a graph actually uses.
-- **Style:** match `docs/concept/03CartTurretChasecam.jpg`.
-  - Flat shading, deliberately large facets, no textures, no bevels, and never decimate.
-  - The premium look comes from lighting, not from geometry.
+- **Style (approved 3 Oct 2026, `../STYLE-RESEARCH.md` P1 as amended in `../SHEET-REVIEW-2026-10-03.md`):** match `docs/concept/reference/style-bible-01.jpg` and shot 03.
+  - **Soft-bevelled toy:** chunky forms, with every exposed edge rounded (`rbox`). Shading is smooth inside a part and creased between parts (about 40°). This is the default for every slot, trees included; `flat: true` on a slot is the opt-in.
+  - No textures, and never decimate. The premium look comes from bevels plus lighting (AO, contact shadows).
+  - *Superseded:* "flat shading, deliberately large facets, no bevels". That rule came from misreading shot 03.
 
 ## Review loop, per asset
 
@@ -72,9 +73,9 @@ This is a 2D polygon extruded straight. It covers hip roofs, gables, wedges, sca
 
 | Asset | Triangles | Draws in-world |
 |---|---|---|
-| Cart v2 (whole cart) | 2,000–3,000 (unchanged) | per-slot, same as today (Stage 3 merges) |
-| Clubhouse | ≤ 3,000 | merged, one per slot-colour mesh via `mergeGraph` |
-| Team barn (each) | ≤ 800 | 1 (`mergeGraph` with team slot override) |
+| Cart v3 (whole cart) | **3,000–4,500** (raised 3 Oct 2026, P5) | per-slot, same as today (Stage 3 merges) |
+| Clubhouse | **≤ 4,000** (raised 3 Oct 2026) | merged, one per slot-colour mesh via `mergeGraph` |
+| Team barn (each) | **≤ 900** (raised 3 Oct 2026) | 1 (`mergeGraph` with team slot override) |
 | Lamp post | ≤ 120 | 1 for all four (`mergeGraphInstances`) |
 | Lot striping | ≤ 100 | 1 |
 | Food cart | ≤ 400 | 1 |

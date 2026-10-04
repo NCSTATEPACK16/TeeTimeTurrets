@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { QualityPreset } from "../../render/quality";
 import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
 import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
@@ -56,6 +57,8 @@ export interface MatchScreenOptions {
   readonly onSettingsChange: (next: Settings) => void;
   /** MAIN MENU from the pause menu. */
   readonly onQuit: () => void;
+  /** The graphics preset this match is drawn at. A change in the pause menu applies next match. */
+  readonly quality?: QualityPreset;
 }
 
 export class MatchScreen implements Screen {
@@ -148,7 +151,7 @@ export class MatchScreen implements Screen {
   enter(): void {
     const { renderer, sim, hudRoot, nameplateRoot, arena } = this.options;
 
-    this.render = new RenderScene(renderer, arena, sim.bots.length);
+    this.render = new RenderScene(renderer, arena, sim.bots.length, this.options.quality);
     this.nameplates = new Nameplates(
       nameplateRoot,
       sim.bots.map((_, i) => `BOT ${i + 1}`),

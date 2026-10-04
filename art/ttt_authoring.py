@@ -62,6 +62,22 @@ def make(name, kind, params, slot, collection, parent=None, loc=(0,0,0), rot=(0,
         obj = bpy.context.active_object
         obj.dimensions = (w, d, h)
         _apply_scale(obj)
+    elif kind == 'rbox':
+        # [w, h, d, radius]: THREE's RoundedBoxGeometry(w, h, d, 1, radius). The bevel is an
+        # unapplied modifier, a preview only: the exporter writes kind and params, never the mesh.
+        w, h, d, r = params[0], params[1], params[2], params[3]
+        if not (w > 0 and h > 0 and d > 0 and 0 < r < min(w, h, d) / 2):
+            raise ValueError(name + ': rbox needs [w, h, d > 0, 0 < radius < min side / 2]')
+        bpy.ops.mesh.primitive_cube_add(size=1)
+        obj = bpy.context.active_object
+        obj.dimensions = (w, d, h)
+        _apply_scale(obj)
+        bevel = obj.modifiers.new('ttt_rbox', 'BEVEL')
+        bevel.width = r
+        bevel.segments = 1   # RoundedBoxGeometry segments 1 is one chamfer strip, smooth-shaded
+        bevel.limit_method = 'NONE'
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
     elif kind == 'cylinder':
         rt, rb, h, seg = params[0], params[1], params[2], int(params[3])
         bpy.ops.mesh.primitive_cone_add(radius1=rb, radius2=rt, depth=h, vertices=seg)
@@ -172,7 +188,7 @@ def _three_euler(quat):
         z = 0.0
     return x, y, z
 
-KINDS = {'box', 'cylinder', 'cone', 'sphere', 'capsule', 'torus', 'prism'}
+KINDS = {'box', 'rbox', 'cylinder', 'cone', 'sphere', 'capsule', 'torus', 'prism'}
 
 def node(obj):
     kind = obj.get('ttt_kind')
@@ -194,6 +210,20 @@ def node(obj):
         'slot': obj.get('ttt_slot', 'default'),
         'children': [node(c) for c in sorted(obj.children, key=lambda o: o.name)] or None,
     }
+
+def _slot_spec(mat, bsdf):
+    """One slot's section 4.1 entry. `flat` is written only when the material opts in with the
+    custom property `ttt_flat`, so every graph exported before it existed stays byte-identical.
+    Smooth shading is the default (docs/art/specs/00-pipeline.md, Style)."""
+    c = bsdf.inputs['Base Color'].default_value
+    spec = {
+        'color': (int(round(c[0] * 255)) << 16) | (int(round(c[1] * 255)) << 8) | int(round(c[2] * 255)),
+        'roughness': round(bsdf.inputs['Roughness'].default_value, 3),
+        'metalness': round(bsdf.inputs['Metallic'].default_value, 3),
+    }
+    if mat.get('ttt_flat'):
+        spec['flat'] = True
+    return spec
 
 def export(root_name, out_path, graph_name=None):
     """ASSET_PIPELINE.md 4.3, with one correction: `slots` carries only the slots the
@@ -218,12 +248,7 @@ def export(root_name, out_path, graph_name=None):
         bsdf = _bsdf(mat)
         if bsdf is None:
             continue
-        c = bsdf.inputs['Base Color'].default_value
-        slots[mat.name] = {
-            'color': (int(round(c[0] * 255)) << 16) | (int(round(c[1] * 255)) << 8) | int(round(c[2] * 255)),
-            'roughness': round(bsdf.inputs['Roughness'].default_value, 3),
-            'metalness': round(bsdf.inputs['Metallic'].default_value, 3),
-        }
+        slots[mat.name] = _slot_spec(mat, bsdf)
     missing = used - set(slots)
     if missing:
         raise ValueError('slots used but not declarable as materials: ' + ', '.join(sorted(missing)))
@@ -270,12 +295,7 @@ def export_set(roots, out_path, set_name):
         bsdf = _bsdf(mat)
         if bsdf is None:
             continue
-        c = bsdf.inputs['Base Color'].default_value
-        slots[mat.name] = {
-            'color': (int(round(c[0] * 255)) << 16) | (int(round(c[1] * 255)) << 8) | int(round(c[2] * 255)),
-            'roughness': round(bsdf.inputs['Roughness'].default_value, 3),
-            'metalness': round(bsdf.inputs['Metallic'].default_value, 3),
-        }
+        slots[mat.name] = _slot_spec(mat, bsdf)
     missing = used - set(slots)
     if missing:
         raise ValueError('slots used but not declarable as materials: ' + ', '.join(sorted(missing)))

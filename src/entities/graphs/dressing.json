@@ -1,0 +1,926 @@
+{
+  "name": "dressing",
+  "version": 1,
+  "units": "m",
+  "slots": {
+    "dr_bag_a": {
+      "color": 11547946,
+      "roughness": 0.7,
+      "metalness": 0.0
+    },
+    "dr_bag_b": {
+      "color": 2307422,
+      "roughness": 0.7,
+      "metalness": 0.0
+    },
+    "dr_board": {
+      "color": 2051374,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "dr_flag": {
+      "color": 8362632,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "dr_flag_stripe": {
+      "color": 15986396,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "dr_iron": {
+      "color": 3093302,
+      "roughness": 0.5,
+      "metalness": 0.6
+    },
+    "dr_shrub": {
+      "color": 4481831,
+      "roughness": 0.9,
+      "metalness": 0.0
+    },
+    "dr_timber": {
+      "color": 9067058,
+      "roughness": 0.8,
+      "metalness": 0.0
+    },
+    "dr_white": {
+      "color": 15986396,
+      "roughness": 0.7,
+      "metalness": 0.0
+    }
+  },
+  "props": {
+    "bench": {
+      "name": "dr_bench_seat1",
+      "kind": "box",
+      "params": [
+        1.6,
+        0.035,
+        0.1
+      ],
+      "position": [
+        0.0,
+        0.4325,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "dr_timber",
+      "children": [
+        {
+          "name": "dr_bench_arm_e",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.05,
+            0.46
+          ],
+          "position": [
+            0.74,
+            0.2075,
+            -0.02
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_iron",
+          "children": null
+        },
+        {
+          "name": "dr_bench_arm_w",
+          "kind": "box",
+          "params": [
+            0.06,
+            0.05,
+            0.46
+          ],
+          "position": [
+            -0.74,
+            0.2075,
+            -0.02
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_iron",
+          "children": null
+        },
+        {
+          "name": "dr_bench_back0",
+          "kind": "box",
+          "params": [
+            1.6,
+            0.1,
+            0.035
+          ],
+          "position": [
+            0.0,
+            0.1675,
+            -0.215
+          ],
+          "rotation": [
+            -0.2094,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        },
+        {
+          "name": "dr_bench_back1",
+          "kind": "box",
+          "params": [
+            1.6,
+            0.1,
+            0.035
+          ],
+          "position": [
+            0.0,
+            0.3275,
+            -0.25
+          ],
+          "rotation": [
+            -0.2094,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        },
+        {
+          "name": "dr_bench_frame_e",
+          "kind": "prism",
+          "params": [
+            0.05,
+            -0.24,
+            0.0,
+            -0.16,
+            0.42,
+            0.18,
+            0.42,
+            0.3,
+            0.86,
+            0.26,
+            0.0
+          ],
+          "position": [
+            0.74,
+            -0.4325,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_iron",
+          "children": null
+        },
+        {
+          "name": "dr_bench_frame_w",
+          "kind": "prism",
+          "params": [
+            0.05,
+            -0.24,
+            0.0,
+            -0.16,
+            0.42,
+            0.18,
+            0.42,
+            0.3,
+            0.86,
+            0.26,
+            0.0
+          ],
+          "position": [
+            -0.74,
+            -0.4325,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            1.5708,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_iron",
+          "children": null
+        },
+        {
+          "name": "dr_bench_seat0",
+          "kind": "box",
+          "params": [
+            1.6,
+            0.035,
+            0.1
+          ],
+          "position": [
+            0.0,
+            0.0,
+            0.12
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        },
+        {
+          "name": "dr_bench_seat2",
+          "kind": "box",
+          "params": [
+            1.6,
+            0.035,
+            0.1
+          ],
+          "position": [
+            0.0,
+            0.0,
+            -0.12
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        }
+      ]
+    },
+    "flagpole": {
+      "name": "dr_pole",
+      "kind": "cylinder",
+      "params": [
+        0.045,
+        0.06,
+        7.85,
+        6.0
+      ],
+      "position": [
+        0.0,
+        3.925,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "dr_white",
+      "children": [
+        {
+          "name": "dr_flag",
+          "kind": "prism",
+          "params": [
+            0.02,
+            0.0,
+            0.0,
+            1.4,
+            0.0,
+            1.05,
+            0.45,
+            1.4,
+            0.9,
+            0.0,
+            0.9
+          ],
+          "position": [
+            0.06,
+            2.875,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_flag",
+          "children": null
+        },
+        {
+          "name": "dr_flag_stripe",
+          "kind": "prism",
+          "params": [
+            0.03,
+            0.0,
+            0.38,
+            1.104,
+            0.38,
+            1.05,
+            0.45,
+            1.104,
+            0.52,
+            0.0,
+            0.52
+          ],
+          "position": [
+            0.06,
+            2.875,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_flag_stripe",
+          "children": null
+        },
+        {
+          "name": "dr_pole_finial",
+          "kind": "sphere",
+          "params": [
+            0.1,
+            5.0,
+            3.0
+          ],
+          "position": [
+            0.0,
+            3.975,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_white",
+          "children": null
+        }
+      ]
+    },
+    "planter": {
+      "name": "dr_planter_box",
+      "kind": "box",
+      "params": [
+        1.2,
+        0.5,
+        1.2
+      ],
+      "position": [
+        0.0,
+        0.25,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "dr_timber",
+      "children": [
+        {
+          "name": "dr_planter_rim",
+          "kind": "box",
+          "params": [
+            1.3,
+            0.06,
+            1.3
+          ],
+          "position": [
+            0.0,
+            0.25,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        },
+        {
+          "name": "dr_planter_shrub",
+          "kind": "sphere",
+          "params": [
+            0.55,
+            8.0,
+            5.0
+          ],
+          "position": [
+            0.0,
+            0.65,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.3491,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_shrub",
+          "children": null
+        }
+      ]
+    },
+    "bag_rack": {
+      "name": "dr_rack_rail_top",
+      "kind": "box",
+      "params": [
+        1.6,
+        0.05,
+        0.05
+      ],
+      "position": [
+        0.0,
+        0.78,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "dr_iron",
+      "children": [
+        {
+          "name": "dr_bag_a",
+          "kind": "cylinder",
+          "params": [
+            0.15,
+            0.12,
+            0.9,
+            8.0
+          ],
+          "position": [
+            -0.4,
+            -0.316,
+            0.1619
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_bag_a",
+          "children": null
+        },
+        {
+          "name": "dr_bag_a_club0",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.1,
+            0.08
+          ],
+          "position": [
+            -0.46,
+            0.1863,
+            0.1033
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_white",
+          "children": null
+        },
+        {
+          "name": "dr_bag_a_club1",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.1,
+            0.08
+          ],
+          "position": [
+            -0.35,
+            0.1863,
+            0.1133
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_white",
+          "children": null
+        },
+        {
+          "name": "dr_bag_a_club2",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.1,
+            0.08
+          ],
+          "position": [
+            -0.4,
+            0.1863,
+            0.0233
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_white",
+          "children": null
+        },
+        {
+          "name": "dr_bag_b",
+          "kind": "cylinder",
+          "params": [
+            0.15,
+            0.12,
+            0.9,
+            8.0
+          ],
+          "position": [
+            0.4,
+            -0.316,
+            0.1619
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_bag_b",
+          "children": null
+        },
+        {
+          "name": "dr_bag_b_club0",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.1,
+            0.08
+          ],
+          "position": [
+            0.34,
+            0.1863,
+            0.1033
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_white",
+          "children": null
+        },
+        {
+          "name": "dr_bag_b_club1",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.1,
+            0.08
+          ],
+          "position": [
+            0.45,
+            0.1863,
+            0.1133
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_white",
+          "children": null
+        },
+        {
+          "name": "dr_bag_b_club2",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.1,
+            0.08
+          ],
+          "position": [
+            0.4,
+            0.1863,
+            0.0233
+          ],
+          "rotation": [
+            -0.1745,
+            0.0,
+            -0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_white",
+          "children": null
+        },
+        {
+          "name": "dr_rack_post_e",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.8,
+            0.05
+          ],
+          "position": [
+            0.78,
+            -0.38,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_iron",
+          "children": null
+        },
+        {
+          "name": "dr_rack_post_w",
+          "kind": "box",
+          "params": [
+            0.05,
+            0.8,
+            0.05
+          ],
+          "position": [
+            -0.78,
+            -0.38,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_iron",
+          "children": null
+        },
+        {
+          "name": "dr_rack_rail_low",
+          "kind": "box",
+          "params": [
+            1.6,
+            0.05,
+            0.05
+          ],
+          "position": [
+            0.0,
+            -0.63,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_iron",
+          "children": null
+        }
+      ]
+    },
+    "welcome_sign": {
+      "name": "dr_sign_board",
+      "kind": "box",
+      "params": [
+        1.6,
+        0.6,
+        0.06
+      ],
+      "position": [
+        0.0,
+        1.2,
+        -0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "slot": "dr_board",
+      "children": [
+        {
+          "name": "dr_sign_cap",
+          "kind": "box",
+          "params": [
+            1.8,
+            0.06,
+            0.12
+          ],
+          "position": [
+            0.0,
+            0.43,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        },
+        {
+          "name": "dr_sign_post_e",
+          "kind": "box",
+          "params": [
+            0.1,
+            1.6,
+            0.1
+          ],
+          "position": [
+            0.85,
+            -0.4,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        },
+        {
+          "name": "dr_sign_post_w",
+          "kind": "box",
+          "params": [
+            0.1,
+            1.6,
+            0.1
+          ],
+          "position": [
+            -0.85,
+            -0.4,
+            -0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "slot": "dr_timber",
+          "children": null
+        }
+      ]
+    }
+  }
+}

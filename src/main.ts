@@ -18,6 +18,9 @@ import type { Settings } from "./app/settings";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
 import { mountPerfOverlay } from "./ui/perfOverlay";
 import { matchSecondsFromQuery } from "./app/matchQuery";
+import { QUALITY_PRESETS, readDeviceSignals, resolveQuality } from "./render/quality";
+import type { QualityName } from "./render/quality";
+import { applyQuality, configureRenderer } from "./render/renderer";
 
 type MatchPath = typeof import("./app/matchPath");
 
@@ -49,17 +52,28 @@ async function main(): Promise<void> {
   // Created once and shared. A context per screen would hit the browser's hard limit on live
   // WebGL contexts within a few transitions, and lose the title backdrop's whole reason to exist.
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  configureRenderer(renderer);
   renderer.setSize(window.innerWidth, window.innerHeight);
   container.appendChild(renderer.domElement);
   window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
   let settings: Settings = loadSettings(pageStorage());
+  // The preset the device gets unless the player picks one (render/quality.ts). Its pixel ratio
+  // applies at once; the rest is read when a match builds its scene.
+  const deviceSignals = readDeviceSignals(renderer.capabilities.maxTextureSize);
+  let quality: QualityName = resolveQuality(settings.quality, deviceSignals);
+  applyQuality(renderer, QUALITY_PRESETS[quality], window.devicePixelRatio);
   const applySettings = (next: Settings): void => {
     settings = next;
     gameAudio.setLevels(settings);
     saveSettings(pageStorage(), settings);
+    const nextQuality = resolveQuality(settings.quality, deviceSignals);
+    if (nextQuality !== quality) {
+      quality = nextQuality;
+      applyQuality(renderer, QUALITY_PRESETS[quality], window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
   };
   // Browsers only start audio from a user gesture. Every gesture calls it, because a context can
   // also be suspended later (a hidden tab), and `unlock` resumes it.
@@ -171,6 +185,7 @@ async function main(): Promise<void> {
       settings,
       onSettingsChange: applySettings,
       onQuit: () => screens.show("title"),
+      quality: QUALITY_PRESETS[quality],
     });
     return matchScreen;
   });
@@ -234,7 +249,7 @@ async function main(): Promise<void> {
   (window as unknown as { __teetimeturrets: unknown }).__teetimeturrets = {
     /** The last `FRAME_STATS_WINDOW` frames: frame and work times, draw calls, triangles. */
     get perf() {
-      return { ...frameStats.report(createFrameReport()), pixelRatio: renderer.getPixelRatio() };
+      return { ...frameStats.report(createFrameReport()), pixelRatio: renderer.getPixelRatio(), quality };
     },
     get sim() {
       return sim;
