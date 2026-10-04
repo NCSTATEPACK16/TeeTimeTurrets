@@ -1,10 +1,10 @@
 # Handoff — next session
 
-Rewritten 2026-10-04, after PR #83 merged (`c09e756`). That PR combined Stage 3b, Stage 5a, the art-direction v2 work, the style pass and cart v3. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-10-04, at the end of the clubhouse and barn v3 pass (branch `clubhouse-v3`, draft PR). That branch merges the open handoff PR #84 (`handoff-2026-10-04`), so merge #84 first and the v3 PR's diff shrinks to its own work. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Paste-ready prompts** for the next two sessions are in `docs/NEXT-SESSION-PROMPT.md`: A is the clubhouse and barn v3 pass (local), B is Stage 4.
+**Paste-ready prompts** are in `docs/NEXT-SESSION-PROMPT.md`. Prompt A (the clubhouse and barn v3 pass) is **done**, and the draft PR waits on the user's play-test. Prompt B, Stage 4, is next once the user says so.
 
 ## Read first
 
@@ -35,53 +35,25 @@ Rewritten 2026-10-04, after PR #83 merged (`c09e756`). That PR combined Stage 3b
 | 5a | Environment art: trees, dressing, horizon, course kit | **done** (#83) |
 | 7 | Clubhouse complex and pickups in Blender | **done** (#77, #78) |
 | Art v2 | Style research, prompt pack, 16 sheets, P1–P6, style pass, **cart v3** | **done** (#83) |
-| **Art v2, remainder** | **Clubhouse and barn v3 Blender pass** | **next. Local only (Blender MCP). See below** |
-| 4 | Handling feel and arena zone (#49–#53) | after the clubhouse pass, or in parallel in the cloud |
+| Art v2, remainder | Clubhouse and barn v3 Blender pass | **built; draft PR on `clubhouse-v3`, awaiting play-test** |
+| **4** | **Handling feel and arena zone (#49–#53)** | **next, once the user approves the v3 PR. Prompt B** |
 | 5 | Environment, the rest (#54–#61) | after Stage 4 |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
 
-## Next, part 1: finish this session's work (clubhouse and barn v3, local)
+## Just done: clubhouse and barn v3 (awaiting play-test)
 
-The specs are approved but not built: the "v3 amendments (approved 3 Oct 2026)" sections at the end of `docs/art/specs/clubhouse.md` and `docs/art/specs/team-barn.md`. Targets:
-- `docs/concept/reference/clubhouse-hero-01.jpg`, the look
-- `clubhouse-breakdown-01.jpg`, the modules
-- `hub-kit-01.jpg`, the barn details only. Its gable-end-open barn is **not** the layout.
+- **Clubhouse:** 3,732 triangles (budget 4,000). It has rbox masses, 7 fascia boards and plain post bases. The ridge is 7.35, which makes a 25° pitch. The cupola tip is at 8.55, and the chimney rose with the ridge.
+- **Barn:** 896 triangles (budget 900). It has rbox posts on bases, 8 triangular knee braces, a 0.9 m brick knee wall and an rbox team fascia.
+- The smoke check (`clubhouseGraph.test.ts`) bounds were raised on purpose.
+- The "As built, v3" sections of both specs record two deviations from the spec, each with its reason:
+  - the braces start 0.8 below the *fascia*, because measured from the eave they hid behind it;
+  - the cupola base is 0.2 taller, to close the gap that the steeper slopes opened under it.
+- **If the play-test asks for changes:** edit `art/stage7_kit.py`, then rebuild from a fresh file:
+  - `read_homefile(use_empty=True)` in one MCP call;
+  - then `exec` both scripts, run `build_all(); export_all(REPO)`, and save `art/clubhouse-exterior.blend`.
 
-**Branch:** `clubhouse-v3`, from `main`.
-
-**Pre-flight:**
-1. Ask the user to run `uvx mcp-for-blender install-addon`, restart Blender, and Start MCP Server. On 3 Oct the add-on reported protocol 11 against 13; code execution still worked.
-2. Confirm Blender has nothing unsaved before opening a file: `bpy.data.is_dirty`. On 3 Oct it had another worktree's `environment.blend` open.
-
-**Steps:**
-1. **Prove the kit first.**
-   - The clubhouse set is built from scratch by `art/stage7_kit.py` (`build_clubhouse`, `build_team_barn`, `export_all`).
-   - Rebuild it unchanged into a scratch file and `diff` the exported `src/entities/graphs/clubhouse.json` against the shipped one. It must be byte-identical before any edit. That proved the exporter for the cart on 3 Oct.
-2. **Edit `stage7_kit.py`, not the `.blend` by hand.**
-   - **Clubhouse:**
-     - `rbox` on the plinth, wall block, cupola base, chimney and cap, 14 posts and 3 steps.
-     - 7 `rbox` fascia boards under every roof edge (`cb_trim`).
-     - Plain-`box` post bases.
-     - Main roof pitch from 17° toward about 25°, ridge about 7.2, with the cupola riding up with it.
-     - The weathervane stays cut.
-   - **Barn:**
-     - `rbox` posts on plain-box bases.
-     - 8 `prism` knee braces (`cb_door`).
-     - A 0.9 m brick knee wall.
-     - An `rbox` `team_trim` fascia.
-3. **Budgets** (already raised in `00-pipeline.md`): clubhouse ≤ 4,000 triangles, barn ≤ 900. Raise the bounds in `src/entities/clubhouseGraph.test.ts` to match. That file is the smoke check.
-4. **Colliders do not change.** They live in `src/sim/clubhouse.ts` and stop at 6.4 m; the roof was never collidable.
-5. **Review:** take viewport screenshots beside `clubhouse-hero-01.jpg`, then an in-game look at High and Med.
-6. **Finish:**
-   - Run `tsc --noEmit`, the smoke file and `npm test`.
-   - Add an "As built" note to both specs.
-   - Open a draft PR with a play-test list.
-   - STOP.
-
-**Reusable from the cart pass:** `art/cart_v3_kit.py` has `remake()`, which swaps a node's shape in place without orphaning its children. It isn't needed here, because the clubhouse kit builds from scratch.
-
-## Next, part 2: Stage 4, handling feel and arena zone (#49–#53)
+## Next: Stage 4, handling feel and arena zone (#49–#53)
 
 The contents are in `REVAMP-PLAN.md` § Stage 4. Branch `stage-4-handling-zone`, from `main`. It can run in the cloud.
 
@@ -140,9 +112,15 @@ The contents are in `REVAMP-PLAN.md` § Stage 5.
 - **The golden is Linux x64's.** Re-record it only from Linux x64 (CI or cloud), in the same commit as the change that moves it.
 - **Killing preview servers from Bash:** `ps | grep 'vite preview' | kill` matches the shell itself. Kill by PID.
 - **Coordinates:** +z is north. `AUTHORED_CLUBHOUSE` is `{x:-241.2, z:-477.3}`. Rough scales cart speed by 0.72.
+- **Blender exports read zeros from hidden collections.** `hide_viewport` on a collection drops its objects from the depsgraph, so `matrix_local` stays at identity, and `export_all` silently writes every node at the origin (seen 4 Oct with the tee sign and pickups). Unhide everything before you export, and check `git diff --stat src/entities/graphs/` after each export.
+- **`execute_blender_code` after `read_homefile`:** run the build in a *separate* call, because the context is stale in the same call (`'Context' object has no attribute 'active_object'`).
+- **Headless hub screenshots:** a scratch Puppeteer script (`.scratch/hubshots.mjs` in the v3 worktree, untracked) overrides the camera inside the frame's render call.
+  - On Med, `render.post` is null (there's no composer), so hook `render.renderer.render`.
+  - Headless Chrome logs `RuntimeError: memory access out of bounds` at match start on main too. It's not from the kit; the frames still render.
+  - The browser pane only returns 480×360 screenshots, and region zoom isn't supported there.
 - **Blender ↔ Three:** Three (x, y, z) is Blender (x, −z, y), so the cart's front is −Y in Blender. Rotations are X plus at most one of Y or Z. Call `view_layer.update()` before reading matrices.
 - **Git hygiene:**
   - Always use `git commit -s`, including on merge commits (`git commit --amend -s --no-edit`).
   - Never put AI-session metadata in git.
   - Never use `git add -A`, because the main checkout carries an untracked `.scratch/` and `tools/zzshots.mjs`.
-- **Local worktrees from the art session** (`TeeTimeTurrets-artdir`, `-style`, `-cart3`) and their `style-dev` and `cart3-dev` entries in `../.claude/launch.json` are merged work and safe to remove.
+- **Local worktrees from the art session** (`TeeTimeTurrets-artdir`, `-style`, `-cart3`) and their `style-dev` and `cart3-dev` entries in `../.claude/launch.json` are merged work and safe to remove. `TeeTimeTurrets-clubhouse3` (`clubhouse3-dev`, port 5184; 5183 belongs to another project) stays until its PR merges.

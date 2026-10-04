@@ -1,6 +1,6 @@
 # Next-session prompts
 
-Two prompts, written 2026-10-04. **Prompt A** is the next session: the clubhouse and barn v3 Blender pass. It must run **locally**, because it needs Blender over the MCP. **Prompt B** is the one after it: Stage 4. It can run locally or in the cloud. Paste one prompt into a fresh Claude Code session. Each prompt stands alone.
+Two prompts, written 2026-10-04. **Prompt A is done** (branch `clubhouse-v3`, draft PR) and is kept for reference. **Prompt B, Stage 4, is next**, once the user has play-tested the v3 PR and says to start. Prompt A was the clubhouse and barn v3 Blender pass. It must run **locally**, because it needs Blender over the MCP. **Prompt B** is the one after it: Stage 4. It can run locally or in the cloud. Paste one prompt into a fresh Claude Code session. Each prompt stands alone.
 
 ---
 
