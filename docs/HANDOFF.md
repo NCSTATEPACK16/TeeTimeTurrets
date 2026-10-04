@@ -4,6 +4,8 @@ Rewritten 2026-10-04, after PR #83 merged (`c09e756`). That PR combined Stage 3b
 
 ---
 
+**Paste-ready prompts** for the next two sessions are in `docs/NEXT-SESSION-PROMPT.md`: A is the clubhouse and barn v3 pass (local), B is Stage 4.
+
 ## Read first
 
 1. `AGENTS.md`: the rules, the Claude of Tanks licence note, and the testing policy. Each change gets one smoke check of 15 s or less, and every automated check finishes under 60 s. Smoke, gate and probe are opt-in. The user play-tests at `?match=60`, with items of 60 s or less.
@@ -131,6 +133,7 @@ The contents are in `REVAMP-PLAN.md` § Stage 5.
 - **Pre-seed the settings to skip the controls card:** `localStorage["teetimeturrets.settings"] = '{"version":2,"quality":"high","seenControls":true}'`. The field is `seenControls`; `controlsSeen` is silently ignored.
 - **The desktop app's browser pane, when hidden, shows stale frames.** Before a screenshot, wait two `requestAnimationFrame`s from `javascript_tool`. Keep each script short, because timers are throttled and long awaits time out.
 - **`GTAOPass.OUTPUT.Off` blanks the composer chain** (it writes nothing, then swaps). To compare AO on and off, toggle `pass.enabled`.
+- **`tools/simAllocation.test.mjs` caps V8 tiering during its measured windows** (fixed 4 Oct, after a CI-only flake in `syncCurrentPool`). If it fails, read its header first: a real per-tick construction shows the same bytes a tick in both windows, as a planted `{t, u}` object did (40.0 and 40.0).
 - **Losing the pointer lock mid-match pauses it.** A tool that calls `document.exitPointerLock()` must press RESUME.
 - **See every new test fail before trusting it,** and read the red.
 - **Vitest hides `console.log`.** To read a number, assert it against an impossible value and read the failure.
