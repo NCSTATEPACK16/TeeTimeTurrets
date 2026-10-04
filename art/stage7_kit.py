@@ -71,10 +71,12 @@ def build_clubhouse():
             s = 1 if face == 'f' else -1
             g.add(name + '_trim', 'box', [1.8, 2.0, 0.06], 'cb_trim', (x, 2.3, z + s * 0.03))
             g.add(name, 'box', [1.6, 1.8, 0.06], 'cb_glass', (x, 2.3, z + s * 0.05))
+            g.add(name + '_mull', 'box', [0.07, 1.8, 0.04], 'cb_trim', (x, 2.3, z + s * 0.09))
         else:
             s = 1 if face == 'e' else -1
             g.add(name + '_trim', 'box', [0.06, 2.0, 1.8], 'cb_trim', (x + s * 0.03, 2.3, z))
             g.add(name, 'box', [0.06, 1.8, 1.6], 'cb_glass', (x + s * 0.05, 2.3, z))
+            g.add(name + '_mull', 'box', [0.04, 1.8, 0.07], 'cb_trim', (x + s * 0.09, 2.3, z))
 
     for i, x in enumerate((-7.2, -3.6, 3.6, 7.2)):
         window('cb_win_f%d' % i, x, 4.0, 'f')
@@ -85,6 +87,10 @@ def build_clubhouse():
         window('cb_win_w%d' % i, -10.0, z, 'w')
     g.add('cb_door_trim', 'box', [2.0, 2.8, 0.06], 'cb_trim', (0, 1.9 + 0.1, 4.03))
     g.add('cb_door', 'box', [1.8, 2.6, 0.06], 'cb_door', (0, 1.9, 4.05))
+    # Detail pass (4 Oct 2026): a double door with a pane in each leaf, as in the hero sheet.
+    g.add('cb_door_split', 'box', [0.06, 2.6, 0.04], 'cb_trim', (0, 1.9, 4.09))
+    for s, n in ((1, 'r'), (-1, 'l')):
+        g.add('cb_door_pane_' + n, 'box', [0.55, 0.9, 0.03], 'cb_glass', (s * 0.45, 2.55, 4.09))
 
     # Main hip roof: two trapezoid slopes and two triangular hips, thin prisms laid on the pitch.
     t = 0.12
@@ -128,6 +134,33 @@ def build_clubhouse():
     for i in range(3):
         g.add('cb_step%d' % i, 'rbox', [3.0, 0.2 * (3 - i), 0.3, 0.04], 'cb_trim',
               (0, 0.1 * (3 - i), 7.15 + 0.3 * i))
+
+    # Detail pass (4 Oct 2026): rounded caps along the ridge and the four hips draw the roof's lines,
+    # the one detail of the 3x A/B test that read at 40 m and on Med. A hip cap runs from 0.4 up
+    # its hip to the ridge end, so its lower end stays inside the eave corner and the footprint.
+    # Its long axis is local z, laid on the hip with X then Y (exact through R()).
+    g.add('cb_ridge_cap', 'rbox', [2 * RIDGE_HALF + 0.3, 0.18, 0.3, 0.06], 'cb_roof', (0, RIDGE_Y + 0.06, ROOF_ZC))
+    hip_len = math.sqrt(2 * RUN * RUN + RISE * RISE)
+    beta = math.degrees(math.asin(RUN / hip_len))
+    alpha = math.degrees(math.asin(RISE / hip_len / math.cos(D(beta))))
+    for n, sx, sz in (('fe', 1, 1), ('fw', -1, 1), ('be', 1, -1), ('bw', -1, -1)):
+        k = 0.2 / hip_len   # shift the centre 0.2 up the hip
+        cx = sx * (ROOF_X + RIDGE_HALF) / 2 - sx * RUN * k
+        cy = (EAVE_Y + RIDGE_Y) / 2 + 0.08 + RISE * k
+        cz = ((ROOF_Z1 if sz > 0 else ROOF_Z0) + ROOF_ZC) / 2 - sz * RUN * k
+        g.add('cb_hip_cap_' + n, 'rbox', [0.3, 0.18, hip_len - 0.4, 0.06], 'cb_roof', (cx, cy, cz),
+              rot=(sz * alpha, sx * sz * beta, 0))
+    # Louvres on each cupola face: three slats over a dark backing.
+    for n, sgn, along_z in (('f', 1, True), ('b', -1, True), ('e', 1, False), ('w', -1, False)):
+        for j, dy in enumerate((0.25, 0.37, 0.49)):
+            if along_z:
+                g.add('cb_louvre_%s%d' % (n, j), 'box', [1.2, 0.05, 0.08], 'cb_trim', (0, RIDGE_Y + dy, ROOF_ZC + sgn * 0.82))
+            else:
+                g.add('cb_louvre_%s%d' % (n, j), 'box', [0.08, 0.05, 1.2], 'cb_trim', (sgn * 0.82, RIDGE_Y + dy, ROOF_ZC))
+        if along_z:
+            g.add('cb_louvre_back_' + n, 'box', [1.2, 0.4, 0.02], 'cb_glass', (0, RIDGE_Y + 0.37, ROOF_ZC + sgn * 0.79))
+        else:
+            g.add('cb_louvre_back_' + n, 'box', [0.02, 0.4, 1.2], 'cb_glass', (sgn * 0.79, RIDGE_Y + 0.37, ROOF_ZC))
 
     # Cupola on the ridge centre, riding with it; chimney rear-right. The cupola's base reaches
     # 0.4 below the ridge so the steeper slopes don't open a gap under its front and back faces.
@@ -178,6 +211,8 @@ def build_team_barn():
     for s, n in ((1, 'n'), (-1, 's')):
         g.add('tb_gable_' + n, 'prism', gable, 'cb_wall', (0, eave, s * 11.85))
     g.add('tb_fascia', 'rbox', [0.1, 0.5, 24.8, 0.04], 'team_trim', (half, eave - 0.25, 0))
+    # Detail pass (4 Oct 2026): a rounded ridge cap, as on the clubhouse.
+    g.add('tb_ridge_cap', 'rbox', [0.3, 0.18, 24.8, 0.06], 'cb_roof', (0, eave + rise + 0.06, 0))
     return g
 
 

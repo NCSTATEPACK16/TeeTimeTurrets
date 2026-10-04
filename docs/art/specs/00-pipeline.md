@@ -74,8 +74,8 @@ This is a 2D polygon extruded straight. It covers hip roofs, gables, wedges, sca
 | Asset | Triangles | Draws in-world |
 |---|---|---|
 | Cart v3 (whole cart) | **3,000–4,500** (raised 3 Oct 2026, P5) | per-slot, same as today (Stage 3 merges) |
-| Clubhouse | **≤ 4,000** (raised 3 Oct 2026) | merged, one per slot-colour mesh via `mergeGraph` |
-| Team barn (each) | **≤ 900** (raised 3 Oct 2026) | 1 (`mergeGraph` with team slot override) |
+| Clubhouse | **≤ 5,000** (raised 3 Oct 2026, and again 4 Oct for the detail pass) | merged, one per slot-colour mesh via `mergeGraph` |
+| Team barn (each) | **≤ 1,100** (raised 3 Oct 2026, and again 4 Oct for the detail pass) | 1 (`mergeGraph` with team slot override) |
 | Lamp post | ≤ 120 | 1 for all four (`mergeGraphInstances`) |
 | Lot striping | ≤ 100 | 1 |
 | Food cart | ≤ 400 | 1 |

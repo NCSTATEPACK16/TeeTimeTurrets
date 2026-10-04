@@ -25,21 +25,21 @@ describe("clubhouse kit", () => {
     for (const name of KIT_NAMES) expect(() => measure(name), name).not.toThrow();
   });
 
-  it("clubhouse: 24 m wide, plinth 14 m deep plus the entrance steps, 8.55 m to the cupola, <= 4,000 tris", () => {
+  it("clubhouse: 24 m wide, plinth 14 m deep plus the entrance steps, 8.55 m to the cupola, <= 5,000 tris", () => {
     const { box, triangles } = measure("clubhouse");
     expect(box.max.x - box.min.x).toBeCloseTo(24.4, 1); // verandah roof eaves overhang the 24 m plinth by 0.2 each side
     expect(box.min.z).toBeCloseTo(-7.4, 1); // rear roof overhang
     expect(box.max.z).toBeCloseTo(7.9, 1); // bottom step
     expect(box.max.y).toBeCloseTo(8.55, 1); // cupola cone tip: RIDGE_Y 7.35 + 0.9 + half its 0.6 height
-    expect(triangles).toBeLessThanOrEqual(4000);
+    expect(triangles).toBeLessThanOrEqual(5000);
   });
 
-  it("team barn: 8 x 24 m footprint within its roof overhang, <= 900 tris", () => {
+  it("team barn: 8 x 24 m footprint within its roof overhang, <= 1,100 tris", () => {
     const { box, triangles } = measure("team_barn");
     expect(box.max.z - box.min.z).toBeCloseTo(24.8, 1);
     expect(box.max.x - box.min.x).toBeGreaterThan(8);
     expect(box.max.x - box.min.x).toBeLessThan(9);
-    expect(triangles).toBeLessThanOrEqual(900);
+    expect(triangles).toBeLessThanOrEqual(1100);
   });
 
   it("lamp: 5.4 m tall, <= 120 tris", () => {
