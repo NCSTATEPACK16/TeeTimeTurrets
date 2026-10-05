@@ -1,10 +1,10 @@
 # Handoff — next session
 
-Rewritten 2026-10-04, at the end of the clubhouse and barn v3 pass (branch `clubhouse-v3`, draft PR). That branch merges the open handoff PR #84 (`handoff-2026-10-04`), so merge #84 first and the v3 PR's diff shrinks to its own work. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-10-04, when the clubhouse and barn v3 pass (#85) and the handoff PR (#84) merged at the user's direction. That finishes the art-direction v2 work. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Paste-ready prompts** are in `docs/NEXT-SESSION-PROMPT.md`. Prompt A (the clubhouse and barn v3 pass) is **done**, and the draft PR waits on the user's play-test. Prompt B, Stage 4, is next once the user says so.
+**The paste-ready prompt for the next session, Stage 4, is in `docs/NEXT-SESSION-PROMPT.md`.**
 
 ## Read first
 
@@ -35,23 +35,25 @@ Rewritten 2026-10-04, at the end of the clubhouse and barn v3 pass (branch `club
 | 5a | Environment art: trees, dressing, horizon, course kit | **done** (#83) |
 | 7 | Clubhouse complex and pickups in Blender | **done** (#77, #78) |
 | Art v2 | Style research, prompt pack, 16 sheets, P1–P6, style pass, **cart v3** | **done** (#83) |
-| Art v2, remainder | Clubhouse and barn v3 Blender pass | **built; draft PR on `clubhouse-v3`, awaiting play-test** |
-| **4** | **Handling feel and arena zone (#49–#53)** | **next, once the user approves the v3 PR. Prompt B** |
+| Art v2, remainder | Clubhouse and barn v3 Blender pass, plus a detail pass | **done** (#85) |
+| **4** | **Handling feel and arena zone (#49–#53)** | **next. See `docs/NEXT-SESSION-PROMPT.md`** |
 | 5 | Environment, the rest (#54–#61) | after Stage 4 |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
 
-## Just done: clubhouse and barn v3 (awaiting play-test)
+## Just done: clubhouse and barn v3 (#85, merged 4 Oct 2026)
+
+- **Merged without its own play-test,** at the user's direction. Its hub-look items join the Stage 4 play-test list (see the prompt).
 
 - **Clubhouse:** 4,632 triangles (budget 5,000). It has rbox masses, 7 fascia boards, plain post bases, and the detail pass: ridge and hip caps, window mullions, a double door and cupola louvres. The ridge is 7.35, which makes a 25° pitch. The cupola tip is at 8.55, and the chimney rose with the ridge.
 - **Barn:** 1,004 triangles (budget 1,100). It has rbox posts on bases, 8 triangular knee braces, a 0.9 m brick knee wall, an rbox team fascia and a ridge cap.
-- **The detail pass came from a 3× A/B test** (local worktree `TeeTimeTurrets-ab3x`, never pushed; safe to delete). Only these items read at play distance. Rounder bevels (more `rbox` segments) showed in no shot.
-- **CI:** `tools/simAllocation.test.mjs` timed out on Node 22. #84's tiering cap is process-wide and ran ahead of the Rapier-reads test. The fix (8d801ad, cherry-picked to #84) runs that test first.
+- **The detail pass came from a 3× A/B test** (a throwaway worktree, now deleted). Only these items read at play distance. Rounder bevels (more `rbox` segments) showed in no shot. Don't spend budget on bevel segments.
+- **CI:** `tools/simAllocation.test.mjs` timed out on Node 22. #84's tiering cap is process-wide and ran ahead of the Rapier-reads test. The fix runs that test first.
 - The smoke check (`clubhouseGraph.test.ts`) bounds were raised on purpose.
 - The "As built, v3" sections of both specs record two deviations from the spec, each with its reason:
   - the braces start 0.8 below the *fascia*, because measured from the eave they hid behind it;
   - the cupola base is 0.2 taller, to close the gap that the steeper slopes opened under it.
-- **If the play-test asks for changes:** edit `art/stage7_kit.py`, then rebuild from a fresh file:
+- **If a later play-test asks for changes:** edit `art/stage7_kit.py`, then rebuild from a fresh file:
   - `read_homefile(use_empty=True)` in one MCP call;
   - then `exec` both scripts, run `build_all(); export_all(REPO)`, and save `art/clubhouse-exterior.blend`.
 
@@ -125,4 +127,5 @@ The contents are in `REVAMP-PLAN.md` § Stage 5.
   - Always use `git commit -s`, including on merge commits (`git commit --amend -s --no-edit`).
   - Never put AI-session metadata in git.
   - Never use `git add -A`, because the main checkout carries an untracked `.scratch/` and `tools/zzshots.mjs`.
-- **Local worktrees from the art session** (`TeeTimeTurrets-artdir`, `-style`, `-cart3`) and their `style-dev` and `cart3-dev` entries in `../.claude/launch.json` are merged work and safe to remove. `TeeTimeTurrets-clubhouse3` (`clubhouse3-dev`, port 5184; 5183 belongs to another project) stays until its PR merges.
+- **Local worktrees from the art session** (`TeeTimeTurrets-artdir`, `-style`, `-cart3`) and their `style-dev` and `cart3-dev` entries in `../.claude/launch.json` are merged work and safe to remove. `TeeTimeTurrets-clubhouse3` (`clubhouse3-dev`, port 5184) is merged work too. Port 5183 belongs to another project, so don't reuse it.
+- **CI runs Node 22; the Mac runs Node 26.** V8-sensitive tests can pass locally and time out on CI. Reproduce with `npx -y node@22 node_modules/vitest/vitest.mjs run <file>`.
