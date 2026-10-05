@@ -118,3 +118,24 @@ Source: `docs/concept/reference/clubhouse-hero-01.jpg` (target), `clubhouse-brea
 - **Weathervane:** still cut, although 3 of the 4 sheets drew it.
 - **Budget:** the as-built clubhouse is 696 triangles. 29 `rbox` nodes (+96 each) and 14 plain base boxes land near 3,650. **Raise the clubhouse budget from 3,000 to 4,000.** It is still 1 draw call (`mergeGraph`).
 - **Smoke check:** the same `clubhouseGraph.test.ts`, with its triangle bound raised to 4,000.
+
+## As built, v3 (4 Oct 2026)
+
+Built by `art/stage7_kit.py` (`build_clubhouse`), exported to `src/entities/graphs/clubhouse.json`. Before any edit, the unchanged kit was rebuilt into a fresh file and re-exported; every graph came out byte-identical.
+
+- **Triangles:** 4,632 after the detail pass below (budget raised to 5,000; it was 3,732 before that pass and 696 before v3). Still one `mergeGraph`.
+- **Pitch and ridge:** `RIDGE_Y` 7.35, so the pitch is 24.99° (`RUN` 5.9 × tan 25° = 2.75). The spec's "about 7.2" would be 23.6°; the prompt's 25° target won.
+- **rbox:** the plinth, walls, cupola, chimney and cap, 14 posts and 3 steps at the radii above.
+- **Fascia:** 7 boards (`cb_fascia_f/b/e/w` on the hip, `cb_fascia_vf/ve/vw` on the verandahs), 0.08 × 0.24, r 0.03. Each hangs 0.08 below its edge and sits flush *inside* it, so the footprint the smoke check pins (24.4 wide, rear −7.4) doesn't move.
+- **Post bases:** 14 plain boxes 0.32 × 0.30 × 0.32 on the deck (y 0.6–0.9).
+- **Changes from the spec, with reasons:**
+  - **Cupola base 1.0 tall (was 0.8)**, centred at ridge + 0.1, so it reaches 0.4 below the ridge. At 25° the slopes fall 0.37 across its half-width, and the old 0.2 embed left a gap under its front and back faces. The top stays at ridge + 0.6, the roof cone at ridge + 0.9, and the tip at **8.55** (the smoke check's `max.y`; was 7.6).
+  - **Chimney raised with the ridge (+0.95, centre 7.05, cap top 8.30).** At the old height it still cleared the hip (6.65 at its centre), but stood only 0.55 proud and read as a stub behind the steeper roof. It keeps its old 0.8 above the ridge.
+- **Colliders unchanged** (`src/sim/clubhouse.ts` stops at 6.4 m; the roof was never collidable).
+- **Detail pass (4 Oct 2026).** Each item was chosen from a throwaway 3× A/B test run at the hub, at 40 m and at 150 m, on High and on Med. The items here are the only ones that read; rounder bevels (more `rbox` segments) cost about 3,700 triangles and showed in no shot.
+  - **Roof caps:** a rounded cap along the ridge and each of the 4 hips, `rbox` r 0.06, 0.3 × 0.18, slot `cb_roof`.
+    - These draw the roof's lines at the hub, at 40 m and on Med, and were the biggest single gain.
+    - A hip cap stops 0.4 short of its eave corner, so the footprint the smoke check pins doesn't move.
+  - **Window mullions** on all 11 windows, and a **double door** (a centre split plus a pane in each leaf), as in the hero sheet.
+  - **Cupola louvres:** three slats per face over a dark backing.
+  - **Still cut:** the weathervane. It read at 40 m in the test, but it remains the spec's call.
