@@ -1,13 +1,13 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { ClubType } from "../physics/Ballistics";
 import type { PlayerIntent } from "./intent";
-import { Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
+import { Cart, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool } from "./entities/BallPool";
 import type { Bucket } from "./entities/Pickup";
 import { CombatRegistry, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
 import { createStats } from "./stats";
-import { ASSIST_WINDOW_S, createTally } from "./scoring";
+import { createTally } from "./scoring";
 import { applyLoadout } from "./upgrades";
 import type { UpgradeLevels } from "./upgrades";
 import type { Loadout } from "./loadout";
@@ -24,7 +24,7 @@ import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
 import { Match } from "./match";
-import { ARENA_MAX_HEALTH, MATCH_DURATION_S, NO_KILLER, teamOf } from "./matchConfig";
+import { ARENA_MAX_HEALTH, MATCH_DURATION_S, NO_KILLER } from "./matchConfig";
 import { addCartRig, placeRig } from "./rigs";
 import { createMoveScratch, createPhysicsWorld, freePhysicsWorld, gradeAlong, moveCartBody } from "./physicsWorld";
 import type { CartLimits, PhysicsWorld } from "./physicsWorld";
@@ -34,9 +34,10 @@ import { SpawnPlan, stepRespawn } from "./respawn";
 import { previewTrajectory, resolveShot } from "./shots";
 import { BotDriver, IDLE_INTENT } from "./botDriver";
 import { RenderSnapshot } from "./snapshot";
+import { MatchCredit } from "./credit";
 import { collectPickups, placeBuckets, resetBuckets, stepBuckets } from "./pickups";
 import type { CartRig } from "./rigs";
-import { NO_TARGET_RIG, SimEventLog } from "./events";
+import { SimEventLog } from "./events";
 import { FIXED_DT } from "./frame";
 import type { CartTransform } from "./frame";
 
@@ -68,10 +69,8 @@ export interface SimOptions {
  */
 export class Sim {
   private physics!: PhysicsWorld;
-  private world!: RAPIER.World;
   /** Rig 0 is the player's; rigs 1.. are `bots`, in the same order. */
   private readonly rigs: CartRig[] = [];
-  private controller!: RAPIER.KinematicCharacterController;
   /** Set by `dispose`. A disposed Sim has freed its Rapier world and must not be stepped. */
   private disposed = false;
   /** The ground under everything: heights, materials, bounds and the collider's heightfield. */
@@ -119,10 +118,10 @@ export class Sim {
    * match earned.
    */
   readonly tally = createTally();
-  /** When the player last hit each rig, by rig index, for assists. */
-  private readonly playerHitAt: number[] = [];
   /** What happened, for hit markers, the kill feed, effects and audio. See `sim/events.ts`. */
   readonly events = new SimEventLog();
+  /** Scores kills and hits into the match, the events, `stats` and `tally`. See credit.ts. */
+  private readonly credit: MatchCredit;
 
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
   private readonly registry = new CombatRegistry();
@@ -183,6 +182,7 @@ export class Sim {
     this.match = new Match({ playerCount: 1, durationS: matchDurationS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
     this.snapshot = new RenderSnapshot(this.cart);
+    this.credit = new MatchCredit(this.match, this.events, this.stats, this.tally);
   }
 
   /** The materials under everything. */
@@ -218,7 +218,7 @@ export class Sim {
 
     sim.combatContext = {
       registry: sim.registry,
-      onBallHit: (shooter, victim, damage, x, y, z) => sim.creditHit(shooter, victim, damage, x, y, z),
+      onBallHit: (shooter, victim, damage, x, y, z) => sim.credit.hit(shooter, victim, damage, x, y, z, sim.simTime),
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
     };
     // Now that every rig exists. The scoreboard is indexed by rig index.
@@ -245,14 +245,12 @@ export class Sim {
     this.heightfield ??= this.playfield.buildHeightfield();
     const physics = createPhysicsWorld(this.heightfield);
     this.physics = physics;
-    this.world = physics.world;
-    this.controller = physics.controller;
 
     this.rigs.length = 0;
     this.registry.clear();
-    addCartRig(this.world, this.registry, this.rigs, this.cart, null, false);
+    addCartRig(this.physics.world, this.registry, this.rigs, this.cart, null, false);
 
-    this.ballPool = new BallPool(this.world, {
+    this.ballPool = new BallPool(this.physics.world, {
       heightAt: (x, z) => this.playfield.heightAt(x, z),
       tuningAt: (x, z, out) => this.playfield.surfaces.tuningAt(x, z, out),
     });
@@ -261,7 +259,7 @@ export class Sim {
       this.registry.registerBall(pooled.body.collider(0).handle, pooled);
     }
     for (let i = 0; i < this.bots.length; i++) {
-      addCartRig(this.world, this.registry, this.rigs, this.bots[i]!, { seed: this.seed, index: i }, this.nav !== null);
+      addCartRig(this.physics.world, this.registry, this.rigs, this.bots[i]!, { seed: this.seed, index: i }, this.nav !== null);
     }
   }
 
@@ -279,50 +277,13 @@ export class Sim {
     return this.buckets;
   }
 
-  /**
-   * Death: the cart is out of the world for `RESPAWN_DELAY_S` and comes back at a spawn point.
-   * Guarded on `dead` so two lethal contacts in one tick do not restart the timer. The death is
-   * the stroke: `Match.scoreKill` charges it to the victim's team.
-   */
+  /** See `MatchCredit.kill`. A method so tests can kill a cart directly. */
   private killCart(cart: Cart, victim: number, killer: number): void {
-    if (cart.dead) return;
-    cart.dead = true;
-    cart.respawnTimer = RESPAWN_DELAY_S;
-    this.match.scoreKill(killer, victim);
-    const playerTeam = teamOf(0);
-    if (teamOf(victim) !== playerTeam) {
-      if (killer === 0) this.tally.kills += 1;
-      else if (
-        killer !== NO_KILLER &&
-        teamOf(killer) === playerTeam &&
-        this.simTime - (this.playerHitAt[victim] ?? -Infinity) <= ASSIST_WINDOW_S
-      ) {
-        this.tally.assists += 1;
-      }
-    }
-    const p = cart.position;
-    this.events.push("kill", killer, victim, p.x, p.y, p.z, 0, null);
-    this.events.push("stroke", NO_TARGET_RIG, victim, p.x, p.y, p.z, this.match.teamStrokes(teamOf(victim)), null);
+    this.credit.kill(cart, victim, killer, this.simTime);
   }
 
   /** A drowning or a drained bar: a death nobody caused. Built once, so a tick allocates none. */
   private readonly hazardDeath: HazardDeath = (cart, victim) => this.killCart(cart, victim, NO_KILLER);
-
-  /**
-   * A fired ball connected: `shooter` fired it, it hit `victim` and took `damage` off it. Every hit
-   * is an event; only rig 0's may write `Sim.stats`, which is the **player's** -- the accuracy the
-   * results screen reports.
-   */
-  private creditHit(shooter: number, victim: number, damage: number, x: number, y: number, z: number): void {
-    this.events.push("hit", shooter, victim, x, y, z, damage, null);
-    if (shooter === 0) {
-      this.stats.directHits += 1;
-      if (teamOf(victim) !== teamOf(0)) {
-        this.tally.damage += damage;
-        this.playerHitAt[victim] = this.simTime;
-      }
-    }
-  }
 
   /**
    * Advance exactly one fixed tick. Call in a while-loop from an accumulator, never per render
@@ -343,7 +304,7 @@ export class Sim {
 
     // Stepping with the queue is what fills it; combat.ts drains it immediately afterwards, so
     // no contact is ever carried into the following tick.
-    this.world.step(this.eventQueue);
+    this.physics.world.step(this.eventQueue);
     processContacts(this.eventQueue, this.combatContext);
     this.snapshot.syncPool(this.ballPool);
 
@@ -388,8 +349,8 @@ export class Sim {
     cart.step(intent, FIXED_DT, this.cartTuningScratch, gradeAlong(this.playfield, c.x, c.z, cart.heading));
     // The controller is shared, so each cart sets its own climb limit before it moves: the ground
     // under it and its tyres decide how steep a face it can drive up (see mobility.ts).
-    this.controller.setMaxSlopeClimbAngle(maxClimbRad(this.cartTuningScratch, cart.tire));
-    moveCartBody(this.controller, rig, this.limits, this.moveScratch);
+    this.physics.controller.setMaxSlopeClimbAngle(maxClimbRad(this.cartTuningScratch, cart.tire));
+    moveCartBody(this.physics.controller, rig, this.limits, this.moveScratch);
     checkCartWater(rig, this.surfaces, this.events, this.hazardDeath);
     checkZone(rig, this.zone, this.hazardDeath);
     if (cart.dead) return;
@@ -426,17 +387,9 @@ export class Sim {
   }
 
   /**
-   * A read-only forward integration of the shot that firing *now* would make, for the aim-preview
-   * arc (UI-SPEC H10). Fills `out` with points from the muzzle to the ball's first ground contact
-   * and returns how many it wrote.
-   *
-   * **It touches no Rapier state and advances nothing** -- `Sim` is byte-identical before and after.
-   * It mirrors the ball's own flight integration (the club's scaled gravity plus `LINEAR_DAMPING` at `FIXED_DT`)
-   * rather than reading the live world, so it is a pure function of its inputs. It predicts the
-   * carry, not the roll: the arc ends where the ball lands, because that is what a player aims with.
-   *
-   * The equipped club is read from the cart, not passed: its loft sets both the muzzle and the
-   * launch elevation. `out` is a caller-held buffer of at least `PREVIEW_MAX_POINTS` reused `Vec3`s.
+   * The arc a shot fired *now* would fly, for the aim preview (UI-SPEC H10): points from the muzzle
+   * to first ground contact, written into `out`. Reads no Rapier state. See `previewTrajectory` in
+   * shots.ts.
    */
   previewTrajectory(charge01: number, yaw: number, out: Vec3[]): number {
     return previewTrajectory(this.playfield, this.cart, charge01, yaw, out, this.previewScratch);
@@ -457,8 +410,7 @@ export class Sim {
   reset(): void {
     this.lastShotWasStrike = false;
     this.match.reset();
-    Object.assign(this.tally, createTally());
-    this.playerHitAt.length = 0;
+    this.credit.reset();
     this.spawns.reset();
     this.freePhysics();
     this.buildPhysics();
