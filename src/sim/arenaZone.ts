@@ -2,6 +2,7 @@ import { toCourseFrame } from "./courseGeometry";
 import type { CourseFrame } from "./courseGeometry";
 import type { Vec2 } from "./mapGeometry";
 import { PAD_OFFSET_M, PAD_SLOTS, PAD_SLOT_SPACING_M } from "./spawn";
+import { clamp01, segmentDistanceSq } from "./vec";
 
 /**
  * Where the match is played: six of the eighteen holes, and the clubhouse the teams start from.
@@ -87,7 +88,7 @@ export function zoneSignedDistance(zone: ArenaZone, x: number, z: number): numbe
     const ex = b.x - a.x;
     const ez = b.z - a.z;
     if (ex * (z - a.z) - ez * (x - a.x) < 0) inside = false;
-    const d = segmentDistanceSq(a, ex, ez, x, z);
+    const d = segmentDistanceSq(x, z, a.x, a.z, b.x, b.z);
     if (d < best) best = d;
   }
   const d = Math.sqrt(best);
@@ -214,13 +215,3 @@ function convexHull(points: readonly Vec2[]): Vec2[] {
   return lower.concat(upper);
 }
 
-function segmentDistanceSq(a: Vec2, ex: number, ez: number, x: number, z: number): number {
-  const t = clamp01(((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez));
-  const dx = x - (a.x + ex * t);
-  const dz = z - (a.z + ez * t);
-  return dx * dx + dz * dz;
-}
-
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
-}

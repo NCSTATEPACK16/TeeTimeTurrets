@@ -9,6 +9,7 @@
  */
 
 import type { Vec2 } from "./mapGeometry";
+import { segmentDistanceSq } from "./vec";
 
 /** The structural slice of a `HoleSpec` a layout needs. Structural so tests need no generator. */
 export interface LayoutHole {
@@ -92,13 +93,7 @@ export function placedControl(hole: LayoutHole, placement: HolePlacement): Vec2[
 
 /** Distance from point p to the segment ab. */
 function pointToSegment(p: Vec2, a: Vec2, b: Vec2): number {
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const lengthSq = dx * dx + dz * dz;
-  if (lengthSq === 0) return Math.hypot(p.x - a.x, p.z - a.z);
-  let t = ((p.x - a.x) * dx + (p.z - a.z) * dz) / lengthSq;
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  return Math.hypot(p.x - (a.x + dx * t), p.z - (a.z + dz * t));
+  return Math.sqrt(segmentDistanceSq(p.x, p.z, a.x, a.z, b.x, b.z));
 }
 
 /**

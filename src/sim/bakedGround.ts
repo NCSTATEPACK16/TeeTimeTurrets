@@ -1,6 +1,7 @@
 import type { Bounds } from "./courseLayout";
 import { SurfaceId, createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, SurfaceWeights, Surfaces } from "./surfaces";
+import { clamp } from "./vec";
 
 /**
  * The course's ground, baked to grids for the queries that run every tick and every frame.
@@ -201,8 +202,4 @@ export class BakedSurfaces implements Surfaces {
       }
     }
   }
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
 }

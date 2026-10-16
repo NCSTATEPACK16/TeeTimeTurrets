@@ -4,6 +4,7 @@ import { createHealth, setMaxHealth } from "../health";
 import type { Health } from "../health";
 import type { SurfaceTuning } from "../surfaces";
 import { ARENA_MAX_HEALTH } from "../matchConfig";
+import { clamp01 } from "../vec";
 
 /**
  * The golf cart as tank chassis: chassis heading, an independently-aimed turret, an equipped
@@ -592,10 +593,6 @@ export function computeMuzzle(cart: Cart, out: Vec3): void {
   out.x = cart.position.x + Math.cos(cart.heading) * forward + Math.cos(yaw) * reach;
   out.y = cart.position.y - CART_COLLIDER.groundOffset + TURRET_GEOMETRY.pivotHeight + rise;
   out.z = cart.position.z + Math.sin(cart.heading) * forward + Math.sin(yaw) * reach;
-}
-
-function clamp01(v: number): number {
-  return Math.min(1, Math.max(0, v));
 }
 
 function degToRad(deg: number): number {
