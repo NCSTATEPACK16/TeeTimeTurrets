@@ -3,6 +3,7 @@ import type { PlayerIntent } from "./intent";
 import type { Cart } from "./entities/Cart";
 import { teamOf } from "./matchConfig";
 import { solveShot } from "./aimSolver";
+import { wrapAngle } from "./vec";
 
 /**
  * The AI opponent, as one pure function of exactly the state it needs: its own cart, and where
@@ -283,11 +284,6 @@ function resetProgress(bot: Cart, mind: BotMind): void {
   mind.stuckFor = 0;
   mind.anchorX = bot.position.x;
   mind.anchorZ = bot.position.z;
-}
-
-/** Folds an angle into [-PI, PI], so an error either side of the wrap turns the short way. */
-function wrapAngle(radians: number): number {
-  return Math.atan2(Math.sin(radians), Math.cos(radians));
 }
 
 function clampSigned(v: number): number {

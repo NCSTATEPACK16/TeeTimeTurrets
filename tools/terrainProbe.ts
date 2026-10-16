@@ -45,9 +45,9 @@ import {
   CART_MIN_SLOPE_SLIDE_DEG,
   CART_SNAP_TO_GROUND,
   CHARACTER_OFFSET,
-  FIXED_DT,
   GRAVITY,
-} from "../src/sim/world";
+} from "../src/sim/physicsWorld";
+import { FIXED_DT } from "../src/sim/frame";
 
 /** The course seed the committed plans are drawn from; `tools/coursePlan.ts` uses the same one. */
 const COURSE_SEED = 0x7ee71e5;

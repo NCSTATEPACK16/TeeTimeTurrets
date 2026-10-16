@@ -7,7 +7,8 @@ import { fixedHoleSpec } from "./course";
 import { arenaFromHole } from "./arena";
 import type { PooledBall } from "./entities/BallPool";
 import { POOL_SIZE } from "./entities/BallPool";
-import { POOL_TRANSFORM_STRIDE, FIXED_DT, PREVIEW_SAMPLE_STRIDE, Sim, createPreviewBuffer } from "./world";
+import { Sim } from "./world";
+import { POOL_TRANSFORM_STRIDE, FIXED_DT, PREVIEW_SAMPLE_STRIDE, createPreviewBuffer } from "./frame";
 
 /**
  * The putter is the arena's pistol: fast, flat and accurate at close range. "Flat" is measured

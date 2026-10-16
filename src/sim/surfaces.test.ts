@@ -221,8 +221,8 @@ describe("createSurfaces default sand source (no sources override)", () => {
   // Removed with Tier 2: "draws sand noise from mulberry32(sandChannel(spec)), not a fixed
   // constant source". `createSurfaces` no longer samples a noise field for sand and no longer
   // takes a `SurfaceSources` override, so there is no injected source left to assert about.
-  // `sandChannel` survives and is now what bunker *placement* draws from; the equivalent
-  // assertion -- that placement is seeded rather than fixed -- lives in course.test.ts.
+  // Bunker placement draws from the hole seed's channel 1 (`authoredCourse.ts`); that it is
+  // seeded rather than fixed is authoredCourse.test.ts's "reproducible from a seed".
 });
 
 describe("weightsAt", () => {

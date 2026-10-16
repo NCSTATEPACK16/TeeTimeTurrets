@@ -393,7 +393,7 @@ Five files import `terrain.ts`:
 | `src/sim/surfaces.ts` | becomes a factory; `distanceToFairwayLine` → spline `nearest`; `tuningAt` gains the scratch parameter |
 | `src/render/scene.ts` | takes terrain from the sim rather than importing `FIELD_SIZE` / `NCOLS` / `NROWS` / `heightAt` |
 | `src/sim/world.cart.test.ts` | constructs a fixed test `HoleSpec` instead of importing constants |
-| `tools/feelProbe.ts` | same, plus the four new assertions |
+| `tools/turretProbe.ts` | same, plus the four new assertions |
 
 `src/main.ts` constructs a `Course` and passes hole 0 to `Sim.create`.
 

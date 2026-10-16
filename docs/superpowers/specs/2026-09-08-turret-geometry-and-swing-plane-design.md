@@ -13,7 +13,7 @@ changed a number or an expectation, and they are worth reading before trusting �
    pivot is right and its 37° limit is right; the follow-through that fits under it is
    **0.65 rad**, not the 0.87 the driver's geometry suggests. The clearance test had only ever run
    the driver, which is how a driver-shaped assumption survived; it now runs all three.
-2. **§5's criterion 4 expects `npm run probe` to move, and it cannot.** `tools/feelProbe.ts` fires
+2. **§5's criterion 4 expects `npm run probe` to move, and it cannot.** `tools/turretProbe.ts` fires
    the free ball from `sim.reset()` and sets its velocity directly — it never calls
    `computeMuzzle` and never reads `TURRET_GEOMETRY`. Raising the muzzle 0.55 m therefore changed
    the probe by nothing at all, and the output is byte-identical including the one known-red

@@ -85,7 +85,7 @@ now has a repository and agents may commit. Two rules replace the prohibition:
   so integration tests against a real `Sim` are cheap — see `src/sim/world.cart.test.ts`.
 - Three verification layers, and they answer different questions. Do not substitute one for
   another: `npm test` (rules and state machines), `npm run probe` (feel and trajectory numbers,
-  `tools/feelProbe.ts`), `npm run smoke` (the real browser path from a key event through
+  `tools/turretProbe.ts`), `npm run smoke` (the real browser path from a key event through
   `KeyboardMouseSource` into `Sim` and back out to the HUD, `tools/smoke.mjs`). The smoke check
   is **not** the Scene Gate below — it has no geometry baseline and no perceptual diff.
 - `tsc --noEmit` (aliased as part of `npm run build`) must be clean before any change is

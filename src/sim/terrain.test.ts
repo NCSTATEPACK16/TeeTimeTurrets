@@ -14,7 +14,7 @@ import type { Terrain } from "./terrain";
 import type { HoleSpec } from "./course";
 import type { Ellipse, Polygon } from "./hazards";
 import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing";
-import { CART_MIN_SLOPE_SLIDE_DEG } from "./world";
+import { CART_MIN_SLOPE_SLIDE_DEG } from "./physicsWorld";
 
 const SPEC = fixedHoleSpec();
 const terrain = createTerrain(SPEC);

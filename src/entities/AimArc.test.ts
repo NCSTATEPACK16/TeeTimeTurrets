@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AimArc } from "./AimArc";
-import { PREVIEW_MAX_POINTS, createPreviewBuffer } from "../sim/world";
+import { PREVIEW_MAX_POINTS, createPreviewBuffer } from "../sim/frame";
 
 describe("AimArc", () => {
   it("draws exactly the points the preview wrote, where it wrote them", () => {

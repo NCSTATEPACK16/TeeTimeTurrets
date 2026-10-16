@@ -14,7 +14,9 @@ import { ARENA_MAX_HEALTH } from "./matchConfig";
 import { SurfaceId } from "./surfaces";
 import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing";
 import type { Crossing } from "./crossing";
-import { MATCH_DURATION_S, POOL_TRANSFORM_STRIDE, Sim } from "./world";
+import { Sim } from "./world";
+import { MATCH_DURATION_S } from "./matchConfig";
+import { POOL_TRANSFORM_STRIDE } from "./frame";
 import { neutralIntent } from "./intent";
 
 /** A match on one hole: its own field, the player on the tee, a bot (if any) on the cup. */

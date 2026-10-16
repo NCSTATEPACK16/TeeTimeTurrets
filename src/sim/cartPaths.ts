@@ -3,6 +3,7 @@ import type { CourseFrame } from "./courseGeometry";
 import type { Vec2 } from "./mapGeometry";
 import type { MutableSurfaceTuning } from "./surfaces";
 import { ARENA_HOLE_INDICES } from "./arenaZone";
+import { segmentDistanceSq } from "./vec";
 
 /**
  * Cart paths: the fast way round the course.
@@ -64,13 +65,7 @@ export function pathWeightAt(paths: readonly CartPath[], x: number, z: number): 
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i]!;
       const b = pts[i + 1]!;
-      const ex = b.x - a.x;
-      const ez = b.z - a.z;
-      const len2 = ex * ex + ez * ez;
-      const t = len2 > 0 ? Math.min(1, Math.max(0, ((x - a.x) * ex + (z - a.z) * ez) / len2)) : 0;
-      const dx = x - (a.x + ex * t);
-      const dz = z - (a.z + ez * t);
-      const d = dx * dx + dz * dz;
+      const d = segmentDistanceSq(x, z, a.x, a.z, b.x, b.z);
       if (d < best) best = d;
     }
   }

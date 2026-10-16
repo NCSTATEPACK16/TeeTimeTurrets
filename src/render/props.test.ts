@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { buildGraph } from "../entities/primitiveGraph";
 import { PROP_NAMES, graphFor } from "../entities/propGraphs";
 import type { PropName } from "../entities/propGraphs";
-import { fixedHoleSpec, generateCourse } from "../sim/course";
+import { fixedHoleSpec } from "../sim/course";
+import { authoredCourse } from "../sim/authoredCourse";
 import type { HoleSpec } from "../sim/course";
 import { createSpline } from "../sim/spline";
 import { createSurfaceWeights, createSurfaces } from "../sim/surfaces";
@@ -508,11 +509,11 @@ describe("the boardwalk", () => {
 });
 
 describe("the real eighteen", () => {
-  it("keeps every generated hole inside the draw-call budget, crossings and all", () => {
+  it("keeps every authored hole inside the draw-call budget, crossings and all", () => {
     // Criterion 11 against the course that ships rather than against a fixture. The fixtures above
     // are hand-built to exercise one prop each; this is the only check that sees a hole with two
     // crossings and a full set of bunkers at the same time.
-    const { holes } = generateCourse(0x7ee7c0, 18);
+    const { holes } = authoredCourse(0x7ee7c0);
     let withCrossings = 0;
     for (let i = 0; i < holes.length; i++) {
       const spec = holes[i]!;

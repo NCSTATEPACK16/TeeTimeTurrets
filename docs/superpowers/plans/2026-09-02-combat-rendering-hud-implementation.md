@@ -319,7 +319,7 @@ Edit `tsconfig.json`'s last line:
   "include": ["src", "tools/gate/**/*.ts"]
 ```
 
-Only `tools/gate/**` is added, not all of `tools/`. `tools/feelProbe.ts` uses `process`, which needs `@types/node`, and adding a dependency to typecheck an unrelated existing file is not this plan's business.
+Only `tools/gate/**` is added, not all of `tools/`. `tools/turretProbe.ts` uses `process`, which needs `@types/node`, and adding a dependency to typecheck an unrelated existing file is not this plan's business.
 
 - [ ] **Step 2: Write the Vite config**
 

@@ -1,10 +1,12 @@
 /**
- * Headless feel probe. Imports the REAL src/sim modules (no copies) and measures
- * carry / rollout / settle time / out-of-bounds for each club, plus terrain slope stats.
- * Run via a vite SSR build (see build-probe.config.ts) then `node out/probe.js`.
+ * Headless turret probe. Imports the REAL src/sim modules (no copies), fires each club from a cart
+ * through the ball pool, and measures carry / rollout / settle time / out-of-bounds, plus terrain
+ * slope stats. `npm run probe` bundles it with `tools/probe.vite.config.ts` and runs
+ * `tools/.probe-out/turretProbe.mjs`. Named `feelProbe.ts` until Stage 9 of the revamp.
  */
 import { createNoise2D } from "simplex-noise";
-import { Sim, FIXED_DT } from "../src/sim/world";
+import { Sim } from "../src/sim/world";
+import { FIXED_DT } from "../src/sim/frame";
 import { mulberry32 } from "../src/sim/rng";
 import { fixedHoleSpec } from "../src/sim/course";
 import { NOISE_MAX_GRADIENT, createTerrain } from "../src/sim/terrain";
@@ -13,13 +15,7 @@ import { neutralIntent } from "../src/sim/intent";
 // The driver's reference distance lives in sim/carry.ts, a leaf module (see that file's header),
 // not in course.ts, which does not re-export it.
 import { ARENA_DRIVER_CARRY_M, ARENA_DRIVER_TOTAL_M } from "../src/sim/carry";
-import {
-  derivePar,
-  draftHole,
-  generateCourse,
-  parForIndex,
-  validateHole,
-} from "../src/sim/course";
+import { authoredCourse } from "../src/sim/authoredCourse";
 import { createSurfaces } from "../src/sim/surfaces";
 import { SurfaceId } from "../src/sim/surfaces";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../src/physics/Ballistics";
@@ -295,51 +291,28 @@ async function driverDistanceCheck(sim: Sim): Promise<void> {
   );
 }
 
-/** 3. The generator's own criteria, re-run from outside it against a full nine. */
-function coursePlayabilityCheck(): void {
-  let failures = 0;
-  const course = generateCourse(PROBE_COURSE_SEED, 9);
-  for (const hole of course.holes) {
-    const rejection = validateHole(hole, createTerrain(hole));
-    if (rejection === null) continue;
-    failures++;
-    console.log(`    hole ${hole.index}: check ${rejection.check} - ${rejection.reason}`);
-  }
-  const pars = course.holes.map((h) => h.par).join("");
-  report(
-    "course playability",
-    failures === 0,
-    `${course.holes.length} holes, pars ${pars} (total ${course.holes.reduce((s, h) => s + h.par, 0)}), ` +
-      `${failures} failing`,
-  );
-}
-
 /**
- * 4. Reports rather than asserts. The research claims 80-85%, computed from its miscalibrated
- *    amplitudes; that figure carries no weight here and the real number is what this run
- *    records. The per-check breakdown is the useful part -- it names which threshold is
- *    actually binding.
+ * 3. The shipped course builds. `authoredCourse` throws when an authored corridor falls outside its
+ *    par's length band, so building it is the check; the card's pars are printed beside it.
+ *
+ *    This used to re-run `validateHole` over a generated nine and report the drafter's acceptance
+ *    rate. Both measured the generator, which is gone. The authored holes are not held to
+ *    `validateHole` (their fields are sized to the corridor, so check 2's box rejects them).
  */
-function acceptanceReport(): void {
-  const samples = 200;
-  let accepted = 0;
-  const byCheck = new Map<number, number>();
-  for (let i = 0; i < samples; i++) {
-    const candidate = draftHole(PROBE_COURSE_SEED, i, parForIndex(i), 0);
-    const terrain = createTerrain(candidate);
-    const spec = { ...candidate, par: derivePar(terrain.spline.length) };
-    const rejection = validateHole(spec, terrain);
-    if (rejection === null) accepted++;
-    else byCheck.set(rejection.check, (byCheck.get(rejection.check) ?? 0) + 1);
+function courseBuildCheck(): void {
+  let detail: string;
+  let ok = true;
+  try {
+    const course = authoredCourse(PROBE_COURSE_SEED);
+    const pars = course.holes.map((h) => h.par);
+    const total = pars.reduce((sum, par) => sum + par, 0);
+    ok = course.holes.length === 18 && total === 72;
+    detail = `${course.holes.length} holes, pars ${pars.join("")} (total ${total})`;
+  } catch (e) {
+    ok = false;
+    detail = e instanceof Error ? e.message : String(e);
   }
-  const breakdown = [...byCheck.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([check, n]) => `check ${check}: ${n}`)
-    .join(", ");
-  console.log(
-    `  acceptance rate         ${((accepted / samples) * 100).toFixed(1)}% ` +
-      `(${accepted}/${samples})${breakdown ? ` - rejections by ${breakdown}` : ""}`,
-  );
+  report("authored course", ok, detail);
 }
 
 async function main(): Promise<void> {
@@ -395,8 +368,7 @@ async function main(): Promise<void> {
     `lowest ball centre ${lowestClearanceM.toFixed(3)} m above the terrain under it, over every tick of ` +
       `the three full-power shots and the driver check (limit -${TUNNEL_TOLERANCE_M} m)`,
   );
-  coursePlayabilityCheck();
-  acceptanceReport();
+  courseBuildCheck();
 
   if (probeFailed) {
     console.error("\nprobe: one or more course checks failed");

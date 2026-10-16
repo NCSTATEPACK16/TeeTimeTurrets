@@ -190,14 +190,6 @@ export class BallPool {
     ball.restTicks = 0;
   }
 
-  /** Releases every ball not already idle. Used when swapping holes so stale in-flight/landed
-   * balls from the previous hole don't survive into the new one. */
-  releaseAll(): void {
-    for (const ball of this.balls) {
-      if (ball.state !== "idle") this.release(ball);
-    }
-  }
-
   /**
    * flying -> landed on sustained rest (mirrors world.ts's isGrounded/restTicks pattern);
    * landed -> idle after LANDED_BALL_DESPAWN_S with no pickup; flying -> idle after MAX_FLIGHT_S.

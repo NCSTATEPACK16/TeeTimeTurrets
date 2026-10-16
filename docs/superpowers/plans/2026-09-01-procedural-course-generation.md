@@ -37,7 +37,7 @@ this section.
   `noUnusedLocals`, `noUnusedParameters` are all on — do not relax them.
 - **`tsconfig.json` has `"include": ["src"]`.** `tools/**` is *not* type-checked by
   `tsc --noEmit`; it is only checked when `npm run probe` builds it through Vite. Type errors in
-  `tools/feelProbe.ts` will not show up in `npm run build`.
+  `tools/turretProbe.ts` will not show up in `npm run build`.
 - **New sim/physics logic gets a colocated test**, `src/**/*.test.ts`, run by `npm test`.
 - **Every commit needs a DCO sign-off:** `git commit -s`.
 - **Never put AI-session metadata in git.** No assistant co-author trailers, no session or chat
@@ -93,7 +93,7 @@ scratch. The allocating forms stay for readable call sites outside the loop (tes
 | `src/sim/surfaces.test.ts` | `tuningAt` allocates nothing, blend monotone |
 
 **Modified:** `src/sim/terrain.ts`, `src/sim/surfaces.ts`, `src/sim/world.ts`,
-`src/sim/world.cart.test.ts`, `src/render/scene.ts`, `src/main.ts`, `tools/feelProbe.ts`,
+`src/sim/world.cart.test.ts`, `src/render/scene.ts`, `src/main.ts`, `tools/turretProbe.ts`,
 `docs/ROADMAP.md`, `docs/BACKLOG.md`.
 
 **Import layering — no runtime cycles.** `course.ts` imports values from `terrain.ts` and
@@ -1435,7 +1435,7 @@ This is where §3 is finished and *proved* finished: `npm run probe` must print 
 as Phase 0's baseline.
 
 **Files:**
-- Modify: `tools/feelProbe.ts`
+- Modify: `tools/turretProbe.ts`
 - Modify: `src/sim/terrain.ts` (delete the shim block)
 - Modify: `src/sim/surfaces.ts` (delete the shim block)
 - Modify: `src/sim/terrain.legacy.test.ts`, `src/sim/surfaces.legacy.test.ts` (retarget onto the
@@ -1484,9 +1484,9 @@ const legacy = createSurfaces(
 const surfaceAt = (x: number, z: number): string => legacy.surfaceAt(x, z);
 ```
 
-- [ ] **Step 3: Rewrite `tools/feelProbe.ts` to build its own hole**
+- [ ] **Step 3: Rewrite `tools/turretProbe.ts` to build its own hole**
 
-Replace the import block at `tools/feelProbe.ts:6-9`:
+Replace the import block at `tools/turretProbe.ts:6-9`:
 
 ```ts
 import { Sim, FIXED_DT } from "../src/sim/world";
@@ -1542,7 +1542,7 @@ now-unused `legacyHoleSpec` and `createTerrain` imports.
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: no type errors; all suites pass, including both legacy snapshot tests.
 
-`tsc` does not cover `tools/**` (`"include": ["src"]`), so a mistake in `feelProbe.ts` surfaces
+`tsc` does not cover `tools/**` (`"include": ["src"]`), so a mistake in `turretProbe.ts` surfaces
 only in the next step.
 
 - [ ] **Step 6: Run the probe and diff against the baseline**
@@ -1559,7 +1559,7 @@ the heightfield resolution.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/sim/terrain.ts src/sim/surfaces.ts src/sim/terrain.legacy.test.ts src/sim/surfaces.legacy.test.ts tools/feelProbe.ts
+git add src/sim/terrain.ts src/sim/surfaces.ts src/sim/terrain.legacy.test.ts src/sim/surfaces.legacy.test.ts tools/turretProbe.ts
 git commit -s -m "Remove the terrain and surfaces module constants
 
 The last consumers now build a hole and read it. npm run probe prints output
@@ -2048,7 +2048,7 @@ overwritten.
 - Modify: `src/sim/terrain.ts` (replace `rawHeight`, add the budget field, build the spline)
 - Modify: `src/sim/course.ts` (rename `legacyHoleSpec` → `fixedHoleSpec`, reposition it)
 - Modify: `src/sim/course.test.ts`, `src/sim/world.cart.test.ts`, `src/main.ts`,
-  `tools/feelProbe.ts` (follow the rename)
+  `tools/turretProbe.ts` (follow the rename)
 - Delete: `src/sim/terrain.legacy.test.ts`, `src/sim/surfaces.legacy.test.ts`
 - Test: `src/sim/terrain.test.ts` (create)
 
@@ -2077,7 +2077,7 @@ git rm src/sim/terrain.legacy.test.ts src/sim/surfaces.legacy.test.ts
 ```
 
 Delete `LEGACY_TERRAIN_SOURCES` from `src/sim/terrain.ts` and `LEGACY_SURFACE_SOURCES` from
-`src/sim/surfaces.ts`. In `tools/feelProbe.ts`, drop the injected sources so the probe uses the
+`src/sim/surfaces.ts`. In `tools/turretProbe.ts`, drop the injected sources so the probe uses the
 hashed defaults:
 
 ```ts
@@ -2125,7 +2125,7 @@ export function fixedHoleSpec(): HoleSpec {
 ```
 
 Update the three call sites — `src/main.ts`, `src/sim/world.cart.test.ts`,
-`tools/feelProbe.ts` — and replace `src/sim/course.test.ts`'s `legacyHoleSpec` block with:
+`tools/turretProbe.ts` — and replace `src/sim/course.test.ts`'s `legacyHoleSpec` block with:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -2389,7 +2389,7 @@ regression, not a threshold.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add -A src/sim tools/feelProbe.ts src/main.ts
+git add -A src/sim tools/turretProbe.ts src/main.ts
 git commit -s -m "Replace the two-octave terrain with budget-masked octaves
 
 Three octaves, each taking what a continuous slope budget leaves after the
@@ -3826,7 +3826,7 @@ because the number it reports has never been measured for this codebase.
 
 **Files:**
 - Modify: `src/sim/course.ts` (export the candidate draft)
-- Modify: `tools/feelProbe.ts`
+- Modify: `tools/turretProbe.ts`
 
 **Interfaces:**
 - Consumes: `createNoise2D` from `simplex-noise`; `mulberry32` from `../src/sim/rng`;
@@ -3862,7 +3862,7 @@ export function draftHole(
 ): HoleSpec {
 ```
 
-- [ ] **Step 2: Add the four checks to `tools/feelProbe.ts`**
+- [ ] **Step 2: Add the four checks to `tools/turretProbe.ts`**
 
 Extend the import block:
 
@@ -4042,7 +4042,7 @@ the only thing that type-checks the probe.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/sim/course.ts tools/feelProbe.ts
+git add src/sim/course.ts tools/turretProbe.ts
 git commit -s -m "Assert the terrain's measured constants in the probe
 
 Four checks. The noise gradient k is a property of the installed
@@ -4215,7 +4215,7 @@ Run against the spec after finishing, before calling the phase complete.
   across the fairway→rough band and exact at both extremes. ✔
 
 **Blast radius — all five importers of `terrain.ts` migrate:** `world.ts` (Task 5),
-`surfaces.ts` (Task 4), `scene.ts` (Task 6), `world.cart.test.ts` (Task 5), `feelProbe.ts`
+`surfaces.ts` (Task 4), `scene.ts` (Task 6), `world.cart.test.ts` (Task 5), `turretProbe.ts`
 (Task 7). Plus `main.ts` (Tasks 6 and 14). ✔
 
 **Type consistency.** Names used across task boundaries, defined once:

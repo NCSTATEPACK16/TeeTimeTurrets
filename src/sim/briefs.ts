@@ -2,15 +2,14 @@
  * The course bible as data -- eighteen authored `HoleBrief`s.
  *
  * This is the authoring unit described in docs/COURSE_PIPELINE.md sections 3 and 4: you author
- * intent, the generator produces coordinates. It is what keeps the properties that make the
- * current system good -- a hole is reconstructible from a uint32, so multiplayer ships a seed
- * rather than a level file, and rejection sampling still guarantees playability -- while giving
- * real design control over what each hole *is*.
+ * intent, and `placement.ts` resolves it to coordinates from the seed. The routing itself is
+ * authored (`authoredCourse.ts`); what a brief still decides is each hole's corridor widths (from
+ * its cover), where its bunkers and water go, and its biome. A hole stays reconstructible from a
+ * uint32, so multiplayer ships a seed rather than a level file.
  *
- * Nothing reads this yet. `generateHole` consumes it at step 6 of the section 9 build order; the
- * point of landing it first is that design intent becomes reviewable before any generator work,
- * and Tier 2 (water polygons, placed bunkers) has something to be checked against instead of
- * polygons hand-tuned against nothing.
+ * `authoredCourse.ts` is the consumer. Until Stage 9 of the revamp a procedural generator read the
+ * dog-leg fields too; the authored control points now carry the bend, and `authoredCourse.test.ts`
+ * checks each brief's dog-leg against them.
  *
  * Plain data: DOM-free, no Rapier, no Three, same as the rest of src/sim.
  */
@@ -96,8 +95,8 @@ export interface HoleBrief {
  * between them, and they are anchored rather than invented:
  *
  * **`moderate` is exactly today's `HALF_WIDTH` (15, terrain.ts).** That is deliberate and it is
- * the reviewable property. When Tier 2 lands and the generator finally varies corridor width, the
- * eleven moderate holes must render byte-identically to today or something is wrong -- which makes
+ * the reviewable property. When Tier 2 landed and corridor width began to vary, the eleven
+ * moderate holes must render byte-identically to today or something is wrong -- which makes
  * a change that touches every hole in the course reviewable one hole at a time.
  *
  * The mid value pinches slightly on every setting: a corridor that narrows through the landing
@@ -124,16 +123,15 @@ function bunkers(...placement: BunkerPlacement[]): HazardSchema["bunkers"] {
  *
  * Transcribed from the table in docs/COURSE_PIPELINE.md section 4. Four properties of that table
  * are asserted in briefs.test.ts against independent sources rather than trusted here: par against
- * `PAR_MIX`, biome against `BIOME_ROUTING`, the adjacent-dogleg rule, and whether an authored
- * corridor width still leaves room for its par band.
+ * the authored card, biome against `BIOME_ROUTING`, and the adjacent-dogleg rule.
  *
- * **Declarative, never geometric.** A brief says `placement: 'fairway-elbow'` and the generator
+ * **Declarative, never geometric.** A brief says `placement: 'fairway-elbow'` and `placement.ts`
  * resolves that to coordinates from the seed. A brief that named a coordinate would have defeated
  * the whole point -- the system exists so a hole is reconstructible from a uint32.
  *
  * Where the section 4 table says "3 pot bunkers, greenside" and the vocabulary only offers
  * `greenside-left` and `greenside-right`, the left/right split is arbitrary and stays arbitrary
- * until the generator resolves placements against the routing it drew. Do not read intent into it.
+ * until `placement.ts` resolves placements against the routing. Do not read intent into it.
  */
 export const COURSE_BRIEFS: readonly HoleBrief[] = [
   {

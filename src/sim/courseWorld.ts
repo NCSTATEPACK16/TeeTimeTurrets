@@ -53,8 +53,8 @@ export function buildCourseWorld(course: Course, seed: number): CourseWorld {
    * The authored offsets were fitted to the authored holes' own lengths, so handing this a course
    * whose holes are a different shape places real corridors at coordinates chosen for different
    * ones -- fairways crossing, with nothing thrown. That is the silent failure this whole module
-   * exists to prevent, so it is checked rather than documented. A caller that genuinely wants a
-   * generated course wants `solveCourseLayout` in `courseLayout.ts`, which is still there.
+   * exists to prevent, so it is checked rather than documented. There is no layout solver for any
+   * other course: it was deleted with the generator in Stage 9.
    */
   if (course.holes.length !== AUTHORED_HOLES.length) {
     throw new Error(
