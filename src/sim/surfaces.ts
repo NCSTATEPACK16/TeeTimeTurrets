@@ -2,7 +2,6 @@ import type { HoleSpec } from "./course";
 import { isWaterAt } from "./hazards";
 import { deriveCrossings, isOnCauseway } from "./crossing";
 import { ellipseEdgeDistance, pointInEllipse } from "./hazards";
-import { hashChannel } from "./rng";
 import { createNearestPoint } from "./spline";
 import type { NearestPoint } from "./spline";
 import { BLEND_WIDTH, GREEN_BLEND, halfWidthAt, smoothstep01 } from "./terrain";
@@ -118,21 +117,6 @@ export const SURFACES: Readonly<Record<SurfaceId, SurfaceTuning>> = {
   // lands on a deck runs, which is the point -- a crossing you can putt across is a route.
   [SurfaceId.Bridge]: { rolling: 0.04, bounceScale: 0.95, cartSpeedScale: 1.0, isHazard: false },
 };
-
-/**
- * Channel 1 of the spec's seed. Bunker *placement* now happens in `course.ts` against a validated
- * routing (a bunker at "the fairway elbow" has no meaning until the elbow exists), so this is the
- * channel that placement draws from rather than one this module samples.
- *
- * **What used to be here:** a simplex field at `SAND_FREQUENCY = 0.055` thresholded at 0.72, so
- * sand was any point where a noise function happened to be high. That produced 3.6% of the *mown
- * corridor* as sand -- tan speckles scattered across every fairway rather than hazards anyone
- * placed (docs/COURSE_PIPELINE.md §5.1). It is gone, not merely tuned: no threshold value makes a
- * noise field express "guard the aggressive line".
- */
-export function sandChannel(spec: HoleSpec): number {
-  return hashChannel(spec.seed, spec.index, 1);
-}
 
 export interface Surfaces {
   /** Discrete. Feeds the HUD readout, Phase 4's minimap, and render colouring. */
