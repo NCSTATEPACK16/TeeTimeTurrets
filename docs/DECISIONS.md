@@ -777,3 +777,28 @@ It is not iteration order. Object, `Map` and array iteration order is fixed by t
 The golden is only the first thing to notice. The same one-ulp drift splits any two machines that run the sim side by side: an x64 server and an arm64 client would disagree about a match by tick 46. `ARCHITECTURE.md` §1 plans for the server to run `src/sim/**` unmodified, so this has to be settled before lockstep, replays or server reconciliation.
 
 The fix is known in outline: route the sim's `sin`, `cos` and `atan2` through a pure-JS implementation, since JS arithmetic is IEEE-exact on every platform. That is 61 call sites across 13 files in `src/sim/**` and `src/physics/**`. A faithful fdlibm port should reproduce x64's current results bit for bit, so the golden might not move at all, but that is a claim to test, not to assume. It is not scheduled in `REVAMP-PLAN.md`.
+
+## Stage 3.5: a countdown, and arena rules that grow capture flags and a mortar
+
+Settled 2026-10-30, by the user. The game played rigid next to the concept art, and the user asked for
+a start timer and "more Battlefield-like warfare, but still goofy".
+
+- **The countdown is a sim phase, not a UI overlay.** `Match.phase` spends `countdownS` before the
+  clock moves.
+  - Carts keep only their aim and club; a charge is cancelled; bots idle without drawing on their
+    RNG streams.
+  - `Sim.create` defaults it to 0, so every test and the golden still start live on tick one.
+    `main.ts` passes `MATCH_COUNTDOWN_S`.
+  - A UI-only overlay would have let a player drive during "3, 2, 1".
+- **Hitstop delays ticks; it does not skip them.** `MatchScreen` holds `sim.step` for 2-4 ticks. It
+  does not sample input during the hold, so a press made then lands on the next real tick. The sim
+  is unchanged; it simply plays out the same a beat later.
+- **The arena's "do not relitigate" rules change in 3.5c, at the user's direction.** Two additions:
+  - capture flags that bleed strokes from the side holding fewer of them;
+  - a Mortar pickup.
+
+  "Fewest strokes wins" stays, so the flags feed the existing score rather than replacing it.
+- **CC0 sprite packs were the plan, but this environment's network policy blocks kenney.nl,
+  opengameart.org and ambientcg.com.** The effects atlas is painted on a canvas at load
+  (`spriteAtlas.ts`), in a fixed 4 × 2 layout. A CC0 atlas can replace the painters without touching
+  any consumer.

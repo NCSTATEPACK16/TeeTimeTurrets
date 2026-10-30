@@ -1,10 +1,10 @@
 # Handoff — next session
 
-Rewritten 2026-10-04, when the clubhouse and barn v3 pass (#85) and the handoff PR (#84) merged at the user's direction. That finishes the art-direction v2 work. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-10-30, at the end of Stage 3.5a (life and intensity), which the user inserted ahead of Stage 4. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**The paste-ready prompt for the next session, Stage 4, is in `docs/NEXT-SESSION-PROMPT.md`.**
+**Next is the user's play-test of Stage 3.5a, then 3.5b (the living course). The details are under "Next" below. `docs/NEXT-SESSION-PROMPT.md` is still the Stage 4 prompt, for after 3.5c.**
 
 ## Read first
 
@@ -36,28 +36,65 @@ Rewritten 2026-10-04, when the clubhouse and barn v3 pass (#85) and the handoff 
 | 7 | Clubhouse complex and pickups in Blender | **done** (#77, #78) |
 | Art v2 | Style research, prompt pack, 16 sheets, P1–P6, style pass, **cart v3** | **done** (#83) |
 | Art v2, remainder | Clubhouse and barn v3 Blender pass, plus a detail pass | **done** (#85) |
-| **4** | **Handling feel and arena zone (#49–#53)** | **next. See `docs/NEXT-SESSION-PROMPT.md`** |
+| **3.5a** | **Life and intensity: pacing, juice, battlefield presentation** | **built, awaiting play-test** (branch `claude/sharp-feynman-bzzp7s`) |
+| 3.5b | The living course: splat, water, sand, trees, grass, ambient life | next, after the play-test |
+| 3.5c | Mortar pickup and capture flags (moves the golden) | after 3.5b |
+| 4 | Handling feel and arena zone (#49–#53) | after 3.5c. See `docs/NEXT-SESSION-PROMPT.md` |
 | 5 | Environment, the rest (#54–#61) | after Stage 4 |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
 
-## Just done: clubhouse and barn v3 (#85, merged 4 Oct 2026)
+## Just done: Stage 3.5a (30 Oct 2026)
 
-- **Merged without its own play-test,** at the user's direction. Its hub-look items join the Stage 4 play-test list (see the prompt).
+The scope is in `REVAMP-PLAN.md` § Stage 3.5, and the reasoning is in `DECISIONS.md` § "Stage 3.5".
+Commits, in order:
+1. countdown, final-30 ramp, streak callouts, hitstop and horn;
+2. sprite particles;
+3. music bed and ambience;
+4. distant barrages;
+5. knockable props.
 
-- **Clubhouse:** 4,632 triangles (budget 5,000). It has rbox masses, 7 fascia boards, plain post bases, and the detail pass: ridge and hip caps, window mullions, a double door and cupola louvres. The ridge is 7.35, which makes a 25° pitch. The cupola tip is at 8.55, and the chimney rose with the ridge.
-- **Barn:** 1,004 triangles (budget 1,100). It has rbox posts on bases, 8 triangular knee braces, a 0.9 m brick knee wall, an rbox team fascia and a ridge cap.
-- **The detail pass came from a 3× A/B test** (a throwaway worktree, now deleted). Only these items read at play distance. Rounder bevels (more `rbox` segments) showed in no shot. Don't spend budget on bevel segments.
-- **CI:** `tools/simAllocation.test.mjs` timed out on Node 22. #84's tiering cap is process-wide and ran ahead of the Rapier-reads test. The fix runs that test first.
-- The smoke check (`clubhouseGraph.test.ts`) bounds were raised on purpose.
-- The "As built, v3" sections of both specs record two deviations from the spec, each with its reason:
-  - the braces start 0.8 below the *fascia*, because measured from the eave they hid behind it;
-  - the cupola base is 0.2 taller, to close the gap that the steeper slopes opened under it.
-- **If a later play-test asks for changes:** edit `art/stage7_kit.py`, then rebuild from a fresh file:
-  - `read_homefile(use_empty=True)` in one MCP call;
-  - then `exec` both scripts, run `build_all(); export_all(REPO)`, and save `art/clubhouse-exterior.blend`.
+- **The golden did not move.** The countdown defaults to 0 in `Sim.create`; only `main.ts` passes
+  `MATCH_COUNTDOWN_S`. Everything else is render, UI or audio.
+- **Assets:** the network policy blocked kenney.nl, opengameart.org and ambientcg.com.
+  - The atlas is painted (`spriteAtlas.ts`).
+  - If the user allows those hosts, a CC0 atlas in the same 4 × 2 layout can replace the painters.
+  - Record it in `LICENSES.md` and `NOTICE`.
+- **Cost:** three new draws for sprites and scorch, plus three for the knockables (one per kind).
+  - A busy moment had about 640 live smoke sprites out of 1,200.
+  - The capacities are constants in `effects.ts`, not preset-driven yet. Wire them to `quality.ts` in
+    3.5b if Low struggles.
+- **Smoke checks:** `world.countdown.test.ts`, `streaks.test.ts`, `spritePool.test.ts`,
+  `music.test.ts`, `battleAmbience.test.ts`, `knockState.test.ts`.
+- **Play-test list (3.5a)** at `?match=60`:
+  1. The countdown holds the cart and lets you aim; FORE! releases it.
+  2. A kill hitches briefly, with a flash, fireball, confetti, lingering smoke and a scorch mark.
+  3. Ball tracers and tyre roost (turf, sand, spray) show.
+  4. The music starts at FORE!, builds with kills and speeds up in the final 30; there's a FINAL 30
+     banner.
+  5. Distant booms come after their flashes.
+  6. Driving through tee markers or a ball washer knocks them over.
+  7. H honks.
 
-## Next: Stage 4, handling feel and arena zone (#49–#53)
+## Next: Stage 3.5b, the living course
+
+- **Splat:** wire the CC0 terrain sets in `public/textures/terrain/` into `groundShader.ts`. Nothing
+  references them today. Use anti-tiling, slope rock and a distance fade.
+- **Water:** `render/water.ts`, a plane per pond with:
+  - scrolling normals and fresnel;
+  - a shore-foam band from a baked distance-to-edge attribute;
+  - ripple rings fed by `splash` events.
+- **Sand:** drift sprites over bunkers (reuse `EffectsLayer.smoke`) and a rim lip in the shader.
+- **Trees:**
+  - Blue-noise placement per hole with 3–7 conifer clumps, replacing the 6 m grid in `Trees.ts`.
+  - Smooth shading.
+  - Per-instance tint.
+  - Vertex wind sway.
+  - `quality.treeCap`.
+- **Grass:** `render/grassCarpet.ts`.
+- **Ambient life:** birds, sprinklers, flag cloth, motes.
+
+## After 3.5c: Stage 4, handling feel and arena zone (#49–#53)
 
 The contents are in `REVAMP-PLAN.md` § Stage 4. Branch `stage-4-handling-zone`, from `main`. It can run in the cloud.
 

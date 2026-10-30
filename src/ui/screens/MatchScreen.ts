@@ -612,6 +612,7 @@ export class MatchScreen implements Screen {
           row("1  2  3", "Putter · iron · driver"),
           row("SHIFT", "Brake"),
           row("M", "Course map"),
+          row("H", "Honk the horn"),
           row("ESC", "Pause"),
         ]),
         el("p", { class: "match-overlay__note", text: "Knock the other team out. Every time you drop to zero, your team takes a stroke. Fewest strokes wins." }),
