@@ -2,10 +2,12 @@ import * as THREE from "three";
 import { BallSwarm } from "../entities/BallSwarm";
 import { AimArc } from "../entities/AimArc";
 import { EffectsLayer } from "./effects";
+import { MotionTrails } from "./trails";
+import { fxRandom } from "./fxRandom";
 import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, placeCart } from "../entities/GolfClub";
 import { teamOf } from "../sim/matchConfig";
-import { teamColors } from "./teamColors";
+import { TEAM_CANOPY, teamColors } from "./teamColors";
 import { createClubhouseKit, type ClubhouseKit } from "./clubhouse";
 import { createTeeSigns, type TeeSigns } from "./teeSigns";
 import { createPickupView, type PickupView } from "./pickups";
@@ -126,6 +128,8 @@ export class RenderScene {
   private readonly aimArc: AimArc;
   /** Puffs, sparks, death bursts and splashes; triggered by `MatchScreen` from `Sim.events`. */
   readonly effects: EffectsLayer;
+  /** Roost, tracers and landing puffs, read off motion between frames. */
+  private readonly trails: MotionTrails;
   /** Camera shake; `MatchScreen` adds trauma from `Sim.events`. */
   readonly trauma = new CameraTrauma();
   /** Where the smoothed chase eye is, before shake: the shake is drawn on top, never fed back. */
@@ -236,8 +240,15 @@ export class RenderScene {
     this.aimArc = new AimArc();
     this.scene.add(this.aimArc);
 
-    this.effects = new EffectsLayer();
+    this.effects = new EffectsLayer(fxRandom(arena.seed ?? 0, 1), heightAt, [
+      TEAM_CANOPY[0],
+      TEAM_CANOPY[1],
+      0xffffff,
+      0xffd23a,
+      0x6fd15a,
+    ]);
     this.scene.add(this.effects.group);
+    this.trails = new MotionTrails(botCount + 1, this.effects, arena.surfaces, heightAt);
 
     // Everything solid casts onto the ground; the ground and the buildings receive.
     const cast = (root: THREE.Object3D, receive: boolean): void =>
@@ -301,6 +312,11 @@ export class RenderScene {
     this.shieldPlates.commit();
     this.pooledBalls.setFromTransforms(view.poolTransforms);
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
+    this.trails.cart(0, view.cart, view.playerDead, view.frameSeconds);
+    for (let i = 0; i < view.botCarts.length; i++) {
+      this.trails.cart(i + 1, view.botCarts[i]!, view.botDead[i] === true, view.frameSeconds);
+    }
+    this.trails.balls(view.poolTransforms, view.frameSeconds);
     this.effects.update(view.frameSeconds);
 
     this.frameChase(view);
