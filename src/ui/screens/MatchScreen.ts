@@ -36,6 +36,7 @@ import { Sightlines } from "../sightlines";
 import { CountdownDisplay, countdownBeat } from "../countdown";
 import type { CountdownBeat } from "../countdown";
 import { StreakTracker } from "../streaks";
+import { musicIntensity } from "../../audio/music";
 import type { Screen } from "../../app/ScreenManager";
 
 /**
@@ -118,6 +119,10 @@ export class MatchScreen implements Screen {
    * Every cart freezes together, which is what makes the stop read as an impact.
    */
   private hitstopTicks = 0;
+  /** Sim seconds of the most recent kills by anyone, newest overwriting oldest: the music's heat. */
+  private readonly killTimes = new Float64Array(RECENT_KILL_SLOTS).fill(-Infinity);
+  private killSlot = 0;
+  private readonly intensityScratch = { recentKills: 0, remaining: 0, live: false };
   /** The white impact veil (#impact-flash) and its current strength, faded each frame. */
   private impactFlash: HTMLElement | null = null;
   private flash = 0;
@@ -213,6 +218,7 @@ export class MatchScreen implements Screen {
     this.streaks = new StreakTracker();
     this.finalStretch = false;
     this.hitstopTicks = 0;
+    this.killTimes.fill(-Infinity);
     this.impactFlash = document.getElementById("impact-flash");
     this.flash = 0;
 
@@ -334,6 +340,7 @@ export class MatchScreen implements Screen {
     if (this.impactFlash) this.impactFlash.style.opacity = "0";
     this.impactFlash = null;
     gameAudio.engineStop();
+    gameAudio.musicStop();
     window.removeEventListener("keydown", this.onKeyDown);
     document.removeEventListener("pointerlockchange", this.onPointerLockChange);
     this.overlay?.remove();
@@ -460,10 +467,28 @@ export class MatchScreen implements Screen {
       gameAudio.play(STINGER);
       this.hud?.timer.classList.add("final");
     }
+
+    // The music bed: on from FORE! to the buzzer, silent while paused, heating up with the fight.
+    const live = match.phase === "live" && !this.pause.paused;
+    if (live) gameAudio.musicStart();
+    else gameAudio.musicStop();
+    const now = match.durationS - match.remaining;
+    let recent = 0;
+    for (let i = 0; i < RECENT_KILL_SLOTS; i++) {
+      // Kill times are stamped from the tick count, which includes the countdown; `now` does not.
+      if (now + match.countdownS - this.killTimes[i]! <= RECENT_KILL_S) recent++;
+    }
+    const input = this.intensityScratch;
+    input.recentKills = recent;
+    input.remaining = match.remaining;
+    input.live = live;
+    gameAudio.musicSet(musicIntensity(input), match.remaining <= FINAL_STRETCH_S);
   }
 
   /** Streak callouts and the kill hitstop, for kills the player made or suffered. */
   private onKillPacing(killer: number, victim: number, tick: number): void {
+    this.killTimes[this.killSlot] = tick * FIXED_DT;
+    this.killSlot = (this.killSlot + 1) % RECENT_KILL_SLOTS;
     if (victim === 0) {
       this.streaks.onDeath();
       return;
@@ -676,6 +701,9 @@ const FLASH_HURT = 0.25;
 const FLASH_FADE_PER_S = 4;
 /** Seconds left at which the final-stretch warning fires. Skipped in matches no longer than it. */
 const FINAL_STRETCH_S = 30;
+/** Kills within this many seconds raise the music, counted over the last few. */
+const RECENT_KILL_S = 10;
+const RECENT_KILL_SLOTS = 6;
 const BEEP = { cue: "beep", gain: 1, pan: 0 } as const;
 const FORE = { cue: "go", gain: 1, pan: 0 } as const;
 const STINGER = { cue: "stinger", gain: 0.8, pan: 0 } as const;

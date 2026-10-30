@@ -1,12 +1,13 @@
 import type { Cue, CuePlay } from "./audioDirector";
+import { MusicBed } from "./music";
 
 /**
  * All of the game's sound, synthesised with WebAudio: no audio files ship, so nothing is loaded
  * and nothing is licensed.
  *
  * Three buses: every sound goes through `sfx` or `music`, both into `master`, which goes to the
- * speakers. Settings (volume, mute) act on the buses. Music has no content yet; the bus exists so
- * Settings can own its level from the start.
+ * speakers. Settings (volume, mute) act on the buses. The music bus carries `music.ts`'s match bed;
+ * its ambience goes through `sfx`, so turning the music down leaves the birds.
  *
  * One engine for the page (`gameAudio`), because a page gets a handful of AudioContexts at most
  * and each screen would otherwise make its own. The context is created on the first user gesture
@@ -32,6 +33,7 @@ export class AudioEngine {
   private engineOsc: OscillatorNode[] = [];
   private engineGain: GainNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
+  private bed: MusicBed | null = null;
 
   get running(): boolean {
     return this.ctx?.state === "running";
@@ -116,6 +118,23 @@ export class AudioEngine {
     for (const osc of this.engineOsc) osc.frequency.setTargetAtTime(38 + 70 * s, t, 0.08);
     this.engineFilter!.frequency.setTargetAtTime(280 + 900 * s, t, 0.1);
     this.engineGain.gain.setTargetAtTime(0.035 + 0.06 * s, t, 0.1);
+  }
+
+  /** Starts the match's music bed and ambience. Idempotent; a no-op before `unlock`. */
+  musicStart(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.music || !this.sfx || !this.noise) return;
+    this.bed ??= new MusicBed(ctx, this.music, this.sfx, this.noise);
+    this.bed.start();
+  }
+
+  /** 0..1 from `musicIntensity`; `finalStretch` pushes the tempo. */
+  musicSet(intensity: number, finalStretch: boolean): void {
+    this.bed?.set(intensity, finalStretch);
+  }
+
+  musicStop(): void {
+    this.bed?.stop();
   }
 
   engineStop(): void {
