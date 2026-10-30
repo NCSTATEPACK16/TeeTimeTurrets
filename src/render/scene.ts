@@ -4,6 +4,7 @@ import { AimArc } from "../entities/AimArc";
 import { EffectsLayer } from "./effects";
 import { MotionTrails } from "./trails";
 import { BattleAmbience } from "./battleAmbience";
+import { Knockables } from "./knockables";
 import { fxRandom } from "./fxRandom";
 import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, placeCart } from "../entities/GolfClub";
@@ -133,6 +134,10 @@ export class RenderScene {
   private readonly trails: MotionTrails;
   /** The distant war: barrages past the fight and flares over the clubhouse. */
   readonly battle: BattleAmbience;
+  /** Tee furniture carts bowl over. Render-only: no collider, the sim never sees it. */
+  private readonly knockables: Knockables;
+  /** Called at a prop as it is knocked over, for the clatter. */
+  onPropKnock: ((x: number, z: number) => void) | null = null;
   /** Camera shake; `MatchScreen` adds trauma from `Sim.events`. */
   readonly trauma = new CameraTrauma();
   /** Where the smoothed chase eye is, before shake: the shake is drawn on top, never fed back. */
@@ -252,6 +257,11 @@ export class RenderScene {
     ]);
     this.scene.add(this.effects.group);
     this.trails = new MotionTrails(botCount + 1, this.effects, arena.surfaces, heightAt);
+    this.knockables = new Knockables(arena.course.holes, heightAt, botCount + 1, (x, y, z) => {
+      this.effects.knock(x, y, z);
+      this.onPropKnock?.(x, z);
+    });
+    this.scene.add(this.knockables.group);
     this.battle = new BattleAmbience(this.effects, heightAt, fxRandom(arena.seed ?? 0, 2), arena.clubhouse ?? null);
 
     // Everything solid casts onto the ground; the ground and the buildings receive.
@@ -317,9 +327,13 @@ export class RenderScene {
     this.pooledBalls.setFromTransforms(view.poolTransforms);
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
     this.trails.cart(0, view.cart, view.playerDead, view.frameSeconds);
+    this.knockables.cart(0, view.cart, view.playerDead, view.frameSeconds);
     for (let i = 0; i < view.botCarts.length; i++) {
-      this.trails.cart(i + 1, view.botCarts[i]!, view.botDead[i] === true, view.frameSeconds);
+      const dead = view.botDead[i] === true;
+      this.trails.cart(i + 1, view.botCarts[i]!, dead, view.frameSeconds);
+      this.knockables.cart(i + 1, view.botCarts[i]!, dead, view.frameSeconds);
     }
+    this.knockables.update(view.frameSeconds);
     this.trails.balls(view.poolTransforms, view.frameSeconds);
     this.effects.update(view.frameSeconds);
 
@@ -350,6 +364,7 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.aimArc.dispose();
     this.effects.dispose();
+    this.knockables.dispose();
     this.clubhouseKit?.dispose();
     this.teeSigns.dispose();
     this.pickups?.dispose();

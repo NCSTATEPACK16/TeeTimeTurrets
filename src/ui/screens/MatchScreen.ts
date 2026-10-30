@@ -179,6 +179,10 @@ export class MatchScreen implements Screen {
     const { renderer, sim, hudRoot, nameplateRoot, arena } = this.options;
 
     this.render = new RenderScene(renderer, arena, sim.bots.length, this.options.quality);
+    this.render.onPropKnock = (x, z) => {
+      const d = Math.hypot(x - sim.cart.position.x, z - sim.cart.position.z);
+      if (d < CLATTER_RANGE_M) gameAudio.play({ cue: "clatter", gain: 1 - d / CLATTER_RANGE_M, pan: 0 });
+    };
     this.render.battle.onBoom = (gain, pan) => {
       if (!this.pause.paused) gameAudio.play({ cue: "boom", gain, pan });
     };
@@ -705,6 +709,8 @@ const FLASH_HURT = 0.25;
 const FLASH_FADE_PER_S = 4;
 /** Seconds left at which the final-stretch warning fires. Skipped in matches no longer than it. */
 const FINAL_STRETCH_S = 30;
+/** A prop knocked over further away than this, in metres, makes no sound. */
+const CLATTER_RANGE_M = 40;
 /** Kills within this many seconds raise the music, counted over the last few. */
 const RECENT_KILL_S = 10;
 const RECENT_KILL_SLOTS = 6;

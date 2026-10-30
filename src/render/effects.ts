@@ -54,6 +54,8 @@ const SPLASH_SPRAY: SpriteSpec = { count: 14, speed: 3, lift: 5, life: 0.9, size
 const TRACER: SpriteSpec = { count: 1, speed: 0, life: 0.28, sizeStart: 0.38, sizeEnd: 0.06, gravity: 0, drag: 0, color: 0xfff1c0, alpha: 0.85, frame: SpriteFrame.Spark };
 const FLARE: SpriteSpec = { count: 1, speed: 2, lift: 22, life: 4, sizeStart: 2.4, sizeEnd: 1.4, gravity: 6, drag: 0.15, color: 0xff5a3a, alpha: 1, frame: SpriteFrame.Flash, spin: 3 };
 const FLARE_TRAIL: SpriteSpec = { count: 1, speed: 1.2, lift: 21, life: 4.2, sizeStart: 0.8, sizeEnd: 3.5, gravity: 5.5, drag: 0.2, color: 0xd8d3cc, alpha: 0.35, frame: SpriteFrame.Smoke };
+const KNOCK_DUST: SpriteSpec = { count: 6, speed: 2, lift: 0.6, life: 0.9, sizeStart: 0.4, sizeEnd: 1.5, gravity: 0.5, drag: 2.5, color: 0xd8cfb8, alpha: 0.6, frame: SpriteFrame.Puff, jitter: 0.3 };
+const KNOCK_CHIPS: BurstSpec = { count: 6, speed: 3.5, life: 0.5, gravity: 9, size: 0.08, color: 0xf1ede2, lift: 2 };
 const SAND_PLUME: SpriteSpec = { count: 12, speed: 3.5, lift: 3.5, life: 1.4, sizeStart: 0.5, sizeEnd: 2.2, gravity: 2, drag: 2.2, color: 0xe2cf9d, alpha: 0.7, frame: SpriteFrame.Smoke, jitter: 0.3 };
 
 /** Tyre roost per surface: what a spinning wheel throws up from it. */
@@ -195,6 +197,12 @@ export class EffectsLayer {
     this.shards.burst(x, y, z, IMPACT_DUST);
     this.glow.pool.emit(x, y, z, IMPACT_FLASH);
     this.smoke.pool.emit(x, y, z, IMPACT_SMOKE);
+  }
+
+  /** A knocked-over prop: a low dust puff and a few chips. */
+  knock(x: number, y: number, z: number): void {
+    this.smoke.pool.emit(x, y + 0.3, z, KNOCK_DUST);
+    this.shards.burst(x, y + 0.5, z, KNOCK_CHIPS);
   }
 
   /** A ball landed in a bunker: a sand plume. */
