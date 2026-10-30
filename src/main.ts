@@ -6,7 +6,7 @@ import { FIXED_DT } from "./sim/tickConstants";
 import { authoredCourse } from "./sim/authoredCourse";
 import type { CourseWorld } from "./sim/courseWorld";
 import type { Sim } from "./sim/world";
-import { ARENA_BOTS } from "./sim/matchConfig";
+import { ARENA_BOTS, MATCH_COUNTDOWN_S } from "./sim/matchConfig";
 import { createLoadout, tireTypeFor } from "./sim/loadout";
 import type { ArenaSource } from "./render/scene";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
@@ -149,6 +149,7 @@ async function main(): Promise<void> {
       tire: tireTypeFor(loadout),
       botCount: ARENA_BOTS,
       matchDurationS: matchSecondsFromQuery(window.location.search),
+      countdownS: MATCH_COUNTDOWN_S,
     });
     screens.show("match");
   };

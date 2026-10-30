@@ -23,7 +23,14 @@ export type Cue =
   | "shield"
   | "plate"
   | "dry"
-  | "splash";
+  | "splash"
+  // Presentation cues, played by the UI rather than mapped from a sim event.
+  | "beep"
+  | "go"
+  | "honk"
+  | "stinger"
+  | "clatter"
+  | "boom";
 
 export interface CuePlay {
   cue: Cue;

@@ -25,6 +25,13 @@
 export const MATCH_DURATION_S = 180;
 
 /**
+ * The pre-match "3, 2, 1, FORE!": carts hold still and can only aim. Four seconds is three beats
+ * and the horn. `Sim.create` defaults to none, so tests and the golden are live from tick one;
+ * the game passes this.
+ */
+export const MATCH_COUNTDOWN_S = 4;
+
+/**
  * Every player-indexed structure in `match.ts` is sized for this and allocated once.
  *
  * It is a Phase 5 target and this build ships single-player against bots, so the arrays will
