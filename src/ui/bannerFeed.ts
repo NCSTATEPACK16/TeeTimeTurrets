@@ -60,6 +60,8 @@ export class BannerFeed {
   /** Seconds until the banner is fully gone (dwell + fade). */
   private remaining = 0;
 
+  /** A `push`ed banner, applied by the next `update` so it outranks that frame's edges. */
+  private pending: BannerDef | null = null;
   private prevWater = false;
   private prevDead = false;
   private prevKills = 0;
@@ -83,6 +85,10 @@ export class BannerFeed {
     if (source.playerInWater && !this.prevWater) fired = WATER_HAZARD;
     if (source.playerKills > this.prevKills) fired = ENEMY_DOWN;
     if (source.playerDead && !this.prevDead) fired = DESTROYED;
+    if (this.pending !== null) {
+      fired = this.pending;
+      this.pending = null;
+    }
 
     this.prevWater = source.playerInWater;
     this.prevDead = source.playerDead;
@@ -95,6 +101,15 @@ export class BannerFeed {
     } else if (this.remaining > 0) {
       this.remaining = Math.max(0, this.remaining - dtSeconds);
     }
+  }
+
+  /**
+   * Queues a banner that no sim flag drives -- a killstreak callout, the final-30 warning. The
+   * next `update` shows it over anything that frame's edges would have fired: a BIRDIE outranks
+   * the ENEMY DOWN its own kill raises.
+   */
+  push(headline: string, consequence: string): void {
+    this.pending = { headline, consequence };
   }
 
   /** Writes the current banner into `out`, per the no-allocation-in-the-render-loop rule. */

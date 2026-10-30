@@ -27,7 +27,15 @@ export interface MatchOptions {
   /** Carts in the match, player included. Sizes nothing -- the arrays are always MAX_PLAYERS. */
   readonly playerCount: number;
   readonly durationS: number;
+  /**
+   * Seconds of "3, 2, 1, FORE!" before the clock starts. Defaults to 0, so a test or tool that
+   * builds a match gets one that is live on its first tick; the game passes `MATCH_COUNTDOWN_S`.
+   */
+  readonly countdownS?: number;
 }
+
+/** Where the match is: lining up before the start, being played, or finished. */
+export type MatchPhase = "countdown" | "live" | "over";
 
 /** `winningTeam()` while the match is still running. Distinct from a draw, which is an answer. */
 export const TEAM_PENDING = -2;
@@ -50,6 +58,9 @@ export class Match {
   remaining: number;
   /** Set once, on the tick the clock reaches zero. */
   over: boolean;
+  readonly countdownS: number;
+  /** Seconds of countdown left. The match clock does not move until this reaches zero. */
+  countdownRemaining: number;
 
   /**
    * Fixed length, allocated once, never resized -- `MAX_PLAYERS` is a Phase 5 target and this
@@ -68,6 +79,13 @@ export class Match {
     this.durationS = options.durationS;
     this.remaining = options.durationS;
     this.over = false;
+    this.countdownS = options.countdownS ?? 0;
+    this.countdownRemaining = this.countdownS;
+  }
+
+  get phase(): MatchPhase {
+    if (this.over) return "over";
+    return this.countdownRemaining > 0 ? "countdown" : "live";
   }
 
   /** See `playerCount`. Called by `Sim` once its rigs exist, and by `loadCourse` on a mode swap. */
@@ -95,6 +113,12 @@ export class Match {
    */
   tick(dt: number): void {
     if (this.over) return;
+    // The countdown spends ticks first, with the same half-tick slack as the clock below.
+    if (this.countdownRemaining > 0) {
+      this.countdownRemaining -= dt;
+      if (this.countdownRemaining <= dt * 0.5) this.countdownRemaining = 0;
+      return;
+    }
     this.remaining -= dt;
     if (this.remaining <= dt * 0.5) {
       this.remaining = 0;
@@ -186,6 +210,7 @@ export class Match {
   /** Clock back to full, scoreboard back to nothing. `Sim.reset`'s half of a "play again". */
   reset(): void {
     this.remaining = this.durationS;
+    this.countdownRemaining = this.countdownS;
     this.over = false;
     this.points.fill(0);
     this.strokes.fill(0);

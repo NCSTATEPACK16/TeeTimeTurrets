@@ -202,6 +202,38 @@ const SYNTHS: Record<Cue, Synth> = {
   splash: (ctx, out, noise, t) => {
     burst(ctx, out, noise, t, 0.5, "bandpass", 1200, 0.6);
   },
+  // A countdown beat: a short, clean start-light tone.
+  beep: (ctx, out, _noise, t) => {
+    tone(ctx, out, "square", 660, 660, t, 0.16, 0.18);
+    tone(ctx, out, "sine", 1320, 1320, t, 0.12, 0.12);
+  },
+  // FORE!: a stadium air horn, three detuned saws through a nasal band.
+  go: (ctx, out, noise, t) => {
+    for (const f of [233, 236, 349]) tone(ctx, out, "sawtooth", f, f * 0.98, t, 0.9, 0.16);
+    burst(ctx, out, noise, t, 0.12, "bandpass", 2400, 0.2);
+  },
+  // The H key: a goofy two-tone golf-cart honk.
+  honk: (ctx, out, _noise, t) => {
+    tone(ctx, out, "square", 415, 400, t, 0.16, 0.2);
+    tone(ctx, out, "square", 523, 505, t + 0.17, 0.2, 0.2);
+  },
+  // A killstreak callout: a quick brass-ish rising triad.
+  stinger: (ctx, out, _noise, t) => {
+    tone(ctx, out, "sawtooth", 392, 392, t, 0.12, 0.14);
+    tone(ctx, out, "sawtooth", 494, 494, t + 0.09, 0.12, 0.14);
+    tone(ctx, out, "sawtooth", 587, 600, t + 0.18, 0.35, 0.18);
+  },
+  // A knocked-over prop: wooden and metal clatter.
+  clatter: (ctx, out, noise, t) => {
+    burst(ctx, out, noise, t, 0.06, "bandpass", 2600, 0.4);
+    burst(ctx, out, noise, t + 0.07, 0.05, "bandpass", 1700, 0.3);
+    tone(ctx, out, "triangle", 900, 700, t + 0.03, 0.1, 0.12);
+  },
+  // Distant artillery past the play area: a soft low rumble with no attack.
+  boom: (ctx, out, noise, t) => {
+    burst(ctx, out, noise, t, 1.1, "lowpass", 220, 0.7);
+    tone(ctx, out, "sine", 55, 30, t, 0.9, 0.5);
+  },
 };
 
 /** An oscillator gliding from `f0` to `f1` Hz under a fast-attack, exponential-decay envelope. */
