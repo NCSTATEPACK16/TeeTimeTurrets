@@ -3,6 +3,7 @@ import { BallSwarm } from "../entities/BallSwarm";
 import { AimArc } from "../entities/AimArc";
 import { EffectsLayer } from "./effects";
 import { MotionTrails } from "./trails";
+import { BattleAmbience } from "./battleAmbience";
 import { fxRandom } from "./fxRandom";
 import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, placeCart } from "../entities/GolfClub";
@@ -130,6 +131,8 @@ export class RenderScene {
   readonly effects: EffectsLayer;
   /** Roost, tracers and landing puffs, read off motion between frames. */
   private readonly trails: MotionTrails;
+  /** The distant war: barrages past the fight and flares over the clubhouse. */
+  readonly battle: BattleAmbience;
   /** Camera shake; `MatchScreen` adds trauma from `Sim.events`. */
   readonly trauma = new CameraTrauma();
   /** Where the smoothed chase eye is, before shake: the shake is drawn on top, never fed back. */
@@ -249,6 +252,7 @@ export class RenderScene {
     ]);
     this.scene.add(this.effects.group);
     this.trails = new MotionTrails(botCount + 1, this.effects, arena.surfaces, heightAt);
+    this.battle = new BattleAmbience(this.effects, heightAt, fxRandom(arena.seed ?? 0, 2), arena.clubhouse ?? null);
 
     // Everything solid casts onto the ground; the ground and the buildings receive.
     const cast = (root: THREE.Object3D, receive: boolean): void =>
@@ -320,6 +324,7 @@ export class RenderScene {
     this.effects.update(view.frameSeconds);
 
     this.frameChase(view);
+    this.battle.update(view.frameSeconds, this.camera.position.x, this.camera.position.z, view.cart.turretYaw);
 
     // After `frameChase`, so the tiles refine toward where the camera now is rather than where it
     // was last frame. `update` is internally budgeted to BUILD_BUDGET_MS, so this cannot blow the

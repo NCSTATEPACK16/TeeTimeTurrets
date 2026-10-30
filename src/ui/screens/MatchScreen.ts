@@ -179,6 +179,9 @@ export class MatchScreen implements Screen {
     const { renderer, sim, hudRoot, nameplateRoot, arena } = this.options;
 
     this.render = new RenderScene(renderer, arena, sim.bots.length, this.options.quality);
+    this.render.battle.onBoom = (gain, pan) => {
+      if (!this.pause.paused) gameAudio.play({ cue: "boom", gain, pan });
+    };
     this.nameplates = new Nameplates(
       nameplateRoot,
       sim.bots.map((_, i) => `BOT ${i + 1}`),
@@ -466,6 +469,7 @@ export class MatchScreen implements Screen {
       this.bannerFeed.push("FINAL 30", "BACK NINE — MAKE IT COUNT");
       gameAudio.play(STINGER);
       this.hud?.timer.classList.add("final");
+      if (this.render) this.render.battle.heat = 2;
     }
 
     // The music bed: on from FORE! to the buzzer, silent while paused, heating up with the fight.

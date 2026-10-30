@@ -52,6 +52,8 @@ const WRECK_SMOKE: SpriteSpec = { count: 1, speed: 0.4, lift: 2.2, life: 3, size
 const WRECK_FIRE: SpriteSpec = { count: 1, speed: 0.3, lift: 1.5, life: 0.5, sizeStart: 0.9, sizeEnd: 0.3, gravity: -1, drag: 1, color: [0xff8a2a, 0xffb347], alpha: 0.9, frame: SpriteFrame.Smoke, jitter: 0.3 };
 const SPLASH_SPRAY: SpriteSpec = { count: 14, speed: 3, lift: 5, life: 0.9, sizeStart: 0.5, sizeEnd: 1.4, gravity: 7, drag: 1.5, color: 0xeaf6ff, alpha: 0.7, frame: SpriteFrame.Puff, jitter: 0.4 };
 const TRACER: SpriteSpec = { count: 1, speed: 0, life: 0.28, sizeStart: 0.38, sizeEnd: 0.06, gravity: 0, drag: 0, color: 0xfff1c0, alpha: 0.85, frame: SpriteFrame.Spark };
+const FLARE: SpriteSpec = { count: 1, speed: 2, lift: 22, life: 4, sizeStart: 2.4, sizeEnd: 1.4, gravity: 6, drag: 0.15, color: 0xff5a3a, alpha: 1, frame: SpriteFrame.Flash, spin: 3 };
+const FLARE_TRAIL: SpriteSpec = { count: 1, speed: 1.2, lift: 21, life: 4.2, sizeStart: 0.8, sizeEnd: 3.5, gravity: 5.5, drag: 0.2, color: 0xd8d3cc, alpha: 0.35, frame: SpriteFrame.Smoke };
 const SAND_PLUME: SpriteSpec = { count: 12, speed: 3.5, lift: 3.5, life: 1.4, sizeStart: 0.5, sizeEnd: 2.2, gravity: 2, drag: 2.2, color: 0xe2cf9d, alpha: 0.7, frame: SpriteFrame.Smoke, jitter: 0.3 };
 
 /** Tyre roost per surface: what a spinning wheel throws up from it. */
@@ -113,6 +115,8 @@ export class EffectsLayer {
   private readonly scorchGeometry = new THREE.CircleGeometry(1, 20);
   private readonly scorchMaterial: THREE.ShaderMaterial;
   private readonly confetti: SpriteSpec;
+  /** FLARE with its colour swapped per launch. */
+  private readonly flareSpec: SpriteSpec = { ...FLARE };
   private readonly scorchMesh: THREE.InstancedMesh;
   private readonly scorchAge = new Float32Array(SCORCHES).fill(SCORCH_S);
   private scorchNext = 0;
@@ -208,6 +212,13 @@ export class EffectsLayer {
   /** One tracer dot where a fast ball is now; a stream of them reads as a streak. */
   tracer(x: number, y: number, z: number): void {
     this.glow.pool.emit(x, y, z, TRACER);
+  }
+
+  /** A signal flare fired straight up, with a lazy smoke trail. */
+  flare(x: number, y: number, z: number, color: number): void {
+    this.flareSpec.color = color;
+    this.glow.pool.emit(x, y, z, this.flareSpec, 0, 1, 0);
+    this.smoke.pool.emit(x, y, z, FLARE_TRAIL, 0, 1, 0, 3);
   }
 
   /**
