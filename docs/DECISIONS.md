@@ -726,6 +726,10 @@ A dynamic raycast vehicle was considered and rejected. It would reverse this fil
 
 Rendering cost is controlled by Low, Medium and High presets, and each is plain data. Medium on a desktop is the design target. Low is kept working for a later iPhone build. Gameplay is never different between presets.
 
+### iOS and gamepad (user, 2026-11-07)
+
+The iOS build is a Capacitor wrapper around the same Vite build, aimed at Pro iPhones and M-series iPads. v1 needs a controller, and the test pad is an 8BitDo SN30 Pro. Aim on the pad is twin-stick rate aim with aim assist. The assist lives in the input layer and only scales `aimDelta`, so the sim, the bots and the golden never see it. Rendering is uncapped at 120 Hz on ProMotion, and a governor drops to 60 when frames run long. This refines "Quality presets, desktop first" above: the phone target is no longer "later". It is Stage 4b. Of the user's cross-game asset-pipeline note, this repo adopts KTX2 textures, a CI size budget, a headless Blender CLI and one menu HDRI, and does not adopt GIS terrain or PBR-realism props. Detail: `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`.
+
 ### Claude of Tanks: what came in, and the rule for anything more
 
 - **Code.** `src/vendor/cot/` holds three MIT files: `terrainMobility.ts`, `botRoutePlanner.ts` and `shadowStability.ts`.

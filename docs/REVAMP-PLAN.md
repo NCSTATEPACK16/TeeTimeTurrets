@@ -37,6 +37,7 @@ Claude of Tanks (CoT) was reviewed for techniques. What we took and what we may 
 | 2 | Juice and audio | cloud | Stage 2 |
 | 3 | Foundations: performance + render base | cloud | Stage 3 |
 | 4 | Handling feel + arena zone | cloud | Stage 4 |
+| 4b | iOS + gamepad, texture compression, size budget | cloud, then Xcode on the Mac | Stage 4b |
 | 5 | Environment | cloud | Stage 5 |
 | 6 | navGraph | cloud | Stage 6 |
 | 7 | Clubhouse and pickups (Blender) | **local only** (needs Blender MCP) | Stage 7 |
@@ -171,6 +172,13 @@ Claude of Tanks (CoT) was reviewed for techniques. What we took and what we may 
     - a cart parked outside the zone loses HP on schedule
     - no bot target is outside the zone
     - the smoke test still spawns both teams inside the zone
+
+### Stage 4b: iOS + gamepad (added 2026-11-07)
+The full spec is `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`. It is a set of user decisions; do not relitigate them. In short:
+- **`GamepadSource`**, using the "shooter" layout on the 8BitDo SN30 Pro: R2 fires, L2 brakes, B cancels, L1/R1 cycle clubs, the D-pad picks a club directly, Select opens the map and Start pauses. The right stick aims at a rate with aim assist, and the assist only scales `aimDelta` in the input layer.
+- **Full controller navigation on every DOM screen**, with glyphs that follow the last input used. Pointer-lock pause applies to keyboard and mouse only.
+- **Capacitor iOS shell** for TestFlight (Pro iPhones and M-series iPads). It needs a controller in v1. Rendering is uncapped at 120 Hz, with a governor that drops to 60.
+- **Assets:** KTX2 terrain textures (before Stage 5 wires them), a CI size budget (`docs/ASSET_BUDGETS.md`), then a headless Blender CLI and one CC0 HDRI for the menus.
 
 ### Stage 5: environment
 Techniques are named here; write the code from scratch.

@@ -37,7 +37,8 @@ Rewritten 2026-10-04, when the clubhouse and barn v3 pass (#85) and the handoff 
 | Art v2 | Style research, prompt pack, 16 sheets, P1–P6, style pass, **cart v3** | **done** (#83) |
 | Art v2, remainder | Clubhouse and barn v3 Blender pass, plus a detail pass | **done** (#85) |
 | **4** | **Handling feel and arena zone (#49–#53)** | **next. See `docs/NEXT-SESSION-PROMPT.md`** |
-| 5 | Environment, the rest (#54–#61) | after Stage 4 |
+| 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | after Stage 4 |
+| 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
 
