@@ -155,9 +155,12 @@ handling. It has three slices, and each one ends at a play-test stop.
   - sand drift and plumes
   - birds, sprinklers, flag cloth and motes
 
-  Render-only.
+  Render-only, in the soft-bevelled toy style, made richer rather than photoreal (user, 7 Nov). The
+  order is water, trees, sand, then ground and grass. If only two fit before a play-test, ship water
+  and trees.
 - **3.5c: new warfare rules.** This moves the golden once.
-  - A Mulligan Mortar pickup: a telegraphed, seeded 6-ball barrage, credited to its owner.
+  - A Mulligan Mortar, earned as a 3-kill streak reward (user, 7 Nov; it replaces the course pickup
+    first planned): a telegraphed, seeded 6-ball barrage, credited to its owner.
   - Capture flags A/B/C on three arena greens. Holding two or more makes the other side bleed one
     stroke every 20 s. Fewest strokes still wins.
 

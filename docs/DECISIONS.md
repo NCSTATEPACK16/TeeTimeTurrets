@@ -802,3 +802,18 @@ a start timer and "more Battlefield-like warfare, but still goofy".
   opengameart.org and ambientcg.com.** The effects atlas is painted on a canvas at load
   (`spriteAtlas.ts`), in a fixed 4 × 2 layout. A CC0 atlas can replace the painters without touching
   any consumer.
+
+### Follow-up answers, 2026-11-07
+
+Asked of the user after 3.5a, before it was play-tested.
+- **The course stays toy-styled, made richer.** "More realistic" means real textures, moving water,
+  dense swaying woods and grass inside the approved P1–P6 look. It does not mean photoreal ground
+  under toy carts, which would split the art direction in two.
+- **The mortar is a killstreak reward at 3 kills, not a course pickup.** It turns the streak callouts
+  into a payoff and keeps the pickup economy as it is.
+- **Capture flags stay as planned** (2 of 3 bleeds 1 stroke every 20 s). In a 3-minute match kills
+  still count for more than flags.
+- **Merge each sub-stage before the next starts.** #87 is play-tested and merged first, so each slice
+  is reviewed on its own.
+- **The user will allow kenney.nl, opengameart.org and ambientcg.com,** so the painted atlas can give
+  way to the CC0 packs. Each one gets a `LICENSES.md` row and a `NOTICE` line in the same commit.

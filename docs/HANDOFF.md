@@ -4,7 +4,7 @@ Rewritten 2026-10-30, at the end of Stage 3.5a (life and intensity), which the u
 
 ---
 
-**Next is the user's play-test of Stage 3.5a, then 3.5b (the living course). The details are under "Next" below. `docs/NEXT-SESSION-PROMPT.md` is still the Stage 4 prompt, for after 3.5c.**
+**The paste-ready prompt for the next session is `docs/NEXT-SESSION-PROMPT-3.5.md`.** It covers the 3.5a play-test, 3.5b and 3.5c, and the user's 7 Nov decisions. `docs/NEXT-SESSION-PROMPT.md` is still the Stage 4 prompt, for after 3.5c.
 
 ## Read first
 
@@ -37,8 +37,8 @@ Rewritten 2026-10-30, at the end of Stage 3.5a (life and intensity), which the u
 | Art v2 | Style research, prompt pack, 16 sheets, P1–P6, style pass, **cart v3** | **done** (#83) |
 | Art v2, remainder | Clubhouse and barn v3 Blender pass, plus a detail pass | **done** (#85) |
 | **3.5a** | **Life and intensity: pacing, juice, battlefield presentation** | **built, awaiting play-test** (branch `claude/sharp-feynman-bzzp7s`) |
-| 3.5b | The living course: splat, water, sand, trees, grass, ambient life | next, after the play-test |
-| 3.5c | Mortar pickup and capture flags (moves the golden) | after 3.5b |
+| 3.5b | The living course: water, then trees, then sand, then ground and grass (toy style, richer) | next, after #87 is play-tested and merged |
+| 3.5c | Mortar as a 3-kill streak reward, and capture flags (moves the golden) | after 3.5b |
 | 4 | Handling feel and arena zone (#49–#53) | after 3.5c. See `docs/NEXT-SESSION-PROMPT.md` |
 | 5 | Environment, the rest (#54–#61) | after Stage 4 |
 | 6 | navGraph (#62–#64) | — |
