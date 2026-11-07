@@ -21,7 +21,8 @@ import { createHorizon, type Horizon } from "./horizon";
 import { createSunShadows, type SunShadows } from "./shadows";
 import { createPostChain, type PostChain } from "./post";
 import { QUALITY_PRESETS, type QualityPreset } from "./quality";
-import { CHASE_POSITION_LERP, CHASE_TARGET_LERP, chasePose, chaseSmoothing } from "./chaseCamera";
+import { CHASE_POSITION_LERP, CHASE_TARGET_LERP, chasePose, chaseSmoothing, fitChaseToGround } from "./chaseCamera";
+import { CartSuspension } from "./cartSuspension";
 import { courseDressingFor } from "./courseDressing";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
@@ -31,9 +32,6 @@ import type { CourseGround } from "./courseGround";
 const SUN_INTENSITY = 3.1;
 /** FogExp2 density times the course's diagonal: the far holes are haze, the near ones are clear. */
 const FOG_DENSITY_X_FIELD = 0.75;
-
-/** Keeps the chase eye out of the terrain when the cart backs toward a slope. */
-const CHASE_MIN_GROUND_CLEARANCE = 1.5;
 
 /**
  * The renderer has no per-bot club, charge or loaded-round state to draw from -- `Sim` doesn't
@@ -122,6 +120,8 @@ export class RenderScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly cart: GolfClub;
   private readonly botCarts: GolfClub[] = [];
+  /** Render-only body tilt and bounce (#51): the player's, then one per bot. */
+  private readonly suspensions: CartSuspension[] = [];
   private readonly pooledBalls: BallSwarm;
   private readonly aimArc: AimArc;
   /** Puffs, sparks, death bursts and splashes; triggered by `MatchScreen` from `Sim.events`. */
@@ -227,6 +227,12 @@ export class RenderScene {
       this.scene.add(bot);
     }
 
+    // Yaw first, then the suspension's pitch about the body's own x and roll about its own z.
+    for (const model of [this.cart, ...this.botCarts]) {
+      model.rotation.order = "YXZ";
+      this.suspensions.push(new CartSuspension());
+    }
+
     this.shieldPlates = new ShieldPlates(botCount + 1);
     this.scene.add(this.shieldPlates.mesh);
 
@@ -282,6 +288,7 @@ export class RenderScene {
     this.syncPickups(view);
     this.pickups?.update(view.elapsedSeconds);
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
+    this.suspend(0, this.cart, view.cart, view.playerDead, view.frameSeconds);
     // A dead cart has burst (`EffectsLayer.death`) and is out of the world until it respawns.
     this.cart.visible = !view.playerDead;
     for (let i = 0; i < this.botCarts.length; i++) {
@@ -292,6 +299,7 @@ export class RenderScene {
       // and the charge above: Sim publishes no per-bot reload, and a guessed swing would be a
       // bot that looks like it is shooting when it is not.
       this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, 1, false);
+      this.suspend(i + 1, this.botCarts[i]!, transform, view.botDead[i] === true, view.frameSeconds);
     }
     const shields = view.shields;
     this.shieldPlates.place(0, view.cart, shields?.[0] ?? 0, view.playerDead, view.elapsedSeconds);
@@ -379,13 +387,29 @@ export class RenderScene {
     model.setBallLoaded(loaded);
   }
 
+  /**
+   * The body's tilt and bounce on top of `placeCart`'s placement. A dead cart is not drawn, and its
+   * spring is reset so it lands on its respawn pad settled rather than springing from its wreck.
+   */
+  private suspend(index: number, model: GolfClub, c: CartTransform, dead: boolean, frameSeconds: number): void {
+    const suspension = this.suspensions[index]!;
+    if (dead) {
+      suspension.reset();
+      return;
+    }
+    suspension.update(model.position.x, model.position.y, model.position.z, c.heading, this.groundHeightAt, frameSeconds);
+    model.position.y += suspension.heave;
+    model.rotation.x = suspension.pitch;
+    model.rotation.z = suspension.roll;
+  }
+
   private frameChase(view: FrameView): void {
     chasePose(view.cart, this.chaseEyeScratch, this.chaseLookScratch);
 
-    // Keep the eye above the terrain it is flying over, or a chase camera reversing into a
-    // hillside ends up underground looking at the inside of the heightfield.
-    const groundAtEye = this.groundHeightAt(this.chaseEyeScratch.x, this.chaseEyeScratch.z);
-    this.chaseEyeScratch.y = Math.max(this.chaseEyeScratch.y, groundAtEye + CHASE_MIN_GROUND_CLEARANCE);
+    // Fit to the ground: look over rises, keep the eye out of hillsides and the sight line clear,
+    // and pull in where a bank behind the cart leaves no room (#51).
+    const p = view.cart.position;
+    fitChaseToGround(p.x, p.y, p.z, view.cart.turretYaw, this.groundHeightAt, this.chaseEyeScratch, this.chaseLookScratch);
 
     this.chaseEye.lerp(this.chaseEyeScratch, chaseSmoothing(CHASE_POSITION_LERP, view.frameSeconds));
     this.cameraTarget.lerp(this.chaseLookScratch, chaseSmoothing(CHASE_TARGET_LERP, view.frameSeconds));
