@@ -404,7 +404,11 @@ console.log("=== TURRET CAMERA ===");
 await new Promise((r) => setTimeout(r, 1500));
 const framed = await read();
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-const lookYaw = Math.atan2(framed.cart.z - framed.camera.z, framed.cart.x - framed.camera.x);
+// Since Stage 4 (#51) the eye sits CHASE_SIDE (0.7 m) to the turret's right at CHASE_DISTANCE
+// (6.3 m) back, so the camera-to-cart bearing runs atan(0.7 / 6.3) to the turret's left by design.
+// Added back, so this still measures which yaw the camera follows.
+const CHASE_SIDE_ANGLE = Math.atan2(0.7, 6.3);
+const lookYaw = Math.atan2(framed.cart.z - framed.camera.z, framed.cart.x - framed.camera.x) + CHASE_SIDE_ANGLE;
 const offTurret = Math.abs(wrap(lookYaw - (framed.heading + framed.turretOffset)));
 const offChassis = Math.abs(wrap(lookYaw - framed.heading));
 check(
