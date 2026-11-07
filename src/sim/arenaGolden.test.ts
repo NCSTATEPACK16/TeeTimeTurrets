@@ -120,6 +120,6 @@ describe("arena determinism fingerprint", () => {
   }, 60_000);
 
   it("matches the recorded fingerprint", async () => {
-    expect(await playScriptedMatch(world)).toBe(2980085065);
+    expect(await playScriptedMatch(world)).toBe(4165176536);
   });
 });

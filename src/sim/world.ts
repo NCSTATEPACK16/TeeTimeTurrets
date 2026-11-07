@@ -127,6 +127,9 @@ const PICKUP_RANGE = 3.0;
  */
 const BOT_EYE_M = 1;
 
+/** Half the baseline the downhill grade is read over: about the cart's own wheelbase. */
+const GRADE_SPAN_M = 1.2;
+
 /**
  * KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one.
  *
@@ -746,7 +749,7 @@ export class Sim {
 
     const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
-    cart.step(intent, FIXED_DT, this.cartTuningScratch);
+    cart.step(intent, FIXED_DT, this.cartTuningScratch, this.gradeAlong(c.x, c.z, cart.heading));
     if (cart.stepShield(FIXED_DT, SHIELD_DECAY_S)) {
       this.events.push("plateBroken", this.tickCount, NO_RIG, rig.index, cart.shield, c.x, c.y, c.z);
     }
@@ -777,6 +780,18 @@ export class Sim {
       cart.shot.fired = false;
       this.resolveShot(rig);
     }
+  }
+
+  /**
+   * The ground's slope along a heading at a point, rise over run, positive uphill: a central
+   * difference across `GRADE_SPAN_M` either side, for the cart's downhill bonus.
+   */
+  private gradeAlong(x: number, z: number, heading: number): number {
+    const dx = Math.cos(heading) * GRADE_SPAN_M;
+    const dz = Math.sin(heading) * GRADE_SPAN_M;
+    const ahead = this.playfield.heightAt(x + dx, z + dz);
+    const behind = this.playfield.heightAt(x - dx, z - dz);
+    return (ahead - behind) / (2 * GRADE_SPAN_M);
   }
 
   /**

@@ -184,6 +184,31 @@ export const CART_TUNING = {
   recoilDecay: 2.2,
   /** Lowest surface multiplier a tire choice can drag the cart down to. */
   minSurfaceScale: 0.05,
+  /**
+   * Throttle spool (#50): the fraction of the drive that arrives the instant the throttle opens. The
+   * rest ramps in linearly over `spoolSeconds`, so a tap nudges and a held throttle pulls. Driving
+   * *against* the current motion -- reverse throttle to slow down -- is not spooled: that is braking.
+   */
+  spoolInstant: 0.25,
+  spoolSeconds: 0.6,
+  /**
+   * Turn speed-bleed (#50): at full steering authority and full lock, the forward cap drops by this
+   * fraction, and speed above it scrubs off at `overspeedDecel`. A held turn at speed costs about
+   * 3 m/s of the 20 rather than none.
+   */
+  turnBleed: 0.15,
+  /**
+   * Downhill bonus (#50): the forward cap rises by this much per unit of downhill grade (rise over
+   * run along the heading), capped at `downhillMaxScale`. 1.0 reaches the cap on a 15% grade.
+   */
+  downhillPerGrade: 1.0,
+  downhillMaxScale: 1.15,
+  /**
+   * How fast speed above the current cap bleeds away, m/s^2. The cap moves with the ground, the
+   * turn and the grade, and a cart that snapped to each new cap would lose 3 m/s in one tick
+   * cresting a hill. Leaving the fairway for rough now scrubs speed over about 0.7 s, not instantly.
+   */
+  overspeedDecel: 8,
 } as const;
 
 export interface CartOptions {
@@ -283,6 +308,10 @@ export class Cart {
   /** The club this cart was built with, which a rematch goes back to. See `rearm`. */
   private readonly startingClub: ClubType;
   private reload = 0;
+  /** Seconds the throttle has been held open in one direction, for the spool. See `CART_TUNING`. */
+  private throttleHeld = 0;
+  /** The sign of the throttle `throttleHeld` is counting: a flip restarts the spool. */
+  private throttleSign = 0;
   private chargeHeld = 0;
   private wasFiring = false;
   /** Set by a cancel; cleared when the trigger is let go. See `CartIntent.cancelCharge`. */
@@ -363,6 +392,8 @@ export class Cart {
     this.shield = 0;
     this.shieldDecayIn = 0;
     this.speed = 0;
+    this.throttleHeld = 0;
+    this.throttleSign = 0;
     this.recoil.x = 0;
     this.recoil.z = 0;
     this.shuntVelocity.x = 0;
@@ -478,14 +509,18 @@ export class Cart {
     return true;
   }
 
-  step(intent: CartIntent, dt: number, surface: SurfaceTuning): void {
+  /**
+   * `grade` is the ground's slope along the heading, rise over run, positive uphill. `Sim` samples it
+   * from the ground; leaving it out is level ground.
+   */
+  step(intent: CartIntent, dt: number, surface: SurfaceTuning, grade = 0): void {
     if (this.reload > 0) this.reload = Math.max(0, this.reload - dt);
     if (this.protectedFor > 0) this.protectedFor = Math.max(0, this.protectedFor - dt);
 
     this.turretOffset += intent.aimDelta;
 
     this.stepSwing(intent, dt);
-    this.stepDrive(intent, dt, surface);
+    this.stepDrive(intent, dt, surface, grade);
 
     // Recoil decays exponentially rather than linearly: a linear ramp reads as the cart being
     // dragged to a stop, an exponential one as a shove that runs out. A shunt from another cart
@@ -524,35 +559,46 @@ export class Cart {
     this.wasFiring = intent.fire;
   }
 
-  private stepDrive(intent: CartIntent, dt: number, surface: SurfaceTuning): void {
+  private stepDrive(intent: CartIntent, dt: number, surface: SurfaceTuning, grade: number): void {
     const tire = TIRE_TUNING[this.tire];
 
     // The tyre and the ground together, through the mobility table: the tyre scales how much of the
     // ground's resistance it feels, and speed is the inverse of what it feels. On a fairway every
     // tyre feels 1 and only topSpeedScale separates them.
     const scale = cartSpeedScale(tire, surface.cartSpeedScale, CART_TUNING.minSurfaceScale);
-    const maxForward = CART_TUNING.topSpeed * scale;
+    const steer = clampSigned(intent.steer);
+    const authority = steerAuthority(this.speed);
+    const maxForward =
+      CART_TUNING.topSpeed * scale * downhillScale(grade) * (1 - CART_TUNING.turnBleed * Math.abs(steer) * authority);
     const maxReverse = -CART_TUNING.reverseTopSpeed * scale;
 
     const throttle = clampSigned(intent.throttle);
+    const sign = Math.sign(throttle);
+    if (sign === 0 || sign !== this.throttleSign) this.throttleHeld = 0;
+    this.throttleSign = sign;
+    if (sign !== 0) this.throttleHeld += dt;
+
+    const before = this.speed;
     if (intent.brake) {
       this.speed = decayToward(this.speed, 0, CART_TUNING.brakeDecel * tire.grip * dt);
     } else if (throttle !== 0) {
-      this.speed += throttle * CART_TUNING.accel * tire.grip * dt;
+      // Against the motion it is a brake and bites at once; with it, the drive spools up.
+      const against = this.speed * throttle < 0;
+      const drive = against ? 1 : spool(this.throttleHeld);
+      this.speed += throttle * CART_TUNING.accel * tire.grip * drive * dt;
     } else {
       this.speed = decayToward(this.speed, 0, CART_TUNING.coastDecel * dt);
     }
-    this.speed = Math.min(maxForward, Math.max(maxReverse, this.speed));
+    // Over the cap -- a new surface, a turn, the end of a hill -- scrubs off rather than snapping,
+    // and the drive cannot push it back up: the limit is the cap, or where the scrub has got to.
+    const overspeed = CART_TUNING.overspeedDecel * dt;
+    this.speed = Math.min(this.speed, Math.max(maxForward, before - overspeed));
+    this.speed = Math.max(this.speed, Math.min(maxReverse, before + overspeed));
 
-    // Steering authority rises with speed but never reaches zero, so a stopped cart can still
-    // pivot -- a golf cart that cannot turn on the spot feels broken long before it feels
-    // realistic. Reversing flips the steering the way a real vehicle does.
-    const authority = Math.min(
-      1,
-      Math.max(CART_TUNING.pivotAuthority, Math.abs(this.speed) / CART_TUNING.steerFullSpeed),
-    );
+    // Authority from the speed this tick ends on, as it always has been.
+    const turnAuthority = steerAuthority(this.speed);
     const reversing = this.speed < -0.1 ? -1 : 1;
-    this.heading += clampSigned(intent.steer) * CART_TUNING.steerRate * tire.grip * authority * reversing * dt;
+    this.heading += steer * CART_TUNING.steerRate * tire.grip * turnAuthority * reversing * dt;
   }
 }
 
@@ -582,6 +628,25 @@ export function computeMuzzle(cart: Cart, out: Vec3): void {
   out.x = cart.position.x + Math.cos(cart.heading) * forward + Math.cos(yaw) * reach;
   out.y = cart.position.y - CART_COLLIDER.groundOffset + TURRET_GEOMETRY.pivotHeight + rise;
   out.z = cart.position.z + Math.sin(cart.heading) * forward + Math.sin(yaw) * reach;
+}
+
+/**
+ * Steering authority rises with speed but never reaches zero, so a stopped cart can still pivot -- a
+ * golf cart that cannot turn on the spot feels broken long before it feels realistic.
+ */
+function steerAuthority(speed: number): number {
+  return Math.min(1, Math.max(CART_TUNING.pivotAuthority, Math.abs(speed) / CART_TUNING.steerFullSpeed));
+}
+
+/** The fraction of the drive available `heldS` seconds after the throttle opened. */
+export function spool(heldS: number): number {
+  const ramp = Math.min(1, heldS / CART_TUNING.spoolSeconds);
+  return CART_TUNING.spoolInstant + (1 - CART_TUNING.spoolInstant) * ramp;
+}
+
+/** Forward-cap multiplier on a grade (rise over run along the heading): above 1 only downhill. */
+export function downhillScale(grade: number): number {
+  return Math.min(CART_TUNING.downhillMaxScale, 1 + CART_TUNING.downhillPerGrade * Math.max(0, -grade));
 }
 
 function clamp01(v: number): number {
