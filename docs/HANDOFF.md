@@ -4,7 +4,14 @@ Rewritten 2026-11-07, at the end of the Stage 4 session (handling feel and arena
 
 ---
 
-**The paste-ready prompt for the next session, Stage 4b (iOS and gamepad), is in `docs/NEXT-SESSION-PROMPT.md`. Don't start it until the user has play-tested Stage 4 and said so.**
+**Where it stands right now:** the PR is [NCSTATEPACK16/TeeTimeTurrets#88](https://github.com/NCSTATEPACK16/TeeTimeTurrets/pull/88), a draft.
+- CI is green on its head, which confirms the golden recorded in the cloud (4165176536) on CI's own runner.
+- It merges cleanly into `main`, and has no reviews yet.
+- Netlify builds a preview of it: https://deploy-preview-88--teetimeturrets.netlify.app/?match=60. The play-test list is in the PR description.
+
+**`docs/NEXT-SESSION-PROMPT.md` holds two paste-ready prompts:**
+- **A, Stage 4 play-test fixes.** Use it when the play-test asks for changes. It works on the same branch and PR.
+- **B, Stage 4b (iOS and gamepad).** Use it only after the user has signed off Stage 4 and #88 is merged.
 
 ## Read first
 
@@ -31,7 +38,7 @@ Rewritten 2026-11-07, at the end of the Stage 4 session (handling feel and arena
 | 5a | Environment art: trees, dressing, horizon, course kit | **done** (#83) |
 | 7 | Clubhouse complex and pickups in Blender | **done** (#77, #78) |
 | Art v2 | Style research, prompt pack, sheets, P1–P6, cart v3, clubhouse and barn v3 | **done** (#83, #85) |
-| **4** | **Handling feel and arena zone (#49–#53)** | **built; draft PR on branch `claude/sweet-franklin-1vthr8`, awaiting play-test** |
+| **4** | **Handling feel and arena zone (#49–#53)** | **built; draft PR #88 (branch `claude/sweet-franklin-1vthr8`), CI green, awaiting play-test** |
 | 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | **next, after the play-test.** Prompt in `docs/NEXT-SESSION-PROMPT.md` |
 | 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
@@ -39,7 +46,7 @@ Rewritten 2026-11-07, at the end of the Stage 4 session (handling feel and arena
 
 **Branch note.** The Stage 4 prompt asked for `stage-4-handling-zone`. This session ran in a cloud session that was bound to the branch `claude/sweet-franklin-1vthr8`, so the work and the draft PR are there. Rename it on merge if the name matters.
 
-## Just done: Stage 4 (draft PR, not merged)
+## Just done: Stage 4 (draft PR #88, not merged)
 
 Six commits, one or more per issue. Each sim commit re-recorded the golden itself, because this session ran on Linux x64 with Node 22, which is CI's platform.
 

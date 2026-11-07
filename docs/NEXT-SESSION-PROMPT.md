@@ -1,15 +1,54 @@
-# Next-session prompt
+# Next-session prompts
 
-Written 2026-11-07, at the end of the Stage 4 session. Stage 4 (handling feel and arena zone, #49–#53) is in a draft PR waiting for the user's play-test. **Run this only after the user has play-tested Stage 4 and said to go on.** The next stage is **4b, iOS and gamepad**; Stage 5 comes after it. Paste the quoted block below into a fresh Claude Code session; it stands alone. The Stage 4 prompt that preceded it is done, so it has been removed; its record is the Stage 4 PR and `docs/HANDOFF.md`.
+Written 2026-11-07, at the end of the Stage 4 session. Stage 4 (handling feel and arena zone, #49–#53) is in draft PR #88 with CI green, waiting for the user's play-test. Two prompts follow. Paste the one that fits into a fresh Claude Code session; each stands alone.
+
+- **A. Stage 4 play-test fixes:** the play-test asked for changes. Same branch and PR.
+- **B. Stage 4b, iOS and gamepad:** the user has signed off Stage 4 and #88 is merged.
 
 ---
 
-## Stage 4b: iOS and gamepad (cloud first, then Xcode on the Mac)
+## A. Stage 4 play-test fixes (local or cloud)
+
+> You are continuing **Stage 4** of TeeTimeTurrets, a browser golf-combat game (three.js, Rapier, TypeScript). Stage 4 is built and is in draft PR #88 on branch **`claude/sweet-franklin-1vthr8`**. The user has play-tested it, and their notes are in their message to you (or in comments on #88). **Make exactly the changes the notes ask for.** Don't start Stage 4b, and don't merge.
+>
+> ### Where to work
+> Check out `claude/sweet-franklin-1vthr8` and pull it. Locally, use a worktree `../TeeTimeTurrets-stage4` and run `npm ci`. If `main` has moved on, merge `origin/main` into the branch (no rebase, no force-push), and sign the merge commit off.
+>
+> ### Read first
+> - `AGENTS.md`: one smoke check of 15 s or less per change, every automated check under 60 s, and play-test items at `?match=60`.
+> - `docs/HANDOFF.md`, especially "Just done: Stage 4" and "Watch for in the play-test".
+> - The PR description of #88 and any review comments on it.
+> - `docs/TEST-AND-SPEC-PITFALLS.md`.
+>
+> ### Where each likely note lands
+> - **Cart feel** (spool, turn bleed, downhill, overspeed scrub): `CART_TUNING` in `src/sim/entities/Cart.ts`. The tests in `Cart.test.ts` ("Cart feel (#50)") assert literals, so update them with the new values.
+> - **Surfaces and tyres** (speed off the fairway, climb limits): `SURFACE_MOBILITY` in `src/sim/mobility.ts`, and `TIRE_TUNING`. Rough at resistance 1.4 caps a street tyre's climb at 29.7°, under the KCC's 32° slide angle. If carts wedge on banks, that gap is the first suspect.
+> - **Camera framing:** `CHASE_HEIGHT`, `CHASE_DISTANCE`, `CHASE_SIDE` and `CHASE_LOOK_DROP` in `src/render/chaseCamera.ts`. The horizon test in `chaseCamera.test.ts` holds the horizon a fifth of the way down the frame. If the user wants it elsewhere, change the test's band on purpose. If `CHASE_SIDE` changes, update the `CHASE_SIDE_ANGLE` in `tools/smoke.mjs` too.
+> - **Suspension:** the constants at the top of `src/render/cartSuspension.ts`.
+> - **The zone's shape** (for example, too tight behind the barns): `ZONE_PAD_M`, `ZONE_HUB_RADIUS_M`, `ZONE_HUB_REACH_M` and the road inset in `src/sim/arenaZone.ts`. `arenaZone.test.ts` must still hold every tee, cup and pad inside it. A shape change moves the pickup sites, and so may move the golden.
+> - **The zone's rules** (drain rate, hard limit, bot edge-holding): the same file, plus `BOT_EDGE_HOLD_M` in `src/sim/bot.ts`.
+>
+> ### The golden fingerprint
+> Any sim change (`src/sim/**`) can move it, and it is Linux x64's (`docs/DECISIONS.md`).
+> - **In a cloud session** (check with `uname -m`), record the new value in the same commit, and say so in the message.
+> - **On the Mac,** push, read `expected N to be M` from the failing CI run, and record N in a follow-up commit. Say so in both messages.
+>
+> Before you push a sim change, run `npm test` and `npx -y node@22 node_modules/vitest/vitest.mjs run tools/simAllocation.test.mjs`. Render-only changes must leave the golden alone.
+>
+> ### Rules
+> - Use `git commit -s` on every commit. Put no AI metadata in git or in the PR body: no co-author trailers, session URLs or "generated with" footers. Stage files by name.
+> - **See every changed check go red once** before you trust it.
+> - Push to the same branch. Update #88's description: what changed and why, the new check outputs, and a short play-test list for just the changed items.
+> - Update "Just done" in `docs/HANDOFF.md`. Then **STOP** for the user's next play-test.
+
+---
+
+## B. Stage 4b: iOS and gamepad (cloud first, then Xcode on the Mac)
 
 > You are building **Stage 4b** of TeeTimeTurrets, a browser golf-combat game (three.js, Rapier, TypeScript): a gamepad on the web, then a Capacitor iOS shell for TestFlight, plus KTX2 terrain textures and a CI size budget. The design is decided in `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`, and `docs/REVAMP-PLAN.md` § Stage 4b summarises it. **Those are user decisions; do not relitigate them.** Build it, and ask only if a fact in the code contradicts the spec.
 >
 > ### Where to work
-> Work on a new branch **`stage-4b-ios-gamepad`** from `origin/main`. Stage 4 must be merged first; if it isn't, stop and ask. Locally, use a worktree `../TeeTimeTurrets-stage4b` and run `npm ci`. Never commit the main checkout's untracked `.scratch/` or `tools/zzshots.mjs`.
+> Work on a new branch **`stage-4b-ios-gamepad`** from `origin/main`. Stage 4 (PR #88) must be merged first; if it isn't, stop and ask. Locally, use a worktree `../TeeTimeTurrets-stage4b` and run `npm ci`. Never commit the main checkout's untracked `.scratch/` or `tools/zzshots.mjs`.
 >
 > ### Read first
 > - `AGENTS.md`, including the testing policy: one smoke check of 15 s or less per change, every automated check under 60 s, and the user play-tests at `?match=60`.
