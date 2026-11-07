@@ -1,29 +1,25 @@
 # Handoff — next session
 
-Rewritten 2026-10-04, when the clubhouse and barn v3 pass (#85) and the handoff PR (#84) merged at the user's direction. That finishes the art-direction v2 work. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-07, at the end of the Stage 4 session (handling feel and arena zone, #49–#53). The stage is built, pushed and in a draft PR, **waiting for the user's play-test.** Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**The paste-ready prompt for the next session, Stage 4, is in `docs/NEXT-SESSION-PROMPT.md`.**
+**The paste-ready prompt for the next session, Stage 4b (iOS and gamepad), is in `docs/NEXT-SESSION-PROMPT.md`. Don't start it until the user has play-tested Stage 4 and said so.**
 
 ## Read first
 
 1. `AGENTS.md`: the rules, the Claude of Tanks licence note, and the testing policy. Each change gets one smoke check of 15 s or less, and every automated check finishes under 60 s. Smoke, gate and probe are opt-in. The user play-tests at `?match=60`, with items of 60 s or less.
 2. **`docs/REVAMP-PLAN.md`:** the master stage order and each stage's contents.
-3. **`docs/art/STYLE-RESEARCH.md` and `docs/art/SHEET-REVIEW-2026-10-03.md`:** the approved soft-bevelled style (P1–P6) and why the old flat-faceted rule was wrong. Everything visual follows from them.
+3. **`docs/art/STYLE-RESEARCH.md` and `docs/art/SHEET-REVIEW-2026-10-03.md`:** the approved soft-bevelled style (P1–P6).
 4. `docs/DECISIONS.md`, especially "The golden fingerprint is Linux x64's".
 5. `docs/TEST-AND-SPEC-PITFALLS.md`, before writing a test or a spec.
 
 ## The direction (set by the user; do not relitigate)
 
 - **Arena is the only mode:** 4v4 (the player plus 3 bot allies against 4 bots), 3 minutes. Reaching 0 HP costs your team a stroke; the fewest strokes wins. Friendly fire is off.
-- **The arena zone is holes 1, 9, 10, 14, 15 and 18** around the clubhouse, marked with white stakes. It lands in Stage 4.
-- **Style (approved 3 Oct 2026): soft-bevelled toy.**
-  - Chunky forms with rounded edges (`rbox`).
-  - Smooth shading by default; a slot opts into facets with `flat`.
-  - The look comes from bevels plus lighting, meaning AO and contact shade.
-  - **The team canopy stays full colour** (decided from `cart-v3-distance-01.jpg`).
-- **Blender authors primitive-graph JSON only, never meshes.** Each asset has a kit script that is its source; edit the script, not the `.blend` by hand.
+- **The arena zone is holes 1, 9, 10, 14, 15 and 18** around the clubhouse, marked with white stakes. **Built in Stage 4.**
+- **Style (approved 3 Oct 2026): soft-bevelled toy.** Rounded `rbox` forms, smooth shading by default, AO and contact shade. The team canopy stays full colour.
+- **Blender authors primitive-graph JSON only, never meshes.** Each asset has a kit script that is its source.
 - **Workflow:** work one stage, run the checkpoint, push, open or update a draft PR, rewrite this file, then **STOP** for the user's play-test. Never merge. Never re-baseline the gate without approval. Never start the next stage without the user saying so.
 
 ## Where things stand
@@ -31,58 +27,78 @@ Rewritten 2026-10-04, when the clubhouse and barn v3 pass (#85) and the handoff 
 | # | Stage | Status |
 |---|---|---|
 | 1, 2 | Arena finish; juice and audio | **done** (#28, #69) |
-| 3 | Foundations: performance and render (#40–#48) | **done**. 3a in #71; 3b in #83 |
+| 3 | Foundations: performance and render (#40–#48) | **done** (#71, #83) |
 | 5a | Environment art: trees, dressing, horizon, course kit | **done** (#83) |
 | 7 | Clubhouse complex and pickups in Blender | **done** (#77, #78) |
-| Art v2 | Style research, prompt pack, 16 sheets, P1–P6, style pass, **cart v3** | **done** (#83) |
-| Art v2, remainder | Clubhouse and barn v3 Blender pass, plus a detail pass | **done** (#85) |
-| **4** | **Handling feel and arena zone (#49–#53)** | **next. See `docs/NEXT-SESSION-PROMPT.md`** |
-| 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | after Stage 4 |
+| Art v2 | Style research, prompt pack, sheets, P1–P6, cart v3, clubhouse and barn v3 | **done** (#83, #85) |
+| **4** | **Handling feel and arena zone (#49–#53)** | **built; draft PR on branch `claude/sweet-franklin-1vthr8`, awaiting play-test** |
+| 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | **next, after the play-test.** Prompt in `docs/NEXT-SESSION-PROMPT.md` |
 | 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
 
-## Just done: clubhouse and barn v3 (#85, merged 4 Oct 2026)
+**Branch note.** The Stage 4 prompt asked for `stage-4-handling-zone`. This session ran in a cloud session that was bound to the branch `claude/sweet-franklin-1vthr8`, so the work and the draft PR are there. Rename it on merge if the name matters.
 
-- **Merged without its own play-test,** at the user's direction. Its hub-look items join the Stage 4 play-test list (see the prompt).
+## Just done: Stage 4 (draft PR, not merged)
 
-- **Clubhouse:** 4,632 triangles (budget 5,000). It has rbox masses, 7 fascia boards, plain post bases, and the detail pass: ridge and hip caps, window mullions, a double door and cupola louvres. The ridge is 7.35, which makes a 25° pitch. The cupola tip is at 8.55, and the chimney rose with the ridge.
-- **Barn:** 1,004 triangles (budget 1,100). It has rbox posts on bases, 8 triangular knee braces, a 0.9 m brick knee wall, an rbox team fascia and a ridge cap.
-- **The detail pass came from a 3× A/B test** (a throwaway worktree, now deleted). Only these items read at play distance. Rounder bevels (more `rbox` segments) showed in no shot. Don't spend budget on bevel segments.
-- **CI:** `tools/simAllocation.test.mjs` timed out on Node 22. #84's tiering cap is process-wide and ran ahead of the Rapier-reads test. The fix runs that test first.
-- The smoke check (`clubhouseGraph.test.ts`) bounds were raised on purpose.
-- The "As built, v3" sections of both specs record two deviations from the spec, each with its reason:
-  - the braces start 0.8 below the *fascia*, because measured from the eave they hid behind it;
-  - the cupola base is 0.2 taller, to close the gap that the steeper slopes opened under it.
-- **If a later play-test asks for changes:** edit `art/stage7_kit.py`, then rebuild from a fresh file:
-  - `read_homefile(use_empty=True)` in one MCP call;
-  - then `exec` both scripts, run `build_all(); export_all(REPO)`, and save `art/clubhouse-exterior.blend`.
+Six commits, one or more per issue. Each sim commit re-recorded the golden itself, because this session ran on Linux x64 with Node 22, which is CI's platform.
 
-## Next: Stage 4, handling feel and arena zone (#49–#53)
+- **#49, mobility (`src/sim/mobility.ts`).**
+  - Each surface has one number, a resistance: fairway, green and bridge 1, rough 1.4, sand 2, water 3.3.
+  - Speed scale is `1 / resistance`. `surfaces.ts` builds its `cartSpeedScale` column from this table, so rough is 0.714 (was 0.72).
+  - A tyre's `offRoadPenalty` scales how much of the resistance above 1 it feels. Grip is the vendored `trackGripCoefficient`.
+  - The KCC climb limit is now set **per cart per tick** from the vendored uphill margin, instead of a flat 45°.
+    - Street tyres: 38.7° on fairway, 29.7° in rough, 21.8° in sand.
+    - Knobby tyres: 37.2°, 33.2° and 28.4°.
+  - `CART_MAX_SLOPE_CLIMB_DEG` stays exported as the street-on-fairway figure, for the terrain tests and the probe.
+  - `SurfaceId` moved to the leaf module `surfaceId.ts`, to avoid an import cycle. `surfaces.ts` re-exports it.
+  - Golden: 615753184 → 2980085065.
+- **#50, cart feel (`Cart.ts`, all in `CART_TUNING`).**
+  - Throttle spool: 25% of the drive is instant, full at 0.6 s. Throttle against the motion is braking and is not spooled.
+  - Turn bleed: −15% to the forward cap at full lock and full authority.
+  - Downhill bonus: grade × 1.0, capped at 1.15×. Sim samples the grade 1.2 m either side of the cart.
+  - Speed over the cap now scrubs off at 8 m/s² instead of snapping to it, so leaving the fairway slows the cart over about 0.7 s.
+  - 0 to 20 m/s on the fairway now takes about 1.5 s (was 1.25).
+  - Golden: → 4165176536.
+- **#51, render only.**
+  - `render/cartSuspension.ts`: four-wheel pitch and roll fit, a critically damped 2 Hz spring and a landing dip. The models use rotation order `YXZ`.
+  - Chase camera: 2.8 m high (was 3.6) at 6.3 m back (was 6.5), **0.7 m to the turret's right**, and a 19° pitch, which puts the horizon a fifth of the way down the frame.
+  - `fitChaseToGround` adds look-ahead over rises, a sight-line lift of up to 3 m, and a pull-in past that.
+  - The golden is unchanged.
+- **#52, the zone (`src/sim/arenaZone.ts`).**
+  - The corridors are padded 22 m and joined to a clubhouse hub, held 8 m north of the road, and traced with marching squares into a 106-vertex polygon (19 ha, 3.8 km of edge).
+  - Out of the zone: an immediate HUD warning, then −1 HP every 2 s, and a hard clamp at 30 m.
+  - Bots drive at a point 6 m inside the edge nearest a target that is outside. They hold within 8 m of it and ignore balls outside the zone. A bot with no live target now **brakes** instead of coasting.
+  - Pickups are placed inside the zone (36 sites, was 56). One call, `coursePickupSites`, serves both the page and the sim.
+  - The stakes are the course kit's `zone_stake` every 15 m, with a sagging rope.
+  - The golden is unchanged, and that was verified: the 40 s script never leaves the zone or reaches a moved site.
+- **#53, checkpoint.** The check outputs are in the PR description.
+  - `tsc` is clean, and `npm test` takes 46 s (107 files, 1,120 tests).
+  - `tools/simAllocation.test.mjs` passes on Node 22 in 21 s.
+  - Build and probe are clean. In this container smoke has failures, and they are environmental: see the PR.
 
-The contents are in `REVAMP-PLAN.md` § Stage 4. Branch `stage-4-handling-zone`, from `main`. It can run in the cloud.
+### Watch for in the play-test
 
-- **#51, the camera, now has an art target:**
-  - `docs/concept/reference/chase-target-01.jpg` and shot 03 show the cart from lower and slightly to the side, with the seat well and side panel visible.
-  - Today `CHASE_HEIGHT` is 3.6 at `CHASE_DISTANCE` 6.5 (`src/render/chaseCamera.ts`), which looks down onto the canopy.
-  - `STYLE-RESEARCH.md` P6 suggests about 2.6–3.0 m high at 6–6.5 m back, with the horizon about a fifth of the way down the frame. Tune by feel.
-- **#52, the zone, feeds the pickup scatter.** `placePickupSites` already takes an optional `zone` polygon. Pass it from `arenaFromCourse` and `main.ts` together, since both must place the same sites.
-- **Sim changes move the Linux golden.** Push, read `expected N to be M` from the failing CI run, record N in a follow-up commit, and say so in both commit messages.
+- **The zone's south edge is close behind the barns,** about 14 m behind the team-0 pad, because the road inset clips the hub there. Reversing off the pad puts you out within seconds.
+- **Rough now caps climbs at 29.7° for street tyres,** under the KCC's 32° slide angle. Slopes between the two neither climb nor slide. Watch for carts or bots wedged on rough banks.
+- **The thin wedge between holes 1 and 9** east of the hub is outside the zone. Stakes run down both sides of it.
+
+## Next: Stage 4b, iOS and gamepad
+
+The prompt is in `docs/NEXT-SESSION-PROMPT.md` and the spec in `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`. What Stage 4 changed that 4b must respect:
+
+- **Throttle spool resets when the throttle's sign changes or it reaches 0.** An analog stick that jitters around zero would keep restarting it. The gamepad's deadzone must hand the sim a clean 0, not noise.
+- **The camera is off-centre.** The chase eye sits 0.7 m to the turret's right, so the screen centre is not the turret line. Aim assist must measure from the turret's yaw, not from the screen centre.
+- **`MatchScreen` is unchanged by Stage 4.** The pointer-lock pause is still at `MatchScreen.ts:122`. The zone warning is a HUD element inside `#hud` (`hudState.zoneWarning`), not a screen, so controller navigation does not need to reach it.
 
 ## Then: Stage 5, the rest (#54–#61)
 
 The contents are in `REVAMP-PLAN.md` § Stage 5.
 
-- **Environment target:** `restyle-chase-01.jpg`, which shows:
-  - raised bunker lips
-  - a clear fairway/rough edge
-  - clumps of 3–7 conifers on the rough
-  - rolling hills and AO
-
-  Its greyscale (`restyle-chase-grey-01.jpg`) is the value structure to hit: fairway light, rough mid, water dark. **Don't copy its grey water;** keep shot 03's teal.
-- **#56 trees:** P1 makes trees smooth. Today `Trees.ts` still sets `flatShading: true` on its instanced material (line 109), and the species have low-segment cones. `treeline.ts` reuses the same geometries. Raise the segments enough to read smooth, and drop the flag.
-- **#60 title:** `restyle-chase-golden-01.jpg` is the golden-hour mood.
-- **Follow-up after Stage 5 (user, 29 Sep):** push the carts' spawn positions further out. At the clubhouse they start far too close together.
+- **Environment target:** `restyle-chase-01.jpg`. It shows raised bunker lips, a clear fairway/rough edge, clumps of 3–7 conifers in the rough, rolling hills and AO. Its greyscale (`restyle-chase-grey-01.jpg`) is the value structure to hit. **Don't copy its grey water;** keep shot 03's teal.
+- **#56 trees:** `Trees.ts` still sets `flatShading: true` (line 109). Raise the segment counts and drop the flag.
+- **Trees must respect the zone:** reject placements in the zone's lanes. `courseArenaZone(world).contains` is there to call.
+- **Follow-up after Stage 5 (user, 29 Sep):** push the carts' spawn positions further out. Check them against the zone's south edge, which is close behind the pads (see above).
 
 ## What the style pass left in the code (bears on everything visual)
 
@@ -129,4 +145,7 @@ The contents are in `REVAMP-PLAN.md` § Stage 5.
   - Never put AI-session metadata in git.
   - Never use `git add -A`, because the main checkout carries an untracked `.scratch/` and `tools/zzshots.mjs`.
 - **Local worktrees from the art session** (`TeeTimeTurrets-artdir`, `-style`, `-cart3`) and their `style-dev` and `cart3-dev` entries in `../.claude/launch.json` are merged work and safe to remove. `TeeTimeTurrets-clubhouse3` (`clubhouse3-dev`, port 5184) is merged work too. Port 5183 belongs to another project, so don't reuse it.
+- **A cloud session is Linux x64.** It can record the golden itself, in the same commit as the change that moves it. Check `uname -m` first.
+- **Headless smoke in a cloud container runs about 1.3 s a frame** on SwiftShader. Checks that hold a key for a fixed time (drive, fire, club select) fail there on `main` as well. To show a change, compare against a `main` worktree in the same container.
+- **The zone and the golden:** the golden's 40 s script never leaves the zone, so the golden does not cover zone rules. `arenaZone.test.ts` does.
 - **CI runs Node 22; the Mac runs Node 26.** V8-sensitive tests can pass locally and time out on CI. Reproduce with `npx -y node@22 node_modules/vitest/vitest.mjs run <file>`.
