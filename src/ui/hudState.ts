@@ -21,6 +21,9 @@ export interface HudSource {
     readonly dead: boolean;
     readonly respawnTimer: number;
     readonly health: { readonly hp: number; readonly max: number };
+    /** Seconds outside the arena zone, and until its next drain (#52). Absent: never outside. */
+    readonly outOfZoneS?: number;
+    readonly zoneDrainIn?: number;
   };
   /**
    * The scoreboard. Two methods rather than the arrays behind them, because `Match` keeps those
@@ -49,6 +52,8 @@ export interface HudState {
   teamScoreText: string;
   /** The player's own kills: `"KILLS 3"`. */
   pointsText: string;
+  /** The out-of-zone warning, or empty while inside it (or dead). */
+  zoneWarning: string;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -64,6 +69,7 @@ export function createHudStateScratch(): HudState {
     timerText: "",
     teamScoreText: "",
     pointsText: "",
+    zoneWarning: "",
   };
 }
 
@@ -83,6 +89,18 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.timerText = formatClock(source.matchTimeRemaining);
   out.teamScoreText = `US ${source.match.teamStrokes(PLAYER_TEAM)} — THEM ${source.match.teamStrokes(ENEMY_TEAM)}`;
   out.pointsText = `KILLS ${source.match.pointsFor(PLAYER)}`;
+  out.zoneWarning = zoneWarningText(source);
+}
+
+/**
+ * Shown from the first tick outside the zone, before any health goes: the warning is the point.
+ * The countdown is to the next lost point of health, which `world.ts` drains every 2 s out there.
+ */
+function zoneWarningText(source: HudSource): string {
+  const cart = source.cart;
+  if (cart.dead || !((cart.outOfZoneS ?? 0) > 0)) return "";
+  const next = Math.max(0, Math.ceil((cart.zoneDrainIn ?? 0) * 10) / 10).toFixed(1);
+  return `OUT OF BOUNDS — GET BACK INSIDE THE STAKES · −1 HP in ${next}s`;
 }
 
 /**

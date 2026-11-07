@@ -233,6 +233,14 @@ await page.waitForFunction(
   },
   { timeout: 60000, polling: 100 },
 );
+// Stage 4 (#52): the match is fought inside the arena zone, so both teams must open inside it. Read
+// off the live sim's own zone, so a page that built none fails rather than passing vacuously.
+const spawned = await page.evaluate(() => {
+  const { sim } = window.__teetimeturrets;
+  const carts = [sim.cart, ...sim.bots];
+  return { zone: sim.zone !== null, carts: carts.length, inside: carts.filter((c) => sim.zone?.contains(c.position.x, c.position.z)).length };
+});
+check("both teams spawn inside the arena zone", spawned.zone && spawned.carts === 8 && spawned.inside === 8, `${spawned.inside}/${spawned.carts} inside, zone ${spawned.zone}`);
 const arena = await page.evaluate(() => ({
   screen: window.__teetimeturrets.screen,
   teamScoreHidden: document.getElementById("hud-team-score").hidden,

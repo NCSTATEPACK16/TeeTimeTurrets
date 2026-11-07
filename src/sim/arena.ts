@@ -10,6 +10,8 @@ import type { Playfield } from "./playfield";
 import type { SpawnHole } from "./spawn";
 import { createSurfaces } from "./surfaces";
 import { createTerrain } from "./terrain";
+import { buildArenaZone } from "./arenaZone";
+import type { ArenaZone } from "./arenaZone";
 
 /**
  * Everything `Sim` needs to know about the place a match is fought: the ground, the tees carts
@@ -37,11 +39,51 @@ export interface ArenaGround {
    */
   readonly pickupSites: readonly PickupSite[];
   /**
+   * Where the match is fought (`arenaZone.ts`, #52): out of it a cart is warned and drained, it is
+   * clamped 30 m beyond it, and bots only drive at points inside it. Null on a ground without one --
+   * a single-hole test arena -- where none of that applies.
+   */
+  readonly zone: ArenaZone | null;
+  /**
    * Root of every seeded stream in the match -- each bot's and the respawn draw. Taken from the
    * ground rather than the clock, per the AGENTS.md no-`Math.random`-in-the-sim rule, so the same
    * ground replays the same match.
    */
   readonly seed: number;
+}
+
+const zones = new WeakMap<CourseWorld, ArenaZone>();
+
+/**
+ * The shipped course's zone, built once per `CourseWorld` and shared. `main.ts` reads it to place
+ * the pickups and to draw the stakes, and `arenaFromCourse` hands the same object to the sim, so
+ * the renderer's sites and the sim's are placed against one polygon.
+ */
+export function courseArenaZone(world: CourseWorld): ArenaZone {
+  let zone = zones.get(world);
+  if (zone === undefined) {
+    zone = buildArenaZone({
+      holes: world.holes,
+      clubhouse: AUTHORED_CLUBHOUSE,
+      southBoundary: world.southBoundary,
+      bounds: world.terrain.bounds,
+    });
+    zones.set(world, zone);
+  }
+  return zone;
+}
+
+/**
+ * Pickup sites for the shipped course, inside its zone. The one placement both `main.ts` (for the
+ * renderer) and `arenaFromCourse`'s default (for the sim) call, so the two cannot disagree.
+ */
+export function coursePickupSites(world: CourseWorld): PickupSite[] {
+  return placePickupSites(
+    courseSiteGround(world),
+    AUTHORED_CLUBHOUSE,
+    world.holes[0]?.spec.seed ?? 0,
+    courseArenaZone(world).polygon,
+  );
 }
 
 /**
@@ -56,7 +98,7 @@ export interface ArenaGround {
  */
 export function arenaFromCourse(
   world: CourseWorld,
-  pickupSites: readonly PickupSite[] = placePickupSites(courseSiteGround(world), AUTHORED_CLUBHOUSE, world.holes[0]?.spec.seed ?? 0),
+  pickupSites: readonly PickupSite[] = coursePickupSites(world),
 ): ArenaGround {
   const first = world.holes.find((h) => h.spec.index === 0) ?? world.holes[0];
   if (!first) throw new Error("arenaFromCourse: the course has no holes");
@@ -66,6 +108,7 @@ export function arenaFromCourse(
     southBoundary: world.southBoundary,
     clubhouse: AUTHORED_CLUBHOUSE,
     pickupSites,
+    zone: courseArenaZone(world),
     seed: first.spec.seed,
   };
 }
@@ -90,6 +133,7 @@ export function arenaFromHole(spec: HoleSpec): ArenaGround {
     // The one bucket a hole arena has always had, 10 m past the tee: the bot and reset tests
     // stand on it.
     pickupSites: [{ x: spec.tee.x + 10, z: spec.tee.z, type: "bucket", depot: false }],
+    zone: null,
     seed: spec.seed,
   };
 }

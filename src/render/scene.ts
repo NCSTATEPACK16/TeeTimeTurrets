@@ -23,6 +23,7 @@ import { createPostChain, type PostChain } from "./post";
 import { QUALITY_PRESETS, type QualityPreset } from "./quality";
 import { CHASE_POSITION_LERP, CHASE_TARGET_LERP, chasePose, chaseSmoothing, fitChaseToGround } from "./chaseCamera";
 import { CartSuspension } from "./cartSuspension";
+import { createZoneStakes, type ZoneStakes } from "./zoneStakes";
 import { courseDressingFor } from "./courseDressing";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
@@ -65,6 +66,8 @@ export interface ArenaSource {
   readonly clubhouse?: GroundVec2;
   /** Pickup sites (`sim/pickupSites.ts`), computed once per course. None drawn when absent. */
   readonly pickupSites?: readonly PickupSite[];
+  /** The arena zone's edge (`sim/arenaZone.ts`), staked and roped. None drawn when absent. */
+  readonly zone?: readonly GroundVec2[];
 }
 
 /**
@@ -138,6 +141,7 @@ export class RenderScene {
   private readonly clubhouseKit: ClubhouseKit | null;
   private readonly teeSigns: TeeSigns;
   private readonly pickups: PickupView | null;
+  private readonly zoneStakes: ZoneStakes | null;
   private readonly shieldPlates: ShieldPlates;
   private readonly takenScratch = new THREE.Vector3();
   /** Ground height under the chase camera, so the eye never dips into a hillside. */
@@ -211,6 +215,9 @@ export class RenderScene {
     for (const object of this.teeSigns.objects) this.scene.add(object);
     this.pickups = arena.pickupSites ? createPickupView(arena.pickupSites, heightAt) : null;
     if (this.pickups) for (const object of this.pickups.objects) this.scene.add(object);
+    // Stage 4: the arena zone's edge, staked and roped.
+    this.zoneStakes = arena.zone ? createZoneStakes(arena.zone, heightAt) : null;
+    if (this.zoneStakes) for (const object of this.zoneStakes.objects) this.scene.add(object);
 
     this.cart = new GolfClub();
     const own = teamColors(teamOf(0));
@@ -257,6 +264,7 @@ export class RenderScene {
     for (const bot of this.botCarts) cast(bot, false);
     if (this.clubhouseKit) cast(this.clubhouseKit.group, true);
     for (const object of this.teeSigns.objects) cast(object, false);
+    for (const object of this.zoneStakes?.objects ?? []) cast(object, false);
     for (const mesh of dressing.woods.meshes) mesh.castShadow = true;
     // High's cascades patch every lit material before the first frame compiles any of them, and
     // every ground tile built later.
@@ -340,6 +348,7 @@ export class RenderScene {
     this.clubhouseKit?.dispose();
     this.teeSigns.dispose();
     this.pickups?.dispose();
+    this.zoneStakes?.dispose();
     this.shieldPlates.dispose();
     this.courseGround.decorateMaterial = null;
     this.shadows.dispose();

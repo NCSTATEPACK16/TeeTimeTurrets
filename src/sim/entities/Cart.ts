@@ -297,6 +297,13 @@ export class Cart {
    * the cart it describes when carts are added or removed.
    */
   wasInWater: boolean;
+  /**
+   * Seconds this cart has been outside the arena zone, 0 while inside (#52). Above 0 is the HUD's
+   * warning, from the first tick out.
+   */
+  outOfZoneS: number;
+  /** Seconds until the zone next drains a point of health. Meaningful only while `outOfZoneS > 0`. */
+  zoneDrainIn: number;
   /** The last non-hazard spot this cart occupied: where it is dropped after driving into water. */
   readonly lastSafePosition: Vec3;
   /** Where the cart wants to move this tick. The controller decides where it actually goes. */
@@ -337,6 +344,8 @@ export class Cart {
     this.shield = 0;
     this.shieldDecayIn = 0;
     this.wasInWater = false;
+    this.outOfZoneS = 0;
+    this.zoneDrainIn = 0;
     this.lastSafePosition = { x: start.x, y: start.y, z: start.z };
     this.shot = { fired: false, hasBall: false, club: this.club, charge01: 0, yaw: 0 };
   }
@@ -394,6 +403,9 @@ export class Cart {
     this.speed = 0;
     this.throttleHeld = 0;
     this.throttleSign = 0;
+    // Back on the pad, inside the zone: the drain clock starts again from the next time out.
+    this.outOfZoneS = 0;
+    this.zoneDrainIn = 0;
     this.recoil.x = 0;
     this.recoil.z = 0;
     this.shuntVelocity.x = 0;

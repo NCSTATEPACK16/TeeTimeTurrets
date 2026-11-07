@@ -40,6 +40,11 @@ export const BOT_ENGAGE_RANGE = 40;
  */
 export const BOT_STANDOFF = 15;
 /**
+ * How near a bot holding at the zone's edge (#52) stops short of its drive point: about its braking
+ * distance from top speed (20^2 / (2 * 24) = 8.3 m), so it stops on the point rather than orbiting it.
+ */
+export const BOT_EDGE_HOLD_M = 8;
+/**
  * Metres. The bot pulls the trigger only inside this. Aiming still begins at `BOT_ENGAGE_RANGE`,
  * so the turret is lined up before the target is in range. Short of the 40 m the pistol is held
  * to, so every trigger pull is a shot that can connect.
@@ -138,6 +143,14 @@ export interface BotTarget {
    * its fire: a shot into a wall is a round wasted. Optional, and false when left out.
    */
   readonly hidden?: boolean;
+  /**
+   * Where to *drive* while fighting this target, when that is not the target itself: `world.ts`
+   * puts it inside the arena zone (#52) when the target stands outside, so a bot closes on the edge
+   * nearest its enemy and fights from there instead of following it out. Aim and range are still
+   * taken to the target. Both left out: drive at the target.
+   */
+  readonly driveX?: number;
+  readonly driveZ?: number;
 }
 
 /** `pickTarget`'s answer when there is no living enemy to fight. */
@@ -250,17 +263,32 @@ export function computeBotIntent(
   const distance = Math.hypot(dx, dz);
   if (target.dead || distance < 1e-6) {
     if (mind !== null) resetProgress(bot, mind);
+    // Idle means stopped: a bot left coasting at speed when its enemy dies rolls on for 25 m,
+    // out of the zone as often as not.
+    out.brake = true;
     return;
   }
 
   const bearing = Math.atan2(dz, dx);
 
   // Drive: turn the chassis toward the target and close to the standoff, then hold station. This
-  // runs at any distance -- see `BOT_ENGAGE_RANGE` for why it no longer stops at it.
-  const headingError = wrapAngle(bearing - bot.heading);
+  // runs at any distance -- see `BOT_ENGAGE_RANGE` for why it no longer stops at it. Toward the
+  // drive point when there is one, which `world.ts` keeps inside the zone.
+  const driveDx = (target.driveX ?? target.x) - bot.position.x;
+  const driveDz = (target.driveZ ?? target.z) - bot.position.z;
+  const driveDistance = Math.hypot(driveDx, driveDz);
+  const headingError = wrapAngle(Math.atan2(driveDz, driveDx) - bot.heading);
   out.steer = clampSigned(headingError / BOT_STEER_FULL);
-  out.throttle = distance > BOT_STANDOFF ? 1 : 0;
-  out.brake = distance < BOT_STANDOFF * 0.5;
+  if (driveDistance < distance - 1e-6) {
+    // A drive point short of the target is the zone's edge: the bot drives to it and holds there,
+    // braking inside `BOT_EDGE_HOLD_M` -- about its stopping distance from top speed -- so it neither
+    // orbits the point nor rolls out past it.
+    out.throttle = driveDistance > BOT_EDGE_HOLD_M ? 1 : 0;
+    out.brake = driveDistance <= BOT_EDGE_HOLD_M;
+  } else {
+    out.throttle = distance > BOT_STANDOFF ? 1 : 0;
+    out.brake = distance < BOT_STANDOFF * 0.5;
+  }
   if (mind !== null && trackProgress(bot, mind, dt, out)) return;
 
   // Beyond the tracking range the bot only drives -- no aim, no fire. Closing changed where the

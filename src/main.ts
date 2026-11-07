@@ -135,7 +135,10 @@ async function main(): Promise<void> {
         southBoundary: courseWorld.southBoundary,
         seed: COURSE_SEED,
         clubhouse: path.AUTHORED_CLUBHOUSE,
-        pickupSites: path.placePickupSites(path.courseSiteGround(courseWorld), path.AUTHORED_CLUBHOUSE, COURSE_SEED),
+        // Placed inside the arena zone, by the same call `arenaFromCourse` would make, so the
+        // renderer's sites are the sim's.
+        pickupSites: path.coursePickupSites(courseWorld),
+        zone: path.courseArenaZone(courseWorld).polygon,
       };
       // The M map's holes, sampled now, while PLAY is already loading, rather than on first open
       // in the middle of a fight. Cached for the page, like the course.

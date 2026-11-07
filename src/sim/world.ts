@@ -45,6 +45,8 @@ import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
+import { ZONE_DRAIN_HP, ZONE_DRAIN_INTERVAL_S, ZONE_HARD_LIMIT_M } from "./arenaZone";
+import type { ArenaZone } from "./arenaZone";
 import {
   BOT_CHANNEL,
   BOT_FIRE_RANGE,
@@ -274,7 +276,7 @@ export class Sim {
   private readonly clampScratch = { x: 0, z: 0 };
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  private readonly botTarget = { x: 0, z: 0, dead: false, hidden: false };
+  private readonly botTarget = { x: 0, z: 0, dead: false, hidden: false, driveX: 0, driveZ: 0 };
   private readonly seekScratch = { x: 0, z: 0 };
   /**
    * Everything that happened, for whatever reacts to it: markers, the kill feed, effects, audio.
@@ -296,6 +298,9 @@ export class Sim {
   }
   /** The road carts are held north of, or null where the ground has none. */
   private readonly southBoundary: SouthBoundary | null;
+  /** Where the match is fought, or null on a ground without one. See `ArenaGround.zone`. */
+  readonly zone: ArenaZone | null;
+  private readonly zoneScratch = { x: 0, z: 0 };
   /** One tee per spawn hole, in the course frame. */
   private readonly spawnSet: SpawnPoint[];
   /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
@@ -314,6 +319,7 @@ export class Sim {
   private constructor(ground: ArenaGround, matchDurationS: number, tire: TireType) {
     this.playfield = ground.playfield;
     this.southBoundary = ground.southBoundary;
+    this.zone = ground.zone;
     this.seed = ground.seed;
     this.spawnSet = createSpawnSet(ground.holes, (x, z) => ground.playfield.heightAt(x, z));
     const heightAt = (x: number, z: number): number => ground.playfield.heightAt(x, z);
@@ -683,6 +689,8 @@ export class Sim {
       if (ball.state !== "landed") continue;
       const x = ball.position[0]!;
       const z = ball.position[2]!;
+      // A ball out of the zone is not worth the drain it would cost, and a bot only drives inside.
+      if (this.zone !== null && !this.zone.contains(x, z)) continue;
       const d = Math.hypot(x - px, z - pz);
       if (d < best) {
         best = d;
@@ -722,6 +730,13 @@ export class Sim {
     const t = this.botTarget;
     t.x = target?.position.x ?? 0;
     t.z = target?.position.z ?? 0;
+    // Drive at the target, or at the zone's edge nearest it when it is outside (#52).
+    t.driveX = t.x;
+    t.driveZ = t.z;
+    if (this.zone !== null && this.zone.clampInside(t.x, t.z, this.zoneScratch)) {
+      t.driveX = this.zoneScratch.x;
+      t.driveZ = this.zoneScratch.z;
+    }
     t.dead = target === null || target.dead;
     t.hidden =
       target !== null &&
@@ -755,6 +770,8 @@ export class Sim {
     }
     this.moveCartBody(rig);
     this.checkCartWater(rig);
+    // Water can kill: a dead cart is out of the world, and the zone has nothing more to say to it.
+    if (!cart.dead) this.checkCartZone(rig);
 
     // Rigs are stepped in order, and a take starts the site's cooldown at once, so two carts on
     // one site in one tick yield exactly one take: the lower rig index's.
@@ -865,12 +882,20 @@ export class Sim {
     // Held inside the ground's own box -- past it there are no heights, so nothing to stand on --
     // and, where there is one, north of the road: the box is axis-aligned and County Home Road is
     // not, so the box alone leaves a wedge of playable ground on the road side. See courseBarrier.ts.
+    let nextX = p.x + corrected.x;
+    let nextZ = p.z + corrected.z;
+    // No further than `ZONE_HARD_LIMIT_M` out of the zone. Before the box and the road, so they
+    // still have the last word.
+    if (this.zone !== null && this.zone.clampWithin(nextX, nextZ, ZONE_HARD_LIMIT_M, this.zoneScratch)) {
+      nextX = this.zoneScratch.x;
+      nextZ = this.zoneScratch.z;
+    }
     clampToPlayable(
       this.playfield.bounds,
       this.southBoundary,
       CART_COLLIDER.radius,
-      p.x + corrected.x,
-      p.z + corrected.z,
+      nextX,
+      nextZ,
       this.clampScratch,
     );
     p.x = this.clampScratch.x;
@@ -913,6 +938,26 @@ export class Sim {
     cart.speed = 0;
     rig.fallSpeed = 0;
     rig.body.setTranslation(p, true);
+  }
+
+  /**
+   * Outside the zone a cart is warned at once (`outOfZoneS > 0`), then loses `ZONE_DRAIN_HP` every
+   * `ZONE_DRAIN_INTERVAL_S` until it comes back. Like drowning, a drain that empties the bar is a
+   * death nobody caused: a stroke, and a point for nobody. Back inside, the clock resets.
+   */
+  private checkCartZone(rig: CartRig): void {
+    if (this.zone === null) return;
+    const cart = rig.cart;
+    if (this.zone.contains(cart.position.x, cart.position.z)) {
+      cart.outOfZoneS = 0;
+      return;
+    }
+    if (cart.outOfZoneS === 0) cart.zoneDrainIn = ZONE_DRAIN_INTERVAL_S;
+    cart.outOfZoneS += FIXED_DT;
+    cart.zoneDrainIn -= FIXED_DT;
+    if (cart.zoneDrainIn > 1e-9) return;
+    cart.zoneDrainIn += ZONE_DRAIN_INTERVAL_S;
+    if (applyDamage(cart.health, ZONE_DRAIN_HP)) this.killCart(cart, rig.index, NO_KILLER);
   }
 
   /**
