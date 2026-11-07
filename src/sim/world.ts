@@ -2,7 +2,18 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { CLUB_STATS, ClubType, computeLaunchVelocityInto } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
-import { BUCKET_REFILL_AMMO, CART_COLLIDER, CART_HULL, Cart, RESPAWN_DELAY_S, TireType, computeMuzzle } from "./entities/Cart";
+import {
+  BUCKET_REFILL_AMMO,
+  CART_COLLIDER,
+  CART_HULL,
+  CART_TUNING,
+  Cart,
+  RESPAWN_DELAY_S,
+  TIRE_TUNING,
+  TireType,
+  computeMuzzle,
+} from "./entities/Cart";
+import { maxClimbRad } from "./mobility";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import type { PooledBall } from "./entities/BallPool";
 import { BALL_RADIUS } from "./entities/ballShape";
@@ -29,7 +40,7 @@ import { createStats } from "./stats";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import type { SouthBoundary } from "./courseBarrier";
-import { SurfaceId, createSurfaceTuning } from "./surfaces";
+import { SURFACES, SurfaceId, createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
@@ -128,7 +139,14 @@ const BOT_EYE_M = 1;
  * `computeColliderMovement` against its own controller settings is timing a different vehicle.
  */
 export const CHARACTER_OFFSET = 0.02;
-export const CART_MAX_SLOPE_CLIMB_DEG = 45;
+/**
+ * The steepest grade a stock (street-tyred) cart climbs on a fairway, degrees: `mobility.ts`'s
+ * `maxClimbRad` for that pair, about 38.7. **Not what the controller uses** -- `moveCartBody` sets the
+ * climb limit per cart per tick from its tyre and the ground under it. Exported as the one figure the
+ * terrain tests and the probe hold corridors to, since a corridor is fairway.
+ */
+export const CART_MAX_SLOPE_CLIMB_DEG =
+  (maxClimbRad(TIRE_TUNING[TireType.Street], SURFACES[SurfaceId.Fairway].cartSpeedScale, CART_TUNING.accel) * 180) / Math.PI;
 export const CART_MIN_SLOPE_SLIDE_DEG = 32;
 export const CART_AUTOSTEP_HEIGHT = 0.45;
 export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
@@ -818,6 +836,12 @@ export class Sim {
     this.moveScratch.y = rig.fallSpeed * FIXED_DT;
     this.moveScratch.z = rig.cart.desiredTranslation.z;
 
+    // The climb limit is this cart's, on this ground: its tyre's grip on the surface under it
+    // (`mobility.ts`), which `stepRig` sampled into `cartTuningScratch` this tick. One controller
+    // serves every cart, so it is set before each one moves.
+    this.controller.setMaxSlopeClimbAngle(
+      maxClimbRad(TIRE_TUNING[rig.cart.tire], this.cartTuningScratch.cartSpeedScale, CART_TUNING.accel),
+    );
     // Filtered by the capsule's own groups, so the controller does not collide with hulls.
     this.controller.computeColliderMovement(rig.collider, this.moveScratch, undefined, CART_GROUPS);
     const corrected = this.controller.computedMovement();

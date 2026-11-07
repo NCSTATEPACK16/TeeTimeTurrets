@@ -57,6 +57,8 @@ Ported code
     Derived from src/sim/terrainMobility.ts in Claude of Tanks.
     Copyright (c) 2026 Kevin B. Liu. Licensed under the MIT License.
     Ported verbatim.
+    Called unchanged by src/sim/mobility.ts (this project's own code), which maps
+    each surface and tyre onto it for the cart's speed scale, grip and climb limit.
 
   src/vendor/cot/botRoutePlanner.ts
     Derived from src/sim/botRoutePlanner.ts in Claude of Tanks.

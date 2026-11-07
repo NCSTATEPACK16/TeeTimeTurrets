@@ -4,6 +4,7 @@ import { createHealth, heal, setMaxHealth } from "../health";
 import type { Health } from "../health";
 import type { SurfaceTuning } from "../surfaces";
 import { ARENA_MAX_HEALTH } from "../matchConfig";
+import { cartSpeedScale } from "../mobility";
 
 /**
  * The golf cart as tank chassis: chassis heading, an independently-aimed turret, an equipped
@@ -58,7 +59,8 @@ export interface TireTuning {
   /** Multiplier on top speed on every surface. */
   readonly topSpeedScale: number;
   /**
-   * How much of a surface's `cartSpeedScale` penalty this tire actually suffers.
+   * How much of a surface's excess resistance (over the fairway's 1) this tire actually feels
+   * (`mobility.ts`'s `tireResistance`).
    * 0 would be immune to sand, 1 suffers it in full, above 1 suffers worse than stock.
    */
   readonly offRoadPenalty: number;
@@ -525,14 +527,10 @@ export class Cart {
   private stepDrive(intent: CartIntent, dt: number, surface: SurfaceTuning): void {
     const tire = TIRE_TUNING[this.tire];
 
-    // A tire does not change the surface, it changes how much of the surface's penalty reaches
-    // the cart -- so the penalty is scaled, not the multiplier. On a surface with no penalty
-    // (cartSpeedScale 1) every tire is equal here and only topSpeedScale separates them.
-    const surfaceScale = Math.max(
-      CART_TUNING.minSurfaceScale,
-      1 - (1 - surface.cartSpeedScale) * tire.offRoadPenalty,
-    );
-    const scale = tire.topSpeedScale * surfaceScale;
+    // The tyre and the ground together, through the mobility table: the tyre scales how much of the
+    // ground's resistance it feels, and speed is the inverse of what it feels. On a fairway every
+    // tyre feels 1 and only topSpeedScale separates them.
+    const scale = cartSpeedScale(tire, surface.cartSpeedScale, CART_TUNING.minSurfaceScale);
     const maxForward = CART_TUNING.topSpeed * scale;
     const maxReverse = -CART_TUNING.reverseTopSpeed * scale;
 

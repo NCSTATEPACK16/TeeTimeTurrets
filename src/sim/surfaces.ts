@@ -7,6 +7,8 @@ import { createNearestPoint } from "./spline";
 import type { NearestPoint } from "./spline";
 import { BLEND_WIDTH, GREEN_BLEND, halfWidthAt, smoothstep01 } from "./terrain";
 import type { Terrain } from "./terrain";
+import { SurfaceId } from "./surfaceId";
+import { SURFACE_MOBILITY, surfaceSpeedScale } from "./mobility";
 
 /**
  * Which surface is under a world position, and what that surface does to a ball and a cart.
@@ -18,19 +20,12 @@ import type { Terrain } from "./terrain";
  * There is exactly one surface table and it lives here.
  */
 
-export enum SurfaceId {
-  Green = "green",
-  Fairway = "fairway",
-  Rough = "rough",
-  Sand = "sand",
-  Water = "water",
-  /**
-   * The drivable crossing: a causeway carrying the corridor over water (spec D5). Deck and
-   * shoulders alike -- the shoulders are ground the causeway raised above the pond, and a cart
-   * standing on one must not be charged a water stroke for it.
-   */
-  Bridge = "bridge",
-}
+/**
+ * The enum lives in `surfaceId.ts`, strictly upstream of this module, so `mobility.ts` can key its
+ * table by it while this module reads that table back -- without a value-import cycle (see
+ * `tools/importCycles.test.mjs`). Re-exported here so every existing importer is unchanged.
+ */
+export { SurfaceId } from "./surfaceId";
 
 /**
  * Every surface, in a fixed order, so a surface can be stored as a byte: the baked course grid
@@ -117,20 +112,26 @@ function blendMown(
   return mown + (rough - mown) * tCorridor;
 }
 
+/** A surface's cart speed scale, from its resistance. */
+const cart = (id: SurfaceId): number => surfaceSpeedScale(SURFACE_MOBILITY[id].resistance);
+
 /**
+ * `cartSpeedScale` is not tuned here: it is `1 / resistance` from `mobility.ts`'s table, so the
+ * speed a cart reads and the grip and climb `mobility.ts` derives come from one number per surface.
+ *
  * Starting values for playtesting, not measured constants. Real-golf anchors: greens run
  * crr ~0.05-0.08, fairway ~0.10-0.13, longer grass higher; a bunker stops a ball almost
  * immediately, which is a very high crr plus a near-dead bounce.
  */
 export const SURFACES: Readonly<Record<SurfaceId, SurfaceTuning>> = {
-  [SurfaceId.Green]: { rolling: 0.06, bounceScale: 0.9, cartSpeedScale: 1.0, isHazard: false },
-  [SurfaceId.Fairway]: { rolling: 0.11, bounceScale: 0.7, cartSpeedScale: 1.0, isHazard: false },
-  [SurfaceId.Rough]: { rolling: 0.22, bounceScale: 0.45, cartSpeedScale: 0.72, isHazard: false },
-  [SurfaceId.Sand]: { rolling: 0.55, bounceScale: 0.12, cartSpeedScale: 0.5, isHazard: false },
-  [SurfaceId.Water]: { rolling: 0.9, bounceScale: 0.05, cartSpeedScale: 0.3, isHazard: true },
+  [SurfaceId.Green]: { rolling: 0.06, bounceScale: 0.9, cartSpeedScale: cart(SurfaceId.Green), isHazard: false },
+  [SurfaceId.Fairway]: { rolling: 0.11, bounceScale: 0.7, cartSpeedScale: cart(SurfaceId.Fairway), isHazard: false },
+  [SurfaceId.Rough]: { rolling: 0.22, bounceScale: 0.45, cartSpeedScale: cart(SurfaceId.Rough), isHazard: false },
+  [SurfaceId.Sand]: { rolling: 0.55, bounceScale: 0.12, cartSpeedScale: cart(SurfaceId.Sand), isHazard: false },
+  [SurfaceId.Water]: { rolling: 0.9, bounceScale: 0.05, cartSpeedScale: cart(SurfaceId.Water), isHazard: true },
   // Planks, not turf: harder and faster than a green, and no drag on a cart at all. A ball that
   // lands on a deck runs, which is the point -- a crossing you can putt across is a route.
-  [SurfaceId.Bridge]: { rolling: 0.04, bounceScale: 0.95, cartSpeedScale: 1.0, isHazard: false },
+  [SurfaceId.Bridge]: { rolling: 0.04, bounceScale: 0.95, cartSpeedScale: cart(SurfaceId.Bridge), isHazard: false },
 };
 
 /**
