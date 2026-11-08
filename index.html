@@ -112,6 +112,32 @@
         animation: low-hp-pulse 1.1s ease-in-out infinite;
       }
       @keyframes low-hp-pulse { 50% { filter: brightness(1.35); } }
+      /* Pre-match countdown: one huge centred word that punches in on every beat. */
+      #countdown[hidden] { display: none; }
+      #countdown {
+        position: fixed; left: 50%; top: 38%; z-index: 5; pointer-events: none;
+        transform: translate(-50%, -50%);
+        font: 900 120px system-ui, sans-serif; letter-spacing: 0.04em;
+        color: #fff; text-shadow: 0 6px 18px rgba(0, 0, 0, 0.7), 0 0 2px #000;
+      }
+      #countdown.fore { color: var(--accent, #ff9a2e); font-size: 150px; }
+      #countdown.punch { animation: countdown-punch 0.9s cubic-bezier(.2, 1.6, .4, 1) both; }
+      @keyframes countdown-punch {
+        0% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+        25% { transform: translate(-50%, -50%) scale(0.92); opacity: 1; }
+        40% { transform: translate(-50%, -50%) scale(1.05); }
+        80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        100% { transform: translate(-50%, -50%) scale(0.96); opacity: 0.85; }
+      }
+      /* The hitstop flash: a white veil MatchScreen fades from a set opacity. */
+      #impact-flash {
+        position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 4;
+        background: radial-gradient(ellipse at center, rgba(255,255,255,0.75), rgba(255,240,210,0.35) 70%);
+        mix-blend-mode: screen;
+      }
+      /* The last 30 seconds: the clock pulses in the accent colour. */
+      #hud-timer.final { display: inline-block; color: var(--accent, #ff9a2e); animation: final-pulse 1s ease-in-out infinite; }
+      @keyframes final-pulse { 50% { transform: scale(1.18); } }
       /* Damage direction: each flash is a full-screen box rotated about the centre with a red arc
          at its top edge, so rotate(angle) points the arc where the shot came from. */
       #damage-indicators { position: fixed; inset: 0; pointer-events: none; }
@@ -577,6 +603,9 @@
     </div>
     <!-- Low-HP vignette and damage-direction flashes: styled here, driven by hitFeedback.ts. -->
     <div id="low-hp"></div>
+    <!-- Pre-match countdown and the hitstop impact flash; driven by countdown.ts and MatchScreen. -->
+    <div id="countdown" hidden></div>
+    <div id="impact-flash"></div>
     <div id="damage-indicators"></div>
     <div id="hit-markers"></div>
     <!-- Filled by killFeed.ts from Sim.events; empty in markup for the same reason as #hud-team-score. -->
