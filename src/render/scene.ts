@@ -32,6 +32,7 @@ import { courseDressingFor } from "./courseDressing";
 import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
+import { createWaterSurface, type WaterSurface } from "./water";
 
 /** Linear sun intensity under ACES; the sky's environment adds the rest. */
 const SUN_INTENSITY = 3.1;
@@ -168,6 +169,7 @@ export class RenderScene {
   /** Hill cards past the course bounds, so the fog meets a skyline (Stage 5a). */
   private readonly horizon: Horizon;
   private readonly shadows: SunShadows;
+  private readonly water: WaterSurface;
   private readonly post: PostChain | null;
 
   /**
@@ -269,6 +271,10 @@ export class RenderScene {
       0x6fd15a,
     ]);
     this.scene.add(this.effects.group);
+    // Stage 3.5b: the ponds as a surface, rung by every splash.
+    this.water = createWaterSurface(arena.course.holes, heightAt, arena.surfaces, quality);
+    if (this.water.mesh) this.scene.add(this.water.mesh);
+    this.effects.onSplash = (x, z) => this.water.ripple(x, z);
     this.trails = new MotionTrails(botCount + 1, this.effects, arena.surfaces, heightAt);
     this.knockables = new Knockables(arena.course.holes, heightAt, botCount + 1, (x, y, z) => {
       this.effects.knock(x, y, z);
@@ -352,6 +358,7 @@ export class RenderScene {
     this.knockables.update(view.frameSeconds);
     this.trails.balls(view.poolTransforms, view.frameSeconds);
     this.effects.update(view.frameSeconds);
+    this.water.update(view.frameSeconds);
 
     this.frameChase(view);
     this.battle.update(view.frameSeconds, this.camera.position.x, this.camera.position.z, view.cart.turretYaw);
@@ -379,7 +386,9 @@ export class RenderScene {
     for (const bot of this.botCarts) bot.dispose();
     this.pooledBalls.dispose();
     this.aimArc.dispose();
+    this.effects.onSplash = null;
     this.effects.dispose();
+    this.water.dispose();
     this.knockables.dispose();
     this.clubhouseKit?.dispose();
     this.teeSigns.dispose();

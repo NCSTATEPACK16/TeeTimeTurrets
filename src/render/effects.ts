@@ -294,7 +294,11 @@ export class EffectsLayer {
     this.shards.burst(x, y + 0.55, z, PLATE_BREAK);
   }
 
+  /** Told of every splash, so the water surface can ring where it landed (`render/water.ts`). */
+  onSplash: ((x: number, z: number) => void) | null = null;
+
   splash(x: number, y: number, z: number): void {
+    this.onSplash?.(x, z);
     this.shards.burst(x, y, z, SPLASH_DROPS);
     this.smoke.pool.emit(x, y + 0.2, z, SPLASH_SPRAY, 0, 1, 0);
     // The oldest ring is the one to reuse: it has faded the furthest.
