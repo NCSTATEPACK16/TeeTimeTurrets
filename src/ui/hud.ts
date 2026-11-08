@@ -26,6 +26,7 @@ export interface Hud {
   timer: HTMLElement;
   teamScore: HTMLElement;
   points: HTMLElement;
+  zoneWarning: HTMLElement;
 }
 
 export function readHud(): Hud | null {
@@ -40,6 +41,7 @@ export function readHud(): Hud | null {
     "hud-timer",
     "hud-team-score",
     "hud-points",
+    "hud-zone-warning",
   ] as const;
 
   const found = ids.map((id) => document.getElementById(id));
@@ -55,6 +57,7 @@ export function readHud(): Hud | null {
     timer,
     teamScore,
     points,
+    zoneWarning,
   ] = found as HTMLElement[];
 
   return {
@@ -68,6 +71,7 @@ export function readHud(): Hud | null {
     timer: timer!,
     teamScore: teamScore!,
     points: points!,
+    zoneWarning: zoneWarning!,
   };
 }
 
@@ -82,6 +86,7 @@ export function drawHud(hud: Hud, source: HudSource): void {
 
   setText(hud.teamScore, state.teamScoreText);
   setText(hud.points, state.pointsText);
+  setText(hud.zoneWarning, state.zoneWarning);
 
   if (hud.combat.hidden) hud.combat.hidden = false;
   setWidth(hud.healthFill, state.healthFraction);

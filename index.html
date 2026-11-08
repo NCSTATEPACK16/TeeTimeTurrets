@@ -73,6 +73,26 @@
       }
       #hud-status { min-height: 1.2em; color: var(--status); margin-top: 5px; }
       #hud-timer { font-variant-numeric: tabular-nums; }
+      /* Stage 4 (#52): out of the arena zone. Empty is hidden, so only the code can show it.
+         Inside #hud so it hides with it; #hud's transform makes it the containing block, so this is
+         placed from #hud's bottom edge, high enough to clear the cart in the chase framing. */
+      #hud-zone-warning {
+        position: absolute;
+        left: 50%;
+        bottom: 64vh;
+        transform: translateX(-50%);
+        padding: 8px 18px;
+        border-radius: 10px;
+        background: rgba(150, 20, 10, 0.78);
+        color: #fff;
+        font: var(--font);
+        font-size: 1.15em;
+        letter-spacing: 0.08em;
+        text-align: center;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      #hud-zone-warning:empty { display: none; }
       #hud-help { margin-top: 8px; opacity: 0.7; font-size: 11px; }
 
       /* Event banner (UI-SPEC H12): a screen-anchored headline that flashes on a match event and
@@ -592,6 +612,8 @@
       </div>
       <div id="power-track"><div id="power-fill"></div></div>
       <div id="hud-status"></div>
+      <!-- Empty by design, like the score spans above. -->
+      <div id="hud-zone-warning"></div>
       <div id="hud-help">
         WASD drive &middot; F or Space fire &middot; mouse/Q/E aim &middot; 1-2-3 club &middot; Shift brake &middot;
         hold to charge, release to shoot

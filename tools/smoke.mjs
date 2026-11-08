@@ -233,6 +233,14 @@ await page.waitForFunction(
   },
   { timeout: 60000, polling: 100 },
 );
+// Stage 4 (#52): the match is fought inside the arena zone, so both teams must open inside it. Read
+// off the live sim's own zone, so a page that built none fails rather than passing vacuously.
+const spawned = await page.evaluate(() => {
+  const { sim } = window.__teetimeturrets;
+  const carts = [sim.cart, ...sim.bots];
+  return { zone: sim.zone !== null, carts: carts.length, inside: carts.filter((c) => sim.zone?.contains(c.position.x, c.position.z)).length };
+});
+check("both teams spawn inside the arena zone", spawned.zone && spawned.carts === 8 && spawned.inside === 8, `${spawned.inside}/${spawned.carts} inside, zone ${spawned.zone}`);
 const arena = await page.evaluate(() => ({
   screen: window.__teetimeturrets.screen,
   teamScoreHidden: document.getElementById("hud-team-score").hidden,
@@ -396,7 +404,11 @@ console.log("=== TURRET CAMERA ===");
 await new Promise((r) => setTimeout(r, 1500));
 const framed = await read();
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-const lookYaw = Math.atan2(framed.cart.z - framed.camera.z, framed.cart.x - framed.camera.x);
+// Since Stage 4 (#51) the eye sits CHASE_SIDE (0.7 m) to the turret's right at CHASE_DISTANCE
+// (6.3 m) back, so the camera-to-cart bearing runs atan(0.7 / 6.3) to the turret's left by design.
+// Added back, so this still measures which yaw the camera follows.
+const CHASE_SIDE_ANGLE = Math.atan2(0.7, 6.3);
+const lookYaw = Math.atan2(framed.cart.z - framed.camera.z, framed.cart.x - framed.camera.x) + CHASE_SIDE_ANGLE;
 const offTurret = Math.abs(wrap(lookYaw - (framed.heading + framed.turretOffset)));
 const offChassis = Math.abs(wrap(lookYaw - framed.heading));
 check(

@@ -643,3 +643,47 @@ describe("health bar sizing", () => {
     expect(cart.health.hp).toBe(10);
   });
 });
+
+describe("Cart feel (#50)", () => {
+  /** Speed after `ticks` of full throttle from rest on the fairway. */
+  function speedAfter(ticks: number): number {
+    const cart = new Cart();
+    for (let i = 0; i < ticks; i++) cart.step(idle({ throttle: 1 }), DT, FAIRWAY);
+    return cart.speed;
+  }
+
+  it("spools the throttle: a quarter of the drive at once, all of it by 0.6 s", () => {
+    const full = CART_TUNING.accel * DT;
+    const ticksToFull = Math.round(CART_TUNING.spoolSeconds / DT);
+    // The first tick's gain is the instant share; a tick after the spool is the whole drive.
+    expect(speedAfter(1) / full).toBeCloseTo(CART_TUNING.spoolInstant + (1 - CART_TUNING.spoolInstant) / ticksToFull, 6);
+    expect((speedAfter(ticksToFull + 1) - speedAfter(ticksToFull)) / full).toBeCloseTo(1, 6);
+    // Halfway through the spool it is halfway between: not a step at either end.
+    const mid = (speedAfter(ticksToFull / 2 + 1) - speedAfter(ticksToFull / 2)) / full;
+    expect(mid).toBeGreaterThan(0.6);
+    expect(mid).toBeLessThan(0.66);
+  });
+
+  it("bleeds speed in a hard turn at speed, and not in a straight line", () => {
+    const straight = new Cart();
+    run(straight, 6, idle({ throttle: 1 }));
+    const turning = new Cart();
+    run(turning, 6, idle({ throttle: 1 }));
+    run(straight, 2, idle({ throttle: 1 }));
+    run(turning, 2, idle({ throttle: 1, steer: 1 }));
+    expect(straight.speed).toBeCloseTo(20, 6);
+    // A literal, not `topSpeed * (1 - turnBleed)`: that expression is satisfied by a bleed of zero.
+    expect(turning.speed).toBeCloseTo(17, 6);
+  });
+
+  it("runs faster downhill, capped at 1.15x however steep, and no faster uphill", () => {
+    const top = (grade: number): number => {
+      const cart = new Cart();
+      for (let i = 0; i < 600; i++) cart.step(idle({ throttle: 1 }), DT, FAIRWAY, grade);
+      return cart.speed;
+    };
+    expect(top(-0.05)).toBeCloseTo(CART_TUNING.topSpeed * 1.05, 6);
+    expect(top(-0.6)).toBeCloseTo(CART_TUNING.topSpeed * 1.15, 6);
+    expect(top(0.3)).toBeCloseTo(CART_TUNING.topSpeed, 6);
+  });
+});
