@@ -1,17 +1,12 @@
 # Handoff — next session
 
-Rewritten 2026-11-07, at the end of the Stage 4 session (handling feel and arena zone, #49–#53). The stage is built, pushed and in a draft PR, **waiting for the user's play-test.** Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-08, when Stage 3.5a (#87) and Stage 4 (#88) both passed the user's play-test and merged at the user's direction. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Where it stands right now:** the PR is [NCSTATEPACK16/TeeTimeTurrets#88](https://github.com/NCSTATEPACK16/TeeTimeTurrets/pull/88), a draft.
-- CI is green on its head, which confirms the golden recorded in the cloud (4165176536) on CI's own runner.
-- It merges cleanly into `main`, and has no reviews yet.
-- Netlify builds a preview of it: https://deploy-preview-88--teetimeturrets.netlify.app/?match=60. The play-test list is in the PR description.
+**Next is Stage 3.5b, the living course.** The paste-ready prompt is `docs/NEXT-SESSION-PROMPT-3.5.md` (its "check PR #87" step is now: merged, so branch 3.5b fresh from `main`). `docs/NEXT-SESSION-PROMPT.md` prompt B, Stage 4b (iOS and gamepad), comes after 3.5c.
 
-**`docs/NEXT-SESSION-PROMPT.md` holds two paste-ready prompts:**
-- **A, Stage 4 play-test fixes.** Use it when the play-test asks for changes. It works on the same branch and PR.
-- **B, Stage 4b (iOS and gamepad).** Use it only after the user has signed off Stage 4 and #88 is merged.
+**Asset hosts (checked 8 Nov):** opengameart.org and ambientcg.com (and its download host) now answer through the proxy. kenney.nl's tunnel opens but the site itself returns 403 to scripted requests; Kenney publishes the same CC0 packs on opengameart.org, so fetch them there.
 
 ## Read first
 
@@ -38,15 +33,31 @@ Rewritten 2026-11-07, at the end of the Stage 4 session (handling feel and arena
 | 5a | Environment art: trees, dressing, horizon, course kit | **done** (#83) |
 | 7 | Clubhouse complex and pickups in Blender | **done** (#77, #78) |
 | Art v2 | Style research, prompt pack, sheets, P1–P6, cart v3, clubhouse and barn v3 | **done** (#83, #85) |
+| 3.5a | Life and intensity: pacing, juice, battlefield presentation | **done** (#87, play-tested 8 Nov) |
+| 4 | Handling feel and arena zone (#49–#53) | **done** (#88, play-tested 8 Nov) |
+| **3.5b** | **The living course: water, then trees, then sand, then ground and grass (toy style, richer)** | **next.** Prompt in `docs/NEXT-SESSION-PROMPT-3.5.md` |
+| 3.5c | Mortar as a 3-kill streak reward, and capture flags (moves the golden) | after 3.5b |
+| 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | after 3.5c. Prompt B in `docs/NEXT-SESSION-PROMPT.md` |
+| 5 | Environment, the rest (#54–#61) | after Stage 4b |
+| 6 | navGraph (#62–#64) | — |
+| 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
+
+## Stage 3.5a, as merged (#87)
+
+Countdown, final-30 ramp, streak callouts, hitstop and horn; sprite particles (painted 4 × 2 atlas in `spriteAtlas.ts`, which a CC0 atlas in the same layout can replace); music bed and ambience; distant barrages; knockable tee props. The golden did not move. Capacities are constants in `effects.ts`; wire them to `quality.ts` in 3.5b if Low struggles. Details: `REVAMP-PLAN.md` and `DECISIONS.md` § "Stage 3.5".
+
+**3.5b must respect Stage 4:** trees and any new dressing go outside the zone's lanes (`courseArenaZone(world).contains`), and the chase camera is now 2.8 m high, 0.7 m right of the turret, so judge new ground detail from that angle.
+
+## Stage 4, as merged (#88)
+
+| Art v2 | Style research, prompt pack, sheets, P1–P6, cart v3, clubhouse and barn v3 | **done** (#83, #85) |
 | **4** | **Handling feel and arena zone (#49–#53)** | **built; draft PR #88 (branch `claude/sweet-franklin-1vthr8`), CI green, awaiting play-test** |
 | 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | **next, after the play-test.** Prompt in `docs/NEXT-SESSION-PROMPT.md` |
 | 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
 
-**Branch note.** The Stage 4 prompt asked for `stage-4-handling-zone`. This session ran in a cloud session that was bound to the branch `claude/sweet-franklin-1vthr8`, so the work and the draft PR are there. Rename it on merge if the name matters.
-
-## Just done: Stage 4 (draft PR #88, not merged)
+Built on branch `claude/sweet-franklin-1vthr8` (the prompt asked for `stage-4-handling-zone`; the cloud session was bound to the other name).
 
 Six commits, one or more per issue. Each sim commit re-recorded the golden itself, because this session ran on Linux x64 with Node 22, which is CI's platform.
 
@@ -84,7 +95,7 @@ Six commits, one or more per issue. Each sim commit re-recorded the golden itsel
   - `tools/simAllocation.test.mjs` passes on Node 22 in 21 s.
   - Build and probe are clean. In this container smoke has failures, and they are environmental: see the PR.
 
-### Watch for in the play-test
+### Known edges (play-test passed; keep an eye on them)
 
 - **The zone's south edge is close behind the barns,** about 14 m behind the team-0 pad, because the road inset clips the hub there. Reversing off the pad puts you out within seconds.
 - **Rough now caps climbs at 29.7° for street tyres,** under the KCC's 32° slide angle. Slopes between the two neither climb nor slide. Watch for carts or bots wedged on rough banks.

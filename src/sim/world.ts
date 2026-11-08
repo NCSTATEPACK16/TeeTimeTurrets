@@ -60,6 +60,7 @@ import {
 } from "./bot";
 import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
+import type { MatchPhase } from "./match";
 import {
   ARENA_MAX_HEALTH,
   MATCH_DURATION_S,
@@ -207,6 +208,12 @@ export interface SimOptions {
   /** Seconds on the match clock. Defaults to MATCH_DURATION_S. */
   readonly matchDurationS?: number;
   /**
+   * Seconds of pre-match countdown, during which carts can aim and change club but not drive or
+   * fire, and bots idle. Defaults to 0 (live from the first tick); the game passes
+   * `MATCH_COUNTDOWN_S`.
+   */
+  readonly countdownS?: number;
+  /**
    * The player cart's tire. Defaults to `TireType.Street`. The one clubhouse purchase that is a
    * stat rather than a skin: `TIRE_TUNING` scales top speed, grip and surface penalties.
    */
@@ -283,6 +290,8 @@ export class Sim {
    * Every cart's events, not just the player's; a reader filters. See `events.ts`.
    */
   readonly events = new SimEventLog();
+  /** `holdIntent`'s output, reused every countdown tick. */
+  private readonly countdownIntent: PlayerIntent = { ...neutralIntent(), brake: true, cancelCharge: true };
   /** Ticks stepped since the match started, stamped on each event. */
   private tickCount = 0;
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
@@ -295,6 +304,10 @@ export class Sim {
   /** Set once, on the tick the clock reaches zero. Every later `step()` is a no-op. */
   get matchOver(): boolean {
     return this.match.over;
+  }
+  /** Countdown, live or over. The countdown holds every cart but lets the player aim. */
+  get matchPhase(): MatchPhase {
+    return this.match.phase;
   }
   /** The road carts are held north of, or null where the ground has none. */
   private readonly southBoundary: SouthBoundary | null;
@@ -316,7 +329,7 @@ export class Sim {
   /** See `Sim.carts`. Grown once and reused, per the no-allocation-in-the-tick rule. */
   private readonly cartsScratch: Cart[] = [];
 
-  private constructor(ground: ArenaGround, matchDurationS: number, tire: TireType) {
+  private constructor(ground: ArenaGround, matchDurationS: number, countdownS: number, tire: TireType) {
     this.playfield = ground.playfield;
     this.southBoundary = ground.southBoundary;
     this.zone = ground.zone;
@@ -328,7 +341,7 @@ export class Sim {
     this.obstacles = ground.clubhouse === null ? [] : clubhouseObstacles(ground.clubhouse, heightAt);
     this.pickupStates = createPickupStates(ground.pickupSites);
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
-    this.match = new Match({ playerCount: 1, durationS: matchDurationS });
+    this.match = new Match({ playerCount: 1, durationS: matchDurationS, countdownS });
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
     this.currentCart = createCartTransform();
     this.previousCart = createCartTransform();
@@ -351,7 +364,12 @@ export class Sim {
 
   static async create(ground: ArenaGround, options: SimOptions = {}): Promise<Sim> {
     await RAPIER.init();
-    const sim = new Sim(ground, options.matchDurationS ?? MATCH_DURATION_S, options.tire ?? TireType.Street);
+    const sim = new Sim(
+      ground,
+      options.matchDurationS ?? MATCH_DURATION_S,
+      options.countdownS ?? 0,
+      options.tire ?? TireType.Street,
+    );
 
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
@@ -583,6 +601,8 @@ export class Sim {
     if (this.disposed) throw new Error("Sim.step called after dispose()");
     // A finished match freezes exactly where it stood.
     if (this.match.over) return;
+    // Read before the tick: the tick that spends the last of the countdown is still a held one.
+    const counting = this.match.countdownRemaining > 0;
     this.match.tick(FIXED_DT);
     this.tickCount++;
     const swapPool = this.previousPoolTransforms;
@@ -595,7 +615,7 @@ export class Sim {
     const swapBots = this.previousBotCarts;
     this.previousBotCarts = this.currentBotCarts;
     this.currentBotCarts = swapBots;
-    this.stepCarts(intent);
+    this.stepCarts(counting ? this.holdIntent(intent) : intent, counting);
     this.syncCurrentCart();
 
     // Stepping with the queue is what fills it; combat.ts drains it immediately afterwards, so
@@ -627,7 +647,7 @@ export class Sim {
    * Per-tick world bookkeeping that belongs to no single cart, then one `stepRig` call per cart.
    * Split that way so the pool and the buckets tick exactly once however many carts are in play.
    */
-  private stepCarts(intent: PlayerIntent): void {
+  private stepCarts(intent: PlayerIntent, counting: boolean): void {
     // The world keeps running while a cart is out of it: balls already in flight land, and
     // pickups keep recharging (against `simTime`). Only the cart is frozen.
     this.simTime += FIXED_DT;
@@ -635,8 +655,22 @@ export class Sim {
 
     for (let i = 0; i < this.rigs.length; i++) {
       const rig = this.rigs[i]!;
-      this.stepRig(rig, this.intentFor(rig, intent));
+      // During the countdown a bot idles without drawing on its RNG stream, so its first live
+      // tick is the same whatever the countdown's length.
+      const rigIntent = counting && rig.random !== null ? IDLE_INTENT : this.intentFor(rig, intent);
+      this.stepRig(rig, rigIntent);
     }
+  }
+
+  /**
+   * The player's intent with only the aim and the club kept: the countdown lets a player line up
+   * a shot but not drive, and a charge started before FORE! is cancelled rather than banked.
+   */
+  private holdIntent(intent: PlayerIntent): PlayerIntent {
+    const held = this.countdownIntent;
+    held.aimDelta = intent.aimDelta;
+    held.selectClub = intent.selectClub;
+    return held;
   }
 
   /** The player's rig gets the player's intent; a bot's gets whatever `sim/bot.ts` decides. */

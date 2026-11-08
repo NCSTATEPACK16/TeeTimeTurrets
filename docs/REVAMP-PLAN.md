@@ -36,6 +36,7 @@ Claude of Tanks (CoT) was reviewed for techniques. What we took and what we may 
 | 1 | Finish Stage 1: 1.8 wiring, 1.9 rematch, checkpoint | cloud | Stage 1 |
 | 2 | Juice and audio | cloud | Stage 2 |
 | 3 | Foundations: performance + render base | cloud | Stage 3 |
+| 3.5 | Life and intensity (inserted 30 Oct 2026): a, b, c, one play-test stop each | cloud | Stage 3.5 |
 | 4 | Handling feel + arena zone | cloud | Stage 4 |
 | 4b | iOS + gamepad, texture compression, size budget | cloud, then Xcode on the Mac | Stage 4b |
 | 5 | Environment | cloud | Stage 5 |
@@ -134,6 +135,37 @@ Claude of Tanks (CoT) was reviewed for techniques. What we took and what we may 
   - Gate subjects re-baselined, with the user's approval.
   - Frame time within budget on the smoke course at Med.
   - Draw calls logged.
+
+### Stage 3.5: life and intensity (user, 2026-10-30)
+The game played rigid next to the concept art. This stage adds pacing, impact and atmosphere before
+handling. It has three slices, and each one ends at a play-test stop.
+- **3.5a: match pacing, juice and battlefield presentation.** Built on `claude/sharp-feynman-bzzp7s`:
+  - pre-match countdown (`Match.phase`; `Sim.create` defaults it to 0, so the golden doesn't move)
+  - final-30 ramp
+  - hitstop with an impact veil
+  - golf-scored streak callouts
+  - sprite particles (`spritePool.ts`/`spriteParticles.ts`, with a painted atlas):
+    - fireball, wreck smoke, confetti and scorch decals on a kill
+    - muzzle and impact smoke
+    - tracers, tyre roost and landing puffs (`trails.ts`)
+  - procedural music bed and ambience (`audio/music.ts`)
+  - distant barrages and flares (`battleAmbience.ts`)
+  - knockable tee furniture (`knockables.ts`, render-only)
+  - an H horn
+- **3.5b: the living course.** This pulls forward Stage 5's splat, water (#21), trees and grass, plus:
+  - sand drift and plumes
+  - birds, sprinklers, flag cloth and motes
+
+  Render-only, in the soft-bevelled toy style, made richer rather than photoreal (user, 7 Nov). The
+  order is water, trees, sand, then ground and grass. If only two fit before a play-test, ship water
+  and trees.
+- **3.5c: new warfare rules.** This moves the golden once.
+  - A Mulligan Mortar, earned as a 3-kill streak reward (user, 7 Nov; it replaces the course pickup
+    first planned): a telegraphed, seeded 6-ball barrage, credited to its owner.
+  - Capture flags A/B/C on three arena greens. Holding two or more makes the other side bleed one
+    stroke every 20 s. Fewest strokes still wins.
+
+Stage 4 follows 3.5c. Stage 5 keeps whatever 3.5b does not absorb.
 
 ### Stage 4: handling feel + arena zone
 - **Mobility (`sim/mobility.ts`).**

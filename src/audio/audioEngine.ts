@@ -1,12 +1,13 @@
 import type { Cue, CuePlay } from "./audioDirector";
+import { MusicBed } from "./music";
 
 /**
  * All of the game's sound, synthesised with WebAudio: no audio files ship, so nothing is loaded
  * and nothing is licensed.
  *
  * Three buses: every sound goes through `sfx` or `music`, both into `master`, which goes to the
- * speakers. Settings (volume, mute) act on the buses. Music has no content yet; the bus exists so
- * Settings can own its level from the start.
+ * speakers. Settings (volume, mute) act on the buses. The music bus carries `music.ts`'s match bed;
+ * its ambience goes through `sfx`, so turning the music down leaves the birds.
  *
  * One engine for the page (`gameAudio`), because a page gets a handful of AudioContexts at most
  * and each screen would otherwise make its own. The context is created on the first user gesture
@@ -32,6 +33,7 @@ export class AudioEngine {
   private engineOsc: OscillatorNode[] = [];
   private engineGain: GainNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
+  private bed: MusicBed | null = null;
 
   get running(): boolean {
     return this.ctx?.state === "running";
@@ -118,6 +120,23 @@ export class AudioEngine {
     this.engineGain.gain.setTargetAtTime(0.035 + 0.06 * s, t, 0.1);
   }
 
+  /** Starts the match's music bed and ambience. Idempotent; a no-op before `unlock`. */
+  musicStart(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.music || !this.sfx || !this.noise) return;
+    this.bed ??= new MusicBed(ctx, this.music, this.sfx, this.noise);
+    this.bed.start();
+  }
+
+  /** 0..1 from `musicIntensity`; `finalStretch` pushes the tempo. */
+  musicSet(intensity: number, finalStretch: boolean): void {
+    this.bed?.set(intensity, finalStretch);
+  }
+
+  musicStop(): void {
+    this.bed?.stop();
+  }
+
   engineStop(): void {
     if (!this.ctx || !this.engineGain) return;
     this.engineGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
@@ -201,6 +220,38 @@ const SYNTHS: Record<Cue, Synth> = {
   },
   splash: (ctx, out, noise, t) => {
     burst(ctx, out, noise, t, 0.5, "bandpass", 1200, 0.6);
+  },
+  // A countdown beat: a short, clean start-light tone.
+  beep: (ctx, out, _noise, t) => {
+    tone(ctx, out, "square", 660, 660, t, 0.16, 0.18);
+    tone(ctx, out, "sine", 1320, 1320, t, 0.12, 0.12);
+  },
+  // FORE!: a stadium air horn, three detuned saws through a nasal band.
+  go: (ctx, out, noise, t) => {
+    for (const f of [233, 236, 349]) tone(ctx, out, "sawtooth", f, f * 0.98, t, 0.9, 0.16);
+    burst(ctx, out, noise, t, 0.12, "bandpass", 2400, 0.2);
+  },
+  // The H key: a goofy two-tone golf-cart honk.
+  honk: (ctx, out, _noise, t) => {
+    tone(ctx, out, "square", 415, 400, t, 0.16, 0.2);
+    tone(ctx, out, "square", 523, 505, t + 0.17, 0.2, 0.2);
+  },
+  // A killstreak callout: a quick brass-ish rising triad.
+  stinger: (ctx, out, _noise, t) => {
+    tone(ctx, out, "sawtooth", 392, 392, t, 0.12, 0.14);
+    tone(ctx, out, "sawtooth", 494, 494, t + 0.09, 0.12, 0.14);
+    tone(ctx, out, "sawtooth", 587, 600, t + 0.18, 0.35, 0.18);
+  },
+  // A knocked-over prop: wooden and metal clatter.
+  clatter: (ctx, out, noise, t) => {
+    burst(ctx, out, noise, t, 0.06, "bandpass", 2600, 0.4);
+    burst(ctx, out, noise, t + 0.07, 0.05, "bandpass", 1700, 0.3);
+    tone(ctx, out, "triangle", 900, 700, t + 0.03, 0.1, 0.12);
+  },
+  // Distant artillery past the play area: a soft low rumble with no attack.
+  boom: (ctx, out, noise, t) => {
+    burst(ctx, out, noise, t, 1.1, "lowpass", 220, 0.7);
+    tone(ctx, out, "sine", 55, 30, t, 0.9, 0.5);
   },
 };
 

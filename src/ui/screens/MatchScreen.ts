@@ -33,6 +33,10 @@ import { plateTeamOf } from "../plateState";
 import type { PlateTeam } from "../plateState";
 import type { HeightSampler } from "../../sim/lineOfSight";
 import { Sightlines } from "../sightlines";
+import { CountdownDisplay, countdownBeat } from "../countdown";
+import type { CountdownBeat } from "../countdown";
+import { StreakTracker } from "../streaks";
+import { musicIntensity } from "../../audio/music";
 import type { Screen } from "../../app/ScreenManager";
 
 /**
@@ -103,8 +107,31 @@ export class MatchScreen implements Screen {
   /** The `M` map: closed, framed on the hole you are on, or the whole course. */
   private courseMap: CourseMap | null = null;
   private readonly mapMarkers: MapMarker[] = [];
+  /** The pre-match countdown (#countdown). */
+  private countdown = new CountdownDisplay(null);
+  private readonly beatScratch: CountdownBeat = { label: "", beat: 0 };
+  private streaks = new StreakTracker();
+  /** Set once the final-30 banner has fired this match. */
+  private finalStretch = false;
+  /**
+   * Fixed ticks still to hold the sim for, after a kill or a heavy hit. The sim is tick-driven, so
+   * a held tick is a delayed tick, not a skipped one: the match plays out the same, a beat later.
+   * Every cart freezes together, which is what makes the stop read as an impact.
+   */
+  private hitstopTicks = 0;
+  /** Sim seconds of the most recent kills by anyone, newest overwriting oldest: the music's heat. */
+  private readonly killTimes = new Float64Array(RECENT_KILL_SLOTS).fill(-Infinity);
+  private killSlot = 0;
+  private readonly intensityScratch = { recentKills: 0, remaining: 0, live: false };
+  /** The white impact veil (#impact-flash) and its current strength, faded each frame. */
+  private impactFlash: HTMLElement | null = null;
+  private flash = 0;
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
+    if (event.code === "KeyH" && !this.pause.paused) {
+      gameAudio.play(HONK);
+      return;
+    }
     if (event.code === "KeyM" && !this.pause.paused) {
       this.courseMap?.cycle();
       return;
@@ -152,6 +179,13 @@ export class MatchScreen implements Screen {
     const { renderer, sim, hudRoot, nameplateRoot, arena } = this.options;
 
     this.render = new RenderScene(renderer, arena, sim.bots.length, this.options.quality);
+    this.render.onPropKnock = (x, z) => {
+      const d = Math.hypot(x - sim.cart.position.x, z - sim.cart.position.z);
+      if (d < CLATTER_RANGE_M) gameAudio.play({ cue: "clatter", gain: 1 - d / CLATTER_RANGE_M, pan: 0 });
+    };
+    this.render.battle.onBoom = (gain, pan) => {
+      if (!this.pause.paused) gameAudio.play({ cue: "boom", gain, pan });
+    };
     this.nameplates = new Nameplates(
       nameplateRoot,
       sim.bots.map((_, i) => `BOT ${i + 1}`),
@@ -187,6 +221,13 @@ export class MatchScreen implements Screen {
     this.lowHp = document.getElementById("low-hp");
     this.damageIndicators.clear();
     this.matchOverReported = false;
+    this.countdown = new CountdownDisplay(document.getElementById("countdown"));
+    this.streaks = new StreakTracker();
+    this.finalStretch = false;
+    this.hitstopTicks = 0;
+    this.killTimes.fill(-Infinity);
+    this.impactFlash = document.getElementById("impact-flash");
+    this.flash = 0;
 
     // Rebuilt per entry rather than per frame: GameLoop's callbacks are covered by the AGENTS.md
     // no-allocation rule just as the fixed step is.
@@ -217,6 +258,11 @@ export class MatchScreen implements Screen {
     if (this.pause.paused) {
       // Frozen: nothing advances, and keys pressed meanwhile are not replayed on resume.
       this.input.endTick();
+      return;
+    }
+    if (this.hitstopTicks > 0) {
+      // Held, not sampled: a press or a mouse move made during the stop lands on the next tick.
+      this.hitstopTicks--;
       return;
     }
     sim.step(this.input.sample());
@@ -296,7 +342,12 @@ export class MatchScreen implements Screen {
     // and ammo cards lit over whatever screen comes next.
     if (this.hud) this.hud.combat.hidden = true;
     if (this.banner) this.banner.root.hidden = true;
+    this.countdown.hide();
+    this.hud?.timer.classList.remove("final");
+    if (this.impactFlash) this.impactFlash.style.opacity = "0";
+    this.impactFlash = null;
     gameAudio.engineStop();
+    gameAudio.musicStop();
     window.removeEventListener("keydown", this.onKeyDown);
     document.removeEventListener("pointerlockchange", this.onPointerLockChange);
     this.overlay?.remove();
@@ -334,6 +385,7 @@ export class MatchScreen implements Screen {
     this.bannerSourceScratch.playerInWater = sim.cart.wasInWater;
     this.bannerSourceScratch.playerDead = sim.cart.dead;
     this.bannerSourceScratch.playerKills = sim.match.pointsFor(0);
+    this.updatePacing(sim);
 
     this.bannerFeed.update(source, dt);
     this.bannerFeed.view(this.bannerView);
@@ -348,6 +400,10 @@ export class MatchScreen implements Screen {
     if (this.lowHp) {
       const opacity = lowHp.toFixed(2);
       if (this.lowHp.style.opacity !== opacity) this.lowHp.style.opacity = opacity;
+    }
+    if (this.flash > 0) {
+      this.flash = Math.max(0, this.flash - dt * FLASH_FADE_PER_S);
+      if (this.impactFlash) this.impactFlash.style.opacity = this.flash > 0 ? this.flash.toFixed(2) : "0";
     }
 
     // Sound that follows state rather than events: the motor, and the heartbeat at low health.
@@ -376,7 +432,11 @@ export class MatchScreen implements Screen {
       const e = log.at(s)!;
       const cue = cueFor(e, this.listener);
       if (cue) gameAudio.play(cue);
-      if (e.kind === "kill") this.killFeed.onKill(e.actor, e.target);
+      if (e.kind === "kill") {
+        this.killFeed.onKill(e.actor, e.target);
+        this.onKillPacing(e.actor, e.target, e.tick);
+      }
+      if (e.target === 0 && (e.kind === "hit" || e.kind === "ram")) this.hitstop(HITSTOP_HURT_TICKS, FLASH_HURT);
       this.playEffect(e.kind, e.x, e.y, e.z);
       this.addTrauma(sim, e.kind, e.actor, e.target, e.club, e.x, e.z);
       // Markers are the player's feedback: the player's own hits, rams and kills, nobody else's.
@@ -394,6 +454,65 @@ export class MatchScreen implements Screen {
       }
     }
     cursor.end();
+  }
+
+  /**
+   * The match's tempo cues that follow the clock rather than events: the countdown beats and their
+   * beeps and horn, and the one-off final-30 warning.
+   */
+  private updatePacing(sim: Sim): void {
+    const match = sim.match;
+    const sinceLive = match.phase === "live" ? match.durationS - match.remaining : Infinity;
+    const beat = countdownBeat(match.countdownRemaining, sinceLive, this.beatScratch);
+    if (this.countdown.draw(beat)) {
+      if (beat.beat >= 2 && beat.beat <= 4) gameAudio.play(BEEP);
+      else if (beat.beat === 5) gameAudio.play(FORE);
+    }
+    if (!this.finalStretch && match.phase === "live" && match.durationS > FINAL_STRETCH_S && match.remaining <= FINAL_STRETCH_S) {
+      this.finalStretch = true;
+      this.bannerFeed.push("FINAL 30", "BACK NINE — MAKE IT COUNT");
+      gameAudio.play(STINGER);
+      this.hud?.timer.classList.add("final");
+      if (this.render) this.render.battle.heat = 2;
+    }
+
+    // The music bed: on from FORE! to the buzzer, silent while paused, heating up with the fight.
+    const live = match.phase === "live" && !this.pause.paused;
+    if (live) gameAudio.musicStart();
+    else gameAudio.musicStop();
+    const now = match.durationS - match.remaining;
+    let recent = 0;
+    for (let i = 0; i < RECENT_KILL_SLOTS; i++) {
+      // Kill times are stamped from the tick count, which includes the countdown; `now` does not.
+      if (now + match.countdownS - this.killTimes[i]! <= RECENT_KILL_S) recent++;
+    }
+    const input = this.intensityScratch;
+    input.recentKills = recent;
+    input.remaining = match.remaining;
+    input.live = live;
+    gameAudio.musicSet(musicIntensity(input), match.remaining <= FINAL_STRETCH_S);
+  }
+
+  /** Streak callouts and the kill hitstop, for kills the player made or suffered. */
+  private onKillPacing(killer: number, victim: number, tick: number): void {
+    this.killTimes[this.killSlot] = tick * FIXED_DT;
+    this.killSlot = (this.killSlot + 1) % RECENT_KILL_SLOTS;
+    if (victim === 0) {
+      this.streaks.onDeath();
+      return;
+    }
+    if (killer !== 0) return;
+    this.hitstop(HITSTOP_KILL_TICKS, FLASH_KILL);
+    const callout = this.streaks.onKill(tick * FIXED_DT);
+    if (callout) {
+      this.bannerFeed.push(callout.headline, callout.consequence);
+      gameAudio.play(STINGER);
+    }
+  }
+
+  private hitstop(ticks: number, flash: number): void {
+    this.hitstopTicks = Math.max(this.hitstopTicks, ticks);
+    this.flash = Math.max(this.flash, flash);
   }
 
   /**
@@ -493,6 +612,7 @@ export class MatchScreen implements Screen {
           row("1  2  3", "Putter · iron · driver"),
           row("SHIFT", "Brake"),
           row("M", "Course map"),
+          row("H", "Honk the horn"),
           row("ESC", "Pause"),
         ]),
         el("p", { class: "match-overlay__note", text: "Knock the other team out. Every time you drop to zero, your team takes a stroke. Fewest strokes wins." }),
@@ -580,6 +700,25 @@ const TRAUMA_NEAR_BLAST = 0.35;
 const NEAR_BLAST_M = 25;
 
 const MAX_FRAME_SECONDS = 0.1;
+
+/** Hitstop: 4 ticks (about 66 ms) on the player's kill, 2 when the player takes a hit. */
+const HITSTOP_KILL_TICKS = 4;
+const HITSTOP_HURT_TICKS = 2;
+/** Impact veil strength (0..1) and how fast it fades. */
+const FLASH_KILL = 0.55;
+const FLASH_HURT = 0.25;
+const FLASH_FADE_PER_S = 4;
+/** Seconds left at which the final-stretch warning fires. Skipped in matches no longer than it. */
+const FINAL_STRETCH_S = 30;
+/** A prop knocked over further away than this, in metres, makes no sound. */
+const CLATTER_RANGE_M = 40;
+/** Kills within this many seconds raise the music, counted over the last few. */
+const RECENT_KILL_S = 10;
+const RECENT_KILL_SLOTS = 6;
+const BEEP = { cue: "beep", gain: 1, pan: 0 } as const;
+const FORE = { cue: "go", gain: 1, pan: 0 } as const;
+const STINGER = { cue: "stinger", gain: 0.8, pan: 0 } as const;
+const HONK = { cue: "honk", gain: 0.9, pan: 0 } as const;
 
 /** Metres above a cart's capsule centre that its plate floats. Clears the turret's club head. */
 const NAMEPLATE_HEIGHT = 2.6;

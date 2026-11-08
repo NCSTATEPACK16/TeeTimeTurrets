@@ -2,10 +2,14 @@ import * as THREE from "three";
 import { BallSwarm } from "../entities/BallSwarm";
 import { AimArc } from "../entities/AimArc";
 import { EffectsLayer } from "./effects";
+import { MotionTrails } from "./trails";
+import { BattleAmbience } from "./battleAmbience";
+import { Knockables } from "./knockables";
+import { fxRandom } from "./fxRandom";
 import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, placeCart } from "../entities/GolfClub";
 import { teamOf } from "../sim/matchConfig";
-import { teamColors } from "./teamColors";
+import { TEAM_CANOPY, teamColors } from "./teamColors";
 import { createClubhouseKit, type ClubhouseKit } from "./clubhouse";
 import { createTeeSigns, type TeeSigns } from "./teeSigns";
 import { createPickupView, type PickupView } from "./pickups";
@@ -129,6 +133,14 @@ export class RenderScene {
   private readonly aimArc: AimArc;
   /** Puffs, sparks, death bursts and splashes; triggered by `MatchScreen` from `Sim.events`. */
   readonly effects: EffectsLayer;
+  /** Roost, tracers and landing puffs, read off motion between frames. */
+  private readonly trails: MotionTrails;
+  /** The distant war: barrages past the fight and flares over the clubhouse. */
+  readonly battle: BattleAmbience;
+  /** Tee furniture carts bowl over. Render-only: no collider, the sim never sees it. */
+  private readonly knockables: Knockables;
+  /** Called at a prop as it is knocked over, for the clatter. */
+  onPropKnock: ((x: number, z: number) => void) | null = null;
   /** Camera shake; `MatchScreen` adds trauma from `Sim.events`. */
   readonly trauma = new CameraTrauma();
   /** Where the smoothed chase eye is, before shake: the shake is drawn on top, never fed back. */
@@ -249,8 +261,21 @@ export class RenderScene {
     this.aimArc = new AimArc();
     this.scene.add(this.aimArc);
 
-    this.effects = new EffectsLayer();
+    this.effects = new EffectsLayer(fxRandom(arena.seed ?? 0, 1), heightAt, [
+      TEAM_CANOPY[0],
+      TEAM_CANOPY[1],
+      0xffffff,
+      0xffd23a,
+      0x6fd15a,
+    ]);
     this.scene.add(this.effects.group);
+    this.trails = new MotionTrails(botCount + 1, this.effects, arena.surfaces, heightAt);
+    this.knockables = new Knockables(arena.course.holes, heightAt, botCount + 1, (x, y, z) => {
+      this.effects.knock(x, y, z);
+      this.onPropKnock?.(x, z);
+    });
+    this.scene.add(this.knockables.group);
+    this.battle = new BattleAmbience(this.effects, heightAt, fxRandom(arena.seed ?? 0, 2), arena.clubhouse ?? null);
 
     // Everything solid casts onto the ground; the ground and the buildings receive.
     const cast = (root: THREE.Object3D, receive: boolean): void =>
@@ -317,9 +342,19 @@ export class RenderScene {
     this.shieldPlates.commit();
     this.pooledBalls.setFromTransforms(view.poolTransforms);
     this.aimArc.setPoints(view.aimArc, view.aimArcCount);
+    this.trails.cart(0, view.cart, view.playerDead, view.frameSeconds);
+    this.knockables.cart(0, view.cart, view.playerDead, view.frameSeconds);
+    for (let i = 0; i < view.botCarts.length; i++) {
+      const dead = view.botDead[i] === true;
+      this.trails.cart(i + 1, view.botCarts[i]!, dead, view.frameSeconds);
+      this.knockables.cart(i + 1, view.botCarts[i]!, dead, view.frameSeconds);
+    }
+    this.knockables.update(view.frameSeconds);
+    this.trails.balls(view.poolTransforms, view.frameSeconds);
     this.effects.update(view.frameSeconds);
 
     this.frameChase(view);
+    this.battle.update(view.frameSeconds, this.camera.position.x, this.camera.position.z, view.cart.turretYaw);
 
     // After `frameChase`, so the tiles refine toward where the camera now is rather than where it
     // was last frame. `update` is internally budgeted to BUILD_BUDGET_MS, so this cannot blow the
@@ -345,6 +380,7 @@ export class RenderScene {
     this.pooledBalls.dispose();
     this.aimArc.dispose();
     this.effects.dispose();
+    this.knockables.dispose();
     this.clubhouseKit?.dispose();
     this.teeSigns.dispose();
     this.pickups?.dispose();
