@@ -33,6 +33,7 @@ import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
 import { createWaterSurface, type WaterSurface } from "./water";
+import { setTreeWindTime } from "./Trees";
 
 /** Linear sun intensity under ACES; the sky's environment adds the rest. */
 const SUN_INTENSITY = 3.1;
@@ -219,6 +220,9 @@ export class RenderScene {
     this.treeline = dressing.treeline;
     for (const mesh of this.treeline?.meshes ?? []) this.scene.add(mesh);
     for (const mesh of dressing.woods.meshes) this.scene.add(mesh);
+    // The woods are the course's and outlive this match, so the cap is set per match: a preset
+    // changed between matches takes effect at the next PLAY.
+    dressing.woods.setCap(quality.treeCap);
     this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
     // Stage 7: the clubhouse complex, a sign on every tee, and the pickups.
@@ -359,6 +363,7 @@ export class RenderScene {
     this.trails.balls(view.poolTransforms, view.frameSeconds);
     this.effects.update(view.frameSeconds);
     this.water.update(view.frameSeconds);
+    setTreeWindTime(view.elapsedSeconds);
 
     this.frameChase(view);
     this.battle.update(view.frameSeconds, this.camera.position.x, this.camera.position.z, view.cart.turretYaw);
