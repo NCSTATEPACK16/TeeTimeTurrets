@@ -45,11 +45,12 @@ not photoreal.
 | Woods floor | Rust-brown pine straw under every clump and stand, feathering into the rough over 2–3 m. |
 | Trees | Mostly tall pines with a bare trunk and a high crown, with oaks mixed in. No gorse, no reed-trees. |
 | Bare ground | Red-orange Piedmont clay where the plan calls for dirt: worn tee surrounds and, later, cart paths. |
-| Ponds | Dark, still farm ponds, the hole 13 look, with a cattail fringe. |
+| Ponds | Still, sky-reflecting water with fine ripples and sun glitter (the hole 13 shader, §3.2), with a cattail fringe. |
 | Horizon | Rolling wooded foothills. Already built (`horizon.ts`). |
 
 The art reference for value structure stays `docs/concept/reference/restyle-chase-grey-01.jpg`:
-fairway light, rough mid, water dark. Pine straw sits between rough and water.
+fairway light, rough mid. Pine straw sits below rough. Water is no longer the dark anchor: it
+reflects the sky (§3.2).
 
 ## 3. Decisions
 
@@ -72,6 +73,7 @@ Rules for the new palettes:
   not see a border where one stretch meets the next.
 - Within a variation, keep the contrast targets recorded in `biomes.ts`' comments: fairway to
   rough at least 25 in luminance, green to fairway at least 20, sand to fairway at least 25.
+- `water` is one colour for all three (§3.2).
 - `sky` is one colour for all three. Today links is grey and marsh is haze. `sky.ts` already uses
   the parkland sky for the whole match, so this only removes dead variation.
 - `treeForm` is `"conifer"` for all three. `TREE_SPECIES.shrub` and `.reed` stay in
@@ -82,25 +84,58 @@ The names `links` and `marsh` are now misleading. Renaming them touches `sim/cou
 `sim/briefs.ts` and the committed plans, so it is left to Stage 9 (refactor). Add a comment at
 `BIOME_ROUTING` saying what the names mean now.
 
-### 3.2 Ponds take the hole 13 look (D2)
+### 3.2 Ponds use the hole 13 water shader (D2)
 
-Hole 13 is the cape hole: the fairway bends around a pond on the inside of the turn, and its
-water is the dark bottomland colour. The user named it as the reference.
+"Water like hole 13" (user, 15 Nov) is the pond in the user's other project, the private repo
+`NCSTATEPACK16/GolfCartSimulator`: its "hole 13 water review" level, drawn by
+`apps/web/src/env/oceanWaves.ts`. That file is a port of **"Very fast procedural ocean" by
+afl_ext** (Shadertoy MdXyzX, 2017), tuned down from an ocean to a still pond. On screen it is a
+pale, sky-reflecting surface with fine wind ripples and sun glitter, not a tinted plane.
 
-- **Every pond uses one water colour**, a dark olive-brown close to hole 13's today, lifted
-  slightly so it is not black: start at `0x4f4a36` and tune on screen. It goes in all three
-  palettes' `water` field, so the ground tint under the surface and the surface itself agree.
-- `water.ts` keeps its depth ramp, foam and ripples. Its green pull (`waterMid`, written for teal)
-  is retuned for the dark colour: shallows show the tinted bed, deep water is nearly opaque.
-- Sky reflection rises from 0.2 to about 0.45. Dark still water is mostly reflection, and it is the
-  teal that the reflection used to wash out.
-- **Cattails:** the course kit already exports reeds (`course_kit.json`, placed by "#55" in the
-  old plan). Place them in clusters along each pond's shoreline, on the bank side, from the same
-  baked shore data `waterMesh.ts` computes. Decorative, no collider.
-- **No new ponds in this spec.** "If needed, use the water like hole 13" is read as: where water
-  is wanted, it should look and sit like hole 13's. Adding a cape pond to another hole changes
-  the briefs, the terrain and the golden, and the real card has water on 4, 12, 13, 15, 16 and 18
-  only, which is what ships. **ASK-2** below covers it.
+- **Port the shader into `render/water.ts`.** It replaces this project's own wave normals and
+  colour ramp. The algorithm is a sum of `exp(sin(x) - 1)` waves, each dragging the next one's
+  sample point; the normal comes from three height samples; the colour is a Schlick Fresnel
+  reflection of a cheap analytic sky plus a sun disc, plus a little scattered light on crests.
+  - That project writes it in TSL for three's WebGPU renderer. This project uses `WebGLRenderer`
+    and `onBeforeCompile`, so the port is to **GLSL**, which is what the original is. Port from
+    the TSL file's structure; do not add `three/webgpu`.
+  - **Reflect this project's sky, not the shader's own.** The original computes its own
+    atmosphere; here the reflection samples `scene.environment` (the baked `Sky`), so the pond
+    shows the same sky the player sees. Keep the original's sun disc term, aimed along
+    `sky.sunDir`, for the glitter. If the baked environment proves too blurry to read as sky,
+    fall back to the original's analytic atmosphere and say so in the PR.
+- **The still setting** (user: "I used still"), from that project's `envConfig.water`:
+
+  | Setting | Value | Meaning |
+  |---|---|---|
+  | `waveScale` | 2.5 | Wave units per metre: ripples about 2.5 m long |
+  | `waveHeight` | 0.06 | Crest to trough, metres |
+  | `drag` | 0.38 | How far each wave drags the next |
+  | `timeScale` | 1.0 | |
+  | `distanceSmoothing` | 0.8 | Flattens the normal with distance, against shimmer |
+  | `scatterColor` | (0.0293, 0.0698, 0.1717) | Linear RGB |
+  | `scatterStrength` | 0.1 | |
+  | `exposure` | 1.2 | Retune for this project's tonemapping |
+
+  They go in `WATER_TUNING`, one place.
+- **Wave iterations are the cost.** The source sums 36 waves, three times per pixel. Set them per
+  preset at compile time: Low 10, Med 18, High 36. The `water: "flat" | "reflective"` preset
+  field becomes `waterIterations: number`.
+- **What this project keeps from its own water:** the baked depth, the fade to nothing at the
+  shoreline (so the sheet meets the bank without a hard edge), the foam line, and the ripple
+  rings from splashes, which now bend the ported normal. The surface is otherwise opaque, as in
+  the source.
+- **The palettes' `water` field** only tints the basin floor, which now shows just at the
+  shoreline fade. Set all three to one neutral blue-grey, `0x3f5560`.
+- **Licence.** afl_ext's shader carries a permissive notice that must travel with the code.
+  Copy the notice from that project's `ATTRIBUTION.md` into this project's `NOTICE` in the commit
+  that adds the port, and record the Shadertoy ID. That file says the notice was taken from the
+  shader's XScreenSaver port because the Shadertoy page was unreachable; **VERIFY** it against
+  the original header when a browser can reach it. The TSL port itself is the user's own code.
+- **Cattails:** the course kit already exports reeds (`course_kit.json`). Place them in clusters
+  along each pond's shoreline, on the bank side, from the shore data `waterMesh.ts` computes.
+  Decorative, no collider.
+- **No new ponds.** The real card has water on 4, 12, 13, 15, 16 and 18, and that is what ships.
 
 ### 3.3 Textures give detail; palettes give colour (D3)
 
@@ -234,9 +269,13 @@ placement and not in the ground.
 
 ### 3.9 Pines (D9)
 
+The user approved loblolly pines (15 Nov).
+
 - **A loblolly species**, `pine_loblolly`: a bare trunk for the lower 55–60% of its height, then
   three stacked rounded crown masses, slightly irregular. Authored at unit height like the others;
   placed at 11–16 m, against the conifer's 7.5 m, so the woods stand well above the carts.
+  GolfCartSimulator's stand-in (`level/treeConfig.ts`) is a 12 m pine with a 0.18 m trunk radius
+  and a 2.1 m crown radius, beside a white oak with a 3.3 m crown; use those proportions.
 - `TREE_SPECIES.conifer` becomes `["pine_loblolly", "broadleaf_oak"]`. `conifer_tall` (the
   stacked-cone Christmas tree) stays in `trees.json` for the title backdrop but leaves the course.
 - **This is a Blender task and needs a local session.** The rule is that Blender authors
@@ -245,6 +284,30 @@ placement and not in the ground.
   `conifer_tall` at a taller `treeHeight` (10 m); every other part of this spec is independent of
   it.
 - The spec for the species goes in `docs/art/specs/stage5/trees.md` beside the others.
+
+### 3.10 What the GIS work gives this spec, and what it does not (D10)
+
+The user expected the GIS mapping of Caswell Pines to be done. It was checked on 15 Nov in
+`NCSTATEPACK16/GolfCartSimulator` (`main`, `c0f7b57`). What is there:
+
+| Item | State |
+|---|---|
+| The pipeline (`pipeline/`, Python): lidar DEM crop, layout from traced outlines, sculpting, cart paths, tree scatter, packet writer | Built and tested |
+| **Hole 1** as a level packet: 241 × 641 m at 1 m, real lidar heights, surface raster, mow stripes, cart paths, tree scatter split into loblolly pine and white oak from the aerial | **Done** |
+| **Holes 2–18** | **Not traced.** `overrides.geojson` holds 12 outlines, all hole 1. That project's last note says "the hole 2-18 layout work" is still to do. |
+| Hole 13 | A **synthetic** review level for the water shader, not survey data |
+| OpenStreetMap snapshot, 2.5 km radius | Roads, buildings and 29 water outlines. **No golf features**: OSM has no fairways, greens or bunkers for this course. |
+| Orthoimagery (0.4 m) and the county lidar DEM | Fetched as tracing and height sources. Their licence line reads "NC public data; terms to confirm". |
+
+So there is no eighteen-hole survey to drop in. This spec therefore takes from that project the
+things that are finished and that are render-only: the water shader (§3.2), the pine and oak
+proportions (§3.9), and the pine/oak split as a fact about the place (mostly pine, oak mixed in,
+which `PURE_CONIFER_SHARE` already expresses).
+
+**Not taken here:** real heights or real hole outlines. Replacing this game's generated terrain
+with surveyed ground changes `src/sim/**`, the colliders, the zone, the spawns and the golden,
+and needs holes 2–18 traced first. It is its own project; `SPEC-QUEUE.md` carries it as an entry
+that needs a spec.
 
 ## 4. Budgets
 
@@ -276,12 +339,15 @@ distance (70 m → 50 m), macro sample off on Med.
 
 ## 6. Questions for the user
 
+Answered on 15 Nov: the water is the hole 13 shader at its still setting (§3.2), and loblolly
+pines are approved (§3.9).
+
 | # | Question | Default until answered |
 |---|---|---|
-| **ASK-1** | "The option I showed from the asset size": which option was it? It is not recorded in the repo. | 512 px layers packed into two array files, about 6.5 MB raw, as in §3.5. If the option was 1K textures or KTX2, only Task 1's constants and the loader change. |
-| **ASK-2** | "Use the water like hole 13": the look only, or also add cape-style ponds to holes that have none? | The look only. The real card has water on 4, 12, 13, 15, 16 and 18, and that is what ships. |
+| **ASK-1** | "The option I showed from the asset size" was not found in this repo, in GolfCartSimulator, or in the hole 13 session. If it was a texture size, which? | 512 px layers packed into two array files, about 6.5 MB raw, as in §3.5. A different size changes only Task 1's constants. |
 | **ASK-3** | Bentgrass greens are lighter and bluer than the current lime green (`0xa2db31`). Keep the toy lime, or move toward the real thing? | Keep the lime: it is what makes a green findable from across a hole. |
-| **ASK-4** | Is a local Blender session available for the loblolly pine, or should the tall-conifer stand-in ship first? | Stand-in ships first. |
+| **ASK-4** | The loblolly needs a local Blender session. Until one runs, ship the taller stand-in conifers? | Yes. |
+| **ASK-5** | Should this game move to surveyed Caswell terrain (§3.10)? It needs holes 2–18 traced in GolfCartSimulator first. | No; keep the generated terrain. |
 
 ## 7. Sources
 
@@ -289,3 +355,6 @@ Course facts in §1 (designer, setting, loblolly pines, bentgrass greens) are fr
 visitnc.com, golflink.com and golfnow.com pages for Caswell Pines Golf Club. No image, plat or text
 from any of them is in this repository, and none may be added (`LICENSES.md`, "A note on the course
 routing").
+
+§3.2, §3.9 and §3.10 are from the user's private repository `NCSTATEPACK16/GolfCartSimulator`, read
+on 15 Nov 2026 at `c0f7b57`, and its branch `claude/sweet-rubin-u1g5bl` for the hole 13 screenshots.
