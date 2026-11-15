@@ -18,8 +18,9 @@ prompt, for afterwards.
    are merged. Items 1 and 2 of the 3.5b list below, water and trees, are built.
    - **Unmerged, and no play-test notes:** ask for the play-test, then stop.
    - **Unmerged, with notes:** fix them on that branch, push, and ask for a re-test.
-   - **Merged:** branch fresh from `main` and go on from item 3, sand. Read `docs/SPEC-QUEUE.md`
-     first: the ground splat and the grass carpet (item 4) need a plan before they are built.
+   - **Merged:** branch fresh from `main` and build
+     `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. It
+     replaces items 3 and 4 below (sand, ground and grass). Items 5 and 6 still stand, after it.
 3. **Check the asset hosts.**
    - Run `curl -sI https://kenney.nl | head -1`. The user said they will allow kenney.nl,
      opengameart.org and ambientcg.com in the environment's Network access.

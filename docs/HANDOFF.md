@@ -6,7 +6,9 @@ Rewritten 2026-11-15, part-way through Stage 3.5b (the living course). Water and
 
 **Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, from `main` after #87 and #88 merged. Two commits: the water surface and the clumped woods. `tsc` is clean and `npm test` passes (115 files, 1,139 tests, 37 s). The play-test list is in the PR description.
 
-**Next, after the play-test:** the rest of 3.5b in `docs/NEXT-SESSION-PROMPT-3.5.md` (sand, then ground and grass, then assets). **`docs/SPEC-QUEUE.md` says which remaining work can be built as written and which needs a spec or a plan first.** The ground splat and the grass carpet are in the second group.
+**Play-test of water and trees (user, 15 Nov):** "much more fun"; the setup, the carts and the shooting are liked. The user then asked for much more detailed grass and for the course to look like Caswell Pines, the real course its routing is traced from.
+
+**Next: the Caswell look and detailed grass.** The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Build it from `main` once #89 is merged. Four slices, each ending at a play-test stop; slice A (grass detail) is the user's first ask. The spec's §6 has four questions for the user, each with a default. It replaces 3.5b's sand, ground and grass items. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
 
 **Asset hosts (checked 8 Nov):** opengameart.org and ambientcg.com (and its download host) answer through the proxy. kenney.nl's tunnel opens but the site returns 403 to scripted requests; Kenney publishes the same CC0 packs on opengameart.org, so fetch them there.
 

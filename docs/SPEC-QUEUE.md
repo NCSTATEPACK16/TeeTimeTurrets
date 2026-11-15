@@ -10,7 +10,8 @@ the existing files there use. Build order is unchanged: 3.5b, 3.5c, 4b, 5, 6, 8,
 
 | Work | Where it is specified | Note |
 |---|---|---|
-| 3.5b sand: bunker texture, rim lip, drift sprites | `NEXT-SESSION-PROMPT-3.5.md` item 3 | Small. Reuses `EffectsLayer.smoke`. |
+| **The Caswell look and detailed grass** (user, 15 Nov): ground detail textures, one Piedmont palette, first cut, bunker lips, dark ponds with cattails, pine straw, grass tufts, loblolly pines | `specs/2026-11-15-caswell-look-and-grass-detail-design.md`, `plans/2026-11-15-caswell-look-and-grass-detail-implementation.md` | **Next.** Four slices, a play-test stop after each. It absorbs the old "ground splat" and "grass carpet" entries and 3.5b's sand item. Four questions for the user are in the spec's §6; build to the defaults. Slice D needs a local Blender session. |
+| 3.5b sand drift sprites | `NEXT-SESSION-PROMPT-3.5.md` item 3 | Small. Reuses `EffectsLayer.smoke`. The bunker texture and lip are in the Caswell plan. |
 | 3.5b assets: Kenney sprites into the 4 × 2 atlas | same file, item 5 | Fetch from opengameart.org; kenney.nl refuses scripted requests. |
 | 3.5b ambient life: birds, sprinklers, flag cloth, motes | same file, item 6 | Optional. Each is one small render module. |
 | Stage 10 docs | `REVAMP-PLAN.md` § Stage 10 | Last. |
@@ -20,8 +21,6 @@ the existing files there use. Build order is unchanged: 3.5b, 3.5c, 4b, 5, 6, 8,
 | Work | Design | What the plan must settle |
 |---|---|---|
 | **4b gamepad, controller navigation, iOS shell** | `specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md` | There is no plan file for it. Split it into slices with a play-test stop each. Say which slices can run in a cloud session and which need a Mac with Xcode (the Capacitor shell and TestFlight do). Carry the two Stage 4 constraints in `HANDOFF.md`: the deadzone must hand the sim a clean 0, and aim assist measures from the turret's yaw. |
-| **3.5b ground splat and KTX2** | `REVAMP-PLAN.md` § Stage 5, first bullet; 4b spec, assets | The two stages collide: 4b says compress the terrain sets to KTX2 *before* they are wired, and 3.5b wires them first. Decide the order. Then: how five texture sets reach a shader that today gets one mask per tile through the material's `map` slot (texture array or atlas), the sampler count on Low, the bundle budget, and how the domain warp is shared with the CPU. |
-| **3.5b grass carpet** | § Stage 5, grass bullet | Blade count per cell at each `grassDensity`, the draw and triangle budget on Med, how cells are cached without allocating per frame, and how it reads `surfaceAt` cheaply. |
 | **Stage 9 refactor** | § Stage 9 | The order of the `world.ts` split, with the golden unchanged after every step. Branch `claude/modest-brahmagupta-alqfjt` holds 48 unmerged commits of this work (`vec.ts`, `credit.ts`, `snapshot.ts`), written before Stage 3.5a and 4 changed `world.ts`. Decide whether to rebase it or redo it. |
 
 ## Needs a spec (decisions are still missing)
