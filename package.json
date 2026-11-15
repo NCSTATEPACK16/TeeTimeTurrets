@@ -17,7 +17,8 @@
     "plan": "vite build -c tools/holePlan.vite.config.ts && node tools/.plan-out/holePlan.mjs",
     "plan:course": "vite build -c tools/coursePlan.vite.config.ts && node tools/.course-out/coursePlan.mjs",
     "plan:png": "node tools/planPng.mjs --scale=2",
-    "swatches": "node tools/readSwatches.mjs"
+    "swatches": "node tools/readSwatches.mjs",
+    "pack:ground": "node tools/textures/packGround.mjs"
   },
   "keywords": [
     "golf",

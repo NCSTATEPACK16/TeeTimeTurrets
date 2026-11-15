@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "size": 512,
+  "detailRange": 2,
+  "layers": [
+    {
+      "name": "mown",
+      "sourceMean": 0.14182
+    },
+    {
+      "name": "coarse",
+      "sourceMean": 0.31651
+    },
+    {
+      "name": "sand",
+      "sourceMean": 0.48891
+    },
+    {
+      "name": "clay",
+      "sourceMean": 0.15319
+    },
+    {
+      "name": "straw",
+      "sourceMean": 0.15319
+    }
+  ],
+  "detailBytes": 1310720,
+  "normalBytes": 5242880
+}
