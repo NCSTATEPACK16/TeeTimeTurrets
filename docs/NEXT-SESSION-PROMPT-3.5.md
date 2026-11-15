@@ -14,13 +14,10 @@ prompt, for afterwards.
    - `docs/REVAMP-PLAN.md` § Stage 3.5;
    - `docs/DECISIONS.md` § "Stage 3.5";
    - `docs/TEST-AND-SPEC-PITFALLS.md`, before writing any test.
-2. **Check the 3.5b water-and-trees PR** (branch `claude/relaxed-einstein-w3jhbf`). #87 and #88
-   are merged. Items 1 and 2 of the 3.5b list below, water and trees, are built.
-   - **Unmerged, and no play-test notes:** ask for the play-test, then stop.
-   - **Unmerged, with notes:** fix them on that branch, push, and ask for a re-test.
-   - **Merged:** branch fresh from `main` and build
-     `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. It
-     replaces items 3 and 4 below (sand, ground and grass). Items 5 and 6 still stand, after it.
+2. **Water and trees are merged** (#89, play-tested 15 Nov), with #87 and #88. Branch fresh from
+   `main` and build `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`.
+   It replaces items 3 and 4 of the 3.5b list below (sand, ground and grass). Items 5 and 6 still
+   stand, after it.
 3. **Check the asset hosts.**
    - Run `curl -sI https://kenney.nl | head -1`. The user said they will allow kenney.nl,
      opengameart.org and ambientcg.com in the environment's Network access.

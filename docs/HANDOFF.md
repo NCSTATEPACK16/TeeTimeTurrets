@@ -1,14 +1,14 @@
 # Handoff — next session
 
-Rewritten 2026-11-15, part-way through Stage 3.5b (the living course). Water and trees are built, pushed and in a draft PR, **waiting for the user's play-test.** Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-15, part-way through Stage 3.5b (the living course). Water and trees are built, play-tested and merged (#89) at the user's direction. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, from `main` after #87 and #88 merged. Two commits: the water surface and the clumped woods. `tsc` is clean and `npm test` passes (115 files, 1,139 tests, 37 s). The play-test list is in the PR description.
+**Where it stands:** `main` has the water surface and the clumped woods (#89). `tsc` is clean and `npm test` passes (115 files, 1,139 tests, 37 s).
 
 **Play-test of water and trees (user, 15 Nov):** "much more fun"; the setup, the carts and the shooting are liked. The user then asked for much more detailed grass and for the course to look like Caswell Pines, the real course its routing is traced from.
 
-**Next: the Caswell look and detailed grass.** The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Build it from `main` once #89 is merged. Four slices, each ending at a play-test stop; slice A (grass detail) is the user's first ask. The ponds take the water shader from the user's other project, `NCSTATEPACK16/GolfCartSimulator` (attach it to the session to read it). That project's GIS survey covers hole 1 only, so the terrain here stays generated (spec §3.10). The spec's §6 has the open questions, each with a default. It replaces 3.5b's sand, ground and grass items. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
+**Next: the Caswell look and detailed grass.** The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Build it on a fresh branch from `main`. Four slices, each ending at a play-test stop; slice A (grass detail) is the user's first ask. The ponds take the water shader from the user's other project, `NCSTATEPACK16/GolfCartSimulator` (attach it to the session to read it). That project's GIS survey covers hole 1 only, so the terrain here stays generated (spec §3.10). The spec's §6 has the open questions, each with a default. It replaces 3.5b's sand, ground and grass items. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
 
 **Asset hosts (checked 8 Nov):** opengameart.org and ambientcg.com (and its download host) answer through the proxy. kenney.nl's tunnel opens but the site returns 403 to scripted requests; Kenney publishes the same CC0 packs on opengameart.org, so fetch them there.
 
@@ -39,14 +39,14 @@ Rewritten 2026-11-15, part-way through Stage 3.5b (the living course). Water and
 | Art v2 | Style research, prompt pack, sheets, P1–P6, cart v3, clubhouse and barn v3 | **done** (#83, #85) |
 | 3.5a | Life and intensity: pacing, juice, battlefield presentation | **done** (#87, play-tested 8 Nov) |
 | 4 | Handling feel and arena zone (#49–#53) | **done** (#88, play-tested 8 Nov) |
-| **3.5b** | **The living course: water, then trees, then sand, then ground and grass (toy style, richer)** | **water and trees built, in a draft PR, awaiting play-test.** Sand, ground, grass and assets remain |
+| **3.5b** | **The living course: water, then trees, then sand, then ground and grass (toy style, richer)** | **water and trees done (#89).** Next: the Caswell look and detailed grass, which replaces sand, ground and grass |
 | 3.5c | Mortar as a 3-kill streak reward, and capture flags (moves the golden) | after 3.5b |
 | 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | after 3.5c. Prompt B in `docs/NEXT-SESSION-PROMPT.md` |
 | 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
 
-## Just done: Stage 3.5b, water and trees (draft PR, not merged)
+## Just done: Stage 3.5b, water and trees (#89, merged 15 Nov)
 
 Render only. The sim and the golden are untouched.
 
