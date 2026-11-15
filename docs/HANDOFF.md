@@ -1,12 +1,14 @@
 # Handoff — next session
 
-Rewritten 2026-11-08, when Stage 3.5a (#87) and Stage 4 (#88) both passed the user's play-test and merged at the user's direction. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-15, part-way through Stage 3.5b (the living course). Water and trees are built, pushed and in a draft PR, **waiting for the user's play-test.** Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Next is Stage 3.5b, the living course.** The paste-ready prompt is `docs/NEXT-SESSION-PROMPT-3.5.md` (its "check PR #87" step is now: merged, so branch 3.5b fresh from `main`). `docs/NEXT-SESSION-PROMPT.md` prompt B, Stage 4b (iOS and gamepad), comes after 3.5c.
+**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, from `main` after #87 and #88 merged. Two commits: the water surface and the clumped woods. `tsc` is clean and `npm test` passes (115 files, 1,139 tests, 37 s). The play-test list is in the PR description.
 
-**Asset hosts (checked 8 Nov):** opengameart.org and ambientcg.com (and its download host) now answer through the proxy. kenney.nl's tunnel opens but the site itself returns 403 to scripted requests; Kenney publishes the same CC0 packs on opengameart.org, so fetch them there.
+**Next, after the play-test:** the rest of 3.5b in `docs/NEXT-SESSION-PROMPT-3.5.md` (sand, then ground and grass, then assets). **`docs/SPEC-QUEUE.md` says which remaining work can be built as written and which needs a spec or a plan first.** The ground splat and the grass carpet are in the second group.
+
+**Asset hosts (checked 8 Nov):** opengameart.org and ambientcg.com (and its download host) answer through the proxy. kenney.nl's tunnel opens but the site returns 403 to scripted requests; Kenney publishes the same CC0 packs on opengameart.org, so fetch them there.
 
 ## Read first
 
@@ -35,12 +37,34 @@ Rewritten 2026-11-08, when Stage 3.5a (#87) and Stage 4 (#88) both passed the us
 | Art v2 | Style research, prompt pack, sheets, P1–P6, cart v3, clubhouse and barn v3 | **done** (#83, #85) |
 | 3.5a | Life and intensity: pacing, juice, battlefield presentation | **done** (#87, play-tested 8 Nov) |
 | 4 | Handling feel and arena zone (#49–#53) | **done** (#88, play-tested 8 Nov) |
-| **3.5b** | **The living course: water, then trees, then sand, then ground and grass (toy style, richer)** | **next.** Prompt in `docs/NEXT-SESSION-PROMPT-3.5.md` |
+| **3.5b** | **The living course: water, then trees, then sand, then ground and grass (toy style, richer)** | **water and trees built, in a draft PR, awaiting play-test.** Sand, ground, grass and assets remain |
 | 3.5c | Mortar as a 3-kill streak reward, and capture flags (moves the golden) | after 3.5b |
 | 4b | iOS + gamepad, KTX2, size budget (spec `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`) | after 3.5c. Prompt B in `docs/NEXT-SESSION-PROMPT.md` |
 | 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
+
+## Just done: Stage 3.5b, water and trees (draft PR, not merged)
+
+Render only. The sim and the golden are untouched.
+
+- **Water (`render/water.ts`, `render/waterMesh.ts`).**
+  - Every pond is one transparent sheet at its hole's water level; all six are one draw of 18.5k triangles.
+  - The mesh is a 2 m grid with the water depth baked per vertex. Deep blocks are merged 4 × 4.
+  - **The sheet follows `surfaces.surfaceAt`, not the pond polygon.** Hole 18's polygon holds dry fairway below the water level (see `SPEC-QUEUE.md`).
+  - The shader patches `MeshStandardMaterial`: wave normals (two layers on High, one elsewhere), a depth colour ramp, foam 0.8 m from the shore, and ripple rings from the last 8 splashes.
+  - `EffectsLayer.onSplash` feeds the ripples, so cart and ball splashes both ring.
+  - Tuning is `WATER_TUNING` at the top of `water.ts`. Sky reflection is 0.2; at 1 it washed the colour out to pale blue.
+  - The biome water colour is sRGB and the shader linearises it. A new per-vertex colour attribute must do the same.
+- **Trees (`render/woodsPlacement.ts`, `render/Trees.ts`).**
+  - Clumps of 3–7 on a 16 m jittered grid, stands of 6–11 where two holes share the ground, and no two trunks closer than 2.6 m. 1,942 trees (was 1,515), still six instanced draws.
+  - A tree stands only where `surfaceAt` is rough and `weights.corridor` is at least `WOODS_WEIGHT`.
+  - `flatShading` is gone. Segment counts are raised when the geometry is built (`smoothedGraph`), so `trees.json` is untouched. The oak is now 504 triangles a tree.
+  - Per-instance tint, and a wind sway from one shared uniform (`setTreeWindTime`). The treeline shares the material and sways too.
+  - `quality.treeCap` is read: `Trees.setCap` drops whole clumps, spread evenly. Med's cap is now 2,000 (all of them), Low 400, High 3,000.
+- **Not done from the plan's tree list:** rejection inside the zone's lanes (trees already keep off every corridor, so nothing stands in a lane today), impostors past 250 m, and the sight-line dither. They stay in Stage 5.
+- **Smoke checks:** `waterMesh.test.ts`, `woodsPlacement.test.ts`. Both were seen to fail first.
+- **Headless screenshots:** the Playwright script from this session is not in the repo. It overrode the camera inside `renderer.render` and called `effects.splash` for the rings. The headless page crashed at match start about one run in three, on `main` too; rerun it.
 
 ## Stage 3.5a, as merged (#87)
 
