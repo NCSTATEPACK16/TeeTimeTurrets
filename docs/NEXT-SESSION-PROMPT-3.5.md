@@ -14,12 +14,10 @@ prompt, for afterwards.
    - `docs/REVAMP-PLAN.md` § Stage 3.5;
    - `docs/DECISIONS.md` § "Stage 3.5";
    - `docs/TEST-AND-SPEC-PITFALLS.md`, before writing any test.
-2. **Check PR #87** (`NCSTATEPACK16/TeeTimeTurrets`, branch `claude/sharp-feynman-bzzp7s`).
-   - **Unmerged, and no play-test notes from the user:** ask for the 3.5a play-test, then stop.
-     Don't start 3.5b on top of an untested slice.
-   - **Unmerged, with notes:** fix them on #87's branch first, push, and ask for a re-test.
-   - **Merged:** branch 3.5b fresh from `main`. The user chose merge-first, so don't stack on the old
-     branch.
+2. **Water and trees are merged** (#89, play-tested 15 Nov), with #87 and #88. Branch fresh from
+   `main` and build `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`.
+   It replaces items 3 and 4 of the 3.5b list below (sand, ground and grass). Items 5 and 6 still
+   stand, after it.
 3. **Check the asset hosts.**
    - Run `curl -sI https://kenney.nl | head -1`. The user said they will allow kenney.nl,
      opengameart.org and ambientcg.com in the environment's Network access.

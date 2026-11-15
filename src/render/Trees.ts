@@ -1,8 +1,7 @@
 import * as THREE from "three";
 import { mergeGraph } from "../entities/primitiveGraph";
+import type { PrimitiveGraph, PrimitiveNode } from "../entities/primitiveGraph";
 import { TREE_SPECIES, treeGraph } from "../entities/envGraphs";
-import { biomeForIndex } from "../sim/course";
-import { metresNorthOf } from "../sim/courseBarrier";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseTerrain } from "../sim/courseTerrain";
 import type { Vec2 } from "../sim/mapGeometry";
@@ -12,6 +11,7 @@ import type { Surfaces } from "../sim/surfaces";
 import { WOODS_WEIGHT } from "../sim/terrain";
 import type { Terrain } from "../sim/terrain";
 import { BIOMES } from "./biomes";
+import { clumpOrder, placeCourseWoods } from "./woodsPlacement";
 import type { BiomePalette } from "./biomes";
 import type { BiomeId } from "../sim/course";
 
@@ -55,8 +55,79 @@ const SCALE_MAX = 1.3;
  *  channel 3: an extra draw per tree there would shift every later cell's draws, and move the wood. */
 const SPECIES_CHANNEL = 7;
 
-/** The course woods' own channel, beside the treeline's 6. */
-const COURSE_WOODS_CHANNEL = 9;
+/**
+ * Radial segments the trees are built with, at least. The species are authored low (7-segment
+ * cones, 6 x 4 spheres) from the flat-faceted era; P1 made trees smooth, and with smooth normals
+ * that few sides shows as a polygon silhouette. Raised here, where the geometry is built, rather
+ * than in `trees.json`, which is the Blender kit's export and is regenerated from it.
+ * Thin blades (reeds) keep their four sides: nobody sees a reed's cross-section.
+ */
+const MIN_CONE_SEGMENTS = 14;
+const MIN_TRUNK_SEGMENTS = 8;
+const MIN_SPHERE_SEGMENTS: readonly [number, number] = [10, 6];
+const BLADE_RADIUS_M = 0.06;
+
+/** Wind sway at the crown, as a fraction of the tree's height. */
+const SWAY_AMPLITUDE = 0.022;
+
+/**
+ * The trees' shared wind clock. Every tree material reads this one uniform, so the match scene
+ * advances the woods and the treeline with one assignment (`setTreeWindTime`).
+ */
+const TREE_WIND = { uTreeTime: { value: 0 } };
+
+/** Advance every tree's sway to `seconds`. Call once per rendered frame. */
+export function setTreeWindTime(seconds: number): void {
+  TREE_WIND.uTreeTime.value = seconds;
+}
+
+function smoothedNode(node: PrimitiveNode): PrimitiveNode {
+  const p = [...node.params];
+  if (node.kind === "cone" && p[0]! >= BLADE_RADIUS_M) p[2] = Math.max(p[2]!, MIN_CONE_SEGMENTS);
+  if (node.kind === "cylinder") p[3] = Math.max(p[3]!, MIN_TRUNK_SEGMENTS);
+  if (node.kind === "sphere") {
+    p[1] = Math.max(p[1]!, MIN_SPHERE_SEGMENTS[0]);
+    p[2] = Math.max(p[2]!, MIN_SPHERE_SEGMENTS[1]);
+  }
+  return { ...node, params: p, children: node.children ? node.children.map(smoothedNode) : node.children };
+}
+
+function smoothedGraph(graph: PrimitiveGraph): PrimitiveGraph {
+  return { ...graph, root: smoothedNode(graph.root) };
+}
+
+/**
+ * The trees' material: smooth-shaded (P1), with the baked vertex colours, an optional per-instance
+ * tint, and a sway that grows with height up the tree. The species are authored at unit height, so
+ * `transformed.y` is already 0 at the root and 1 at the crown. The phase comes from the instance's
+ * own position, so neighbours move together and a wood ripples rather than beating in step.
+ */
+function treeMaterial(): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTreeTime = TREE_WIND.uTreeTime;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\n uniform float uTreeTime;")
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+         {
+           #ifdef USE_INSTANCING
+             vec2 treeAt = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
+           #else
+             vec2 treeAt = vec2(0.0);
+           #endif
+           float bend = max(transformed.y, 0.0);
+           bend *= bend;
+           float phase = uTreeTime * 1.25 + dot(treeAt, vec2(0.071, 0.053));
+           transformed.x += (sin(phase) + 0.35 * sin(phase * 2.3 + 1.7)) * ${SWAY_AMPLITUDE.toFixed(4)} * bend;
+           transformed.z += cos(phase * 0.8) * ${(SWAY_AMPLITUDE * 0.6).toFixed(4)} * bend;
+         }`,
+      );
+  };
+  material.customProgramCacheKey = () => "ttt-trees";
+  return material;
+}
 
 /**
  * The biome's two species, each merged into one geometry with the biome's colours baked in.
@@ -75,7 +146,7 @@ export function buildTreeGeometries(palette: BiomePalette): [THREE.BufferGeometr
   const geometryOf = (name: (typeof TREE_SPECIES)[typeof palette.treeForm][number]): THREE.BufferGeometry => {
     // No contact shade: a species is authored at unit height and scaled to metres later, so graph
     // space is not metres above the ground and the shade would darken most of the tree.
-    const merged = mergeGraph(treeGraph(name), overrides, { contactShade: false });
+    const merged = mergeGraph(smoothedGraph(treeGraph(name)), overrides, { contactShade: false });
     // Only the geometry is kept: the instanced meshes below bring their own material.
     (merged.mesh.material as THREE.Material).dispose();
     return merged.mesh.geometry;
@@ -88,10 +159,17 @@ export interface Trees {
   /** One per species that has at least one tree; empty when nothing was planted. */
   readonly meshes: readonly THREE.InstancedMesh[];
   readonly count: number;
+  /**
+   * Draw at most `cap` trees (the quality preset's `treeCap`), dropping the same share from every
+   * mesh. Instances are filled in clump order (`woodsPlacement.clumpOrder`) where that matters, so
+   * the ones dropped are whole clumps spread over the course. Cheap: only each mesh's draw count
+   * changes, so a course dressing built once can serve every preset.
+   */
+  setCap(cap: number): void;
   dispose(): void;
 }
 
-const NO_TREES: Trees = { meshes: [], count: 0, dispose: () => {} };
+const NO_TREES: Trees = { meshes: [], count: 0, setCap: () => {}, dispose: () => {} };
 
 /**
  * Instances already-placed trees: `species[i]` (0 or 1) picks which of the biome's two forms
@@ -102,11 +180,13 @@ export function plantTrees(
   palette: BiomePalette,
   matrices: readonly THREE.Matrix4[],
   species: readonly number[],
+  tints?: readonly number[],
 ): Trees {
   if (matrices.length === 0) return NO_TREES;
 
   const geometries = buildTreeGeometries(palette);
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
+  const material = treeMaterial();
+  const colour = new THREE.Color();
   const meshes: THREE.InstancedMesh[] = [];
   for (let s = 0; s < 2; s++) {
     let count = 0;
@@ -114,8 +194,13 @@ export function plantTrees(
     if (count === 0) continue;
     const mesh = new THREE.InstancedMesh(geometries[s]!, material, count);
     let slot = 0;
-    for (let i = 0; i < matrices.length; i++) if (species[i] === s) mesh.setMatrixAt(slot++, matrices[i]!);
+    for (let i = 0; i < matrices.length; i++) {
+      if (species[i] !== s) continue;
+      if (tints) mesh.setColorAt(slot, tintColour(tints[i]!, colour));
+      mesh.setMatrixAt(slot++, matrices[i]!);
+    }
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     // The trees never move, so three can skip re-uploading the matrix buffer every frame.
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
     // Frustum culling on an InstancedMesh tests one bounding volume for the whole wood; three
@@ -124,9 +209,14 @@ export function plantTrees(
     meshes.push(mesh);
   }
 
+  const capacity = meshes.map((mesh) => mesh.count);
   return {
     meshes,
     count: matrices.length,
+    setCap: (cap) => {
+      const share = Math.min(1, Math.max(0, cap) / matrices.length);
+      meshes.forEach((mesh, i) => (mesh.count = Math.round(capacity[i]! * share)));
+    },
     dispose: () => {
       // Both geometries, including a species that planted nothing and so has no mesh.
       for (const geometry of geometries) geometry.dispose();
@@ -198,10 +288,6 @@ export function createTrees(terrain: Terrain, surfaces: Surfaces): Trees {
   return plantTrees(palette, matrices, species);
 }
 
-/** How far from the clubhouse centre the course woods stay clear: the complex, its barns and spawn
- *  pads, the lot behind it and the welcome sign in front all sit inside this. */
-const CLUBHOUSE_CLEAR_M = 55;
-
 export interface CourseWoodsOptions {
   /** The course seed; placement is deterministic in it. */
   readonly seed: number;
@@ -211,87 +297,54 @@ export interface CourseWoodsOptions {
 }
 
 /**
- * The woods of an eighteen-hole course, in the match. The same planting rule as `createTrees` --
- * the same cell, density, deep-rough threshold and scale spread -- asked of the course's blended
- * ground rather than of one hole's.
- *
- * **Only where a hole reaches.** Each cell takes the biome of the hole with the largest share of
- * it (`CourseTerrain.weightsInto`), and ground no hole reaches has no biome, so it is left open.
- * Water on the course is painted by surface weight, not drawn as a plane at a height, so the
- * shoreline test is any water weight at all rather than `createTrees`' freeboard height.
- *
- * Up to six InstancedMeshes, two per biome present. Decorative: no collider, never read by the sim.
+ * Per-instance colour, multiplied into the baked vertex colours: a little lighter or darker and a
+ * touch warmer or cooler, so a wood of one species is not one swatch.
+ */
+function tintColour(t: number, out: THREE.Color): THREE.Color {
+  const light = 0.86 + 0.24 * t;
+  const warm = (t - 0.5) * 0.08;
+  return out.setRGB(light * (1 + warm), light, light * (1 - warm * 1.5));
+}
+
+/**
+ * The woods of an eighteen-hole course, in the match: clumps and stands placed by
+ * `woodsPlacement.ts`, each biome's two species as two InstancedMeshes (up to six draws).
+ * Decorative: no collider, never read by the sim.
  */
 export function createCourseTrees(course: CourseTerrain, surfaces: Surfaces, options: CourseWoodsOptions): Trees {
-  const random = mulberry32(hashChannel(options.seed, 0, COURSE_WOODS_CHANNEL));
-  const weights = createSurfaceWeights();
-  const shares = new Float32Array(course.holes.length);
-  const holeBiome = course.holes.map((hole) => biomeForIndex(hole.spec.index));
-  const { bounds } = course;
+  const placed = clumpOrder(placeCourseWoods(course, surfaces, options), options.seed);
 
-  const byBiome = new Map<BiomeId, { matrices: THREE.Matrix4[]; species: number[] }>();
-  const matrix = new THREE.Matrix4();
+  const byBiome = new Map<BiomeId, { matrices: THREE.Matrix4[]; species: number[]; tints: number[] }>();
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
-  const clear2 = CLUBHOUSE_CLEAR_M * CLUBHOUSE_CLEAR_M;
-
-  const cols = Math.floor((bounds.maxX - bounds.minX) / CELL_M);
-  const rows = Math.floor((bounds.maxZ - bounds.minZ) / CELL_M);
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      // A fixed number of draws per cell, whatever it decides, so one cell's rules never move the
-      // next cell's tree.
-      const occupancy = random();
-      const x = bounds.minX + (col + random()) * CELL_M;
-      const z = bounds.minZ + (row + random()) * CELL_M;
-      const size = random();
-      const turn = random();
-      const pick = random();
-
-      course.weightsInto(x, z, shares);
-      let owner = -1;
-      let best = 0;
-      for (let i = 0; i < shares.length; i++) {
-        if (shares[i]! > best) {
-          best = shares[i]!;
-          owner = i;
-        }
-      }
-      if (owner < 0) continue;
-      const biome = holeBiome[owner]!;
-      const palette = BIOMES[biome];
-      if (occupancy > (palette.treeDensity * CELL_M * CELL_M) / 1000) continue;
-
-      surfaces.weightsAt(x, z, weights);
-      if (weights.corridor < MIN_ROUGH_WEIGHT) continue;
-      if (weights.sand === 1 || weights.water > 0) continue;
-      if (options.southBoundary && metresNorthOf(options.southBoundary, x, z) <= 0) continue;
-      if (options.clubhouse) {
-        const dx = x - options.clubhouse.x;
-        const dz = z - options.clubhouse.z;
-        if (dx * dx + dz * dz < clear2) continue;
-      }
-
-      const height = palette.treeHeight * (SCALE_MIN + size * (SCALE_MAX - SCALE_MIN));
-      position.set(x, course.heightAt(x, z), z);
-      quaternion.setFromAxisAngle(up, turn * Math.PI * 2);
-      scale.set(height, height, height);
-      let wood = byBiome.get(biome);
-      if (wood === undefined) {
-        wood = { matrices: [], species: [] };
-        byBiome.set(biome, wood);
-      }
-      wood.matrices.push(matrix.clone().compose(position, quaternion, scale));
-      wood.species.push(pick < 0.5 ? 0 : 1);
+  for (const tree of placed) {
+    let wood = byBiome.get(tree.biome);
+    if (wood === undefined) {
+      wood = { matrices: [], species: [], tints: [] };
+      byBiome.set(tree.biome, wood);
     }
+    position.set(tree.x, tree.y, tree.z);
+    quaternion.setFromAxisAngle(up, tree.turn);
+    scale.set(tree.height, tree.height, tree.height);
+    wood.matrices.push(new THREE.Matrix4().compose(position, quaternion, scale));
+    wood.species.push(tree.species);
+    wood.tints.push(tree.tint);
   }
 
-  const woods = [...byBiome.entries()].map(([biome, wood]) => plantTrees(BIOMES[biome], wood.matrices, wood.species));
+  const woods = [...byBiome.entries()].map(([biome, wood]) =>
+    plantTrees(BIOMES[biome], wood.matrices, wood.species, wood.tints),
+  );
+  const count = woods.reduce((sum, wood) => sum + wood.count, 0);
   return {
     meshes: woods.flatMap((wood) => wood.meshes),
-    count: woods.reduce((sum, wood) => sum + wood.count, 0),
+    count,
+    setCap: (cap) => {
+      // The same share of every biome's wood, so the cap thins the course evenly.
+      const share = Math.min(1, Math.max(0, cap) / Math.max(count, 1));
+      for (const wood of woods) wood.setCap(Math.round(wood.count * share));
+    },
     dispose: () => {
       for (const wood of woods) wood.dispose();
     },

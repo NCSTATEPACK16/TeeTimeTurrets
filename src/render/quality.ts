@@ -43,13 +43,13 @@ export interface QualityPreset {
   readonly ambientOcclusion: boolean;
   /** Reserved for Stage 5's grass carpet: blades per square metre near the camera. */
   readonly grassDensity: number;
-  /** Reserved for Stage 5's trees: most drawn at once. */
+  /** Most course-wood trees drawn at once (`Trees.setCap`); whole clumps are dropped past it. */
   readonly treeCap: number;
   /** SMAA on the post chain. Only where there is a post chain; Low and Med use the canvas's MSAA. */
   readonly smaa: boolean;
   /** A light bloom on the post chain. */
   readonly bloom: boolean;
-  /** Reserved for Stage 5's water. */
+  /** "reflective" gives the water surface its second wave layer (`render/water.ts`). */
   readonly water: "flat" | "reflective";
 }
 
@@ -76,7 +76,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     shadowCascades: 1,
     ambientOcclusion: false,
     grassDensity: 8,
-    treeCap: 1200,
+    // Stage 3.5b's clumped woods are about 1,950 trees. Med is the design target, so it draws
+    // them all; at the old 1,200 it dropped two clumps in five.
+    treeCap: 2000,
     smaa: false,
     bloom: false,
     water: "flat",
