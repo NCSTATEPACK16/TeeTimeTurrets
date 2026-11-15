@@ -10,7 +10,7 @@ the existing files there use. Build order is unchanged: 3.5b, 3.5c, 4b, 5, 6, 8,
 
 | Work | Where it is specified | Note |
 |---|---|---|
-| **The Caswell look and detailed grass** (user, 15 Nov): ground detail textures, one Piedmont palette, first cut, bunker lips, dark ponds with cattails, pine straw, grass tufts, loblolly pines | `specs/2026-11-15-caswell-look-and-grass-detail-design.md`, `plans/2026-11-15-caswell-look-and-grass-detail-implementation.md` | **Next.** Four slices, a play-test stop after each. It absorbs the old "ground splat" and "grass carpet" entries and 3.5b's sand item. Four questions for the user are in the spec's §6; build to the defaults. Slice D needs a local Blender session. |
+| **The Caswell look and detailed grass** (user, 15 Nov): ground detail textures, one Piedmont palette, first cut, bunker lips, dark ponds with cattails, pine straw, grass tufts, loblolly pines | `specs/2026-11-15-caswell-look-and-grass-detail-design.md`, `plans/2026-11-15-caswell-look-and-grass-detail-implementation.md` | **Next.** Four slices, a play-test stop after each. It absorbs the old "ground splat" and "grass carpet" entries and 3.5b's sand item. The water becomes the hole 13 pond shader from GolfCartSimulator. Open questions are in the spec's §6; build to the defaults. Slice D needs a local Blender session. |
 | 3.5b sand drift sprites | `NEXT-SESSION-PROMPT-3.5.md` item 3 | Small. Reuses `EffectsLayer.smoke`. The bunker texture and lip are in the Caswell plan. |
 | 3.5b assets: Kenney sprites into the 4 × 2 atlas | same file, item 5 | Fetch from opengameart.org; kenney.nl refuses scripted requests. |
 | 3.5b ambient life: birds, sprinklers, flag cloth, motes | same file, item 6 | Optional. Each is one small render module. |
@@ -50,10 +50,17 @@ In priority order.
 4. **Stage 8, economy.** The formulas are decided. Missing: the profile's schema and its migration
    from today's saved state, the `UPGRADES` table's actual numbers and prices, how `applyLoadout`
    reaches every rig, and the results screen's layout.
-5. **Cross-platform sim determinism.** Unscheduled (`DECISIONS.md`, "The golden fingerprint is Linux
+5. **Surveyed Caswell terrain.** The user's other project, `NCSTATEPACK16/GolfCartSimulator`, has
+   a GIS pipeline (lidar heights, traced outlines, sculpting, cart paths, tree scatter) and one
+   finished packet: **hole 1 only**. Holes 2–18 are not traced. Using surveyed ground here means
+   tracing them there first, then replacing this game's generated terrain, surfaces, colliders,
+   zone and spawns, and re-recording the golden. Missing: whether to do it at all, the packet-to-sim
+   adapter, and the data licences ("NC public data; terms to confirm"; OpenStreetMap is ODbL).
+   See the Caswell spec's §3.10.
+6. **Cross-platform sim determinism.** Unscheduled (`DECISIONS.md`, "The golden fingerprint is Linux
    x64's"). It needs a decision before any multiplayer work: fix it, or keep one authoritative
    platform.
-6. **Performance audit items** still open in `HANDOFF.md` (nameplate line of sight, draw calls per
+7. **Performance audit items** still open in `HANDOFF.md` (nameplate line of sight, draw calls per
    cart, the single 3.6 MB chunk). Each needs a measured target before it is worth a plan.
 
 ## Found while building 3.5b, not yet decided

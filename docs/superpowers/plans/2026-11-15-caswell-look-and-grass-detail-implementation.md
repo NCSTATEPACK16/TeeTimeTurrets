@@ -2,7 +2,7 @@
 
 **Goal:** The course reads as one Carolina Piedmont pine course, and the grass has visible detail
 from the chase camera: grain, clumpy rough, striped fairways with sheen, pine straw under the
-woods, dark ponds with cattails, and tufts of blades in the rough.
+woods, still sky-reflecting ponds with cattails, and tufts of blades in the rough.
 
 **Spec:** `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md`. Its **D**
 decisions are settled. Its **ASK** items have defaults; build to the defaults and list the ASKs
@@ -51,7 +51,7 @@ play-test notes, fix those first on its branch.
 | Slice | Tasks | What the user sees |
 |---|---|---|
 | **A. Detailed grass** | 1, 2 | Grain on fairway and rough, clumpy rough, stripes with sheen. Same colours as today. |
-| **B. One Piedmont course** | 3, 4 | No tan links holes or reed-trees. First cut, collar, bunker lips, dark ponds with cattails. |
+| **B. One Piedmont course** | 3, 4 | No tan links holes or reed-trees. First cut, collar, bunker lips, the hole 13 pond shader, cattails. |
 | **C. Woods floor and tufts** | 5, 6 | Pine straw under the trees, blades in the rough. |
 | **D. Loblolly pines** | 7 | Tall pines. **Local session with Blender.** |
 
@@ -75,7 +75,8 @@ A is the user's first ask and stands alone. If only one slice fits a session, sh
 - `src/render/groundShader.ts` — detail, sheen, first cut, collar, lip, woods floor, clay, fade.
 - `src/render/courseGround.ts` — binds the arrays, bakes `aWoods`, passes the camera position.
 - `src/render/biomes.ts` — the three palettes (Task 3).
-- `src/render/water.ts` — retune for the dark pond colour.
+- `src/render/water.ts` — the hole 13 pond shader (a GLSL port of afl_ext's ocean).
+- `NOTICE` — the afl_ext notice.
 - `src/render/woodsPlacement.ts` — `buildWoodsDensity`, `woodsDensityAt`.
 - `src/render/quality.ts` — `groundDetail`; `grassDensity` gets real values.
 - `src/render/courseDressing.ts`, `src/render/scene.ts` — wiring.
@@ -210,7 +211,7 @@ if they assert on links' or marsh's density.
   | `fairway` | `0x5fa53a` | `0x66a83c` | `0x599e39` |
   | `rough` | `0x4f7a3a` | `0x587f3a` | `0x49723a` |
   | `sand` | `0xe2cfa0` | `0xe2cfa0` | `0xdcc898` |
-  | `water` | `0x4f4a36` | `0x4f4a36` | `0x4f4a36` |
+  | `water` | `0x3f5560` | `0x3f5560` | `0x3f5560` |
   | `sky` | `0x55b1ef` | `0x55b1ef` | `0x55b1ef` |
   | `foliageLight` | `0x5f9636` | `0x679a38` | `0x588c36` |
   | `foliageDark` | `0x3c5c28` | `0x42602a` | `0x36542a` |
@@ -250,9 +251,25 @@ if they assert on links' or marsh's density.
   - **Rake lines** on sand: a 0.25 m stripe in warped world space, ±6%.
   - **Clay** on steep ground from `vNormal` in world space (pass a world-normal varying), layer
     `clay`, colour a fixed `0xb5562f` uniform, not per biome.
-- [ ] `water.ts`: retune `waterMid`, `waterShallow`, `waterDeepCol` and `envMapIntensity` (0.45)
-  for the dark pond per spec D2. Keep foam and ripples. Compare on holes 13, 15 and 18 at Med and
-  High.
+- [ ] `water.ts`: port the afl_ext ocean shader per spec D2. The source to read is
+  `apps/web/src/env/oceanWaves.ts` in `NCSTATEPACK16/GolfCartSimulator` (attach that repo to the
+  session, read access); the settings are in its `env/envConfig.ts` and repeated in the spec.
+  1. Add GLSL `waterWaves(vec2 p, float time)` (the `exp(sin(x) - 1)` sum with drag; iteration
+     count a `#define` from `quality.waterIterations`) to the fragment `common` block.
+  2. In the normal block, replace `waterSlope` with the three-sample normal:
+     `pos = world.xz * waveScale`, `depth = waveHeight * waveScale`, `e = 0.01`; then flatten
+     toward +Y by `distanceSmoothing * min(1, sqrt(dist * 0.01) * 1.1)`. Add the ripple-ring slope
+     to the result as today.
+  3. Colour: drop the depth colour ramp. `diffuseColor.rgb = scatterColor * scatterStrength * (h0 + 0.2)`,
+     `roughness` near 0.05 and `envMapIntensity` 1 so three's own Fresnel reflects
+     `scene.environment`; add the sun disc `pow(max(0, dot(reflect(ray, n), sunDir)), 720) * 210`
+     into `totalEmissiveRadiance`, scaled by the Fresnel term. `uSunDir` is `sky.sunDir`.
+  4. Alpha: 1 everywhere except the shoreline fade and foam, which stay.
+  5. `quality.ts`: replace `water: "flat" | "reflective"` with `waterIterations` (10, 18, 36).
+  6. `NOTICE`: add the afl_ext notice in this commit (spec D2, Licence).
+  Compare against `docs/screens/water/h13-chase.png` on that repo's branch
+  `claude/sweet-rubin-u1g5bl`, on holes 13, 15 and 18 at Med and High. If the baked environment
+  reads as a flat colour in the reflection, port the source's analytic `atmosphere()` too.
 - [ ] `waterMesh.ts` exports the shoreline: while building, collect points where a cell edge
   crosses depth 0 between a wet and a dry vertex (`shore: Float32Array` of x, z pairs).
 - [ ] `cattails.ts`: thin the shore points to one cluster site every 5–9 m (seeded), step each
@@ -264,11 +281,11 @@ if they assert on links' or marsh's density.
   the sim does not call water, within 2.5 m of a shore point, and every pond with a shore has at
   least 3 clusters. See it fail by stepping toward the wet side.
 - [ ] Commit(s): `render: first cut, collars, bunker lips and clay`, then
-  `render: dark still ponds with a cattail fringe`.
+  `render: the hole 13 pond shader on every pond, with a cattail fringe`.
 
 **STOP B.** Play-test list: do holes 6–11 now look like the same course as 1–5; can you still
 tell fairway from rough at a glance on every stretch; is the first cut visible; do bunkers have a
-lip; do the ponds read as dark still water or as holes in the ground; cattails present and not in
+lip; do the ponds look like the hole 13 pond in GolfCartSimulator (still, reflecting the sky, with ripples and sun glitter); cattails present and not in
 the water; drive from hole 5 to hole 6 and from 11 to 12: is there a visible seam.
 
 ---
@@ -361,7 +378,7 @@ smooth with tufts on; on Low is everything still fast.
 
 Needs the Blender MCP session on the user's Mac. Do not attempt in the cloud.
 
-- [ ] Write the species into `docs/art/specs/stage5/trees.md`: unit height; trunk a tapered
+- [ ] Write the species into `docs/art/specs/stage5/trees.md` (proportions from spec §3.9): unit height; trunk a tapered
   cylinder to 0.58 of the height, radius 0.035 at the base; three crown masses (flattened spheres
   or short wide cones with rounded tops) at 0.62, 0.78 and 0.92, radii 0.20, 0.17, 0.11, each
   offset a few percent off-axis; slots `tree_trunk`, `tree_foliage_dark`, `tree_foliage_light`
