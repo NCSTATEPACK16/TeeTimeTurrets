@@ -35,8 +35,6 @@ Render only. The sim and the golden are untouched.
 - **Not measured:** frame time on a real GPU. In headless software GL a Med frame with detail took over 30 s to capture where Low took a second or two, which says software GL is slow at `textureGrad` with anisotropy and nothing about a real GPU. The play-test is the check. If Med drops frames, the levers in order are: `anisotropy` 4 to 1 in `groundTextures.ts`, the fade distance (70 m to 50 m), the macro sample off on Med.
 - **Headless screenshots time out at Med and High now.** Give `page.screenshot` a 150 s timeout, and hide the HUD with a style tag to see the ground.
 
-## Earlier in 3.5b: water and trees (#89, merged 15 Nov)
-
 **Asset hosts (checked 8 Nov):** opengameart.org and ambientcg.com (and its download host) answer through the proxy. kenney.nl's tunnel opens but the site returns 403 to scripted requests; Kenney publishes the same CC0 packs on opengameart.org, so fetch them there.
 
 ## Read first
@@ -72,6 +70,10 @@ Render only. The sim and the golden are untouched.
 | 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
+
+## Earlier in 3.5b: water and trees (#89, merged 15 Nov)
+
+Render only. The sim and the golden are untouched.
 
 - **Water (`render/water.ts`, `render/waterMesh.ts`).**
   - Every pond is one transparent sheet at its hole's water level; all six are one draw of 18.5k triangles.
