@@ -1,23 +1,40 @@
 # Handoff — next session
 
-Rewritten 2026-11-16, at the end of slice A of the Caswell look (detailed grass). It is built, pushed and in a draft PR, **waiting for the user's play-test.** Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-16, at the end of slice B of the Caswell look (one Piedmont course). It is built, pushed and in a draft PR, **waiting for the user's play-test.** Slice A (detailed grass, #90) was merged at the user's direction without notes. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, from `main` after #89 (water and trees) merged. Two commits: the texture packer and the ground detail shader. `tsc` is clean and `npm test` passes (117 files, 1,148 tests). **The suite took 54.8 s on this run, against the 60 s cap;** it has ranged from 37 s to 55 s between containers. If it goes over, trim the slowest file (`AGENTS.md`).
+**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, from `main` after #90 merged. Five commits: palettes, ground edges, the pond shader, the bed tint, cattails. `tsc` is clean and `npm test` passes (120 files, 1,159 tests, 48.9 s; it has ranged from 37 s to 55 s between containers against a 60 s cap).
 
 **The work is the Caswell look and detailed grass** (user, 15 Nov). The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Four slices, each ending at a play-test stop:
 
 | Slice | State |
 |---|---|
-| **A. Detailed grass** (Tasks 1, 2) | **built, draft PR, awaiting play-test** |
-| B. One Piedmont course: palettes, first cut, collars, bunker lips, the hole 13 pond shader, cattails (Tasks 3, 4) | next, after the play-test |
-| C. Pine straw and grass tufts (Tasks 5, 6) | after B |
+| A. Detailed grass (Tasks 1, 2) | **done** (#90) |
+| **B. One Piedmont course** (Tasks 3, 4) | **built, draft PR, awaiting play-test** |
+| C. Pine straw and grass tufts (Tasks 5, 6) | next, after the play-test |
 | D. Loblolly pines (Task 7) | needs a local Blender session |
 
-The ponds will take the water shader from the user's other project, `NCSTATEPACK16/GolfCartSimulator` (attach it to the session to read it). That project's GIS survey covers hole 1 only, so the terrain here stays generated (spec §3.10). The spec's §6 has the open questions, each with a default. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
+The spec's §6 has the open questions, each with a default. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
 
-## Just done: slice A, detailed grass (draft PR, not merged)
+## Just done: slice B, one Piedmont course (draft PR, not merged)
+
+Render only. The sim and the golden are untouched (`sim/course.ts` gained a comment).
+
+- **Palettes (`render/biomes.ts`).** The three biomes are now pine upland, open upland and bottomland: one course in slightly different light. `biomes.test.ts` holds the two rules (at most 6 in luminance between variations; fairway 25 over rough within one). All three grow the conifer pair at 9–10 m, the stand-in until the loblolly exists. The woods went from 1,942 trees to **2,564**; Med's `treeCap` is 2,750.
+- **Edges (`GROUND_EDGES` in `groundShader.ts`, course path, every preset).** Fairway, first cut, rough at two cut lines; a collar round each green; stripes stop at the fairway's edge; a darker lip and a cut edge on bunkers; rake lines on detail presets; clay on ground steeper than about 39°. The one-hole path (title backdrop) keeps the old blend.
+  - **Deviation:** clay is a colour only. It does not switch detail layer, which would need a third sampled slot.
+- **Water (`render/water.ts`).** A GLSL port of afl_ext's ocean, through the user's GolfCartSimulator project, at its still-pond settings (`WATER_TUNING`). `NOTICE` carries the permission notice; it is still to be confirmed against the Shadertoy header.
+  - The reflection is three's own Fresnel on `scene.environment`, and the sun's glitter is the scene sun's specular. The source's analytic atmosphere and sun disc were not ported.
+  - The scatter term is emissive over a black diffuse. From above, the water is near-black navy; at the chase camera's angle it reflects the sky. That is the source's behaviour too.
+  - `waterWaves` exists in TypeScript beside the GLSL as its reference; `water.test.ts` checks them against one set of constants, not against each other's output.
+  - `QualityPreset.waterIterations`: 10, 18, 36. Three wave sums a pixel. Not measured on a real GPU.
+  - The palettes' `water` field is now a damp-grass olive: it shows on the pond bed and on the strip of bank above the waterline.
+- **Cattails (`render/cattailPlacement.ts`, `cattails.ts`).** Placed from `WaterMesh.shore`, a new list of shoreline crossings. One merged draw, 39k triangles. Scaled up and widened 2.4× to read at distance. **No sway** (the plan asked for it).
+- **Smoke checks:** `biomes.test.ts`, `water.test.ts`, `cattailPlacement.test.ts`. Each was seen to fail first.
+- **A trap from this session:** to see a check fail, break the code with a reversible edit and reverse it. Do not `git checkout` the file afterwards: on an uncommitted file that discards the work.
+
+## Slice A, detailed grass (#90, merged 16 Nov)
 
 Render only. The sim and the golden are untouched.
 

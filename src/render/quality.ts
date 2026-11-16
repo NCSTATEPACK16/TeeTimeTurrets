@@ -55,8 +55,11 @@ export interface QualityPreset {
   readonly smaa: boolean;
   /** A light bloom on the post chain. */
   readonly bloom: boolean;
-  /** "reflective" gives the water surface its second wave layer (`render/water.ts`). */
-  readonly water: "flat" | "reflective";
+  /**
+   * Waves summed per sample by the pond shader (`render/water.ts`), three samples a pixel. The
+   * source's 36 is High; fewer loses the finest ripples first.
+   */
+  readonly waterIterations: number;
 }
 
 export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
@@ -72,7 +75,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     treeCap: 400,
     smaa: false,
     bloom: false,
-    water: "flat",
+    waterIterations: 10,
   },
   med: {
     label: "Med",
@@ -84,12 +87,12 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     ambientOcclusion: false,
     groundDetail: "near",
     grassDensity: 8,
-    // Stage 3.5b's clumped woods are about 1,950 trees. Med is the design target, so it draws
-    // them all; at the old 1,200 it dropped two clumps in five.
-    treeCap: 2000,
+    // The clumped woods are 2,564 trees now that every stretch is wooded. Med is the design
+    // target, so it draws them all.
+    treeCap: 2750,
     smaa: false,
     bloom: false,
-    water: "flat",
+    waterIterations: 18,
   },
   high: {
     label: "High",
@@ -103,7 +106,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     treeCap: 3000,
     smaa: true,
     bloom: true,
-    water: "reflective",
+    waterIterations: 36,
   },
 };
 

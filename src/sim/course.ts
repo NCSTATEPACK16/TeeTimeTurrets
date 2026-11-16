@@ -53,6 +53,9 @@ export type BiomeId = "parkland" | "links" | "marsh";
  * carries the hard stretch, and parkland returns for the closing three -- so three palettes cover
  * four stretches.
  */
+// The ids are historical. Since 15 Nov 2026 the three are variations of one Piedmont pine
+// course -- pine upland, open upland, bottomland -- and not three climates: see `render/biomes.ts`.
+// Renaming them is left to the refactor stage, because the briefs and committed plans use them.
 const BIOME_ROUTING: readonly BiomeId[] = [
   "parkland", "parkland", "parkland", "parkland", "parkland",
   "links", "links", "links", "links", "links", "links",
