@@ -1,14 +1,41 @@
 # Handoff — next session
 
-Rewritten 2026-11-15, part-way through Stage 3.5b (the living course). Water and trees are built, play-tested and merged (#89) at the user's direction. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-16, at the end of slice A of the Caswell look (detailed grass). It is built, pushed and in a draft PR, **waiting for the user's play-test.** Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Where it stands:** `main` has the water surface and the clumped woods (#89). `tsc` is clean and `npm test` passes (115 files, 1,139 tests, 37 s).
+**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, from `main` after #89 (water and trees) merged. Two commits: the texture packer and the ground detail shader. `tsc` is clean and `npm test` passes (117 files, 1,148 tests). **The suite took 54.8 s on this run, against the 60 s cap;** it has ranged from 37 s to 55 s between containers. If it goes over, trim the slowest file (`AGENTS.md`).
 
-**Play-test of water and trees (user, 15 Nov):** "much more fun"; the setup, the carts and the shooting are liked. The user then asked for much more detailed grass and for the course to look like Caswell Pines, the real course its routing is traced from.
+**The work is the Caswell look and detailed grass** (user, 15 Nov). The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Four slices, each ending at a play-test stop:
 
-**Next: the Caswell look and detailed grass.** The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Build it on a fresh branch from `main`. Four slices, each ending at a play-test stop; slice A (grass detail) is the user's first ask. The ponds take the water shader from the user's other project, `NCSTATEPACK16/GolfCartSimulator` (attach it to the session to read it). That project's GIS survey covers hole 1 only, so the terrain here stays generated (spec §3.10). The spec's §6 has the open questions, each with a default. It replaces 3.5b's sand, ground and grass items. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
+| Slice | State |
+|---|---|
+| **A. Detailed grass** (Tasks 1, 2) | **built, draft PR, awaiting play-test** |
+| B. One Piedmont course: palettes, first cut, collars, bunker lips, the hole 13 pond shader, cattails (Tasks 3, 4) | next, after the play-test |
+| C. Pine straw and grass tufts (Tasks 5, 6) | after B |
+| D. Loblolly pines (Task 7) | needs a local Blender session |
+
+The ponds will take the water shader from the user's other project, `NCSTATEPACK16/GolfCartSimulator` (attach it to the session to read it). That project's GIS survey covers hole 1 only, so the terrain here stays generated (spec §3.10). The spec's §6 has the open questions, each with a default. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
+
+## Just done: slice A, detailed grass (draft PR, not merged)
+
+Render only. The sim and the golden are untouched.
+
+- **Packer (`tools/textures/packGround.mjs`, `npm run pack:ground`).** Reads the CC0 sets in `art/textures-src/` (moved out of `public/`, so 19 MB stops shipping) and writes `public/textures/ground/detail.bin`, `normal.bin` and `ground.json`: five layers at 512 px, 6.5 MB raw, 4.6 MB gzipped. Needs ImageMagick's `convert`. Deterministic. Rerun it after changing a source or a layer; commit the outputs.
+- **Layers (`render/groundLayers.ts`):** mown, coarse, sand, clay, straw. **Straw is packed from clay's files** until Task 5 adds a pine-straw set. The packer has its own copy of the layer order; `tools/groundTextures.test.mjs` fails if the two disagree.
+- **Shader (`render/groundShader.ts`, course path).** `QualityPreset.groundDetail`: Low `off` (the old shader, no fetch), Med `near`, High `full`.
+  - Palette colour × detail. Mean colour is unchanged (measured: within 2 in 255).
+  - Two slots per pixel: mown grass or sand, and coarse grass by rough weight. Plus a 27 m macro sample.
+  - All fetches use `textureGrad` with gradients from the world position. Keep it that way: an implicit fetch draws a line where the layer changes.
+  - Stripe sheen and layer normals are written to `gNormalTilt` in the roughness chunk and applied after `normal_fragment_maps`. The chunks share globals (`gUvA` and friends) because three compiles them in the order colour, roughness, normal.
+  - Tuning is `GROUND_DETAIL_TUNING` in `groundShader.ts` and the per-layer `scaleM` and `strength` in `groundLayers.ts`.
+- **Warp (`render/groundWarp.ts`):** the fairway edge wanders up to 1.2 m. The TypeScript function and the GLSL string are built from the same constants on an integer hash. The shader fades the warp out with distance and within 3 m of a tile edge; the TypeScript function does not. Task 6's tufts must allow for that margin.
+- **Loading (`render/courseDressing.ts`):** `applyGroundDetail(mode)` fetches the arrays once per page and calls `ground.setDetail`. The ground draws flat until they arrive.
+- **Smoke checks:** `tools/groundTextures.test.mjs`, `groundWarp.test.ts`, and one case in `courseGround.test.ts`. Each was seen to fail first.
+- **Not measured:** frame time on a real GPU. In headless software GL a Med frame with detail took over 30 s to capture where Low took a second or two, which says software GL is slow at `textureGrad` with anisotropy and nothing about a real GPU. The play-test is the check. If Med drops frames, the levers in order are: `anisotropy` 4 to 1 in `groundTextures.ts`, the fade distance (70 m to 50 m), the macro sample off on Med.
+- **Headless screenshots time out at Med and High now.** Give `page.screenshot` a 150 s timeout, and hide the HUD with a style tag to see the ground.
+
+## Earlier in 3.5b: water and trees (#89, merged 15 Nov)
 
 **Asset hosts (checked 8 Nov):** opengameart.org and ambientcg.com (and its download host) answer through the proxy. kenney.nl's tunnel opens but the site returns 403 to scripted requests; Kenney publishes the same CC0 packs on opengameart.org, so fetch them there.
 
@@ -45,10 +72,6 @@ Rewritten 2026-11-15, part-way through Stage 3.5b (the living course). Water and
 | 5 | Environment, the rest (#54–#61) | after Stage 4b |
 | 6 | navGraph (#62–#64) | — |
 | 8, 9, 10 | Economy (#66), refactor (#67), docs (#68) | — |
-
-## Just done: Stage 3.5b, water and trees (#89, merged 15 Nov)
-
-Render only. The sim and the golden are untouched.
 
 - **Water (`render/water.ts`, `render/waterMesh.ts`).**
   - Every pond is one transparent sheet at its hole's water level; all six are one draw of 18.5k triangles.
