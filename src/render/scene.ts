@@ -223,6 +223,7 @@ export class RenderScene {
     // The woods are the course's and outlive this match, so the cap is set per match: a preset
     // changed between matches takes effect at the next PLAY.
     dressing.woods.setCap(quality.treeCap);
+    dressing.applyGroundDetail(quality.groundDetail);
     this.groundHeightAt = (x, z) => arena.course.heightAt(x, z);
 
     // Stage 7: the clubhouse complex, a sign on every tee, and the pickups.

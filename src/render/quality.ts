@@ -41,6 +41,12 @@ export interface QualityPreset {
    * contact shade baked into static merged graphs instead (`groundContactShade`).
    */
   readonly ambientOcclusion: boolean;
+  /**
+   * Ground detail from the packed textures (`groundShader.ts`): "off" is the flat palette ground,
+   * "near" adds grain, a macro sample, the warped fairway edge and mow-stripe sheen, "full" adds
+   * a second anti-tiling sample. "off" loads no textures at all.
+   */
+  readonly groundDetail: "off" | "near" | "full";
   /** Reserved for Stage 5's grass carpet: blades per square metre near the camera. */
   readonly grassDensity: number;
   /** Most course-wood trees drawn at once (`Trees.setCap`); whole clumps are dropped past it. */
@@ -61,6 +67,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     shadowMapSize: 0,
     shadowCascades: 0,
     ambientOcclusion: false,
+    groundDetail: "off",
     grassDensity: 0,
     treeCap: 400,
     smaa: false,
@@ -75,6 +82,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     shadowMapSize: 2048,
     shadowCascades: 1,
     ambientOcclusion: false,
+    groundDetail: "near",
     grassDensity: 8,
     // Stage 3.5b's clumped woods are about 1,950 trees. Med is the design target, so it draws
     // them all; at the old 1,200 it dropped two clumps in five.
@@ -90,6 +98,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     shadowMapSize: 2048,
     shadowCascades: 3,
     ambientOcclusion: true,
+    groundDetail: "full",
     grassDensity: 16,
     treeCap: 3000,
     smaa: true,
