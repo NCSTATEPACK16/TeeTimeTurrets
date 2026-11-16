@@ -5,7 +5,7 @@ import type { CourseTerrain } from "../sim/courseTerrain";
 import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
 import { BIOMES } from "./biomes";
-import { applyGroundShader } from "./groundShader";
+import { CLAY_COLOUR, applyGroundShader } from "./groundShader";
 import type { GroundDetailMode } from "./groundShader";
 import type { GroundTextures } from "./groundTextures";
 
@@ -163,6 +163,7 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     uRoughBiome: { value: paletteVector("rough") },
     uSandBiome: { value: paletteVector("sand") },
     uWaterBiome: { value: paletteVector("water") },
+    uClay: { value: new THREE.Color(CLAY_COLOUR) },
     // Detail arrays (`groundTextures.ts`), null until `setDetail` hands them over. Only a program
     // compiled with detail on reads them.
     uGroundDetail: { value: null as THREE.DataArrayTexture | null },
