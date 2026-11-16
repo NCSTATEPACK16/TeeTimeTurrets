@@ -61,8 +61,9 @@ export const BIOMES: Readonly<Record<BiomeId, BiomePalette>> = {
   //
   // `parkland` is the base and still the colour sheet's values, except `rough`, darkened from
   // 0x59823f so pine straw has room beneath it, and `sand`, lightened toward the pale bunkers of
-  // a parkland course. `water` only tints the pond bed, which shows at the shoreline; the pond
-  // surface draws itself (`render/water.ts`).
+  // a parkland course. `water` only tints the pond bed and the strip of bank above the waterline;
+  // the pond surface draws itself (`render/water.ts`). It is a damp-grass olive: a blue-grey there
+  // read as wet concrete beside the reflecting surface.
   //
   // Pine upland: holes 1-5 and 16-18.
   parkland: {
@@ -70,7 +71,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomePalette>> = {
     fairway: 0x5fa53a,
     rough: 0x4f7a3a,
     sand: 0xe2cfa0,
-    water: 0x3f5560,
+    water: 0x47583a,
     sky: 0x55b1ef,
     foliageLight: 0x5f9636,
     foliageDark: 0x3c5c28,
@@ -85,7 +86,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomePalette>> = {
     fairway: 0x63a73b,
     rough: 0x547d3a,
     sand: 0xe2cfa0,
-    water: 0x3f5560,
+    water: 0x47583a,
     sky: 0x55b1ef,
     foliageLight: 0x679a38,
     foliageDark: 0x42602a,
@@ -100,7 +101,7 @@ export const BIOMES: Readonly<Record<BiomeId, BiomePalette>> = {
     fairway: 0x5ca239,
     rough: 0x4c773a,
     sand: 0xdcc898,
-    water: 0x3f5560,
+    water: 0x47583a,
     sky: 0x55b1ef,
     foliageLight: 0x588c36,
     foliageDark: 0x36542a,
