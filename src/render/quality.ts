@@ -84,9 +84,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     ambientOcclusion: false,
     groundDetail: "near",
     grassDensity: 8,
-    // Stage 3.5b's clumped woods are about 1,950 trees. Med is the design target, so it draws
-    // them all; at the old 1,200 it dropped two clumps in five.
-    treeCap: 2000,
+    // The clumped woods are 2,564 trees now that every stretch is wooded. Med is the design
+    // target, so it draws them all.
+    treeCap: 2750,
     smaa: false,
     bloom: false,
     water: "flat",
