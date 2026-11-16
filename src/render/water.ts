@@ -69,6 +69,8 @@ export const WATER_TUNING = {
 export interface WaterSurface {
   /** Null when the course has no water. */
   readonly mesh: THREE.Mesh | null;
+  /** The shoreline (`WaterMesh.shore`), for bank-side dressing. */
+  readonly shore: Float32Array;
   /** A splash at a course point: starts a ripple ring there. */
   ripple(x: number, z: number): void;
   /** Advance the waves. Call once per rendered frame. */
@@ -91,7 +93,7 @@ export function createWaterSurface(
   const ring = new RippleRing();
   let time = 0;
   if (built.indices.length === 0) {
-    return { mesh: null, ripple() {}, update() {}, dispose() {} };
+    return { mesh: null, shore: built.shore, ripple() {}, update() {}, dispose() {} };
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -130,6 +132,7 @@ export function createWaterSurface(
 
   return {
     mesh,
+    shore: built.shore,
     ripple(x, z) {
       ring.push(x, z, time);
     },

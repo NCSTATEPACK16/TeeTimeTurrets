@@ -42,6 +42,13 @@ export interface WaterMesh {
   readonly indices: Uint32Array;
   /** Ponds that produced at least one cell. */
   readonly ponds: number;
+  /**
+   * The shoreline, as points where the sheet's depth crosses zero along a grid edge: `x, z` of
+   * the crossing and the unit direction `dx, dz` from the water toward the bank, four floats a
+   * point, about one every `WATER_CELL_M` along every shore. What bank-side dressing is placed
+   * from (`cattails.ts`).
+   */
+  readonly shore: Float32Array;
 }
 
 /**
@@ -61,6 +68,7 @@ export function buildWaterMesh(
   const colour: number[] = [];
   const indices: number[] = [];
   const world = { x: 0, z: 0 };
+  const shore: number[] = [];
   let ponds = 0;
 
   for (const hole of holes) {
@@ -114,6 +122,27 @@ export function buildWaterMesh(
           inside[k] = wet ? 1 : 0;
           const d = level - heightAt(world.x, world.z);
           vd[k] = wet ? d : Math.min(d, NOT_WATER_DEPTH_M);
+        }
+      }
+
+      // Shoreline crossings: every grid edge with water at one end and bank at the other.
+      const cross = (a: number, b: number): void => {
+        const wetA = inside[a] === 1 && vd[a]! > 0;
+        const wetB = inside[b] === 1 && vd[b]! > 0;
+        if (wetA === wetB) return;
+        const wet = wetA ? a : b;
+        const dry = wetA ? b : a;
+        const t = vd[wet]! / (vd[wet]! - vd[dry]!);
+        const dx = vx[dry]! - vx[wet]!;
+        const dz = vz[dry]! - vz[wet]!;
+        const length = Math.hypot(dx, dz) || 1;
+        shore.push(vx[wet]! + dx * t, vz[wet]! + dz * t, dx / length, dz / length);
+      };
+      for (let j = 0; j <= rows; j++) {
+        for (let i = 0; i <= cols; i++) {
+          const k = j * side + i;
+          if (i < cols) cross(k, k + 1);
+          if (j < rows) cross(k, k + side);
         }
       }
 
@@ -182,6 +211,7 @@ export function buildWaterMesh(
     colour: new Float32Array(colour),
     indices: new Uint32Array(indices),
     ponds,
+    shore: new Float32Array(shore),
   };
 }
 
