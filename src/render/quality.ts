@@ -55,8 +55,11 @@ export interface QualityPreset {
   readonly smaa: boolean;
   /** A light bloom on the post chain. */
   readonly bloom: boolean;
-  /** "reflective" gives the water surface its second wave layer (`render/water.ts`). */
-  readonly water: "flat" | "reflective";
+  /**
+   * Waves summed per sample by the pond shader (`render/water.ts`), three samples a pixel. The
+   * source's 36 is High; fewer loses the finest ripples first.
+   */
+  readonly waterIterations: number;
 }
 
 export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
@@ -72,7 +75,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     treeCap: 400,
     smaa: false,
     bloom: false,
-    water: "flat",
+    waterIterations: 10,
   },
   med: {
     label: "Med",
@@ -89,7 +92,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     treeCap: 2750,
     smaa: false,
     bloom: false,
-    water: "flat",
+    waterIterations: 18,
   },
   high: {
     label: "High",
@@ -103,7 +106,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     treeCap: 3000,
     smaa: true,
     bloom: true,
-    water: "reflective",
+    waterIterations: 36,
   },
 };
 

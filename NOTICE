@@ -87,3 +87,29 @@ Ported code
   The full MIT notice travels with the code at src/vendor/cot/LICENSE and
   reference/claude-of-tanks/LICENSE.
 
+
+"Very fast procedural ocean" by afl_ext
+---------------------------------------
+
+  src/render/water.ts
+    The wave sum (waterWaves), the three-sample normal, the distance
+    smoothing of the normal and the crest-lit scattering term are a GLSL
+    port of "Very fast procedural ocean" by afl_ext, Shadertoy MdXyzX
+    (https://www.shadertoy.com/view/MdXyzX), 2017, by way of the TSL port
+    in the GolfCartSimulator project (apps/web/src/env/oceanWaves.ts), whose
+    still-pond settings are used. The reflection, foam, shoreline fade and
+    ripple rings are this project's own.
+
+    Copyright (c) 2017 by afl_ext.
+
+    Permission to use, copy, modify, distribute, and sell this software and
+    its documentation for any purpose is hereby granted without fee, provided
+    that the above copyright notice appear in all copies and that both that
+    copyright notice and this permission notice appear in supporting
+    documentation. No representations are made about the suitability of this
+    software for any purpose. It is provided "as is" without express or
+    implied warranty.
+
+    The notice is as published with the shader's XScreenSaver port
+    (prococean). The Shadertoy page was not reachable from the build
+    environment, so it is still to be confirmed against the original header.
