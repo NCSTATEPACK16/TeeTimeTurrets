@@ -6,6 +6,8 @@ import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
 import { BIOMES } from "./biomes";
 import { applyGroundShader } from "./groundShader";
+import type { GroundDetailMode } from "./groundShader";
+import type { GroundTextures } from "./groundTextures";
 
 /**
  * The whole course, drawn as tiles that get finer as you approach them.
@@ -84,6 +86,13 @@ export interface CourseGround {
    * (`render/shadows.ts`). Set by the match scene that borrows the ground, cleared when it goes.
    */
   decorateMaterial: ((material: THREE.MeshStandardMaterial) => void) | null;
+  /**
+   * Turn ground detail on, or off with `null`. The textures stay the caller's to dispose. Every
+   * tile recompiles once when the mode changes; tiles built later compile into the same program.
+   */
+  setDetail(textures: Pick<GroundTextures, "detail" | "normal"> | null, mode: GroundDetailMode): void;
+  /** The mode tiles are drawn in now. For tests and the smoke check. */
+  readonly detailMode: GroundDetailMode;
   /** Tiles currently drawn at near detail. For tests and the smoke check. */
   readonly nearTileCount: number;
   /** Tiles holding a near level, drawn or not. Never more than `NEAR_TILE_CAP`. */
@@ -154,7 +163,14 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     uRoughBiome: { value: paletteVector("rough") },
     uSandBiome: { value: paletteVector("sand") },
     uWaterBiome: { value: paletteVector("water") },
+    // Detail arrays (`groundTextures.ts`), null until `setDetail` hands them over. Only a program
+    // compiled with detail on reads them.
+    uGroundDetail: { value: null as THREE.DataArrayTexture | null },
+    uGroundNormal: { value: null as THREE.DataArrayTexture | null },
+    // A tile's size in metres, the same for every tile: what turns the warp's metres into mask UV.
+    uMaskMetres: { value: new THREE.Vector2(sizeX, sizeZ) },
   };
+  let detailMode: GroundDetailMode = "off";
 
   const weightScratch = new Float32Array(terrain.holes.length);
   const biomeScratch = new Float32Array(BIOME_ORDER.length);
@@ -375,11 +391,11 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     material.map = mask;
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
-      applyGroundShader(shader, { course: true });
+      applyGroundShader(shader, { course: true, detail: detailMode });
     };
-    // One key for every tile: they differ only in the map, which three binds per material, so
-    // they share a compiled program rather than one each.
-    material.customProgramCacheKey = () => "course-ground";
+    // One key for every tile in a mode: they differ only in the map, which three binds per
+    // material, so they share a compiled program rather than one each.
+    material.customProgramCacheKey = () => `course-ground-${detailMode}`;
     return material;
   }
 
@@ -591,6 +607,21 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     group,
     update,
     tileAt,
+    setDetail(textures, mode) {
+      const next: GroundDetailMode = textures === null ? "off" : mode;
+      uniforms.uGroundDetail.value = textures?.detail ?? null;
+      uniforms.uGroundNormal.value = textures?.normal ?? null;
+      if (next === detailMode) return;
+      detailMode = next;
+      // Every tile recompiles once, into the one program its new mode shares.
+      for (const tile of tiles) {
+        tile.far.material.needsUpdate = true;
+        if (tile.near !== null) tile.near.material.needsUpdate = true;
+      }
+    },
+    get detailMode() {
+      return detailMode;
+    },
     get decorateMaterial() {
       return decorate;
     },

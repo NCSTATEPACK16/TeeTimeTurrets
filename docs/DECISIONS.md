@@ -821,3 +821,23 @@ Asked of the user after 3.5a, before it was play-tested.
   is reviewed on its own.
 - **The user will allow kenney.nl, opengameart.org and ambientcg.com,** so the painted atlas can give
   way to the CC0 packs. Each one gets a `LICENSES.md` row and a `NOTICE` line in the same commit.
+
+## Ground textures are detail, not colour; and the course is one place
+
+Decided 15 Nov 2026 in `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md`,
+after the user asked for much more detailed grass and for the course to look like Caswell Pines.
+
+- **A texture never supplies the ground's colour.** Each packed layer is its colour map's luminance
+  over its own mean, a number near 1, and the shader multiplies the palette colour by it. Sampled as
+  colour, a photographed lawn would replace the toy palette and every contrast value the palettes
+  were tuned for (fairway against rough, green against fairway). As detail, it adds grain and leaves
+  them alone. Measured on the first build: the same Med frame with detail on and off differs by at
+  most 2 in 255 in mean ground colour.
+- **The ground was wired before the KTX2 conversion,** reversing the order the Stage 4b spec set.
+  `toktx` is not installed in the cloud environment and the user wanted the grass now. The format is
+  hidden behind `loadGroundTextures`, so 4b swaps the files without touching the shader.
+- **The three biomes become three variations of one Piedmont pine course** (slice B of the plan, not
+  built yet). The "course bible" that made holes 6–11 a links and 12–15 a marsh predates the
+  routing being traced from a real Carolina course.
+- **Water takes the pond shader from the user's GolfCartSimulator project** (slice B). Its GIS
+  survey covers hole 1 only, so this game's terrain stays generated.

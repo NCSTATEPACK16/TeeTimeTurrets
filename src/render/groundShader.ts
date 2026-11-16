@@ -1,5 +1,47 @@
 import type * as THREE from "three";
 import { FAIRWAY_STRIPE_M, GREEN_STRIPE_M, STRIPE_CONTRAST } from "./biomes";
+import {
+  DETAIL_FADE_END_M,
+  DETAIL_FADE_START_M,
+  DETAIL_RANGE,
+  GROUND_LAYERS,
+  LAYER,
+  MACRO_SCALE_M,
+  MACRO_STRENGTH,
+} from "./groundLayers";
+import { GROUND_WARP_GLSL } from "./groundWarp";
+
+/** How much ground detail a preset draws. See `QualityPreset.groundDetail`. */
+export type GroundDetailMode = "off" | "near" | "full";
+
+/**
+ * Detail tuning that is not per layer (`groundLayers.ts` holds the per-layer numbers).
+ */
+export const GROUND_DETAIL_TUNING = {
+  /** How strongly the layers' normal maps tilt the shading normal. */
+  normalStrength: 0.9,
+  /**
+   * The layers' roughness maps are remapped into this narrow, matte band before use. Grass here
+   * is a toy surface at roughness 0.95; the scans' own values (about 0.5) would let it reflect
+   * the sky at the chase camera's grazing angle. The map still varies the sheen texel to texel.
+   */
+  roughnessFloor: 0.86,
+  roughnessCeil: 1.0,
+  /**
+   * Mow-stripe sheen: grass in alternate bands is laid in opposite directions, so the bands tilt
+   * the normal this far along the mow direction, and shift roughness by `sheenRoughness`. Looking
+   * down-sun and up-sun the light and dark bands swap, as on a real fairway.
+   */
+  sheenTilt: 0.12,
+  sheenRoughness: 0.035,
+  /** Detail strength on the putting surface, as a fraction of the fairway's: a green is finer. */
+  greenStrength: 0.5,
+  /** The macro sample keeps working this far out, metres, after the fine detail has faded. */
+  macroFadeStartM: 150,
+  macroFadeEndM: 420,
+  /** The mask warp fades to nothing this close to a tile's edge, metres, so tiles meet. */
+  warpEdgeM: 3,
+} as const;
 
 /**
  * The ground's shader, shared by the one-hole ground and the course-wide one.
@@ -34,6 +76,92 @@ export interface GroundShaderOptions {
    * three biomes. And the mow direction rides in per vertex too.
    */
   readonly course: boolean;
+  /**
+   * Course path only. Anything but "off" samples the packed detail arrays (`groundTextures.ts`):
+   * grain and normal detail near the camera, a macro sample against tiling, a warped fairway
+   * edge and the mow-stripe sheen. "full" adds a second, rotated near sample. "off" compiles the
+   * flat ground exactly as it was before there were textures.
+   */
+  readonly detail?: GroundDetailMode;
+}
+
+const g = (n: number): string => n.toFixed(4);
+
+/** Declarations for the detail path: samplers, the warp, and what the three chunks share. */
+function detailDeclaration(): string {
+  return `
+         uniform highp sampler2DArray uGroundDetail;
+         uniform highp sampler2DArray uGroundNormal;
+         uniform vec2 uMaskMetres;
+${GROUND_WARP_GLSL}
+         // Written by the colour chunk, read by the roughness and normal chunks after it.
+         vec2 gUvA; vec2 gUvB; vec2 gGradAx; vec2 gGradAy; vec2 gGradBx; vec2 gGradBy;
+         float gLayerA; float gWeightB; float gIsSand; float gDetailFade;
+         float gBandSign; float gMown; vec2 gMowDir; vec2 gNormalTilt;`;
+}
+
+/**
+ * The detail multiplier for the colour chunk. Two "slots" are sampled, never all five layers:
+ * slot A is mown grass, or sand inside a bunker; slot B is coarse grass, weighted by how far
+ * into the rough the pixel is.
+ *
+ * Every fetch uses explicit gradients taken from the world position. The two slots' UVs jump
+ * where the layer changes, and an implicit-derivative fetch across that jump picks a tiny mip
+ * for one pixel and draws a line along every bunker edge.
+ */
+function detailColour(full: boolean): string {
+  const t = GROUND_DETAIL_TUNING;
+  const mown = GROUND_LAYERS[LAYER.mown]!;
+  const coarse = GROUND_LAYERS[LAYER.coarse]!;
+  const sand = GROUND_LAYERS[LAYER.sand]!;
+  return `
+           {
+             vec2 p = vGroundWorldPos.xz;
+             vec2 dpx = dFdx(p);
+             vec2 dpy = dFdy(p);
+             // Mown grass is sampled in the mow frame, so its grain runs with the stripes.
+             vec2 perp = vec2(-fairwayDir.y, fairwayDir.x);
+             mat2 toMow = mat2(fairwayDir.x, perp.x, fairwayDir.y, perp.y);
+             gIsSand = step(0.5, wSand);
+             gMowDir = fairwayDir;
+             if (gIsSand > 0.5) {
+               gUvA = p / ${g(sand.scaleM)};
+               gGradAx = dpx / ${g(sand.scaleM)};
+               gGradAy = dpy / ${g(sand.scaleM)};
+               gLayerA = ${LAYER.sand}.0;
+             } else {
+               gUvA = (toMow * p) / ${g(mown.scaleM)};
+               gGradAx = (toMow * dpx) / ${g(mown.scaleM)};
+               gGradAy = (toMow * dpy) / ${g(mown.scaleM)};
+               gLayerA = ${LAYER.mown}.0;
+             }
+             gUvB = p / ${g(coarse.scaleM)};
+             gGradBx = dpx / ${g(coarse.scaleM)};
+             gGradBy = dpy / ${g(coarse.scaleM)};
+             gWeightB = wCorridor * (1.0 - gIsSand);
+
+             float strengthA = mix(${g(mown.strength)} * mix(${g(t.greenStrength)}, 1.0, wGreen), ${g(sand.strength)}, gIsSand);
+             float dA = textureGrad(uGroundDetail, vec3(gUvA, gLayerA), gGradAx, gGradAy).r * ${g(DETAIL_RANGE)};
+             float dB = textureGrad(uGroundDetail, vec3(gUvB, ${LAYER.coarse}.0), gGradBx, gGradBy).r * ${g(DETAIL_RANGE)};
+             float macro = textureGrad(uGroundDetail, vec3(p / ${g(MACRO_SCALE_M)}, ${LAYER.coarse}.0), dpx / ${g(MACRO_SCALE_M)}, dpy / ${g(MACRO_SCALE_M)}).r * ${g(DETAIL_RANGE)};
+${
+  full
+    ? `             // Anti-tiling: the same layers again, turned 40 degrees and a little larger, taking over
+             // where the macro sample is bright. No two repeats of the fine grain line up.
+             const mat2 turn = mat2(0.7660, 0.6428, -0.6428, 0.7660);
+             float dA2 = textureGrad(uGroundDetail, vec3(turn * gUvA / 1.15, gLayerA), turn * gGradAx / 1.15, turn * gGradAy / 1.15).r * ${g(DETAIL_RANGE)};
+             float dB2 = textureGrad(uGroundDetail, vec3(turn * gUvB / 1.15, ${LAYER.coarse}.0), turn * gGradBx / 1.15, turn * gGradBy / 1.15).r * ${g(DETAIL_RANGE)};
+             float swap = smoothstep(0.85, 1.15, macro);
+             dA = mix(dA, dA2, swap);
+             dB = mix(dB, dB2, swap);`
+    : ""
+}
+             float near = mix(mix(1.0, dA, strengthA), mix(1.0, dB, ${g(coarse.strength)}), gWeightB);
+             float macroFade = 1.0 - smoothstep(${g(t.macroFadeStartM)}, ${g(t.macroFadeEndM)}, groundDist);
+             float detail = mix(1.0, near, gDetailFade) * mix(1.0, macro, ${g(MACRO_STRENGTH)} * macroFade);
+             // Not under the water tint: the pond surface draws its own detail.
+             grass *= mix(detail, 1.0, wWater);
+           }`;
 }
 
 function paletteDeclaration(course: boolean): string {
@@ -114,6 +242,9 @@ export function applyGroundShader(
   // `map_fragment` would multiply the mask straight into diffuseColor, which is not what a mask
   // is, so on the course path it is replaced rather than appended to.
   const mapPreamble = options.course ? "" : "#include <map_fragment>\n";
+  const detail: GroundDetailMode = options.course ? (options.detail ?? "off") : "off";
+  const detailed = detail !== "off";
+  const t = GROUND_DETAIL_TUNING;
   const maskUniforms = options.course
     ? ""
     : `
@@ -138,7 +269,7 @@ export function applyGroundShader(
     .replace(
       "#include <common>",
       `#include <common>
-         varying vec3 vGroundWorldPos;${maskUniforms}${paletteDeclaration(options.course)}
+         varying vec3 vGroundWorldPos;${maskUniforms}${paletteDeclaration(options.course)}${detailed ? detailDeclaration() : ""}
 
          // Two-tone band. The bands run perpendicular to the mow direction, which is why the
          // projection is onto the direction rather than along it.
@@ -151,6 +282,21 @@ export function applyGroundShader(
       "#include <map_fragment>",
       `${mapPreamble}         {
            vec4 m = ${sample};
+${
+  detailed
+    ? `           float groundDist = distance(cameraPosition, vGroundWorldPos);
+           gDetailFade = 1.0 - smoothstep(${g(DETAIL_FADE_START_M)}, ${g(DETAIL_FADE_END_M)}, groundDist);
+           {
+             // The grass edges wander: green and corridor weights are read through the warp. Sand
+             // and water are not, because the pond surface and the bunkers are placed against
+             // the unwarped shapes. The warp dies away at a tile's edge, where the mask clamps.
+             vec2 toEdge = min(vMapUv, 1.0 - vMapUv) * uMaskMetres;
+             float inside = smoothstep(0.0, ${g(t.warpEdgeM)}, min(toEdge.x, toEdge.y));
+             vec2 warp = groundWarp(vGroundWorldPos.xz) * gDetailFade * inside;
+             m.rg = texture2D(map, vMapUv + warp / uMaskMetres).rg;
+           }`
+    : ""
+}
            float wGreen = m.r;      // 0 on the putting green, 1 off it
            float wCorridor = m.g;   // 0 on the mown corridor, 1 in full rough
            float wSand = m.b;
@@ -174,6 +320,13 @@ ${paletteBody(options.course)}
 
            grass = mix(grass, cSand, wSand);
            grass = mix(grass, cWater, wWater);
+${
+  detailed
+    ? `           gMown = mownAmount * (1.0 - wSand) * (1.0 - wWater);
+           gBandSign = band * 2.0 - 1.0;
+${detailColour(detail === "full")}`
+    : ""
+}
            diffuseColor.rgb *= grass;
          }`,
     )
@@ -181,6 +334,37 @@ ${paletteBody(options.course)}
       "#include <roughnessmap_fragment>",
       `#include <roughnessmap_fragment>
          // Water is the one surface here that should catch a highlight.
-         roughnessFactor = mix(roughnessFactor, 0.18, ${sample}.a);`,
+         roughnessFactor = mix(roughnessFactor, 0.18, ${sample}.a);
+${
+  detailed
+    ? `         {
+           // The layers' normals and roughness, fetched once here for both this chunk and the
+           // normal chunk below. RG is the tangent-space normal, B the roughness.
+           vec4 nA = textureGrad(uGroundNormal, vec3(gUvA, gLayerA), gGradAx, gGradAy);
+           vec4 nB = textureGrad(uGroundNormal, vec3(gUvB, ${LAYER.coarse}.0), gGradBx, gGradBy);
+           vec2 tiltA = nA.rg * 2.0 - 1.0;
+           // Slot A's normal is in the mow frame unless it is sand; turn it back to world XZ.
+           vec2 perp = vec2(-gMowDir.y, gMowDir.x);
+           tiltA = mix(gMowDir * tiltA.x + perp * tiltA.y, tiltA, gIsSand);
+           vec2 tiltB = nB.rg * 2.0 - 1.0;
+           // The ground is close enough to level that world X and Z stand in for the tangent
+           // frame; on a steep bank the grain is slightly foreshortened, which nobody can see.
+           gNormalTilt = mix(tiltA, tiltB, gWeightB) * (${g(t.normalStrength)} * gDetailFade);
+           // The sheen does not fade with the fine detail: stripes read from across the hole.
+           gNormalTilt += gMowDir * (gBandSign * ${g(t.sheenTilt)} * gMown);
+           float layerRough = mix(nA.b, nB.b, gWeightB);
+           float matte = mix(${g(t.roughnessFloor)}, ${g(t.roughnessCeil)}, layerRough);
+           roughnessFactor = mix(roughnessFactor, matte, gDetailFade);
+           roughnessFactor = clamp(roughnessFactor - gBandSign * ${g(t.sheenRoughness)} * gMown, ${g(t.roughnessFloor - 0.04)}, 1.0);
+         }`
+    : ""
+}`,
     );
+  if (detailed) {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <normal_fragment_maps>",
+      `#include <normal_fragment_maps>
+         normal = normalize(normal + (viewMatrix * vec4(gNormalTilt.x, 0.0, gNormalTilt.y, 0.0)).xyz);`,
+    );
+  }
 }

@@ -211,6 +211,33 @@ describe("what the shader is handed", () => {
     expect(keys.size).toBe(1);
     ground.dispose();
   });
+
+  it("moves every tile to one new program when detail turns on, and back when it turns off", () => {
+    const { ground } = build();
+    const keysNow = (): Set<string> =>
+      new Set(meshes(ground).map((mesh) => (mesh.material as THREE.MeshStandardMaterial).customProgramCacheKey!()));
+    const versions = (): number[] => meshes(ground).map((mesh) => (mesh.material as THREE.Material).version);
+    const flat = [...keysNow()];
+    expect(ground.detailMode).toBe("off");
+
+    const textures = { detail: new THREE.DataArrayTexture(null, 1, 1, 1), normal: new THREE.DataArrayTexture(null, 1, 1, 1) };
+    const before = versions();
+    ground.setDetail(textures, "near");
+    expect(ground.detailMode).toBe("near");
+    // Still one program for every tile, and not the flat one.
+    expect(keysNow().size).toBe(1);
+    expect([...keysNow()]).not.toEqual(flat);
+    // `needsUpdate` bumps a material's version: every tile was told to recompile.
+    versions().forEach((version, i) => expect(version).toBeGreaterThan(before[i]!));
+
+    // No textures means flat, whatever mode was asked for.
+    ground.setDetail(null, "full");
+    expect(ground.detailMode).toBe("off");
+    expect([...keysNow()]).toEqual(flat);
+    textures.detail.dispose();
+    textures.normal.dispose();
+    ground.dispose();
+  });
 });
 
 /** Runs `update` until the ground has nothing left to build here, or a generous cap. */

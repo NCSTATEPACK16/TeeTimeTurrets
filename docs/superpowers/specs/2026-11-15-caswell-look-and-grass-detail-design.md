@@ -185,7 +185,7 @@ Its three files leave the repo.
   and uploaded as `THREE.DataArrayTexture` with mipmaps. No image decoding on the page, no canvas.
 - **Sizes: 512 px per layer by default.** Detail array 5 × 512² × 1 byte = 1.3 MB; normal array
   5 × 512² × 4 = 5.2 MB; about 6.5 MB raw and about 8.7 MB of GPU memory with mips. The host
-  serves them compressed; expect 3–4 MB on the wire. **VERIFY** the compressed size after Task 1. **ASK-1** covers whether this is the size option
+  serves them compressed. Measured after Task 1: 4.6 MB gzipped (detail 1.1 MB, normal 3.5 MB). **ASK-1** covers whether this is the size option
   the user meant.
 - **The 19 MB of source JPGs leave `public/`**, so they stop shipping. They move to
   `art/textures-src/`, which the script reads.
@@ -317,7 +317,7 @@ that needs a spec.
 | Ground texture GPU memory | 0 | about 8.7 MB | about 8.7 MB |
 | Grass tufts | 0 | up to 22,000 (one draw, about 0.66 M triangles) | up to 60,000 |
 | Extra draws | 0 | +2 (tufts, cattails) | +2 |
-| Shipped bytes added | 0 | 3–4 MB compressed (6.5 MB raw) | same |
+| Shipped bytes added | 0 | 4.6 MB gzipped (6.5 MB raw) | same |
 | Shipped bytes removed | 19 MB of unused JPG, all presets | | |
 
 Frame time cannot be measured honestly in the cloud (software GL). Each slice's PR records draw
