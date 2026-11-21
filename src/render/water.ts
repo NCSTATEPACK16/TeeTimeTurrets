@@ -1,10 +1,9 @@
 import * as THREE from "three";
 import type { PlacedHole } from "../sim/courseTerrain";
-import { SurfaceId } from "../sim/surfaceId";
-import type { Surfaces } from "../sim/surfaces";
 import { BIOMES } from "./biomes";
 import type { QualityPreset } from "./quality";
 import { NOT_WATER_DEPTH_M, RIPPLE_LIFE_S, RIPPLE_SLOTS, RippleRing, buildWaterMesh } from "./waterMesh";
+import type { WaterMesh } from "./waterMesh";
 
 /**
  * The water surface: every pond on the course as one sheet at its water level.
@@ -66,6 +65,9 @@ export const WATER_TUNING = {
   rippleWavelength: 0.9,
 } as const;
 
+/** Keyed on the course's holes, which `main.ts` builds once and keeps. */
+const builtByCourse = new WeakMap<readonly PlacedHole[], WaterMesh>();
+
 export interface WaterSurface {
   /** Null when the course has no water. */
   readonly mesh: THREE.Mesh | null;
@@ -81,15 +83,15 @@ export interface WaterSurface {
 export function createWaterSurface(
   holes: readonly PlacedHole[],
   heightAt: (x: number, z: number) => number,
-  surfaces: Pick<Surfaces, "surfaceAt">,
   quality: Pick<QualityPreset, "waterIterations">,
 ): WaterSurface {
-  const built = buildWaterMesh(
-    holes,
-    heightAt,
-    (x, z) => surfaces.surfaceAt(x, z) === SurfaceId.Water,
-    (hole) => BIOMES[hole.spec.biome].water,
-  );
+  // The course is fixed, so its ponds are built once per page: the spill search reads the ground
+  // at about sixty thousand points, which is worth doing once and not at every PLAY.
+  let built = builtByCourse.get(holes);
+  if (built === undefined) {
+    built = buildWaterMesh(holes, heightAt, (hole) => BIOMES[hole.spec.biome].water);
+    builtByCourse.set(holes, built);
+  }
   const ring = new RippleRing();
   let time = 0;
   if (built.indices.length === 0) {

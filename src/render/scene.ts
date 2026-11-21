@@ -34,7 +34,6 @@ import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
 import { createWaterSurface, type WaterSurface } from "./water";
 import { setTreeWindTime } from "./Trees";
-import { SurfaceId } from "../sim/surfaceId";
 import { placeCattails } from "./cattailPlacement";
 import { createCattails, type Cattails } from "./cattails";
 
@@ -281,12 +280,12 @@ export class RenderScene {
     ]);
     this.scene.add(this.effects.group);
     // Stage 3.5b: the ponds as a surface, rung by every splash.
-    this.water = createWaterSurface(arena.course.holes, heightAt, arena.surfaces, quality);
+    this.water = createWaterSurface(arena.course.holes, heightAt, quality);
     if (this.water.mesh) this.scene.add(this.water.mesh);
     this.effects.onSplash = (x, z) => this.water.ripple(x, z);
     // Cattails along the banks, placed from the water's own shoreline.
     this.cattails = createCattails(
-      placeCattails(this.water.shore, arena.seed ?? 0, (x, z) => arena.surfaces.surfaceAt(x, z) === SurfaceId.Water),
+      placeCattails(this.water.shore, arena.seed ?? 0, heightAt),
       heightAt,
     );
     if (this.cattails.mesh) this.scene.add(this.cattails.mesh);
