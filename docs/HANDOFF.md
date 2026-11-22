@@ -17,7 +17,14 @@ Rewritten 2026-11-16, at the end of slice B of the Caswell look (one Piedmont co
 
 The spec's §6 has the open questions, each with a default. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
 
-## Just done: slice B, one Piedmont course (draft PR, not merged)
+## Just done: slice B, one Piedmont course (draft PR #91, not merged)
+
+**Water-float fix (latest commit on the PR).** The user's play-test: "the water seems to float above the ground". Cause: every pond was drawn at one level, `spec.waterLevel` (-0.72), while the basins around them are carved to different depths and some ground beside a pond sits lower than that. 582 grid cells hung over lower ground. Render only; the golden is untouched.
+- `waterMesh.ts` now gives each pond its own level: the lower of its nominal level and the **spill level** of its basin (`spillLevel`, a priority flood over the local ground) minus 4 cm. Only ground connected to the pond's deepest point is water. 2 of 1,684 shoreline points now have lower ground beyond them.
+- Levels now range from -2.70 to -0.72 m. Hole 12 (index 11) is unchanged; the others sit 0.6 to 2 m lower. Hole 4's creek-like pond shrinks to a small pool; hole 13's shrinks a lot.
+- Cattails stand on ground above the local pond's level (`waterLevelNear`).
+- Seen in headless Chrome at holes 18, 15 and 4: water meets the bank with foam at the edge. Not seen on a real GPU.
+- **Known mismatch, undecided:** the rules still label ground from the owning hole's pond polygon. About 6,500 m² in the arena zone (the holes 14, 15 and 18 pits) is drawn as water but labelled drivable ground, and about 1,900 m² is the reverse. A real fix is a sim decision (see `SPEC-QUEUE.md`, "Water drawn versus water ruled").
 
 Render only. The sim and the golden are untouched (`sim/course.ts` gained a comment).
 

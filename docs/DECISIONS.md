@@ -841,3 +841,7 @@ after the user asked for much more detailed grass and for the course to look lik
   routing being traced from a real Carolina course.
 - **Water takes the pond shader from the user's GolfCartSimulator project** (slice B). Its GIS
   survey covers hole 1 only, so this game's terrain stays generated.
+
+## Ponds are drawn at their basin's own level (22 Nov 2026)
+
+The play-test said the water floated. One shared level (`spec.waterLevel`) cannot meet banks whose basins are carved to different depths. Each pond is now drawn at `min(nominal, spill level - 4 cm)`, where the spill level is the lowest point the basin's water could escape over, and only ground connected to its deepest point is wet. This is render only. The sim still labels water from the owning hole's polygon, so drawn water and ruled water differ by a few thousand square metres in the arena zone (`SPEC-QUEUE.md`, "Water drawn versus water ruled"). Chosen over relabelling because relabelling moves the golden and floods fairways on holes 12 to 15 and 18.

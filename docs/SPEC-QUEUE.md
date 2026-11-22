@@ -65,6 +65,8 @@ In priority order.
 
 ## Found while building 3.5b, not yet decided
 
+- **Water drawn versus water ruled.** After the water-float fix (per-pond spill levels in `waterMesh.ts`), ponds are drawn at the level their basin can hold, but `courseSurfaces.surfaceAt` still labels water from the owning hole's polygon at the constant `waterLevel`. In the arena zone about 6,500 m² (the holes 14, 15 and 18 pits) is drawn as water but drivable, and about 1,900 m² is the reverse. Options: (1) relabel pits as water wherever the render draws it ("pond wins"): +63% water, 16 to 60% of fairway centrelines on holes 12 to 15 and 18 get wet, moves the golden (measured and reverted; patch not kept in the repo); (2) fix the basin carving so each pond is carved to one level, or fix the hole 12/13/16 layout overlap; (3) leave it. Needs the user's decision.
+
 - **Hole 18's pond polygon is larger than its water.** Part of the polygon is fairway that the
   course blend gives to a neighbouring hole, and the ground there sits about 0.3 m below the water
   level. The sim treats it as dry fairway, so the water surface is not drawn there
