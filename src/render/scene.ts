@@ -34,6 +34,8 @@ import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
 import { createWaterSurface, type WaterSurface } from "./water";
 import { setTreeWindTime } from "./Trees";
+import { placeCattails } from "./cattailPlacement";
+import { createCattails, type Cattails } from "./cattails";
 
 /** Linear sun intensity under ACES; the sky's environment adds the rest. */
 const SUN_INTENSITY = 3.1;
@@ -171,6 +173,7 @@ export class RenderScene {
   private readonly horizon: Horizon;
   private readonly shadows: SunShadows;
   private readonly water: WaterSurface;
+  private readonly cattails: Cattails;
   private readonly post: PostChain | null;
 
   /**
@@ -277,9 +280,15 @@ export class RenderScene {
     ]);
     this.scene.add(this.effects.group);
     // Stage 3.5b: the ponds as a surface, rung by every splash.
-    this.water = createWaterSurface(arena.course.holes, heightAt, arena.surfaces, quality);
+    this.water = createWaterSurface(arena.course.holes, heightAt, quality);
     if (this.water.mesh) this.scene.add(this.water.mesh);
     this.effects.onSplash = (x, z) => this.water.ripple(x, z);
+    // Cattails along the banks, placed from the water's own shoreline.
+    this.cattails = createCattails(
+      placeCattails(this.water.shore, arena.seed ?? 0, heightAt),
+      heightAt,
+    );
+    if (this.cattails.mesh) this.scene.add(this.cattails.mesh);
     this.trails = new MotionTrails(botCount + 1, this.effects, arena.surfaces, heightAt);
     this.knockables = new Knockables(arena.course.holes, heightAt, botCount + 1, (x, y, z) => {
       this.effects.knock(x, y, z);
@@ -395,6 +404,7 @@ export class RenderScene {
     this.effects.onSplash = null;
     this.effects.dispose();
     this.water.dispose();
+    this.cattails.dispose();
     this.knockables.dispose();
     this.clubhouseKit?.dispose();
     this.teeSigns.dispose();

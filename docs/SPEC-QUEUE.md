@@ -10,7 +10,7 @@ the existing files there use. Build order is unchanged: 3.5b, 3.5c, 4b, 5, 6, 8,
 
 | Work | Where it is specified | Note |
 |---|---|---|
-| **The Caswell look and detailed grass** (user, 15 Nov): ground detail textures, one Piedmont palette, first cut, bunker lips, dark ponds with cattails, pine straw, grass tufts, loblolly pines | `specs/2026-11-15-caswell-look-and-grass-detail-design.md`, `plans/2026-11-15-caswell-look-and-grass-detail-implementation.md` | **In progress.** Slice A (detailed grass) is built and awaiting play-test; B, C and D remain. Four slices, a play-test stop after each. It absorbs the old "ground splat" and "grass carpet" entries and 3.5b's sand item. The water becomes the hole 13 pond shader from GolfCartSimulator. Open questions are in the spec's §6; build to the defaults. Slice D needs a local Blender session. |
+| **The Caswell look and detailed grass** (user, 15 Nov): ground detail textures, one Piedmont palette, first cut, bunker lips, dark ponds with cattails, pine straw, grass tufts, loblolly pines | `specs/2026-11-15-caswell-look-and-grass-detail-design.md`, `plans/2026-11-15-caswell-look-and-grass-detail-implementation.md` | **In progress.** Slice A (detailed grass) is merged (#90). Slice B (one Piedmont course, the pond shader, cattails) is built and awaiting play-test. C and D remain. Four slices, a play-test stop after each. It absorbs the old "ground splat" and "grass carpet" entries and 3.5b's sand item. The water becomes the hole 13 pond shader from GolfCartSimulator. Open questions are in the spec's §6; build to the defaults. Slice D needs a local Blender session. |
 | 3.5b sand drift sprites | `NEXT-SESSION-PROMPT-3.5.md` item 3 | Small. Reuses `EffectsLayer.smoke`. The bunker texture and lip are in the Caswell plan. |
 | 3.5b assets: Kenney sprites into the 4 × 2 atlas | same file, item 5 | Fetch from opengameart.org; kenney.nl refuses scripted requests. |
 | 3.5b ambient life: birds, sprinklers, flag cloth, motes | same file, item 6 | Optional. Each is one small render module. |
@@ -64,6 +64,8 @@ In priority order.
    cart, the single 3.6 MB chunk). Each needs a measured target before it is worth a plan.
 
 ## Found while building 3.5b, not yet decided
+
+- **Water drawn versus water ruled.** After the water-float fix (per-pond spill levels in `waterMesh.ts`), ponds are drawn at the level their basin can hold, but `courseSurfaces.surfaceAt` still labels water from the owning hole's polygon at the constant `waterLevel`. In the arena zone about 6,500 m² (the holes 14, 15 and 18 pits) is drawn as water but drivable, and about 1,900 m² is the reverse. Options: (1) relabel pits as water wherever the render draws it ("pond wins"): +63% water, 16 to 60% of fairway centrelines on holes 12 to 15 and 18 get wet, moves the golden (measured and reverted; patch not kept in the repo); (2) fix the basin carving so each pond is carved to one level, or fix the hole 12/13/16 layout overlap; (3) leave it. Needs the user's decision.
 
 - **Hole 18's pond polygon is larger than its water.** Part of the polygon is fairway that the
   course blend gives to a neighbouring hole, and the ground there sits about 0.3 m below the water

@@ -11,6 +11,44 @@ import {
 } from "./groundLayers";
 import { GROUND_WARP_GLSL } from "./groundWarp";
 
+/**
+ * The course's mown edges (the Caswell spec, section 3.6). The surface mask blends fairway into
+ * rough over ten metres and green into fairway over six; a real course does neither. These turn
+ * each blend into the bands a greenkeeper cuts. All are thresholds on the mask's own weights, so
+ * they cost no data and apply on every preset.
+ */
+export const GROUND_EDGES = {
+  /** Corridor weight where the fairway stops and the first cut starts, with the blur either side. */
+  firstCutFrom: 0.3,
+  /** Corridor weight where the first cut gives way to rough. */
+  firstCutTo: 0.6,
+  /** Half-width of each of those two steps, in corridor weight: narrow, so the cut lines read. */
+  cutSoftness: 0.04,
+  /** The first cut's colour, as a share of the way from fairway to rough. */
+  firstCutTone: 0.4,
+  /** Green weight where the putting surface ends and its collar starts, and where the collar ends. */
+  collarFrom: 0.22,
+  collarTo: 0.55,
+  /** The collar is fairway-height grass, drawn a touch darker than fairway so it rings the green. */
+  collarTone: 0.93,
+  /** Sand weight (blurred by the mask's own filtering) between which the turf lip is drawn. */
+  lipFrom: 0.06,
+  lipTo: 0.42,
+  /** How much darker the lip is than the turf around it. */
+  lipShade: 0.18,
+  /** Sand weight at which turf becomes sand; a narrow step, because a bunker's edge is cut. */
+  sandAt: 0.5,
+  /** Rake lines in the sand: spacing in metres and contrast. Detail presets only. */
+  rakeSpacingM: 0.25,
+  rakeContrast: 0.06,
+  /** Ground steeper than this (as the normal's y) starts to show clay; fully clay at `clayFull`. */
+  clayFrom: 0.78,
+  clayFull: 0.7,
+} as const;
+
+/** Piedmont red clay, shown on banks too steep to hold turf. `courseGround.ts` passes it in. */
+export const CLAY_COLOUR = 0xb5562f;
+
 /** How much ground detail a preset draws. See `QualityPreset.groundDetail`. */
 export type GroundDetailMode = "off" | "near" | "full";
 
@@ -87,6 +125,46 @@ export interface GroundShaderOptions {
 
 const g = (n: number): string => n.toFixed(4);
 
+/**
+ * The course's surface blend: the mask's weights cut into bands (`GROUND_EDGES`). Leaves `grass`,
+ * `band`, `mownAmount`, `wRough` and `sandMix` in scope for the detail path.
+ */
+function courseBlend(): string {
+  const e = GROUND_EDGES;
+  return `           // Green, collar, fairway: the putting surface ends at a cut line, ringed by a collar.
+           float onGreen = 1.0 - smoothstep(${g(e.collarFrom - e.cutSoftness)}, ${g(e.collarFrom + e.cutSoftness)}, wGreen);
+           float collar = (1.0 - onGreen) * (1.0 - smoothstep(${g(e.collarTo - e.cutSoftness)}, ${g(e.collarTo + e.cutSoftness)}, wGreen));
+           vec3 mown = mix(cFairway, cGreen, onGreen);
+           mown = mix(mown, cFairway * ${g(e.collarTone)}, collar);
+
+           // Fairway, first cut, rough: two cut lines where the mask has one ten-metre blend.
+           float pastFairway = smoothstep(${g(e.firstCutFrom - e.cutSoftness)}, ${g(e.firstCutFrom + e.cutSoftness)}, wCorridor);
+           float wRough = smoothstep(${g(e.firstCutTo - e.cutSoftness)}, ${g(e.firstCutTo + e.cutSoftness)}, wCorridor);
+           vec3 firstCut = mix(cFairway, cRough, ${g(e.firstCutTone)});
+           vec3 grass = mix(mix(mown, firstCut, pastFairway), cRough, wRough);
+
+           // Greens are mown finer and at a right angle to the fairway.
+           float fairwayBand = mowBand(vGroundWorldPos.xz, fairwayDir, ${FAIRWAY_STRIPE_M.toFixed(1)});
+           float greenBand = mowBand(vGroundWorldPos.xz, greenDir, ${GREEN_STRIPE_M.toFixed(1)});
+           float band = mix(fairwayBand, greenBand, onGreen);
+
+           // Stripes run to the fairway's edge and stop: the first cut and the collar have none.
+           float mownAmount = (1.0 - pastFairway) * (1.0 - collar);
+           float stripe = mix(1.0, mix(1.0 - ${STRIPE_CONTRAST.toFixed(3)}, 1.0 + ${STRIPE_CONTRAST.toFixed(3)}, band), mownAmount);
+           grass *= stripe;
+
+           // Banks too steep to hold turf show clay.
+           float clay = 1.0 - smoothstep(${g(e.clayFull)}, ${g(e.clayFrom)}, vGroundUp);
+           grass = mix(grass, uClay, clay);
+
+           // A bunker is cut into the turf: a darker lip just outside it, then sand at a line.
+           float lip = smoothstep(${g(e.lipFrom)}, ${g(e.lipTo)}, wSand) * (1.0 - smoothstep(${g(e.lipTo)}, ${g(e.sandAt)}, wSand));
+           grass *= 1.0 - ${g(e.lipShade)} * lip;
+           float sandMix = smoothstep(${g(e.sandAt - 0.06)}, ${g(e.sandAt + 0.06)}, wSand);
+           grass = mix(grass, cSand, sandMix);
+           grass = mix(grass, cWater, wWater);`;
+}
+
 /** Declarations for the detail path: samplers, the warp, and what the three chunks share. */
 function detailDeclaration(): string {
   return `
@@ -122,7 +200,7 @@ function detailColour(full: boolean): string {
              // Mown grass is sampled in the mow frame, so its grain runs with the stripes.
              vec2 perp = vec2(-fairwayDir.y, fairwayDir.x);
              mat2 toMow = mat2(fairwayDir.x, perp.x, fairwayDir.y, perp.y);
-             gIsSand = step(0.5, wSand);
+             gIsSand = step(0.5, sandMix);
              gMowDir = fairwayDir;
              if (gIsSand > 0.5) {
                gUvA = p / ${g(sand.scaleM)};
@@ -138,9 +216,9 @@ function detailColour(full: boolean): string {
              gUvB = p / ${g(coarse.scaleM)};
              gGradBx = dpx / ${g(coarse.scaleM)};
              gGradBy = dpy / ${g(coarse.scaleM)};
-             gWeightB = wCorridor * (1.0 - gIsSand);
+             gWeightB = wRough * (1.0 - gIsSand);
 
-             float strengthA = mix(${g(mown.strength)} * mix(${g(t.greenStrength)}, 1.0, wGreen), ${g(sand.strength)}, gIsSand);
+             float strengthA = mix(${g(mown.strength)} * mix(1.0, ${g(t.greenStrength)}, onGreen), ${g(sand.strength)}, gIsSand);
              float dA = textureGrad(uGroundDetail, vec3(gUvA, gLayerA), gGradAx, gGradAy).r * ${g(DETAIL_RANGE)};
              float dB = textureGrad(uGroundDetail, vec3(gUvB, ${LAYER.coarse}.0), gGradBx, gGradBy).r * ${g(DETAIL_RANGE)};
              float macro = textureGrad(uGroundDetail, vec3(p / ${g(MACRO_SCALE_M)}, ${LAYER.coarse}.0), dpx / ${g(MACRO_SCALE_M)}, dpy / ${g(MACRO_SCALE_M)}).r * ${g(DETAIL_RANGE)};
@@ -159,6 +237,11 @@ ${
              float near = mix(mix(1.0, dA, strengthA), mix(1.0, dB, ${g(coarse.strength)}), gWeightB);
              float macroFade = 1.0 - smoothstep(${g(t.macroFadeStartM)}, ${g(t.macroFadeEndM)}, groundDist);
              float detail = mix(1.0, near, gDetailFade) * mix(1.0, macro, ${g(MACRO_STRENGTH)} * macroFade);
+             // Rake lines: fine parallel grooves, bent by the same warp that bends the grass edges,
+             // and gone with the fine detail before they can shimmer.
+             vec2 raked = p + groundWarp(p * 3.0) * 0.6;
+             float rake = sin(dot(raked, vec2(0.94, 0.34)) * ${g((2 * Math.PI) / GROUND_EDGES.rakeSpacingM)});
+             detail *= 1.0 + rake * ${g(GROUND_EDGES.rakeContrast)} * gIsSand * gDetailFade;
              // Not under the water tint: the pond surface draws its own detail.
              grass *= mix(detail, 1.0, wWater);
            }`;
@@ -256,12 +339,13 @@ export function applyGroundShader(
     .replace(
       "#include <common>",
       `#include <common>
-         varying vec3 vGroundWorldPos;${perVertex}`,
+         varying vec3 vGroundWorldPos;${perVertex}${options.course ? "\n         varying float vGroundUp;" : ""}`,
     )
     .replace(
       "#include <begin_vertex>",
       `#include <begin_vertex>
          vGroundWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+         ${options.course ? "vGroundUp = normalize(mat3(modelMatrix) * objectNormal).y;" : ""}
          ${perVertexAssign}`,
     );
 
@@ -269,7 +353,9 @@ export function applyGroundShader(
     .replace(
       "#include <common>",
       `#include <common>
-         varying vec3 vGroundWorldPos;${maskUniforms}${paletteDeclaration(options.course)}${detailed ? detailDeclaration() : ""}
+         varying vec3 vGroundWorldPos;${maskUniforms}${paletteDeclaration(options.course)}${detailed ? detailDeclaration() : ""}${
+        options.course ? "\n         varying float vGroundUp;\n         uniform vec3 uClay;" : ""
+      }
 
          // Two-tone band. The bands run perpendicular to the mow direction, which is why the
          // projection is onto the direction rather than along it.
@@ -303,7 +389,10 @@ ${
            float wWater = m.a;
 ${paletteBody(options.course)}
 
-           // The same nested blend surfaces.ts uses for tuning: green -> fairway -> rough.
+${
+  options.course
+    ? courseBlend()
+    : `           // The same nested blend surfaces.ts uses for tuning: green -> fairway -> rough.
            vec3 mown = mix(cGreen, cFairway, wGreen);
            vec3 grass = mix(mown, cRough, wCorridor);
 
@@ -319,10 +408,11 @@ ${paletteBody(options.course)}
            grass *= stripe;
 
            grass = mix(grass, cSand, wSand);
-           grass = mix(grass, cWater, wWater);
+           grass = mix(grass, cWater, wWater);`
+}
 ${
   detailed
-    ? `           gMown = mownAmount * (1.0 - wSand) * (1.0 - wWater);
+    ? `           gMown = mownAmount * (1.0 - sandMix) * (1.0 - wWater);
            gBandSign = band * 2.0 - 1.0;
 ${detailColour(detail === "full")}`
     : ""
