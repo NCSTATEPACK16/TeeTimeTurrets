@@ -22,7 +22,7 @@ export const GROUND_LAYERS: readonly GroundLayer[] = [
   { name: "coarse", scaleM: 4.0, strength: 0.55 },
   { name: "sand", scaleM: 2.4, strength: 0.7 },
   { name: "clay", scaleM: 3.0, strength: 0.6 },
-  // Until the pine-straw set lands (plan Task 5) this layer is packed from clay's files.
+  // Ground077, a pine forest floor; the shader adds a needle streak over it.
   { name: "straw", scaleM: 2.6, strength: 0.7 },
 ];
 

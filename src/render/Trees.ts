@@ -12,6 +12,7 @@ import { WOODS_WEIGHT } from "../sim/terrain";
 import type { Terrain } from "../sim/terrain";
 import { BIOMES } from "./biomes";
 import { clumpOrder, placeCourseWoods } from "./woodsPlacement";
+import type { PlacedTree } from "./woodsPlacement";
 import type { BiomePalette } from "./biomes";
 import type { BiomeId } from "../sim/course";
 
@@ -311,8 +312,14 @@ function tintColour(t: number, out: THREE.Color): THREE.Color {
  * `woodsPlacement.ts`, each biome's two species as two InstancedMeshes (up to six draws).
  * Decorative: no collider, never read by the sim.
  */
-export function createCourseTrees(course: CourseTerrain, surfaces: Surfaces, options: CourseWoodsOptions): Trees {
-  const placed = clumpOrder(placeCourseWoods(course, surfaces, options), options.seed);
+export function createCourseTrees(
+  course: CourseTerrain,
+  surfaces: Surfaces,
+  options: CourseWoodsOptions,
+  /** The placement, when the caller already has it (`courseDressing.ts` also builds the woods floor from it). */
+  placement?: readonly PlacedTree[],
+): Trees {
+  const placed = clumpOrder(placement ?? placeCourseWoods(course, surfaces, options), options.seed);
 
   const byBiome = new Map<BiomeId, { matrices: THREE.Matrix4[]; species: number[]; tints: number[] }>();
   const position = new THREE.Vector3();

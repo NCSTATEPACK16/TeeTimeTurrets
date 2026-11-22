@@ -123,14 +123,15 @@ step and one 16 KB file does not justify inventing one.
 
 ## Terrain textures (CC0)
 
-Photoscanned PBR sets in `art/textures-src/`, at 1K JPG, with colour, OpenGL normal and roughness maps only. All are CC0 1.0 (public domain) from their original publishers. They were taken from the copies in the Claude of Tanks repository, whose `LICENSE-POLICY.md` leaves third-party material under its original licence. `public/textures/**` is not in its Reserved Content list.
+Photoscanned PBR sets in `art/textures-src/`, at 1K JPG, with colour, OpenGL normal and roughness maps only. All are CC0 1.0 (public domain) from their original publishers. All but Ground077 were taken from the copies in the Claude of Tanks repository, whose `LICENSE-POLICY.md` leaves third-party material under its original licence. `public/textures/**` is not in its Reserved Content list. Ground077 was downloaded from ambientCG directly.
 
 | Set | Files | Source | Use |
 |---|---|---|---|
 | Grass004 | `Grass004_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | mown grass: green, fairway |
 | withered_grass | `withered_grass_{diff,nor_gl,rough}_1k.jpg` | Poly Haven, CC0 | rough |
 | Ground093C | `Ground093C_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | sand/bunker candidate (verify visually) |
-| Ground071 | `Ground071_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | clay; also the pine-straw layer until its own set is added |
+| Ground071 | `Ground071_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0 | clay: bare banks |
+| Ground077 | `Ground077_1K-JPG_{Color,NormalGL,Roughness}.jpg` | ambientCG, CC0, https://ambientcg.com/view?id=Ground077, fetched 22 Nov 2026 | pine straw under the woods |
 
 CC0 requires no attribution. It is recorded here so provenance is auditable.
 

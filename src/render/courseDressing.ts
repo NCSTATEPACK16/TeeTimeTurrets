@@ -3,6 +3,8 @@ import type { CourseGround } from "./courseGround";
 import { createTreeline } from "./treeline";
 import type { Treeline } from "./treeline";
 import { createCourseTrees } from "./Trees";
+import { buildWoodsDensity, placeCourseWoods } from "./woodsPlacement";
+import type { WoodsDensity } from "./woodsPlacement";
 import type { Trees } from "./Trees";
 import type { ArenaSource } from "./scene";
 import type { GroundDetailMode } from "./groundShader";
@@ -28,6 +30,8 @@ export interface CourseDressing {
   readonly woods: Trees;
   /** Null on a course with no road. */
   readonly treeline: Treeline | null;
+  /** How wooded the ground is (`woodsPlacement.buildWoodsDensity`): pine straw, and where tufts thin. */
+  readonly woodsDensity: WoodsDensity;
   /**
    * Set the ground's detail for the match about to start (`QualityPreset.groundDetail`). The
    * textures are fetched once per page, the first time a preset asks for them, and kept: like
@@ -46,7 +50,15 @@ const dressings = new WeakMap<ArenaSource, CourseDressing>();
 export function courseDressingFor(arena: ArenaSource): CourseDressing {
   let dressing = dressings.get(arena);
   if (dressing === undefined) {
-    const ground = createCourseGround(arena.course, arena.surfaces);
+    const woodsOptions = {
+      seed: arena.seed ?? 0,
+      southBoundary: arena.southBoundary,
+      clubhouse: arena.clubhouse,
+    };
+    // Placed once: the trees are instanced from it and the woods floor is drawn from it.
+    const placed = placeCourseWoods(arena.course, arena.surfaces, woodsOptions);
+    const woodsDensity = buildWoodsDensity(placed, arena.course.bounds);
+    const ground = createCourseGround(arena.course, arena.surfaces, woodsDensity);
     // The mode the latest match asked for, so a load that lands late applies the current one.
     let wanted: GroundDetailMode = "off";
     dressing = {
@@ -62,11 +74,8 @@ export function courseDressingFor(arena: ArenaSource): CourseDressing {
           if (wanted !== "off") ground.setDetail(textures, wanted);
         });
       },
-      woods: createCourseTrees(arena.course, arena.surfaces, {
-        seed: arena.seed ?? 0,
-        southBoundary: arena.southBoundary,
-        clubhouse: arena.clubhouse,
-      }),
+      woods: createCourseTrees(arena.course, arena.surfaces, woodsOptions, placed),
+      woodsDensity,
       treeline:
         arena.southBoundary === undefined
           ? null

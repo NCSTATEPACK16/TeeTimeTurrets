@@ -37,8 +37,9 @@ const LAYERS = [
   { name: "coarse", colour: "withered_grass_diff_1k.jpg", normal: "withered_grass_nor_gl_1k.jpg", rough: "withered_grass_rough_1k.jpg" },
   { name: "sand", colour: "Ground093C_1K-JPG_Color.jpg", normal: "Ground093C_1K-JPG_NormalGL.jpg", rough: "Ground093C_1K-JPG_Roughness.jpg" },
   { name: "clay", colour: "Ground071_1K-JPG_Color.jpg", normal: "Ground071_1K-JPG_NormalGL.jpg", rough: "Ground071_1K-JPG_Roughness.jpg" },
-  // Until the pine-straw set lands, straw repeats clay.
-  { name: "straw", colour: "Ground071_1K-JPG_Color.jpg", normal: "Ground071_1K-JPG_NormalGL.jpg", rough: "Ground071_1K-JPG_Roughness.jpg" },
+  // ambientCG's one pine-tagged forest floor. It reads as fine mulch more than needles; the shader
+  // adds the needle streak (groundShader.ts, `needleStreak`).
+  { name: "straw", colour: "Ground077_1K-JPG_Color.jpg", normal: "Ground077_1K-JPG_NormalGL.jpg", rough: "Ground077_1K-JPG_Roughness.jpg" },
 ];
 
 /** Raw 8-bit RGB of a source image, resized to SIZE x SIZE. */

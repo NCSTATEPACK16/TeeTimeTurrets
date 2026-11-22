@@ -224,3 +224,98 @@ export function clumpOrder(trees: readonly PlacedTree[], seed: number): PlacedTr
   }
   return clumps.flat();
 }
+
+/**
+ * How wooded the ground is, 0..1, on a coarse grid (the Caswell spec, D7): pine straw is drawn
+ * where this is high, and grass tufts thin out as it rises. Built once from the placed trees.
+ *
+ * Each tree stamps a soft disc a little wider than its crown (`stampRadius`), the stamps add and
+ * clamp at 1, and one 3 x 3 blur rounds the steps off. Read bilinearly with `woodsDensityAt`.
+ *
+ * Pure: no three. Stage 6's route-finding can ask it where the woods are.
+ */
+export interface WoodsDensity {
+  readonly minX: number;
+  readonly minZ: number;
+  readonly cols: number;
+  readonly rows: number;
+  /** Row-major, `rows * cols`, 0..1. */
+  readonly values: Float32Array;
+}
+
+/** Metres per density cell. Coarse on purpose: the boundary is meant to feather. */
+export const WOODS_CELL_M = 4;
+
+/** Share of a stamp's radius inside which it is full; it falls smoothly to nothing at the radius. */
+const STAMP_FULL = 0.85;
+
+/** A tree's stamp radius, metres: a little wider than the crown, so the floor shows round it. */
+export function stampRadius(height: number): number {
+  return 1.6 * MIN_SPACING_M + height * 0.25;
+}
+
+export function buildWoodsDensity(
+  trees: readonly { readonly x: number; readonly z: number; readonly height: number }[],
+  bounds: { readonly minX: number; readonly minZ: number; readonly maxX: number; readonly maxZ: number },
+): WoodsDensity {
+  const cols = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / WOODS_CELL_M) + 1);
+  const rows = Math.max(1, Math.ceil((bounds.maxZ - bounds.minZ) / WOODS_CELL_M) + 1);
+  const raw = new Float32Array(cols * rows);
+  for (const tree of trees) {
+    const radius = stampRadius(tree.height);
+    const inner = radius * STAMP_FULL;
+    // Cell centres sit on the grid points: cell (c, r) is the value at minX + c * cell.
+    const c0 = Math.max(0, Math.floor((tree.x - radius - bounds.minX) / WOODS_CELL_M));
+    const c1 = Math.min(cols - 1, Math.ceil((tree.x + radius - bounds.minX) / WOODS_CELL_M));
+    const r0 = Math.max(0, Math.floor((tree.z - radius - bounds.minZ) / WOODS_CELL_M));
+    const r1 = Math.min(rows - 1, Math.ceil((tree.z + radius - bounds.minZ) / WOODS_CELL_M));
+    for (let r = r0; r <= r1; r++) {
+      const dz = bounds.minZ + r * WOODS_CELL_M - tree.z;
+      for (let c = c0; c <= c1; c++) {
+        const dx = bounds.minX + c * WOODS_CELL_M - tree.x;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (d >= radius) continue;
+        const t = d <= inner ? 0 : (d - inner) / (radius - inner);
+        raw[r * cols + c] = Math.min(1, raw[r * cols + c]! + 1 - t * t * (3 - 2 * t));
+      }
+    }
+  }
+  // One 3 x 3 tent blur (1-2-1 each way), clamped at the grid's edge.
+  const values = new Float32Array(cols * rows);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      let sum = 0;
+      let n = 0;
+      for (let dr = -1; dr <= 1; dr++) {
+        const rr = r + dr;
+        if (rr < 0 || rr >= rows) continue;
+        for (let dc = -1; dc <= 1; dc++) {
+          const cc = c + dc;
+          if (cc < 0 || cc >= cols) continue;
+          const k = (dr === 0 ? 2 : 1) * (dc === 0 ? 2 : 1);
+          sum += raw[rr * cols + cc]! * k;
+          n += k;
+        }
+      }
+      values[r * cols + c] = Math.min(1, Math.max(0, sum / n));
+    }
+  }
+  return { minX: bounds.minX, minZ: bounds.minZ, cols, rows, values };
+}
+
+/** Bilinear read of the density, 0 off the grid. Never allocates. */
+export function woodsDensityAt(field: WoodsDensity, x: number, z: number): number {
+  const fx = (x - field.minX) / WOODS_CELL_M;
+  const fz = (z - field.minZ) / WOODS_CELL_M;
+  if (fx < 0 || fz < 0 || fx > field.cols - 1 || fz > field.rows - 1) return 0;
+  const c = Math.min(field.cols - 2, Math.floor(fx));
+  const r = Math.min(field.rows - 2, Math.floor(fz));
+  if (c < 0 || r < 0) return field.values[0]!;
+  const tx = fx - c;
+  const tz = fz - r;
+  const v = field.values;
+  const i = r * field.cols + c;
+  const top = v[i]! + (v[i + 1]! - v[i]!) * tx;
+  const bottom = v[i + field.cols]! + (v[i + field.cols + 1]! - v[i + field.cols]!) * tx;
+  return top + (bottom - top) * tz;
+}

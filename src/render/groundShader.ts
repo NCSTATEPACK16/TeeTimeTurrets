@@ -44,10 +44,25 @@ export const GROUND_EDGES = {
   /** Ground steeper than this (as the normal's y) starts to show clay; fully clay at `clayFull`. */
   clayFrom: 0.78,
   clayFull: 0.7,
+  /**
+   * Pine straw under the woods (`aWoods`, from `woodsPlacement.buildWoodsDensity`): none below
+   * `strawFrom`, all of it above `strawTo`. The edge is roughed up by a noise of `strawNoise`
+   * either way on a `strawNoiseCellM` lattice, so the floor feathers into the rough in fingers
+   * rather than in a ring, and it is scaled by the corridor weight so it never reaches mown grass.
+   */
+  strawFrom: 0.35,
+  strawTo: 0.7,
+  strawNoise: 0.15,
+  strawNoiseCellM: 2.5,
+  /** Lattice salt of the straw-edge noise: the warp uses 0 to 3. */
+  strawNoiseSalt: 4,
 } as const;
 
 /** Piedmont red clay, shown on banks too steep to hold turf. `courseGround.ts` passes it in. */
 export const CLAY_COLOUR = 0xb5562f;
+
+/** Pine straw: rust-brown, the same in every variation. `courseGround.ts` passes it in. */
+export const STRAW_COLOUR = 0x8a5a34;
 
 /** How much ground detail a preset draws. See `QualityPreset.groundDetail`. */
 export type GroundDetailMode = "off" | "near" | "full";
@@ -79,6 +94,20 @@ export const GROUND_DETAIL_TUNING = {
   macroFadeEndM: 420,
   /** The mask warp fades to nothing this close to a tile's edge, metres, so tiles meet. */
   warpEdgeM: 3,
+  /**
+   * The needle streak over pine straw: the forest-floor scan reads as mulch, so two sets of short
+   * dashes at different angles, one lighter and one darker, draw the needles. Length and pitch
+   * in metres; it fades out once a pixel covers more than `needleFadeFromM`..`needleFadeToM` of
+   * ground, before it can shimmer.
+   */
+  needleLengthM: 0.42,
+  needlePitchM: 0.06,
+  /** Share of dash slots that hold a needle: sparse, or the two sets read as a weave. */
+  needleFill: 0.3,
+  needleLight: 0.3,
+  needleDark: 0.2,
+  needleFadeFromM: 0.025,
+  needleFadeToM: 0.07,
 } as const;
 
 /**
@@ -127,7 +156,9 @@ const g = (n: number): string => n.toFixed(4);
 
 /**
  * The course's surface blend: the mask's weights cut into bands (`GROUND_EDGES`). Leaves `grass`,
- * `band`, `mownAmount`, `wRough` and `sandMix` in scope for the detail path.
+ * `band`, `mownAmount`, `wRough`, `straw` and `sandMix` in scope for the detail path.
+ *
+ * `groundPalette.ts` is this in TypeScript, without stripes, for the grass tufts. Change both.
  */
 function courseBlend(): string {
   const e = GROUND_EDGES;
@@ -153,6 +184,11 @@ function courseBlend(): string {
            float stripe = mix(1.0, mix(1.0 - ${STRIPE_CONTRAST.toFixed(3)}, 1.0 + ${STRIPE_CONTRAST.toFixed(3)}, band), mownAmount);
            grass *= stripe;
 
+           // Pine straw under the woods, feathered into the rough in fingers by a noise, and scaled
+           // by the corridor weight so it never reaches mown grass. Clay, sand and water cover it.
+           float straw = smoothstep(${g(e.strawFrom)}, ${g(e.strawTo)}, vGroundWoods + groundWarpNoise(vGroundWorldPos.xz / ${g(e.strawNoiseCellM)}, ${e.strawNoiseSalt}) * ${g(e.strawNoise)}) * wCorridor;
+           grass = mix(grass, uStraw, straw);
+
            // Banks too steep to hold turf show clay.
            float clay = 1.0 - smoothstep(${g(e.clayFull)}, ${g(e.clayFrom)}, vGroundUp);
            grass = mix(grass, uClay, clay);
@@ -171,11 +207,31 @@ function detailDeclaration(): string {
          uniform highp sampler2DArray uGroundDetail;
          uniform highp sampler2DArray uGroundNormal;
          uniform vec2 uMaskMetres;
-${GROUND_WARP_GLSL}
          // Written by the colour chunk, read by the roughness and normal chunks after it.
          vec2 gUvA; vec2 gUvB; vec2 gGradAx; vec2 gGradAy; vec2 gGradBx; vec2 gGradBy;
-         float gLayerA; float gWeightB; float gIsSand; float gDetailFade;
-         float gBandSign; float gMown; vec2 gMowDir; vec2 gNormalTilt;`;
+         float gLayerA; float gLayerB; float gWeightB; float gIsSand; float gDetailFade;
+         float gBandSign; float gMown; vec2 gMowDir; vec2 gNormalTilt;
+
+         // One set of needles: short dashes along dir, a random few of the slots filled.
+         float needleDash(vec2 p, vec2 dir, int salt) {
+           vec2 q = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
+           vec2 size = vec2(${g(GROUND_DETAIL_TUNING.needleLengthM)}, ${g(GROUND_DETAIL_TUNING.needlePitchM)});
+           // Each row is shifted by its own amount, so the dash ends do not line up across rows.
+           float row = floor(q.y / size.y);
+           q.x += groundWarpHash(ivec2(int(row), 0), salt + 8) / 65535.0 * size.x;
+           float on = step(${g(1 - GROUND_DETAIL_TUNING.needleFill)}, groundWarpHash(ivec2(floor(q / size)), salt) / 65535.0);
+           float across = abs(fract(q.y / size.y) - 0.5) * 2.0;
+           return on * (1.0 - smoothstep(0.25, 0.75, across));
+         }
+         // Light needles over dark ones, at two angles; nothing once a pixel is too big to hold one.
+         float needleStreak(vec2 p, vec2 dpx, vec2 dpy) {
+           float footprint = max(length(dpx), length(dpy));
+           float visible = 1.0 - smoothstep(${g(GROUND_DETAIL_TUNING.needleFadeFromM)}, ${g(GROUND_DETAIL_TUNING.needleFadeToM)}, footprint);
+           if (visible <= 0.0) return 0.0;
+           float light = needleDash(p, vec2(0.8192, 0.5736), 5);
+           float dark = needleDash(p + 0.13, vec2(0.7660, -0.6428), 6);
+           return (light * ${g(GROUND_DETAIL_TUNING.needleLight)} - dark * ${g(GROUND_DETAIL_TUNING.needleDark)}) * visible;
+         }`;
 }
 
 /**
@@ -192,6 +248,7 @@ function detailColour(full: boolean): string {
   const mown = GROUND_LAYERS[LAYER.mown]!;
   const coarse = GROUND_LAYERS[LAYER.coarse]!;
   const sand = GROUND_LAYERS[LAYER.sand]!;
+  const straw = GROUND_LAYERS[LAYER.straw]!;
   return `
            {
              vec2 p = vGroundWorldPos.xz;
@@ -213,14 +270,19 @@ function detailColour(full: boolean): string {
                gGradAy = (toMow * dpy) / ${g(mown.scaleM)};
                gLayerA = ${LAYER.mown}.0;
              }
-             gUvB = p / ${g(coarse.scaleM)};
-             gGradBx = dpx / ${g(coarse.scaleM)};
-             gGradBy = dpy / ${g(coarse.scaleM)};
-             gWeightB = wRough * (1.0 - gIsSand);
+             // Slot B is the rough's coarse grass, or pine straw where the woods floor has taken over.
+             float isStraw = step(0.5, straw);
+             float scaleB = mix(${g(coarse.scaleM)}, ${g(straw.scaleM)}, isStraw);
+             gLayerB = mix(${LAYER.coarse}.0, ${LAYER.straw}.0, isStraw);
+             gUvB = p / scaleB;
+             gGradBx = dpx / scaleB;
+             gGradBy = dpy / scaleB;
+             gWeightB = max(wRough, straw) * (1.0 - gIsSand);
+             float strengthB = mix(${g(coarse.strength)}, ${g(straw.strength)}, isStraw);
 
              float strengthA = mix(${g(mown.strength)} * mix(1.0, ${g(t.greenStrength)}, onGreen), ${g(sand.strength)}, gIsSand);
              float dA = textureGrad(uGroundDetail, vec3(gUvA, gLayerA), gGradAx, gGradAy).r * ${g(DETAIL_RANGE)};
-             float dB = textureGrad(uGroundDetail, vec3(gUvB, ${LAYER.coarse}.0), gGradBx, gGradBy).r * ${g(DETAIL_RANGE)};
+             float dB = textureGrad(uGroundDetail, vec3(gUvB, gLayerB), gGradBx, gGradBy).r * ${g(DETAIL_RANGE)};
              float macro = textureGrad(uGroundDetail, vec3(p / ${g(MACRO_SCALE_M)}, ${LAYER.coarse}.0), dpx / ${g(MACRO_SCALE_M)}, dpy / ${g(MACRO_SCALE_M)}).r * ${g(DETAIL_RANGE)};
 ${
   full
@@ -228,13 +290,13 @@ ${
              // where the macro sample is bright. No two repeats of the fine grain line up.
              const mat2 turn = mat2(0.7660, 0.6428, -0.6428, 0.7660);
              float dA2 = textureGrad(uGroundDetail, vec3(turn * gUvA / 1.15, gLayerA), turn * gGradAx / 1.15, turn * gGradAy / 1.15).r * ${g(DETAIL_RANGE)};
-             float dB2 = textureGrad(uGroundDetail, vec3(turn * gUvB / 1.15, ${LAYER.coarse}.0), turn * gGradBx / 1.15, turn * gGradBy / 1.15).r * ${g(DETAIL_RANGE)};
+             float dB2 = textureGrad(uGroundDetail, vec3(turn * gUvB / 1.15, gLayerB), turn * gGradBx / 1.15, turn * gGradBy / 1.15).r * ${g(DETAIL_RANGE)};
              float swap = smoothstep(0.85, 1.15, macro);
              dA = mix(dA, dA2, swap);
              dB = mix(dB, dB2, swap);`
     : ""
 }
-             float near = mix(mix(1.0, dA, strengthA), mix(1.0, dB, ${g(coarse.strength)}), gWeightB);
+             float near = mix(mix(1.0, dA, strengthA), mix(1.0, dB, strengthB), gWeightB);
              float macroFade = 1.0 - smoothstep(${g(t.macroFadeStartM)}, ${g(t.macroFadeEndM)}, groundDist);
              float detail = mix(1.0, near, gDetailFade) * mix(1.0, macro, ${g(MACRO_STRENGTH)} * macroFade);
              // Rake lines: fine parallel grooves, bent by the same warp that bends the grass edges,
@@ -242,6 +304,7 @@ ${
              vec2 raked = p + groundWarp(p * 3.0) * 0.6;
              float rake = sin(dot(raked, vec2(0.94, 0.34)) * ${g((2 * Math.PI) / GROUND_EDGES.rakeSpacingM)});
              detail *= 1.0 + rake * ${g(GROUND_EDGES.rakeContrast)} * gIsSand * gDetailFade;
+             detail *= 1.0 + needleStreak(p, dpx, dpy) * straw * (1.0 - gIsSand) * gDetailFade;
              // Not under the water tint: the pond surface draws its own detail.
              grass *= mix(detail, 1.0, wWater);
            }`;
@@ -265,8 +328,11 @@ function paletteDeclaration(course: boolean): string {
          uniform vec3 uRoughBiome[3];
          uniform vec3 uSandBiome[3];
          uniform vec3 uWaterBiome[3];
+         uniform vec3 uStraw;
          varying vec2 vGroundMow;
-         varying vec3 vGroundBiome;`;
+         varying vec3 vGroundBiome;
+         varying float vGroundWoods;
+${GROUND_WARP_GLSL}`;
 }
 
 function paletteBody(course: boolean): string {
@@ -314,10 +380,14 @@ export function applyGroundShader(
     ? `
          attribute vec2 aMow;
          attribute vec3 aBiome;
+         attribute float aWoods;
          varying vec2 vGroundMow;
-         varying vec3 vGroundBiome;`
+         varying vec3 vGroundBiome;
+         varying float vGroundWoods;`
     : "";
-  const perVertexAssign = options.course ? "vGroundMow = aMow;\n         vGroundBiome = aBiome;" : "";
+  const perVertexAssign = options.course
+    ? "vGroundMow = aMow;\n         vGroundBiome = aBiome;\n         vGroundWoods = aWoods;"
+    : "";
   // The course reads the mask out of the material's own map slot; a hole reads it from a uniform.
   const sample = options.course
     ? "texture2D(map, vMapUv)"
@@ -431,7 +501,7 @@ ${
            // The layers' normals and roughness, fetched once here for both this chunk and the
            // normal chunk below. RG is the tangent-space normal, B the roughness.
            vec4 nA = textureGrad(uGroundNormal, vec3(gUvA, gLayerA), gGradAx, gGradAy);
-           vec4 nB = textureGrad(uGroundNormal, vec3(gUvB, ${LAYER.coarse}.0), gGradBx, gGradBy);
+           vec4 nB = textureGrad(uGroundNormal, vec3(gUvB, gLayerB), gGradBx, gGradBy);
            vec2 tiltA = nA.rg * 2.0 - 1.0;
            // Slot A's normal is in the mow frame unless it is sand; turn it back to world XZ.
            vec2 perp = vec2(-gMowDir.y, gMowDir.x);
