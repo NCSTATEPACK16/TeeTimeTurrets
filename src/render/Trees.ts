@@ -77,6 +77,9 @@ const SWAY_AMPLITUDE = 0.022;
  */
 const TREE_WIND = { uTreeTime: { value: 0 } };
 
+/** The wind clock's uniform, for other swaying things (`grassCarpet.ts`) to bind. */
+export const TREE_WIND_TIME = TREE_WIND.uTreeTime;
+
 /** Advance every tree's sway to `seconds`. Call once per rendered frame. */
 export function setTreeWindTime(seconds: number): void {
   TREE_WIND.uTreeTime.value = seconds;

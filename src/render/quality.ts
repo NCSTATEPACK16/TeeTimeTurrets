@@ -10,10 +10,6 @@
  * and overridable by the player -- and the device heuristic are adapted from Claude of Tanks'
  * `quality.ts` (MIT, `reference/claude-of-tanks/quality.ts.txt`; see `NOTICE`). The values are this
  * game's own.
- *
- * Some levers have no consumer yet and say so: grass, the tree
- * cap and water belong to Stage 5's environment. They are here so a preset describes the whole
- * budget from the start, and so Stage 5 reads a number rather than inventing one.
  */
 
 export type QualityName = "low" | "med" | "high";
@@ -47,8 +43,10 @@ export interface QualityPreset {
    * a second anti-tiling sample. "off" loads no textures at all.
    */
   readonly groundDetail: "off" | "near" | "full";
-  /** Reserved for Stage 5's grass carpet: blades per square metre near the camera. */
+  /** Grass tufts per square metre of rough near the camera (`grassCarpet.ts`). 0 draws none. */
   readonly grassDensity: number;
+  /** Most tufts held at once: the size of the tuft pool. */
+  readonly grassCap: number;
   /** Most course-wood trees drawn at once (`Trees.setCap`); whole clumps are dropped past it. */
   readonly treeCap: number;
   /** SMAA on the post chain. Only where there is a post chain; Low and Med use the canvas's MSAA. */
@@ -72,6 +70,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     ambientOcclusion: false,
     groundDetail: "off",
     grassDensity: 0,
+    grassCap: 0,
     treeCap: 400,
     smaa: false,
     bloom: false,
@@ -86,7 +85,8 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     shadowCascades: 1,
     ambientOcclusion: false,
     groundDetail: "near",
-    grassDensity: 8,
+    grassDensity: 1.5,
+    grassCap: 22000,
     // The clumped woods are 2,564 trees now that every stretch is wooded. Med is the design
     // target, so it draws them all.
     treeCap: 2750,
@@ -102,7 +102,8 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualityPreset>> = {
     shadowCascades: 3,
     ambientOcclusion: true,
     groundDetail: "full",
-    grassDensity: 16,
+    grassDensity: 4,
+    grassCap: 60000,
     treeCap: 3000,
     smaa: true,
     bloom: true,
