@@ -1,25 +1,45 @@
 # Handoff — next session
 
-Rewritten 2026-11-16, at the end of slice B of the Caswell look (one Piedmont course). It is built, pushed and in a draft PR, **waiting for the user's play-test.** Slice A (detailed grass, #90) was merged at the user's direction without notes. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-22, at the end of slice C of the Caswell look (pine straw and grass tufts). It is built, pushed and in a draft PR, **waiting for the user's play-test.** Slice B (#91) was merged after the user's play-test of the water fix. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
-**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, from `main` after #90 merged. Five commits: palettes, ground edges, the pond shader, the bed tint, cattails. `tsc` is clean and `npm test` passes (120 files, 1,159 tests, 48.9 s; it has ranged from 37 s to 55 s between containers against a 60 s cap).
+**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, restarted from `main` after #91 merged. Two code commits (straw, tufts) and this docs commit. `tsc` is clean and `npm test` passes (123 files, 1,175 tests, 46.3 s against a 60 s cap).
 
 **The work is the Caswell look and detailed grass** (user, 15 Nov). The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Four slices, each ending at a play-test stop:
 
 | Slice | State |
 |---|---|
 | A. Detailed grass (Tasks 1, 2) | **done** (#90) |
-| **B. One Piedmont course** (Tasks 3, 4) | **built, draft PR, awaiting play-test** |
-| C. Pine straw and grass tufts (Tasks 5, 6) | next, after the play-test |
+| B. One Piedmont course (Tasks 3, 4) | **done** (#91) |
+| **C. Pine straw and grass tufts** (Tasks 5, 6) | **built, draft PR, awaiting play-test** |
 | D. Loblolly pines (Task 7) | needs a local Blender session |
 
 The spec's §6 has the open questions, each with a default. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
 
-## Just done: slice B, one Piedmont course (draft PR #91, not merged)
+## Just done: slice C, pine straw and grass tufts (draft PR, not merged)
 
-**Water-float fix (latest commit on the PR).** The user's play-test: "the water seems to float above the ground". Cause: every pond was drawn at one level, `spec.waterLevel` (-0.72), while the basins around them are carved to different depths and some ground beside a pond sits lower than that. 582 grid cells hung over lower ground. Render only; the golden is untouched.
+Render only. The sim and the golden are untouched.
+
+- **Woods density (`woodsPlacement.ts`: `buildWoodsDensity`, `woodsDensityAt`).** A 4 m grid over the course. Each tree adds a disc of radius `1.6 × MIN_SPACING_M + 0.25 × height`, full inside 85% of it; the sum is clamped to 1 and blurred once (1-2-1 tent). `courseDressing.ts` now places the woods once and builds both the trees and this field from that placement; `CourseDressing.woodsDensity` carries it.
+  - The plan's 50% full radius and box blur left lone trees at 0.44. 85% and a tent blur put every tree above 0.70 (lowest 0.707).
+- **Pine straw (`groundShader.ts`, course path, every preset).** `aWoods` is baked per tile vertex in `buildGeometry`, straight from the positions, and copied to the skirts. `straw = smoothstep(0.35, 0.7, woods + noise × 0.15) × corridor`, after the rough and before clay, sand and water. Colour `STRAW_COLOUR` 0x8a5a34. Tuning in `GROUND_EDGES.straw*`.
+  - **Texture:** ambientCG's only pine-tagged floor, `Ground077` (CC0, in `LICENSES.md` and `NOTICE`). It reads as fine mulch, not needles, so the detail path also draws a needle streak: two sparse sets of short dashes at different angles (`needleStreak`, `GROUND_DETAIL_TUNING.needle*`). Dense dashes read as woven burlap; the fill is 30%.
+  - On detail presets slot B switches from coarse grass to straw where straw is over half.
+- **CPU palette (`groundPalette.ts`: `groundColourAt`, `strawAmount`).** `courseBlend` transcribed to TypeScript, without stripes or detail. Comments at both say the other exists. Change them together.
+- **Grass tufts (`grassCells.ts` pure, `grassCarpet.ts` three).** 12 m cells, a ring of 69 cells (centres within 4.5 cells) round the camera. A cell's tufts come from `hashChannel(seed, 12, cellX, cellZ)`. A tuft stands where the sim says rough, the warped corridor weight is over 0.34, the woods density is under 0.5, with no sand or water and a slope under 35°. It is kept with probability `1 − woods`, halved in the first cut. Its colour is `groundColourAt` × 1.04, and the blades lighten from 0.88 at the root to 1.12 at the tip.
+  - One `InstancedMesh` of five-blade fans (20 triangles), in slots of one cell each. At most two cells are filled a frame, and a slot keeps its tufts until reused. The outer 10 m of the 48 m ring shrinks away in the vertex shader. Tufts sway on the trees' wind clock (`TREE_WIND_TIME`) in a world direction. They receive shadows and cast none.
+  - `QualityPreset.grassDensity` is Low 0, Med 1.5 and High 4 tufts per m². `grassCap` is 0, 22,000 and 60,000.
+  - **Measured in headless Chrome, open rough at (184, −236):** Med, about 19k tufts, 217 → 218 draws, 1.13 M → 1.51 M triangles. High, 55k tufts, 4.18 M → 6.57 M triangles (High's post chain draws the scene twice). Frame time not measured: software GL.
+  - The corridor rule never fires on the shipped course: the sim's rough never reaches the drawn fairway. It is kept as a guard. The fairway check fails only with both the surface and corridor rules removed.
+  - **Not done:** the spec's "never within 2 m of a spawn pad". Tees are not rough, so it may not matter; check in the play-test.
+- **Smoke checks:** `woodsDensity.test.ts`, `groundPalette.test.ts`, `grassCells.test.ts`. The density and tuft checks were seen to fail first.
+  - **Deviation:** on greens the density check asserts "below where straw starts" (density + noise < 0.35), not 0. A few green back edges sit 4–6 m from a clump, and the 4 m grid blurs up to 0.18 onto them.
+- **Headless screenshots of the tufts** must move the tuft ring with the shot camera (`render.grass.update(x, z)`). The ring follows the scene's camera, which the shot override does not move.
+
+## Slice B, one Piedmont course (#91, merged 22 Nov)
+
+**Water-float fix.** The user confirmed it after a play-test: "looks good water wise". The user's play-test: "the water seems to float above the ground". Cause: every pond was drawn at one level, `spec.waterLevel` (-0.72), while the basins around them are carved to different depths and some ground beside a pond sits lower than that. 582 grid cells hung over lower ground. Render only; the golden is untouched.
 - `waterMesh.ts` now gives each pond its own level: the lower of its nominal level and the **spill level** of its basin (`spillLevel`, a priority flood over the local ground) minus 4 cm. Only ground connected to the pond's deepest point is water. 2 of 1,684 shoreline points now have lower ground beyond them.
 - Levels now range from -2.70 to -0.72 m. Hole 12 (index 11) is unchanged; the others sit 0.6 to 2 m lower. Hole 4's creek-like pond shrinks to a small pool; hole 13's shrinks a lot.
 - Cattails stand on ground above the local pond's level (`waterLevelNear`).
