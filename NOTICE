@@ -88,6 +88,16 @@ Ported code
   reference/claude-of-tanks/LICENSE.
 
 
+--------------------------------------------------------------------------------
+Ground textures
+
+  art/textures-src/*.jpg and the arrays packed from them in
+  public/textures/ground/ are CC0 1.0 sets from ambientCG (ambientcg.com) and
+  Poly Haven (polyhaven.com). No attribution is required; LICENSES.md lists
+  each set and its source. Most recently added: Ground077 (pine forest floor),
+  https://ambientcg.com/view?id=Ground077.
+
+
 "Very fast procedural ocean" by afl_ext
 ---------------------------------------
 

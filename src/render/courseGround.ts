@@ -5,7 +5,9 @@ import type { CourseTerrain } from "../sim/courseTerrain";
 import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
 import { BIOMES } from "./biomes";
-import { CLAY_COLOUR, applyGroundShader } from "./groundShader";
+import { CLAY_COLOUR, STRAW_COLOUR, applyGroundShader } from "./groundShader";
+import { woodsDensityAt } from "./woodsPlacement";
+import type { WoodsDensity } from "./woodsPlacement";
 import type { GroundDetailMode } from "./groundShader";
 import type { GroundTextures } from "./groundTextures";
 
@@ -146,7 +148,15 @@ function paletteVector(field: "green" | "fairway" | "rough" | "sand" | "water"):
   return BIOME_ORDER.map((biome) => new THREE.Color(BIOMES[biome][field]));
 }
 
-export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): CourseGround {
+/**
+ * `woods` is the woods-floor density (`woodsPlacement.buildWoodsDensity`), baked into each tile's
+ * vertices as `aWoods` for the pine straw. Without it the ground has no straw.
+ */
+export function createCourseGround(
+  terrain: CourseTerrain,
+  surfaces: Surfaces,
+  woods: WoodsDensity | null = null,
+): CourseGround {
   let decorate: ((material: THREE.MeshStandardMaterial) => void) | null = null;
   const group = new THREE.Group();
   const extentX = terrain.bounds.maxX - terrain.bounds.minX;
@@ -164,6 +174,7 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     uSandBiome: { value: paletteVector("sand") },
     uWaterBiome: { value: paletteVector("water") },
     uClay: { value: new THREE.Color(CLAY_COLOUR) },
+    uStraw: { value: new THREE.Color(STRAW_COLOUR) },
     // Detail arrays (`groundTextures.ts`), null until `setDetail` hands them over. Only a program
     // compiled with detail on reads them.
     uGroundDetail: { value: null as THREE.DataArrayTexture | null },
@@ -284,6 +295,14 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     const bio = new Uint8Array(total * 3);
     const mowAttr = new Int8Array(total * 2);
     const uv = new Float32Array(total * 2);
+    // Woods density per vertex, read straight off the positions: it needs nothing else about the
+    // point, so it is not threaded through the row-by-row near build.
+    const woodsAttr = new Uint8Array(total);
+    if (woods !== null) {
+      for (let i = 0; i < gridVerts; i++) {
+        woodsAttr[i] = Math.round(woodsDensityAt(woods, positions[i * 3]!, positions[i * 3 + 2]!) * 255);
+      }
+    }
     pos.set(positions);
     bio.set(biome);
     mowAttr.set(mow);
@@ -338,6 +357,7 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
           bio[target * 3 + 2] = bio[rim * 3 + 2]!;
           mowAttr[target * 2] = mowAttr[rim * 2]!;
           mowAttr[target * 2 + 1] = mowAttr[rim * 2 + 1]!;
+          woodsAttr[target] = woodsAttr[rim]!;
           uv[target * 2] = uv[rim * 2]!;
           uv[target * 2 + 1] = uv[rim * 2 + 1]!;
           skirtRim[target - gridVerts] = rim;
@@ -356,6 +376,7 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     geometry.setAttribute("aBiome", new THREE.BufferAttribute(bio, 3, true));
     geometry.setAttribute("aMow", new THREE.BufferAttribute(mowAttr, 2, true));
+    geometry.setAttribute("aWoods", new THREE.BufferAttribute(woodsAttr, 1, true));
     geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
@@ -381,7 +402,7 @@ export function createCourseGround(terrain: CourseTerrain, surfaces: Surfaces): 
     geometry.computeBoundingBox();
     // The GPU owns these once uploaded, and nothing on the CPU reads them again. Positions and the
     // index are kept: the bounds and the smoke's NaN check read them.
-    for (const name of ["aBiome", "aMow", "uv", "normal"]) {
+    for (const name of ["aBiome", "aMow", "aWoods", "uv", "normal"]) {
       (geometry.getAttribute(name) as THREE.BufferAttribute).onUpload(releaseArray);
     }
     return geometry;

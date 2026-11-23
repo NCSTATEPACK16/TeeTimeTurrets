@@ -36,6 +36,8 @@ import { createWaterSurface, type WaterSurface } from "./water";
 import { setTreeWindTime } from "./Trees";
 import { placeCattails } from "./cattailPlacement";
 import { createCattails, type Cattails } from "./cattails";
+import { createGrassCarpet, type GrassCarpet } from "./grassCarpet";
+import { createCourseTuftQuery } from "./grassCells";
 
 /** Linear sun intensity under ACES; the sky's environment adds the rest. */
 const SUN_INTENSITY = 3.1;
@@ -174,6 +176,8 @@ export class RenderScene {
   private readonly shadows: SunShadows;
   private readonly water: WaterSurface;
   private readonly cattails: Cattails;
+  /** Tufts in the rough round the camera; null where the preset draws none. */
+  private readonly grass: GrassCarpet | null;
   private readonly post: PostChain | null;
 
   /**
@@ -289,6 +293,22 @@ export class RenderScene {
       heightAt,
     );
     if (this.cattails.mesh) this.scene.add(this.cattails.mesh);
+    // Grass tufts in the rough near the camera, per match: the pool is sized by the preset.
+    this.grass =
+      quality.grassDensity > 0 && quality.grassCap > 0
+        ? createGrassCarpet(
+            createCourseTuftQuery(
+              arena.course,
+              arena.surfaces,
+              dressing.woodsDensity,
+              arena.seed ?? 0,
+              arena.clubhouse,
+            ),
+            quality.grassDensity,
+            quality.grassCap,
+          )
+        : null;
+    if (this.grass) this.scene.add(this.grass.mesh);
     this.trails = new MotionTrails(botCount + 1, this.effects, arena.surfaces, heightAt);
     this.knockables = new Knockables(arena.course.holes, heightAt, botCount + 1, (x, y, z) => {
       this.effects.knock(x, y, z);
@@ -382,6 +402,7 @@ export class RenderScene {
     // was last frame. `update` is internally budgeted to BUILD_BUDGET_MS, so this cannot blow the
     // frame however far the cart has driven.
     this.courseGround.update(this.camera.position.x, this.camera.position.z);
+    this.grass?.update(this.camera.position.x, this.camera.position.z);
 
     this.sky.update(view.elapsedSeconds);
     this.shadows.update(this.cameraTarget);
@@ -405,6 +426,7 @@ export class RenderScene {
     this.effects.dispose();
     this.water.dispose();
     this.cattails.dispose();
+    this.grass?.dispose();
     this.knockables.dispose();
     this.clubhouseKit?.dispose();
     this.teeSigns.dispose();

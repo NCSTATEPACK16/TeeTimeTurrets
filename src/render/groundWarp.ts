@@ -33,8 +33,8 @@ function hash(ix: number, iz: number, salt: number): number {
   return h & 0xffff;
 }
 
-/** Smooth value noise in -1..1. */
-function noise(x: number, z: number, salt: number): number {
+/** Smooth value noise in -1..1, one lattice cell per unit. `groundWarpNoise` in the GLSL below. */
+export function groundNoise(x: number, z: number, salt: number): number {
   const ix = Math.floor(x);
   const iz = Math.floor(z);
   const fx = x - ix;
@@ -56,8 +56,8 @@ export function groundWarp(x: number, z: number, out: { x: number; z: number }):
   let oz = 0;
   for (let i = 0; i < WARP_OCTAVES.length; i++) {
     const octave = WARP_OCTAVES[i]!;
-    ox += noise(x / octave.cellM, z / octave.cellM, i * 2) * octave.amplitudeM;
-    oz += noise(x / octave.cellM, z / octave.cellM, i * 2 + 1) * octave.amplitudeM;
+    ox += groundNoise(x / octave.cellM, z / octave.cellM, i * 2) * octave.amplitudeM;
+    oz += groundNoise(x / octave.cellM, z / octave.cellM, i * 2 + 1) * octave.amplitudeM;
   }
   out.x = ox;
   out.z = oz;

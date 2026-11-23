@@ -287,6 +287,12 @@ export interface MergeOptions {
    * that floats, such as a pickup hovering over its pedestal.
    */
   readonly contactShade?: boolean;
+  /**
+   * `mergeGraphInstances` only: also write `aAboveBase`, each vertex's height in metres above its
+   * own instance's origin, so a shader can bend a merged copy from its root (the cattails sway on
+   * it). Off by default: most merges are rigid.
+   */
+  readonly baseHeight?: boolean;
 }
 
 export function mergeGraph(
@@ -338,7 +344,18 @@ export function mergeGraphInstances(
   const colours: number[] = [];
 
   const shade = options.contactShade !== false;
-  for (const instance of instances) bakeInto(graph, built, instance, parts, colours, shade);
+  for (const instance of instances) {
+    const first = parts.length;
+    bakeInto(graph, built, instance, parts, colours, shade);
+    if (!options.baseHeight) continue;
+    const baseY = instance.elements[13]!;
+    for (let i = first; i < parts.length; i++) {
+      const position = parts[i]!.getAttribute("position");
+      const above = new Float32Array(position.count);
+      for (let v = 0; v < position.count; v++) above[v] = position.getY(v) - baseY;
+      parts[i]!.setAttribute("aAboveBase", new THREE.BufferAttribute(above, 1));
+    }
+  }
   built.dispose();
 
   return meshFrom(graph.name, parts, colours);
