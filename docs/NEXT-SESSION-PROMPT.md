@@ -1,49 +1,102 @@
 # Next-session prompts
 
-Written 2026-11-07, at the end of the Stage 4 session. Stage 4 (handling feel and arena zone, #49–#53) is in draft PR #88 with CI green, waiting for the user's play-test. Two prompts follow. Paste the one that fits into a fresh Claude Code session; each stands alone.
+Written 2026-11-23, after slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested and merged. Three prompts follow. Paste the one that fits into a fresh Claude Code session; each stands alone.
 
-- **A. Stage 4 play-test fixes:** the play-test asked for changes. Same branch and PR.
-- **B. Stage 4b, iOS and gamepad:** the user has signed off Stage 4 and #88 is merged.
+- **A. Slice D, loblolly pines.** The next thing to build. **Local only:** it needs Blender and the Blender MCP on the Mac.
+- **B. The 3.5c spec (mortar and capture flags).** For a cloud session when no Blender session is to hand. It writes a spec and stops for the user's answers; it builds nothing.
+- **C. Stage 4b, iOS and gamepad.** After 3.5c. Written on 7 Nov and still current.
 
 ---
 
-## A. Stage 4 play-test fixes (local or cloud)
+## A. Slice D of the Caswell look: loblolly pines (local, Blender)
 
-> You are continuing **Stage 4** of TeeTimeTurrets, a browser golf-combat game (three.js, Rapier, TypeScript). Stage 4 is built and is in draft PR #88 on branch **`claude/sweet-franklin-1vthr8`**. The user has play-tested it, and their notes are in their message to you (or in comments on #88). **Make exactly the changes the notes ask for.** Don't start Stage 4b, and don't merge.
+> You are building **slice D** of the Caswell look for TeeTimeTurrets, a browser golf-combat game (three.js, Rapier, TypeScript). Slices A, B and C are merged (#90, #91, #92). This slice replaces the stacked-cone stand-in conifer with a **loblolly pine** species, so the woods read as a Carolina Piedmont pine course. It is render only: no file under `src/sim/**` or `src/physics/**` changes, and the golden fingerprint must not move.
+>
+> **This needs Blender.** Run it on the Mac, with Blender open and the Blender MCP connected (`execute_blender_code`, `get_scene_info`, `get_viewport_screenshot`). If those tools are not available, stop and say so. Do not hand-write the species into `trees.json`.
 >
 > ### Where to work
-> Check out `claude/sweet-franklin-1vthr8` and pull it. Locally, use a worktree `../TeeTimeTurrets-stage4` and run `npm ci`. If `main` has moved on, merge `origin/main` into the branch (no rebase, no force-push), and sign the merge commit off.
+> Branch from the latest `main`. Use a worktree `../TeeTimeTurrets-pines` and run `npm ci`. Commit with `git commit -s` on every commit. Put no AI or session metadata in commits, PR titles or bodies. Stage files by name, never `git add -A`: the main checkout carries an untracked `.scratch/`.
 >
-> ### Read first
-> - `AGENTS.md`: one smoke check of 15 s or less per change, every automated check under 60 s, and play-test items at `?match=60`.
-> - `docs/HANDOFF.md`, especially "Just done: Stage 4" and "Watch for in the play-test".
-> - The PR description of #88 and any review comments on it.
-> - `docs/TEST-AND-SPEC-PITFALLS.md`.
+> ### Read first, in this order
+> 1. `AGENTS.md`: one smoke check of 15 s or less per change, `npm test` under 60 s, and play-test items at `?match=60`.
+> 2. `docs/HANDOFF.md`. Read the slice C section, "The direction" (Blender authors primitive-graph JSON only, and the kit script is the source) and **"Traps"**. The Blender traps there have each cost a session before:
+>    - Unhide every collection before export. Hidden collections export every node at the origin.
+>    - Run the build in a separate `execute_blender_code` call after `read_homefile`.
+>    - Three (x, y, z) is Blender (x, −z, y).
+>    - Call `view_layer.update()` before reading matrices.
+> 3. `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` §3.9 (the species) and `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`, Task 7 and Task 8.
+> 4. `docs/art/specs/stage5/trees.md`: the contract the existing species follow (unit height, slot names, how `Trees.ts` scales and colours them). The new species goes in this file.
+> 5. `art/stage5_kit.py` (collection `trees`) and `art/kit_common.py`: where the species are authored and exported to `src/entities/graphs/trees.json`.
 >
-> ### Where each likely note lands
-> - **Cart feel** (spool, turn bleed, downhill, overspeed scrub): `CART_TUNING` in `src/sim/entities/Cart.ts`. The tests in `Cart.test.ts` ("Cart feel (#50)") assert literals, so update them with the new values.
-> - **Surfaces and tyres** (speed off the fairway, climb limits): `SURFACE_MOBILITY` in `src/sim/mobility.ts`, and `TIRE_TUNING`. Rough at resistance 1.4 caps a street tyre's climb at 29.7°, under the KCC's 32° slide angle. If carts wedge on banks, that gap is the first suspect.
-> - **Camera framing:** `CHASE_HEIGHT`, `CHASE_DISTANCE`, `CHASE_SIDE` and `CHASE_LOOK_DROP` in `src/render/chaseCamera.ts`. The horizon test in `chaseCamera.test.ts` holds the horizon a fifth of the way down the frame. If the user wants it elsewhere, change the test's band on purpose. If `CHASE_SIDE` changes, update the `CHASE_SIDE_ANGLE` in `tools/smoke.mjs` too.
-> - **Suspension:** the constants at the top of `src/render/cartSuspension.ts`.
-> - **The zone's shape** (for example, too tight behind the barns): `ZONE_PAD_M`, `ZONE_HUB_RADIUS_M`, `ZONE_HUB_REACH_M` and the road inset in `src/sim/arenaZone.ts`. `arenaZone.test.ts` must still hold every tee, cup and pad inside it. A shape change moves the pickup sites, and so may move the golden.
-> - **The zone's rules** (drain rate, hard limit, bot edge-holding): the same file, plus `BOT_EDGE_HOLD_M` in `src/sim/bot.ts`.
+> ### What to build (plan Task 7)
+> - **The species `pine_loblolly`**, at unit height.
+>   - Trunk: a tapered cylinder to 0.58 of the height, radius 0.035 at the base.
+>   - Crown: three masses (flattened spheres, or short wide cones with rounded tops) at heights 0.62, 0.78 and 0.92, radii 0.20, 0.17 and 0.11. Set each a few percent off-axis, so the crown is irregular.
+>   - Slots `tree_trunk`, `tree_foliage_dark` and `tree_foliage_light`; the top mass is light.
+>   - Budget: 220 triangles after `smoothedGraph` in `Trees.ts`, which raises cone, cylinder and sphere segment counts. Count after that, not in Blender.
+>   - Proportions: GolfCartSimulator's stand-in pine is 12 m tall, with a 0.18 m trunk radius and a 2.1 m crown radius.
+> - **Write the spec first** into `docs/art/specs/stage5/trees.md`. Then author the species in `art/stage5_kit.py`. Rebuild from an empty file, export, and check `git diff --stat src/entities/graphs/` shows **only** `trees.json`.
+> - **Wiring:**
+>   - `src/entities/envGraphs.ts`: `TREE_SPECIES.conifer = ["pine_loblolly", "broadleaf_oak"]`. `conifer_tall` stays in `trees.json` for the title backdrop.
+>   - `src/render/biomes.ts`: `treeHeight` 14, 14, 12 for the three variations. No test pins the heights today; `woodsDensity.test.ts` and `Trees.test.ts` are the ones they can move.
+>   - `PURE_CONIFER_SHARE` in `woodsPlacement.ts` stays 0.8.
+> - **Wind:** `SWAY_AMPLITUDE` in `Trees.ts` bends by height squared, so a 14 m crown moves about 0.3 m. If that looks like rubber, halve it for species taller than 10 m.
+> - **Smoke check:** extend the colour-bake test in `Trees.test.ts` to the new species, and assert its merged triangle count is under 260. See it fail first.
 >
-> ### The golden fingerprint
-> Any sim change (`src/sim/**`) can move it, and it is Linux x64's (`docs/DECISIONS.md`).
-> - **In a cloud session** (check with `uname -m`), record the new value in the same commit, and say so in the message.
-> - **On the Mac,** push, read `expected N to be M` from the failing CI run, and record N in a follow-up commit. Say so in both messages.
+> ### Knock-ons from slice C (check each; they are why this prompt is long)
+> - **Straw grows with the trees.** `stampRadius` in `woodsPlacement.ts` is `1.6 × MIN_SPACING_M + 0.25 × height`. Going from about 10 m to 14 m widens every straw patch by about 1 m. Run `woodsDensity.test.ts`: the mean must stay between 0.03 and 0.25, and fairway centrelines must stay at 0. If straw reaches too far, lower the 0.25 rather than the test.
+> - **Tufts** thin under the woods from the same density (`grassCells.ts`, `MAX_WOODS` 0.5). Taller trees mean fewer tufts beside the woods. That is expected; say so in the PR.
+> - **Tree counts and caps.** Placement does not depend on height, so the count stays 2,564 and Med's `treeCap` stays 2,750. The triangle count does change: (new triangles − old) × 2,564 is the per-frame cost. Compute it and put it in the PR.
+> - **Shadows.** 14 m trees cast longer shadows. Med's single shadow map (`shadows.ts`, `SINGLE_HALF_EXTENT_M`) may now clip shadows near its edge. Look for it.
+> - **The treeline beyond the road** (`treeline.ts`) plants the biome's same two species through `plantTrees`, so it changes too. Check it still reads as a band and does not tower over the course edge.
+> - **Sight lines.** Taller trees with high crowns should let you see under them to the next fairway. Check that crowns do not cover the chase camera's view of your own cart.
 >
-> Before you push a sim change, run `npm test` and `npx -y node@22 node_modules/vitest/vitest.mjs run tools/simAllocation.test.mjs`. Render-only changes must leave the golden alone.
+> ### Verify
+> - `npx tsc --noEmit` is clean, and `npm test` passes in under 60 s. The golden must not change. If `arenaGolden.test.ts` moves, something reached the sim: stop and find it.
+> - Look at it in the real game in the browser (`npm run dev`, `?match=60`) on Med and High, on this Mac's GPU. Record Med's frame time and draw calls from the perf overlay before and after. Slice C's tufts and the pond shader have never been measured on a real GPU, so this is the first real number for the whole look. Put it in the PR.
 >
-> ### Rules
-> - Use `git commit -s` on every commit. Put no AI metadata in git or in the PR body: no co-author trailers, session URLs or "generated with" footers. Stage files by name.
-> - **See every changed check go red once** before you trust it.
-> - Push to the same branch. Update #88's description: what changed and why, the new check outputs, and a short play-test list for just the changed items.
-> - Update "Just done" in `docs/HANDOFF.md`. Then **STOP** for the user's next play-test.
+> ### Finish (plan Task 8)
+> - Push, and open a **draft** PR with: what changed, the deviations, the checks with outputs, the perf numbers, and a play-test list of items 60 s or less at `?match=60`:
+>   - Do the woods read as tall pines?
+>   - Can you see under the crowns to the next fairway?
+>   - Does the treeline beyond the road match?
+>   - Do trees hide the camera's view of your own cart?
+>   - Is the straw still where the trees are, and no wider?
+>   - Is Med still smooth?
+> - Rewrite `docs/HANDOFF.md` for slice D. In `docs/SPEC-QUEUE.md`, mark the Caswell look done once D merges. In `docs/DECISIONS.md`, add one entry if a decision was made.
+> - **Then stop and wait for the user's play-test. Do not merge.**
 
 ---
 
-## B. Stage 4b: iOS and gamepad (cloud first, then Xcode on the Mac)
+## B. Spec for Stage 3.5c: mortar and capture flags (cloud)
+
+> You are writing the **spec** for Stage 3.5c of TeeTimeTurrets, a browser golf-combat game (three.js, Rapier, TypeScript): a mortar as a 3-kill streak reward, and capture flags on three greens. **Write the spec and stop. Build nothing.** The user answers the open questions before any code is written.
+>
+> ### Read first
+> - `AGENTS.md` and `docs/TEST-AND-SPEC-PITFALLS.md`. The pitfalls file is about specs as much as tests.
+> - `docs/SPEC-QUEUE.md`, item 1 under "Needs a spec": the list of what is missing.
+> - `docs/REVAMP-PLAN.md`, the 3.5 section: the six lines of rules the plan gives.
+> - `docs/DECISIONS.md`, "Stage 3.5: a countdown, and arena rules that grow capture flags and a mortar", and "The golden fingerprint is Linux x64's".
+> - `docs/UI-SPEC.md`, for the HUD and map elements.
+> - The code the spec will touch: `src/sim/combat.ts`, `src/sim/arena.ts`, `src/sim/arenaZone.ts`, `src/sim/bot.ts`, `src/sim/events.ts`, `src/sim/stats.ts`, the ball pool, and the HUD under `src/ui/`. Read enough to name exact functions and constants, not to change them.
+> - Two earlier specs in `docs/superpowers/specs/` as models of the format, for example `2026-09-12-stage-d-pickups-design.md` and `2026-11-15-caswell-look-and-grass-detail-design.md`.
+>
+> ### What the spec must settle
+> Everything in SPEC-QUEUE item 1:
+> - **Mortar:** how the owner aims it, the telegraph (what the target sees, and for how long), the barrage's seeded spread, damage per ball, whether it uses the ball pool, and what a bot does with one.
+> - **Flags:** which three greens, capture state per flag, how "contested" is counted, how the stroke bleed joins the existing stroke scoring and the match end, and the events the HUD and audio hear.
+> - **Bots:** when they go for a flag instead of a target. Stage 6's routing does not exist yet, so say what they do without it.
+> - **HUD and map elements**, against `UI-SPEC.md`.
+> - **The golden:** it moves once. Say which commit records it, and that it is recorded from Linux x64.
+>
+> Give every open question a default, in a "Questions for the user" table, so the build can start the moment the user answers. Split the build into slices, each ending at a play-test stop, as the Caswell plan does. Each slice's smoke check must be 15 s or less.
+>
+> ### Finish
+> Commit the spec as `docs/superpowers/specs/<date>-mortar-and-capture-flags-design.md` with `git commit -s`, and no AI or session metadata. Update `docs/SPEC-QUEUE.md` to point to it. Push, open a draft PR containing only the spec, list the questions in the PR body, and **stop for the user's answers.**
+
+---
+
+## C. Stage 4b: iOS and gamepad (cloud first, then Xcode on the Mac)
 
 > You are building **Stage 4b** of TeeTimeTurrets, a browser golf-combat game (three.js, Rapier, TypeScript): a gamepad on the web, then a Capacitor iOS shell for TestFlight, plus KTX2 terrain textures and a CI size budget. The design is decided in `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`, and `docs/REVAMP-PLAN.md` § Stage 4b summarises it. **Those are user decisions; do not relitigate them.** Build it, and ask only if a fact in the code contradicts the spec.
 >

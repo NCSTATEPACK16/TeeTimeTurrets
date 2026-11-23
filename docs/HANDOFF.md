@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Rewritten 2026-11-22, at the end of slice C of the Caswell look (pine straw and grass tufts). It is built, pushed and in a draft PR, **waiting for the user's play-test.** Slice B (#91) was merged after the user's play-test of the water fix. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, prompt B writes the 3.5c spec. Rewrite this file at the end of each session: it is a baton, not a log.
 
 ---
 
@@ -12,12 +12,12 @@ Rewritten 2026-11-22, at the end of slice C of the Caswell look (pine straw and 
 |---|---|
 | A. Detailed grass (Tasks 1, 2) | **done** (#90) |
 | B. One Piedmont course (Tasks 3, 4) | **done** (#91) |
-| **C. Pine straw and grass tufts** (Tasks 5, 6) | **built, draft PR, awaiting play-test** |
-| D. Loblolly pines (Task 7) | needs a local Blender session |
+| C. Pine straw and grass tufts (Tasks 5, 6) | **done** (#92) |
+| **D. Loblolly pines** (Task 7) | **next; needs a local Blender session** (`NEXT-SESSION-PROMPT.md`, A) |
 
 The spec's §6 has the open questions, each with a default. **`docs/SPEC-QUEUE.md` lists everything else that is left and what still needs a spec.**
 
-## Just done: slice C, pine straw and grass tufts (draft PR, not merged)
+## Just done: slice C, pine straw and grass tufts (#92, merged 23 Nov)
 
 Render only. The sim and the golden are untouched.
 
