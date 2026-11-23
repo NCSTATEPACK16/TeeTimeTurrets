@@ -4,7 +4,7 @@ Rewritten 2026-11-22, at the end of slice C of the Caswell look (pine straw and 
 
 ---
 
-**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, restarted from `main` after #91 merged. Two code commits (straw, tufts) and this docs commit. `tsc` is clean and `npm test` passes (123 files, 1,175 tests, 46.3 s against a 60 s cap).
+**Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, restarted from `main` after #91 merged. Four code commits (straw; tufts; the tuft frame budget and clubhouse clearance; cattail sway and the first-frame fill) and docs. `tsc` is clean and `npm test` passes (125 files, 1,181 tests, 41.3 s against a 60 s cap).
 
 **The work is the Caswell look and detailed grass** (user, 15 Nov). The spec is `docs/superpowers/specs/2026-11-15-caswell-look-and-grass-detail-design.md` and the task-by-task plan is `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`. Four slices, each ending at a play-test stop:
 
@@ -28,14 +28,16 @@ Render only. The sim and the golden are untouched.
   - On detail presets slot B switches from coarse grass to straw where straw is over half.
 - **CPU palette (`groundPalette.ts`: `groundColourAt`, `strawAmount`).** `courseBlend` transcribed to TypeScript, without stripes or detail. Comments at both say the other exists. Change them together.
 - **Grass tufts (`grassCells.ts` pure, `grassCarpet.ts` three).** 12 m cells, a ring of 69 cells (centres within 4.5 cells) round the camera. A cell's tufts come from `hashChannel(seed, 12, cellX, cellZ)`. A tuft stands where the sim says rough, the warped corridor weight is over 0.34, the woods density is under 0.5, with no sand or water and a slope under 35°. It is kept with probability `1 − woods`, halved in the first cut. Its colour is `groundColourAt` × 1.04, and the blades lighten from 0.88 at the root to 1.12 at the tip.
-  - One `InstancedMesh` of five-blade fans (20 triangles), in slots of one cell each. At most two cells are filled a frame, and a slot keeps its tufts until reused. The outer 10 m of the 48 m ring shrinks away in the vertex shader. Tufts sway on the trees' wind clock (`TREE_WIND_TIME`) in a world direction. They receive shadows and cast none.
+  - One `InstancedMesh` of five-blade fans (20 triangles), in slots of one cell each. A slot keeps its tufts until reused.
+  - **Filling is budgeted.** A cell first cost 18 ms on Med (47 ms on High), and two a frame was a 37 ms hitch at every cell crossing. Height, slope and biome now come off a 2 m lattice per cell (6.5 ms a cell on Med). The ring fills 24 candidates at a time under 2 ms a frame (`FILL_BUDGET_MS`), resuming the cell's stream (`fillCellRange`; mulberry32's state steps by a constant, so it can skip ahead). The first update gets 50 ms behind the countdown. Driving at 15 m/s in node: 3.7 ms per update at most. On High the outer cells lag while driving; they are the faded ones.
+  - **Clubhouse clearance:** no tuft within `CLUBHOUSE_CLEAR_M` (55 m), the woods' clearance. The spawn pads and the lot are rough to the sim and grew tufts before. The outer 10 m of the 48 m ring shrinks away in the vertex shader. Tufts sway on the trees' wind clock (`TREE_WIND_TIME`) in a world direction. They receive shadows and cast none.
   - `QualityPreset.grassDensity` is Low 0, Med 1.5 and High 4 tufts per m². `grassCap` is 0, 22,000 and 60,000.
   - **Measured in headless Chrome, open rough at (184, −236):** Med, about 19k tufts, 217 → 218 draws, 1.13 M → 1.51 M triangles. High, 55k tufts, 4.18 M → 6.57 M triangles (High's post chain draws the scene twice). Frame time not measured: software GL.
   - The corridor rule never fires on the shipped course: the sim's rough never reaches the drawn fairway. It is kept as a guard. The fairway check fails only with both the surface and corridor rules removed.
-  - **Not done:** the spec's "never within 2 m of a spawn pad". Tees are not rough, so it may not matter; check in the play-test.
-- **Smoke checks:** `woodsDensity.test.ts`, `groundPalette.test.ts`, `grassCells.test.ts`. The density and tuft checks were seen to fail first.
+- **Cattails sway** (slice B's deviation, fixed): `mergeGraphInstances(..., { baseHeight: true })` writes `aAboveBase`, and `cattails.ts` bends from it on the trees' wind clock, 2.5 cm per m² of height.
+- **Smoke checks:** `woodsDensity.test.ts`, `groundPalette.test.ts`, `grassCells.test.ts`, `grassCarpet.test.ts`, `cattails.test.ts`. Each was seen to fail first; `grassCarpet.test.ts` caught `standing` counting slots the ring had left.
   - **Deviation:** on greens the density check asserts "below where straw starts" (density + noise < 0.35), not 0. A few green back edges sit 4–6 m from a clump, and the 4 m grid blurs up to 0.18 onto them.
-- **Headless screenshots of the tufts** must move the tuft ring with the shot camera (`render.grass.update(x, z)`). The ring follows the scene's camera, which the shot override does not move.
+- **Headless screenshots of the tufts** must pin the tuft ring to the shot camera by replacing `render.grass.update`. Calling it from the shot as well as the scene moves the ring between two places every frame and abandons every half-filled cell. At software GL's 1 fps the ring takes minutes to fill; that says nothing about a real GPU.
 
 ## Slice B, one Piedmont course (#91, merged 22 Nov)
 
