@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { RING_M, RING_SIZE, TUFT_STRIDE, cellOf, fillCell, ringCells, tuftsPerCell } from "./grassCells";
+import { RING_M, RING_SIZE, TUFT_STRIDE, cellOf, fillCellRange, ringCells, tuftsPerCell } from "./grassCells";
 import type { TuftQuery } from "./grassCells";
 import { TREE_WIND_TIME } from "./Trees";
 
@@ -9,15 +9,19 @@ import { TREE_WIND_TIME } from "./Trees";
  *
  * The pool is cut into slots, one cell's worth of tufts each. When the camera crosses into a new
  * cell, cells that left the ring give up their slots and the nearest new cells are filled into
- * them, at most `FILLS_PER_FRAME` a frame. A slot keeps its tufts until it is reused, so driving
- * back into a cell just left costs nothing. Everything is allocated when the carpet is built.
+ * them. A cell costs several milliseconds to fill (6.5 ms on Med in node), so filling is spread
+ * over frames: `FILL_BUDGET_MS` a frame, `FILL_SLICE` candidates at a time, resuming the cell's
+ * own seeded stream where it stopped. A slot keeps its tufts until it is reused, so driving back
+ * into a cell just left costs nothing. Everything is allocated when the carpet is built.
  *
  * Tufts shrink to nothing over the ring's outer `FADE_M`, in the vertex shader, so cells appear
  * and leave at the edge without a pop; and they sway on the trees' wind clock.
  */
 
-/** Cells filled per frame at most. */
-const FILLS_PER_FRAME = 2;
+/** Milliseconds of filling a frame may spend, at most (plus one slice). */
+const FILL_BUDGET_MS = 2;
+/** Candidates filled between clock checks. */
+const FILL_SLICE = 24;
 /** Metres over which tufts shrink away at the ring's edge. */
 const FADE_M = 10;
 /** Sway at a blade's tip, as a fraction of the tuft's height. */
@@ -35,7 +39,7 @@ export interface GrassCarpet {
   readonly mesh: THREE.InstancedMesh;
   /** Bring the ring to the camera. Cheap when the camera has not changed cell. */
   update(cameraX: number, cameraZ: number): void;
-  /** Tufts standing in filled slots. For the perf hook and tests. */
+  /** Tufts in the ring's filled cells; a slot kept for reuse past the ring is not counted. For the perf hook and tests. */
   readonly standing: number;
   dispose(): void;
 }
@@ -159,11 +163,15 @@ export function createGrassCarpet(query: TuftQuery, density: number, cap: number
   const scale = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
   const colour = new THREE.Color();
+  let ringLength = 0;
   let lastX = Number.NaN;
   let lastZ = Number.NaN;
-  let pending = false;
-  let standing = 0;
   let highWater = 0;
+  /** The cell being filled, if any: its slot, its ring index, the next candidate, tufts so far. */
+  let jobSlot = -1;
+  let jobRing = -1;
+  let jobNext = 0;
+  let jobCount = 0;
 
   function slotOf(cx: number, cz: number): number {
     for (let s = 0; s < slots; s++) if (slotFilled[s] && slotX[s] === cx && slotZ[s] === cz) return s;
@@ -181,72 +189,116 @@ export function createGrassCarpet(query: TuftQuery, density: number, cap: number
     return given;
   }
 
-  function fill(slot: number, cx: number, cz: number): void {
-    const n = fillCell(cx, cz, density, query, tufts);
-    const first = slot * perCell;
-    for (let i = 0; i < perCell; i++) {
-      if (i < n) {
-        const o = i * TUFT_STRIDE;
-        position.set(tufts[o]!, tufts[o + 1]!, tufts[o + 2]!);
-        quaternion.setFromAxisAngle(up, tufts[o + 3]!);
-        const h = tufts[o + 4]!;
-        scale.set(h, h, h);
-        matrix.compose(position, quaternion, scale);
-        mesh.setMatrixAt(first + i, matrix);
-        mesh.setColorAt(first + i, colour.setRGB(tufts[o + 5]!, tufts[o + 6]!, tufts[o + 7]!));
-      } else {
-        mesh.setMatrixAt(first + i, hidden);
-      }
-    }
-    mesh.instanceMatrix.addUpdateRange(first * 16, perCell * 16);
-    mesh.instanceColor!.addUpdateRange(first * 3, perCell * 3);
+  /** Upload instances `first`..`last` with the next frame. three merges the ranges and clears them. */
+  function dirty(first: number, last: number): void {
+    const n = last - first + 1;
+    mesh.instanceMatrix.addUpdateRange(first * 16, n * 16);
+    mesh.instanceColor!.addUpdateRange(first * 3, n * 3);
     mesh.instanceMatrix.needsUpdate = true;
     mesh.instanceColor!.needsUpdate = true;
-    standing += n - (slotFilled[slot] ? slotCount[slot]! : 0);
-    slotX[slot] = cx;
-    slotZ[slot] = cz;
-    slotFilled[slot] = 1;
-    slotCount[slot] = n;
+  }
+
+  /** The nearest ring cell with no slot and not being filled, or -1. */
+  function nextCell(): number {
+    for (let i = 0; i < ringLength; i++) if (ringSlot[i]! < 0 && i !== jobRing) return i;
+    return -1;
+  }
+
+  function startJob(ringIndex: number): boolean {
+    const slot = freeSlot();
+    // The pool is smaller than the ring: the farthest cells go without.
+    if (slot < 0) return false;
+    slotFilled[slot] = 0;
+    slotWanted[slot] = 1;
+    slotX[slot] = ring[ringIndex * 2]!;
+    slotZ[slot] = ring[ringIndex * 2 + 1]!;
+    // Hide what the slot held: those tufts stood in a cell the ring has left.
+    const first = slot * perCell;
+    for (let i = 0; i < perCell; i++) mesh.setMatrixAt(first + i, hidden);
+    dirty(first, first + perCell - 1);
+    jobSlot = slot;
+    jobRing = ringIndex;
+    jobNext = 0;
+    jobCount = 0;
     if (slot + 1 > highWater) {
       highWater = slot + 1;
       mesh.count = highWater * perCell;
+    }
+    return true;
+  }
+
+  /** One slice of the current job; finishes it when the cell is done. */
+  function step(): void {
+    const before = jobCount;
+    jobCount = fillCellRange(slotX[jobSlot]!, slotZ[jobSlot]!, density, query, tufts, jobNext, jobNext + FILL_SLICE, jobCount);
+    jobNext += FILL_SLICE;
+    const first = jobSlot * perCell;
+    for (let i = before; i < jobCount; i++) {
+      const o = i * TUFT_STRIDE;
+      position.set(tufts[o]!, tufts[o + 1]!, tufts[o + 2]!);
+      quaternion.setFromAxisAngle(up, tufts[o + 3]!);
+      const h = tufts[o + 4]!;
+      scale.set(h, h, h);
+      matrix.compose(position, quaternion, scale);
+      mesh.setMatrixAt(first + i, matrix);
+      mesh.setColorAt(first + i, colour.setRGB(tufts[o + 5]!, tufts[o + 6]!, tufts[o + 7]!));
+    }
+    if (jobCount > before) dirty(first + before, first + jobCount - 1);
+    if (jobNext >= perCell) {
+      slotFilled[jobSlot] = 1;
+      slotCount[jobSlot] = jobCount;
+      ringSlot[jobRing] = jobSlot;
+      jobSlot = -1;
+      jobRing = -1;
     }
   }
 
   return {
     mesh,
     get standing() {
-      return standing;
+      let n = 0;
+      for (let s = 0; s < slots; s++) if (slotFilled[s] && slotWanted[s]) n += slotCount[s]!;
+      return n;
     },
     update(cameraX, cameraZ) {
       const cx = cellOf(cameraX);
       const cz = cellOf(cameraZ);
-      if (cx === lastX && cz === lastZ && !pending) return;
-      lastX = cx;
-      lastZ = cz;
-      const cells = ringCells(cameraX, cameraZ, ring);
-      slotWanted.fill(0);
-      for (let i = 0; i < cells; i++) {
-        const slot = slotOf(ring[i * 2]!, ring[i * 2 + 1]!);
-        ringSlot[i] = slot;
-        if (slot >= 0) slotWanted[slot] = 1;
-      }
-      mesh.instanceMatrix.clearUpdateRanges();
-      mesh.instanceColor!.clearUpdateRanges();
-      pending = false;
-      let fills = 0;
-      for (let i = 0; i < cells; i++) {
-        if (ringSlot[i]! >= 0) continue;
-        if (fills === FILLS_PER_FRAME) {
-          pending = true;
-          break;
+      const moved = cx !== lastX || cz !== lastZ;
+      if (moved) {
+        lastX = cx;
+        lastZ = cz;
+        ringLength = ringCells(cameraX, cameraZ, ring);
+        slotWanted.fill(0);
+        let jobKept = -1;
+        for (let i = 0; i < ringLength; i++) {
+          const rx = ring[i * 2]!;
+          const rz = ring[i * 2 + 1]!;
+          const slot = slotOf(rx, rz);
+          ringSlot[i] = slot;
+          if (slot >= 0) slotWanted[slot] = 1;
+          if (jobSlot >= 0 && slotX[jobSlot] === rx && slotZ[jobSlot] === rz) jobKept = i;
         }
-        const slot = freeSlot();
-        // The pool is smaller than the ring: the farthest cells go without.
-        if (slot < 0) break;
-        slotWanted[slot] = 1;
-        fill(slot, ring[i * 2]!, ring[i * 2 + 1]!);
-        fills++;
+        // A cell half-filled when the ring moves keeps going if it is still in the ring.
+        if (jobSlot >= 0) {
+          if (jobKept >= 0) {
+            jobRing = jobKept;
+            slotWanted[jobSlot] = 1;
+          } else {
+            jobSlot = -1;
+            jobRing = -1;
+          }
+        }
+      } else if (jobSlot < 0 && nextCell() < 0) {
+        return;
+      }
+
+      const start = performance.now();
+      while (performance.now() - start < FILL_BUDGET_MS) {
+        if (jobSlot < 0) {
+          const next = nextCell();
+          if (next < 0 || !startJob(next)) break;
+        }
+        step();
       }
     },
     dispose() {

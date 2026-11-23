@@ -1,6 +1,6 @@
 import type { CourseTerrain } from "../sim/courseTerrain";
 import { biomeForIndex } from "../sim/course";
-import { hashChannel, mulberry32 } from "../sim/rng";
+import { hashChannel } from "../sim/rng";
 import { SurfaceId } from "../sim/surfaceId";
 import { createSurfaceWeights } from "../sim/surfaces";
 import type { Surfaces } from "../sim/surfaces";
@@ -8,7 +8,8 @@ import { PALETTE_BIOME_ORDER, groundColourAt } from "./groundPalette";
 import type { LinearRgb } from "./groundPalette";
 import { GROUND_EDGES } from "./groundShader";
 import { groundWarp } from "./groundWarp";
-import { woodsDensityAt } from "./woodsPlacement";
+import type { Vec2 } from "../sim/mapGeometry";
+import { CLUBHOUSE_CLEAR_M, woodsDensityAt } from "./woodsPlacement";
 import type { WoodsDensity } from "./woodsPlacement";
 
 /**
@@ -74,35 +75,85 @@ export interface TuftGround {
 
 export interface TuftQuery {
   readonly seed: number;
-  /** Fill `out` for the point, or return false where there is no ground to grow on. */
-  at(x: number, z: number, out: TuftGround): boolean;
+  /**
+   * The cheap half: surface, mask weights and woods density, enough to reject a candidate. Return
+   * false where there is no ground to grow on. May stop early once the surface is not rough.
+   */
+  surface(x: number, z: number, out: TuftGround): boolean;
+  /** The rest, for a tuft that is kept: height, slope and biome shares. */
+  finish(x: number, z: number, out: TuftGround): void;
 }
 
 export function createTuftGround(): TuftGround {
   return { surface: SurfaceId.Rough, green: 1, corridor: 1, sand: 0, water: 0, woods: 0, up: 1, y: 0, biome: new Float32Array(3) };
 }
 
+/** Lattice points per side of a cell for height, slope and biome: every 2 m, as the near ground. */
+const LATTICE = 7;
+const LATTICE_M = CELL_M / (LATTICE - 1);
+
 /**
  * The query over the shipped course: its surfaces, its heights, the holes' biome shares and the
  * woods floor. All scratch is allocated here, once.
+ *
+ * Height, slope and biome are read off a 2 m lattice over the cell, built the first time a cell
+ * asks: a terrain lookup costs about 9 us, and asking five of them per tuft made a cell take 18 ms.
+ * The near ground is a 2 m grid too, so the lattice is, if anything, closer to what is drawn.
+ *
+ * With a clubhouse, nothing grows within `CLUBHOUSE_CLEAR_M` of it, the same ground the woods keep
+ * clear: the buildings, the lot and both teams' spawn pads (`sim/spawn.ts`, at most about 33 m
+ * out), which are rough to the sim but paved or mown to the eye.
  */
 export function createCourseTuftQuery(
   terrain: CourseTerrain,
   surfaces: Surfaces,
   woods: WoodsDensity | null,
   seed: number,
+  clubhouse?: Vec2,
 ): TuftQuery {
+  const clear2 = CLUBHOUSE_CLEAR_M * CLUBHOUSE_CLEAR_M;
   const weights = createSurfaceWeights();
   const shares = new Float32Array(terrain.holes.length);
   const holeBiome = terrain.holes.map((hole) => PALETTE_BIOME_ORDER.indexOf(biomeForIndex(hole.spec.index)));
   const warp = { x: 0, z: 0 };
   const { bounds } = terrain;
-  const STEP = 0.5;
+  const heights = new Float32Array(LATTICE * LATTICE);
+  const biomes = new Float32Array(LATTICE * LATTICE * 3);
+  let latticeX = Number.NaN;
+  let latticeZ = Number.NaN;
+
+  function buildLattice(cx: number, cz: number): void {
+    latticeX = cx;
+    latticeZ = cz;
+    for (let j = 0; j < LATTICE; j++) {
+      for (let i = 0; i < LATTICE; i++) {
+        const x = cx * CELL_M + i * LATTICE_M;
+        const z = cz * CELL_M + j * LATTICE_M;
+        const k = j * LATTICE + i;
+        terrain.weightsInto(x, z, shares);
+        heights[k] = terrain.heightFromWeights(x, z, shares);
+        biomes[k * 3] = 0;
+        biomes[k * 3 + 1] = 0;
+        biomes[k * 3 + 2] = 0;
+        for (let h = 0; h < shares.length; h++) {
+          const share = shares[h]!;
+          if (share > 0) biomes[k * 3 + holeBiome[h]!]! += share;
+        }
+      }
+    }
+  }
+
   return {
     seed,
-    at(x, z, out) {
+    surface(x, z, out) {
       if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ) return false;
+      if (clubhouse !== undefined) {
+        const cx = x - clubhouse.x;
+        const cz = z - clubhouse.z;
+        if (cx * cx + cz * cz < clear2) return false;
+      }
       out.surface = surfaces.surfaceAt(x, z);
+      if (out.surface !== SurfaceId.Rough) return true;
       surfaces.weightsAt(x, z, weights);
       out.sand = weights.sand;
       out.water = weights.water;
@@ -112,17 +163,32 @@ export function createCourseTuftQuery(
       out.green = weights.green;
       out.corridor = weights.corridor;
       out.woods = woods === null ? 0 : woodsDensityAt(woods, x, z);
-      out.y = terrain.heightAt(x, z);
-      const dx = terrain.heightAt(x + STEP, z) - terrain.heightAt(x - STEP, z);
-      const dz = terrain.heightAt(x, z + STEP) - terrain.heightAt(x, z - STEP);
-      out.up = (2 * STEP) / Math.sqrt(dx * dx + dz * dz + 4 * STEP * STEP);
-      out.biome.fill(0);
-      terrain.weightsInto(x, z, shares);
-      for (let i = 0; i < shares.length; i++) {
-        const share = shares[i]!;
-        if (share > 0) out.biome[holeBiome[i]!]! += share;
-      }
       return true;
+    },
+    finish(x, z, out) {
+      const cx = cellOf(x);
+      const cz = cellOf(z);
+      if (cx !== latticeX || cz !== latticeZ) buildLattice(cx, cz);
+      const fx = Math.min(LATTICE - 1.0001, Math.max(0, (x - cx * CELL_M) / LATTICE_M));
+      const fz = Math.min(LATTICE - 1.0001, Math.max(0, (z - cz * CELL_M) / LATTICE_M));
+      const i = Math.floor(fx);
+      const j = Math.floor(fz);
+      const tx = fx - i;
+      const tz = fz - j;
+      const k = j * LATTICE + i;
+      const h00 = heights[k]!;
+      const h10 = heights[k + 1]!;
+      const h01 = heights[k + LATTICE]!;
+      const h11 = heights[k + LATTICE + 1]!;
+      out.y = (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+      const dx = ((h10 - h00) * (1 - tz) + (h11 - h01) * tz) / LATTICE_M;
+      const dz = ((h01 - h00) * (1 - tx) + (h11 - h10) * tx) / LATTICE_M;
+      out.up = 1 / Math.sqrt(dx * dx + dz * dz + 1);
+      for (let c = 0; c < 3; c++) {
+        out.biome[c] =
+          (biomes[k * 3 + c]! * (1 - tx) + biomes[(k + 1) * 3 + c]! * tx) * (1 - tz) +
+          (biomes[(k + LATTICE) * 3 + c]! * (1 - tx) + biomes[(k + LATTICE + 1) * 3 + c]! * tx) * tz;
+      }
     },
   };
 }
@@ -141,30 +207,63 @@ const sample = {
   up: 1,
 };
 
+/** Draws per candidate: x, z, yaw, height, keep. */
+const DRAWS_PER_CANDIDATE = 5;
+/** mulberry32's step (`sim/rng.ts`). Its state moves by this per draw, so a stream can resume. */
+const MULBERRY_STEP = 0x6d2b79f5;
+let rngState = 0;
+
+/** One draw of `mulberry32`, on module state: the same numbers, no closure. */
+function draw(): number {
+  rngState = (rngState + MULBERRY_STEP) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
 /**
  * Write cell (`cellX`, `cellZ`)'s tufts into `out`, `TUFT_STRIDE` floats each, and return how
- * many. `out` must hold `tuftsPerCell(density)` tufts. Allocates nothing but its seeded stream.
+ * many. `out` must hold `tuftsPerCell(density)` tufts. Never allocates.
  */
 export function fillCell(cellX: number, cellZ: number, density: number, query: TuftQuery, out: Float32Array): number {
-  const candidates = tuftsPerCell(density);
-  const random = mulberry32(hashChannel(query.seed, GRASS_CHANNEL, cellX, cellZ));
+  return fillCellRange(cellX, cellZ, density, query, out, 0, tuftsPerCell(density), 0);
+}
+
+/**
+ * Candidates `from` up to `to` of a cell, appended to `out` after the `count` tufts already there;
+ * returns the new count. Filling a cell in several ranges gives exactly what one `fillCell` gives,
+ * which is what lets `grassCarpet.ts` spread a cell over frames. Never allocates.
+ */
+export function fillCellRange(
+  cellX: number,
+  cellZ: number,
+  density: number,
+  query: TuftQuery,
+  out: Float32Array,
+  from: number,
+  to: number,
+  count: number,
+): number {
+  const candidates = Math.min(to, tuftsPerCell(density));
+  rngState = (hashChannel(query.seed, GRASS_CHANNEL, cellX, cellZ) + Math.imul(from * DRAWS_PER_CANDIDATE, MULBERRY_STEP)) | 0;
   const minX = cellX * CELL_M;
   const minZ = cellZ * CELL_M;
-  let count = 0;
-  for (let i = 0; i < candidates; i++) {
+  for (let i = from; i < candidates; i++) {
     // Every draw is taken whether or not the tuft is kept, so one rule never moves another tuft.
-    const x = minX + random() * CELL_M;
-    const z = minZ + random() * CELL_M;
-    const yaw = random() * Math.PI * 2;
-    const height = HEIGHT_MIN_M + random() * (HEIGHT_MAX_M - HEIGHT_MIN_M);
-    const keep = random();
+    const x = minX + draw() * CELL_M;
+    const z = minZ + draw() * CELL_M;
+    const yaw = draw() * Math.PI * 2;
+    const height = HEIGHT_MIN_M + draw() * (HEIGHT_MAX_M - HEIGHT_MIN_M);
+    const keep = draw();
 
-    if (!query.at(x, z, ground)) continue;
+    if (!query.surface(x, z, ground)) continue;
     if (ground.surface !== SurfaceId.Rough) continue;
     if (ground.corridor <= MIN_CORRIDOR || ground.woods >= MAX_WOODS) continue;
-    if (ground.water > 0 || ground.sand > 0 || ground.up < MIN_UP) continue;
+    if (ground.water > 0 || ground.sand > 0) continue;
     const firstCut = ground.corridor < GROUND_EDGES.firstCutTo;
     if (keep >= (1 - ground.woods) * (firstCut ? FIRST_CUT_SHARE : 1)) continue;
+    query.finish(x, z, ground);
+    if (ground.up < MIN_UP) continue;
 
     sample.x = x;
     sample.z = z;

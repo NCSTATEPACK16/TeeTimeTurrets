@@ -13,11 +13,13 @@ import {
   cellOf,
   createCourseTuftQuery,
   fillCell,
+  fillCellRange,
   ringCells,
   tuftsPerCell,
 } from "./grassCells";
 import { GROUND_EDGES } from "./groundShader";
 import { groundWarp } from "./groundWarp";
+import { PAD_OFFSET_M, PAD_SLOTS, PAD_SLOT_SPACING_M } from "../sim/spawn";
 import { buildWoodsDensity, placeCourseWoods, woodsDensityAt } from "./woodsPlacement";
 
 /**
@@ -32,7 +34,7 @@ describe("grass cells", () => {
     clubhouse: AUTHORED_CLUBHOUSE,
   });
   const woods = buildWoodsDensity(trees, world.terrain.bounds);
-  const query = createCourseTuftQuery(world.terrain, world.surfaces, woods, 2026);
+  const query = createCourseTuftQuery(world.terrain, world.surfaces, woods, 2026, AUTHORED_CLUBHOUSE);
   const density = 1.5;
   const out = new Float32Array(tuftsPerCell(density) * TUFT_STRIDE);
   const weights = createSurfaceWeights();
@@ -99,7 +101,8 @@ describe("grass cells", () => {
       expect(world.surfaces.surfaceAt(x, z)).toBe(SurfaceId.Rough);
       world.surfaces.weightsAt(x, z, weights);
       expect(weights.water).toBe(0);
-      expect(out[i * TUFT_STRIDE + 1]).toBeCloseTo(world.terrain.heightAt(x, z), 5);
+      // Height comes off a 2 m lattice, as the near ground is drawn: within a few centimetres.
+      expect(Math.abs(out[i * TUFT_STRIDE + 1]! - world.terrain.heightAt(x, z))).toBeLessThan(0.05);
     }
   });
 
@@ -133,6 +136,33 @@ describe("grass cells", () => {
     expect(worst).toBeGreaterThan(GROUND_EDGES.firstCutFrom + GROUND_EDGES.cutSoftness);
   });
 
+  it("keeps the clubhouse, its lot and both spawn pads clear", () => {
+    // The pads are rough to the sim, so only the clearance keeps tufts off them.
+    const farthestPad = Math.hypot(PAD_OFFSET_M, (PAD_SLOTS - 1) * PAD_SLOT_SPACING_M);
+    const open = createCourseTuftQuery(world.terrain, world.surfaces, woods, 2026);
+    let near = 0;
+    let nearWithout = 0;
+    const cx0 = cellOf(AUTHORED_CLUBHOUSE.x);
+    const cz0 = cellOf(AUTHORED_CLUBHOUSE.z);
+    for (let dz = -4; dz <= 4; dz++) {
+      for (let dx = -4; dx <= 4; dx++) {
+        for (const [q, counted] of [[query, true], [open, false]] as const) {
+          const n = fillCell(cx0 + dx, cz0 + dz, density, q, out);
+          for (let i = 0; i < n; i++) {
+            const d = Math.hypot(out[i * TUFT_STRIDE]! - AUTHORED_CLUBHOUSE.x, out[i * TUFT_STRIDE + 2]! - AUTHORED_CLUBHOUSE.z);
+            if (d < farthestPad + 2) {
+              if (counted) near++;
+              else nearWithout++;
+            }
+          }
+        }
+      }
+    }
+    // Liveness: without the clearance, tufts do grow there.
+    expect(nearWithout).toBeGreaterThan(0);
+    expect(near).toBe(0);
+  });
+
   it("grows the same cell the same way twice, into the same buffer", () => {
     const n = fillCell(roughCell[0], roughCell[1], density, query, out);
     const first = out.slice(0, n * TUFT_STRIDE);
@@ -142,6 +172,18 @@ describe("grass cells", () => {
     expect(out.slice(0, n * TUFT_STRIDE)).toEqual(first);
     expect(out.buffer).toBe(buffer);
     expect(out.length).toBe(tuftsPerCell(density) * TUFT_STRIDE);
+  });
+
+  it("grows a cell filled in slices exactly as in one go", () => {
+    const n = fillCell(roughCell[0], roughCell[1], density, query, out);
+    const whole = out.slice(0, n * TUFT_STRIDE);
+    out.fill(0);
+    let count = 0;
+    for (let from = 0; from < tuftsPerCell(density); from += 37) {
+      count = fillCellRange(roughCell[0], roughCell[1], density, query, out, from, from + 37, count);
+    }
+    expect(count).toBe(n);
+    expect(out.slice(0, n * TUFT_STRIDE)).toEqual(whole);
   });
 
   it("rings the camera with 69 cells or fewer, its own first", () => {

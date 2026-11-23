@@ -297,7 +297,13 @@ export class RenderScene {
     this.grass =
       quality.grassDensity > 0 && quality.grassCap > 0
         ? createGrassCarpet(
-            createCourseTuftQuery(arena.course, arena.surfaces, dressing.woodsDensity, arena.seed ?? 0),
+            createCourseTuftQuery(
+              arena.course,
+              arena.surfaces,
+              dressing.woodsDensity,
+              arena.seed ?? 0,
+              arena.clubhouse,
+            ),
             quality.grassDensity,
             quality.grassCap,
           )
