@@ -214,22 +214,7 @@ The full spec is `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adopti
 
 ### Stage 5: environment
 Techniques are named here; write the code from scratch.
-- **Textured ground splat (`render/groundShader.ts`).** It samples the CC0 sets in `public/textures/terrain/`:
-
-  | Set | Surface |
-  |---|---|
-  | `Grass004` | Fairway and green. The existing mow-stripe tint goes on top, with a finer scale on greens. |
-  | `withered_grass` | Rough |
-  | `Ground093C` | Sand (check it visually; if it doesn't read as sand, fetch a CC0 sand set from ambientCG and record it in `LICENSES.md`) |
-  | `Ground071` | Dirt and cart path |
-  | `Rock058` | Grades steeper than about 35° |
-
-  Techniques:
-  - **Anti-tiling:** a second sample of the same texture, rotated about 40° and scaled about 1.15, blended in by a low-frequency noise mask.
-  - **Slope-driven rock takeover.**
-  - **Distance detail fade:** normal strength and texture contrast fade toward the biome flat colour with distance.
-  - **Domain-warped patch edges** between surfaces, with the same warp function available on the CPU so dressing can follow it.
-  - **Budget:** resize the textures to 512 px or compress them to KTX2 so the bundle budget holds. Load the full set at High and a subset at Low.
+- ~~**Textured ground splat.**~~ Done another way by the Caswell look (slices A and B, #90 and #91): textures are detail over the palette, not colour. See `docs/superpowers/plans/2026-11-15-caswell-look-and-grass-detail-implementation.md`.
 - **Water (BACKLOG #21).**
   - A plane per pond polygon.
   - An animated normal map, fresnel against the env map, and a shore fade using depth, or distance to the polygon edge at Low.
@@ -244,13 +229,7 @@ Techniques are named here; write the code from scratch.
     - Caps set by the preset.
     - Cross-quad impostors beyond about 250 m.
     - **Sight-line dither:** trees inside a capsule between the camera and the player's cart fade out with a dither.
-- **Grass carpet (`render/grassCarpet.ts`).**
-  - A camera-following ring of 16 m cells out to ±48 m. Cells are cached and rebuilt only when the camera changes cell.
-  - Instanced blades with a vertex-shader wind sway.
-  - Rough and fairway edges only, never on greens or sand.
-  - A circular fade at the edge.
-  - Frustum-culled per cell.
-  - Density set by the preset.
+- ~~**Grass carpet.**~~ Done as tufts in the rough by the Caswell look's slice C (`render/grassCells.ts`, `render/grassCarpet.ts`): 12 m cells in a 48 m ring, filled under a frame budget. See the Caswell plan above.
 - **Course props.**
   - Start from the archived `courseProps.ts` (tag `archive/wonderful-edison`, commit `1c49b15`), which is tested. It runs the per-hole `props.ts` derivation over all 18 holes, gives each prop kind one draw via `mergeGraphInstances`, and puts a `Flagstick` on every green.
   - Add `SurfaceId.Tee` (raised mown tee boxes).

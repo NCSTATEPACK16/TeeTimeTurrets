@@ -845,3 +845,10 @@ after the user asked for much more detailed grass and for the course to look lik
 ## Ponds are drawn at their basin's own level (22 Nov 2026)
 
 The play-test said the water floated. One shared level (`spec.waterLevel`) cannot meet banks whose basins are carved to different depths. Each pond is now drawn at `min(nominal, spill level - 4 cm)`, where the spill level is the lowest point the basin's water could escape over, and only ground connected to its deepest point is wet. This is render only. The sim still labels water from the owning hole's polygon, so drawn water and ruled water differ by a few thousand square metres in the arena zone (`SPEC-QUEUE.md`, "Water drawn versus water ruled"). Chosen over relabelling because relabelling moves the golden and floods fairways on holes 12 to 15 and 18.
+
+## Grass tufts follow the drawn ground, and fill under a frame budget (23 Nov 2026)
+
+Tufts take their colour from the same palette blend the ground shader draws (`groundPalette.ts`, a transcription of `courseBlend`), and their edge test reads the corridor weight through the same warp. A tuft is the colour of the grass it stands in and never stands on what is drawn as fairway. The cost is that the blend exists twice, so the two must change together.
+
+A cell's tufts are generated on the CPU when the camera nears it, not in a shader. Filling a cell costs milliseconds (6.5 ms on Med in node) because each candidate asks the sim's surface queries. So the ring fills a slice at a time under 2 ms a frame, resuming the cell's seeded stream, rather than a whole cell or two a frame (which was a 37 ms hitch at every cell crossing). A GPU-placed carpet would be cheaper but could not ask the sim where the rough is.
+

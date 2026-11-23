@@ -55,13 +55,11 @@ describe("grass carpet", () => {
   const density = 1.5;
   const cap = 22000;
 
-  it("fills the whole ring over several frames, not in one", () => {
+  it("grows the camera's own cell on the first update, and the whole ring once settled", () => {
     const carpet = createGrassCarpet(roughEverywhere, density, cap);
     carpet.update(5, 5);
-    const afterOne = carpet.standing;
-    const frames = settle(carpet, 5, 5);
-    expect(afterOne).toBeLessThan(expectedAround(5, 5, density));
-    expect(frames).toBeGreaterThan(3);
+    expect(carpet.standing).toBeGreaterThanOrEqual(fillCell(0, 0, density, roughEverywhere, new Float32Array(tuftsPerCell(density) * TUFT_STRIDE)));
+    settle(carpet, 5, 5);
     expect(carpet.standing).toBe(expectedAround(5, 5, density));
     expect(carpet.mesh.count).toBeLessThanOrEqual(cap);
     carpet.dispose();

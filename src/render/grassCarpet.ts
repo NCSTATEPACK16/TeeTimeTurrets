@@ -20,6 +20,11 @@ import { TREE_WIND_TIME } from "./Trees";
 
 /** Milliseconds of filling a frame may spend, at most (plus one slice). */
 const FILL_BUDGET_MS = 2;
+/**
+ * The first update's budget: the match opens behind the countdown, so one long frame there grows
+ * the cells round the cart at once (about eight on Med) instead of over the first second.
+ */
+const FIRST_FILL_BUDGET_MS = 50;
 /** Candidates filled between clock checks. */
 const FILL_SLICE = 24;
 /** Metres over which tufts shrink away at the ring's edge. */
@@ -164,6 +169,7 @@ export function createGrassCarpet(query: TuftQuery, density: number, cap: number
   const up = new THREE.Vector3(0, 1, 0);
   const colour = new THREE.Color();
   let ringLength = 0;
+  let budgetMs = FIRST_FILL_BUDGET_MS;
   let lastX = Number.NaN;
   let lastZ = Number.NaN;
   let highWater = 0;
@@ -293,13 +299,14 @@ export function createGrassCarpet(query: TuftQuery, density: number, cap: number
       }
 
       const start = performance.now();
-      while (performance.now() - start < FILL_BUDGET_MS) {
+      while (performance.now() - start < budgetMs) {
         if (jobSlot < 0) {
           const next = nextCell();
           if (next < 0 || !startJob(next)) break;
         }
         step();
       }
+      budgetMs = FILL_BUDGET_MS;
     },
     dispose() {
       geometry.dispose();
