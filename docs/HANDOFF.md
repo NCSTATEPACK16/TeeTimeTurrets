@@ -7,12 +7,27 @@ Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #
 Chill / Joyride), and free drive's course is Tee Time Links, with no club name or logo. Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
 open items (its M2 gate, John's per-hole routing review) are in `drive/docs/handoff/M2.md`, Part F.
 
-**Specified (2026-11-25): one cart in both games, and hole flags in free drive.** Chill and Joyride get
+**In progress (2026-11-25): one cart in both games, and hole flags in free drive.** Chill and Joyride get
 the Turrets cart (no turret, with the rider, team paint, engine and horn, and wheels that spin and steer in both games). It keeps free drive's
 vehicle physics, retuned so Joyride tops out at Turrets' 20 m/s. Free drive gets an oversized waving flag on
 every pin (hole number, PAR and a new Tee Time Links logo) and tee signs. Three PRs: the logo, then the flags, then the cart.
 Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; prompt D in
 `docs/NEXT-SESSION-PROMPT.md`. Independent of slice D and 3.5c, so it can run in any cloud session.
+
+- **PR 1, the logo: #95, a draft awaiting the user's play-test.** The design was approved on 25 Nov
+  with these choices: one file with two views, the generator committed, free drive showing the logo
+  with no banner, and the full name on the compact mark.
+  - `art/brand/tee-time-links.svg` is the one file. Its root viewBox is the wordmark; `<view id="mark">`
+    is the 256 × 256 compact mark. `art/brand/tee_time_links.py` builds it from the `@fontsource`
+    Shrikhand file (Shrikhand as outlines, so there's no `<text>`). Edit the script, not the paths.
+  - The Turrets title and free drive's menu import it with `?url`. `src/ui/title/teeTimeLinksLogo.test.ts`
+    checks it parses, has its viewBoxes and has no `<text>`. Renders are in `docs/art/brand/`.
+- **Next: PR 2, flags and tee signs, once #95 merges.** For the cloth atlas, load the mark as
+  `` `${logoUrl}#mark` `` (Chromium draws the `#mark` view square, at 150 × 150 natural size, into a
+  canvas; give `drawImage` an explicit size), and draw after the image has decoded.
+- **Trap:** free drive's dev server only serves files under `drive/`. `drive/apps/web/vite.config.ts`
+  lists `art/brand/` in `server.fs.allow`; PR 3's `src/entities/graphs/` must be added there too, or
+  `pnpm dev` answers 403 (the build is unaffected, so a build check won't catch it).
 
 ---
 
