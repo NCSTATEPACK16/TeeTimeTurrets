@@ -1,3 +1,5 @@
+// The Tee Time Links logo: one file at the repo root, shared with TeeTimeTurrets' title.
+import logoUrl from '../../../../../art/brand/tee-time-links.svg?url';
 import { inputConfig } from '../core/inputConfig';
 import { MODES, type ModeName } from '../modes/modes';
 import { CLOUDS, FLAG_ICON, RIDE_SCENE, TITLE_SCENE, cartSvg } from './art';
@@ -72,7 +74,7 @@ export class Menus {
           </div>
         </div>
         <div class="mn-stage mn-contain mn-ui">
-          <div class="mn-wordmark"><h1>Golf Cart</h1><div class="mn-banner">SIMULATOR</div></div>
+          <div class="mn-wordmark"><h1><img src="${logoUrl}" alt="Tee Time Links" width="430" height="190"></h1></div>
           <nav class="mn-title-menu" aria-label="Main menu">
             <button type="button" class="mn-btn mn-btn-primary" data-act="tee">${FLAG_ICON}<span>Tee Off</span></button>
             <div class="mn-row" role="group" aria-label="Ride">
