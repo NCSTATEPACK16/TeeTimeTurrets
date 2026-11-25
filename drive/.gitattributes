@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.bin -text
+*.png -text
+*.jpg -text
+*.glb -text
+*.ktx2 -text
+*.hdr -text
+*.exr -text
+*.blend -text
+*.webp -text

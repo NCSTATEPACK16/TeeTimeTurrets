@@ -1,0 +1,47 @@
+[project]
+name = "gcs-pipeline"
+version = "0.1.0"
+description = "GolfCartSimulator course pipeline: builds level packets"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy==2.5.4",
+    "pillow==12.3.0",
+    "pyproj==3.8.0",
+    "rasterio==1.5.2",
+    "scikit-image==0.26.0",
+    "scipy==1.18.1",
+    "shapely==2.1.2",
+]
+
+[project.scripts]
+gce-dummy = "gcs_pipeline.cli:dummy_main"
+gce-review-h13 = "gcs_pipeline.cli:review_h13_main"
+gce-fetch-osm = "gcs_pipeline.cli:fetch_osm_main"
+gce-fetch-aerial = "gcs_pipeline.cli:fetch_aerial_main"
+gce-course = "gcs_pipeline.cli:course_main"
+gce-fetch-dem = "gcs_pipeline.cli:fetch_dem_main"
+gce-author = "gcs_pipeline.author:main"
+gce-route = "gcs_pipeline.route:main"
+gce-routemap = "gcs_pipeline.routemap:main"
+
+[dependency-groups]
+dev = [
+    "jsonschema==4.26.0",
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.14"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

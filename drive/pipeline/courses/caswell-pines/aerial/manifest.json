@@ -1,0 +1,16 @@
+{
+  "source": "NC OneMap orthoimagery (latest)",
+  "service": "https://services.nconemap.gov/secure/rest/services/Imagery/Orthoimagery_Latest/ImageServer",
+  "serviceDescription": "<div style='text-align:Left;'><div><div><p><span>Contains the most recent imagery collected by the NC Orthoimagery Program for any given area of North Carolina. The imagery is natural color (3-band, JPEG compression) and has a pixel resolution of 6 inches with an RMSE of 1.0 ft X and Y. Individual pixel values may have been altered during image processing. Therefore, this service should be used for general reference and viewing. Users conducting image analysis requiring examination of individual",
+  "copyright": "NC Center for Geographic Information and Analysis, NC 911 Board",
+  "epsg": 32617,
+  "bounds": [
+    649684.0,
+    4032559.0,
+    652084.0,
+    4034959.0
+  ],
+  "pixelM": 0.4,
+  "sha256": "ccf6129667e896f753cfa6063c477ba32e3d0e083144eabb74dd411f97bd1c4f",
+  "skipped": []
+}

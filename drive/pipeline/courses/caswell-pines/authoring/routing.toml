@@ -1,0 +1,310 @@
+# Caswell Pines, holes 2-18: routing draft (session 3, 2026-11-23).
+#
+# Read off the 2024 NC orthoimagery and the 2024 QL1 lidar hillshade, with the scorecard yardages
+# and the flyover notes (docs/reference/caswell-pines/holes-*.md) for direction and sides.
+# Course frame: meters east (x) and south (z) of the pin. `gce-route` turns this table into
+# authoring/holes.json; `gce-author` compiles that into overrides.geojson.
+#
+# Per hole:
+#   green      auto-traced green center (the outline comes from the turf-color trace)
+#   line       fairway centerline, tee end first, ending at the green center
+#   path       "left" | "right" of the line as played, for the hole's cart path
+#   bunkers    [along_m_from_green, side_m (+ right, - left as played), semi_a, semi_b]
+#   path_from_m / path_end_past_m  optional trims where the path would clip a green or a pond
+#   confidence "high" | "medium" | "low": how sure the routing is (for John's review)
+#
+# Tee pads go on the centerline at each tee's scorecard distance (yards) from the green center.
+
+yards_to_m = 0.9144
+tee_size_m = [12.0, 8.0]
+bunker_clear_green_m = 1.5        # bunkers are pushed out from the green until this far off its edge          # length along the line, width
+fairway_from_forward_tee_m = 35.0 # fairway starts this far in front of the forward (red) tee
+fairway_end_short_m = 14.0        # ... and ends this far short of the green center
+fairway_half_m = [16.0, 22.0, 13.0] # half-width at the start, in the landing zone, near the green
+landing_m = [200.0, 260.0]        # landing zone, meters from the blue tee
+path_offset_m = 9.0               # cart path this far outside the fairway edge
+path_start_back_m = 10.0          # path starts this far behind the back tee
+path_end_past_m = 25.0            # and ends this far past the green center
+path_clear_green_m = 6.0          # paths are cut back this far from every green
+path_clear_water_m = 4.0          # ... and from every pond
+path_clear_tee_m = 2.0            # ... every tee
+path_clear_bunker_m = 2.0         # ... and every bunker
+path_min_gap_m = 6.0              # two paths may not run closer than this ...
+path_max_parallel_m = 15.0        # ... for longer than this (crossings are fine)
+# Connectors without `via` are routed round greens, tees, bunkers and ponds (gce-route auto_route).
+connector = { search_m = 120.0, corner_m = 2.0, corner_gap_m = 20.0, fairway_cost = 1.0, beside_path_cost = 10.0, crossing_cost = 40.0 }
+
+[holes.2]
+green = [309, 594]
+line = [[-50, 592], [150, 592], [309, 594]]
+tees = { blue = 400, white = 371, yellow = 348, red = 312 }
+path = "right"
+bunkers = [[0, 16, 9, 5], [175, 22, 6, 4]]
+confidence = "high"
+
+[holes.3]
+green = [790, 665]
+line = [[380, 638], [600, 640], [760, 655], [790, 665]]
+tees = { blue = 447, white = 406, yellow = 351, red = 279 }
+path = "right"
+bunkers = [[0, 14, 5, 4]]
+confidence = "medium"
+
+[holes.4]
+green = [776, 523]
+line = [[872, 676], [776, 523]]
+tees = { blue = 189, white = 170, yellow = 148, red = 119 }
+path = "right"
+bunkers = [[-8, 13, 5, 3]]
+par3 = true
+confidence = "medium"
+
+[holes.5]
+green = [334, 430]
+line = [[662, 428], [500, 420], [334, 430]]
+tees = { blue = 358, white = 340, yellow = 322, red = 294 }
+path = "left"
+bunkers = [[8, -13, 5, 3.5]]
+confidence = "medium"
+
+[holes.6]
+green = [391, 596]
+line = [[296, 447], [391, 596]]
+tees = { blue = 192, white = 172, yellow = 154, red = 137 }
+path = "left"
+bunkers = [[0, -14, 5, 3], [10, -12, 4, 3]]
+par3 = true
+path_end_past_m = 0.0   # no stub past the green: it would wrap round 7's forward tee; 6-7 connector instead
+confidence = "medium"
+
+[holes.7]
+green = [673, 517]
+line = [[318, 566], [500, 575], [640, 560], [673, 517]]
+tees = { blue = 408, white = 380, yellow = 350, red = 312 }
+path = "right"
+bunkers = [[150, -20, 8, 5], [21, 0, 6, 3], [-21, 0, 5, 3]]
+confidence = "medium"
+
+[holes.8]
+green = [273, 532]
+line = [[705, 497], [500, 500], [300, 522], [273, 532]]
+tees = { blue = 472, white = 453, yellow = 436, red = 414 }
+path = "left"
+bunkers = [[20, -10, 7, 4], [20, 10, 5, 3.5], [200, 20, 6, 4]]
+path_from_m = 60.0
+confidence = "medium"
+
+[holes.9]
+green = [117, 80]
+line = [[172, 430], [182, 300], [150, 150], [117, 80]]
+tees = { blue = 414, white = 390, yellow = 364, red = 333 }
+path = "left"
+bunkers = [[0, 14, 5, 3.5]]
+confidence = "low"
+
+[holes.10]
+green = [164, -187]
+line = [[30, -75], [164, -187]]
+tees = { blue = 194, white = 170, yellow = 151, red = 144 }
+path = "left"
+bunkers = [[20, 12, 7, 4]]
+par3 = true
+confidence = "low"
+
+[holes.11]
+green = [533, -273]
+line = [[245, -282], [400, -286], [533, -273]]
+tees = { blue = 325, white = 306, yellow = 294, red = 188 }
+path = "left"
+bunkers = [[13, 0, 8, 3]]
+confidence = "medium"
+
+[holes.12]
+green = [867, -97]
+line = [[650, -305], [780, -290], [840, -220], [860, -130], [867, -97]]
+tees = { blue = 382, white = 363, yellow = 350, red = 326 }
+path = "right"
+bunkers = []
+confidence = "high"
+
+[holes.13]
+green = [593, -158]
+line = [[885, -150], [790, -205], [650, -205], [593, -158]]
+tees = { blue = 333, white = 321, yellow = 275, red = 224 }
+path = "right"
+bunkers = [[200, -24, 4, 3], [215, -24, 4, 3], [230, -24, 4, 3], [25, -14, 8, 4]]
+confidence = "medium"
+
+[holes.14]
+green = [161, -98]
+line = [[560, -78], [400, -115], [250, -110], [161, -98]]
+tees = { blue = 456, white = 417, yellow = 398, red = 335 }
+path = "right"
+bunkers = [[0, -15, 7, 4], [0, 15, 7, 4]]
+path_from_m = 40.0
+confidence = "low"
+
+[holes.15]
+green = [541, -178]
+line = [[188, -210], [350, -215], [541, -178]]
+tees = { blue = 395, white = 374, yellow = 337, red = 312 }
+path = "right"
+bunkers = [[150, 20, 7, 4], [10, 14, 8, 5]]
+path_from_m = 15.0
+path_end_past_m = 0.0
+confidence = "low"
+
+[holes.16]
+green = [763, -4]
+line = [[420, -55], [620, -60], [763, -4]]
+tees = { blue = 391, white = 365, yellow = 351, red = 251 }
+path = "right"
+bunkers = []
+confidence = "low"
+
+[holes.17]
+green = [714, 231]
+line = [[716, 92], [714, 231]]
+tees = { blue = 152, white = 142, yellow = 137, red = 111 }
+path = "right"
+bunkers = [[0, 13, 5, 3], [10, -12, 4, 3]]
+par3 = true
+confidence = "medium"
+
+[holes.18]
+green = [304, 12]
+line = [[640, 262], [540, 190], [420, 100], [304, 12]]
+tees = { blue = 489, white = 457, yellow = 431, red = 394 }
+path = "left"
+bunkers = [[0, -13, 6, 4], [35, 16, 9, 5], [220, 20, 7, 4]]
+confidence = "low"
+
+# Ponds: the two big ones are auto-traced from the aerial; the two by hole 4 are traced by hand
+# from the hillshade review crop (pond outlines in course frame). `wade` marks a wading shelf.
+[ponds.pond-big]
+trace = [384, -2]
+
+[ponds.pond-long]
+trace = [685, -126]
+
+[ponds.pond-h4-west]
+xz = [[750, 546], [770, 541], [792, 543], [800, 552], [798, 566], [784, 580], [762, 581], [749, 570], [746, 554]]
+
+[ponds.pond-h4-east]
+xz = [[806, 574], [822, 570], [838, 580], [842, 596], [832, 604], [815, 600], [806, 588]]
+
+[wade]
+# A wading shelf on the big pond's south-west shore (qa.waterEntry), as [cx, cz, semi_a, semi_b, bearing].
+pond = "pond-big"
+ellipse = [352, 50, 26, 16, 45]
+
+# Connectors: cart paths that join the holes into one network, in playing order. Ends are
+# "clubhouse", [x, z], "<path id>:start|end", or a bare "<path id>" (its nearest point: a T-junction),
+# so they follow routing edits; `via` points steer
+# round greens, tees, bunkers and ponds, which gce-route refuses to let a connector touch.
+[clubhouse]
+at = "h01-path-east:start"   # the cart path leaves the clubhouse's south side for the 1st tee
+
+[[connectors]]
+id = "conn-01-02"
+from = "h01-path-east:end"
+to = "h02-path"
+
+[[connectors]]
+id = "conn-02-03"
+from = "h02-path:end"
+to = "h03-path"
+
+[[connectors]]
+id = "conn-03-04"
+from = "h03-path:end"
+to = "h04-path"
+
+[[connectors]]
+id = "conn-04-05"
+from = "h04-path:end"
+to = "h05-path"
+
+[[connectors]]
+id = "conn-05-06"
+from = "h05-path:end"
+to = "h06-path"
+
+[[connectors]]
+id = "conn-06-07"
+from = "h06-path:end"
+to = "h07-path"
+
+[[connectors]]
+id = "conn-07-08"
+from = "h07-path:end"
+to = "h08-path"
+
+[[connectors]]
+id = "conn-08-09"
+from = "h08-path:end"
+to = "h09-path"
+
+[[connectors]]
+id = "conn-09-club"
+from = "h09-path:end"
+to = "clubhouse"
+via = [[40, 58], [10, 40]]
+
+[[connectors]]
+id = "conn-club-10"
+from = "clubhouse"
+to = "h10-path"
+via = [[14, 20], [30, -10], [26, -45]]
+
+[[connectors]]
+id = "conn-10-11"
+from = "h10-path:end"
+to = "h11-path"
+
+# Draft overlap: 13's tees sit on 12's fairway, so 12's path starts on 13's path. Join 13's path there.
+[[connectors]]
+id = "conn-11-12"
+from = "h11-path:end"
+to = "h13-path"
+
+[[connectors]]
+id = "conn-12-13"           # leaves 12's path short of its end, so no hairpin back past the green
+from = "h12-path"
+to = "h13-path:start"
+
+[[connectors]]
+id = "conn-13-14"
+from = "h13-path:end"
+to = "h14-path"
+
+[[connectors]]
+id = "conn-14-15"
+from = "h14-path:end"
+to = "h15-path"
+
+# 15 and 13 share the path between the long pond and the 15th green; 16 leaves from 14's start.
+[[connectors]]
+id = "conn-15-16a"
+from = "h15-path:end"
+to = "conn-13-14"
+
+[[connectors]]
+id = "conn-15-16b"
+from = "h14-path:start"
+to = "h16-path"
+
+[[connectors]]
+id = "conn-16-17"
+from = "h16-path:end"
+to = "h17-path"
+
+[[connectors]]
+id = "conn-17-18"
+from = "h17-path:end"
+to = "h18-path"
+
+[[connectors]]
+id = "conn-18-club"           # joins 9's way back to the clubhouse
+from = "h18-path:end"
+to = "conn-09-club"

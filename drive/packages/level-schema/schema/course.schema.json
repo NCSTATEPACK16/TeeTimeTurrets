@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gcs:level-packet/course.schema.json",
+  "title": "GolfCartSimulator level packet v0.2: course.json",
+  "description": "Grids are W x H node samples, row-major, row 0 = north, 1 m spacing. Node (row, col) sits at world x = (col - (W-1)/2) * cellSize, z = (row - (H-1)/2) * cellSize; +Y up, north = -Z. Height in meters = offset + scale * u16.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "id", "name", "generator", "crs", "grid", "height", "material", "stripe",
+    "materials", "spawn", "water", "scatter", "holes", "paths", "attribution", "files", "qa"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "0.2" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "seed": { "type": "integer" }
+      }
+    },
+    "crs": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["epsg", "originEasting", "originNorthing"],
+          "description": "Projected coordinates of node (row 0, col 0).",
+          "properties": {
+            "epsg": { "type": "integer" },
+            "originEasting": { "type": "number" },
+            "originNorthing": { "type": "number" }
+          }
+        }
+      ]
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "cellSize"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 2, "maximum": 8193 },
+        "height": { "type": "integer", "minimum": 2, "maximum": 8193 },
+        "cellSize": { "const": 1 }
+      }
+    },
+    "height": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "scale", "offset"],
+      "properties": {
+        "file": { "const": "height.u16.bin" },
+        "scale": { "type": "number", "exclusiveMinimum": 0 },
+        "offset": { "type": "number" }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "properties": { "file": { "const": "material.u8.bin" } }
+    },
+    "stripe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "description": "Mowing stripe bearing per node: degrees clockwise from north = value * 180 / 256.",
+      "properties": { "file": { "const": "stripe.u8.bin" } }
+    },
+    "materials": {
+      "type": "array",
+      "description": "Palette. Entry i describes material ID i.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "color"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "name": { "$ref": "#/$defs/materialName" },
+          "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" }
+        }
+      }
+    },
+    "spawn": { "$ref": "#/$defs/pose" },
+    "water": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "level", "polygon"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "level": { "type": "number", "description": "Water surface height in meters." },
+          "polygon": {
+            "type": "array",
+            "description": "Shoreline outline in world [x, z]; the body is the water cells inside it.",
+            "minItems": 3,
+            "items": { "$ref": "#/$defs/xz" }
+          }
+        }
+      }
+    },
+    "scatter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "species"],
+      "properties": {
+        "file": { "const": "scatter.bin" },
+        "species": {
+          "type": "array",
+          "description": "Records are Float32 LE [x, z, scale, rotationRad], 16 bytes each, species concatenated in this order.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "count", "byteOffset"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+              "count": { "type": "integer", "minimum": 0 },
+              "byteOffset": { "type": "integer", "minimum": 0, "multipleOf": 16 }
+            }
+          }
+        }
+      }
+    },
+    "horizon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "cellSize", "width", "height", "originX", "originZ", "scale", "offset"],
+      "description": "Optional coarse visual-only terrain around the course (no collider). Node (row, col) sits at world x = originX + col * cellSize, z = originZ + row * cellSize; row 0 = north. Height in meters = offset + scale * u16.",
+      "properties": {
+        "file": { "const": "horizon.u16.bin" },
+        "cellSize": { "type": "number", "exclusiveMinimum": 0 },
+        "width": { "type": "integer", "minimum": 2, "maximum": 4097 },
+        "height": { "type": "integer", "minimum": 2, "maximum": 4097 },
+        "originX": { "type": "number" },
+        "originZ": { "type": "number" },
+        "scale": { "type": "number", "exclusiveMinimum": 0 },
+        "offset": { "type": "number" }
+      }
+    },
+    "logo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "description": "Optional course logo image shipped beside the packet (used with the club's permission).",
+      "properties": { "file": { "type": "string", "pattern": "^[a-z0-9_.-]+\\.(webp|png)$" } }
+    },
+    "holes": { "const": "holes.json" },
+    "paths": { "const": "paths.json" },
+    "attribution": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "license"],
+        "properties": {
+          "name": { "type": "string" },
+          "license": { "type": "string" },
+          "url": { "type": "string" }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "description": "SHA-256 of every other file in the packet.",
+      "propertyNames": { "pattern": "^[a-z0-9_.]+$" },
+      "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    },
+    "qa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["driveStart", "probes"],
+      "description": "Where packet-agnostic tests drive and what they expect to find.",
+      "properties": {
+        "driveStart": {
+          "allOf": [{ "$ref": "#/$defs/pose" }],
+          "description": "Start of a straight, nearly flat run of at least 200 m along the heading."
+        },
+        "waterEntry": {
+          "allOf": [{ "$ref": "#/$defs/pose" }],
+          "description": "Pose a few meters before flat water about 0.5 m deep, heading straight in."
+        },
+        "deepWater": {
+          "allOf": [{ "$ref": "#/$defs/pose" }],
+          "description": "A point in water deep enough to float the cart (at least 1.2 m)."
+        },
+        "wheelPad": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "z", "headingDeg", "expected"],
+          "description": "Cart pose where each wheel rests on a different known material.",
+          "properties": {
+            "x": { "type": "number" },
+            "z": { "type": "number" },
+            "headingDeg": { "type": "number" },
+            "expected": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["FL", "FR", "RL", "RR"],
+              "properties": {
+                "FL": { "$ref": "#/$defs/materialName" },
+                "FR": { "$ref": "#/$defs/materialName" },
+                "RL": { "$ref": "#/$defs/materialName" },
+                "RR": { "$ref": "#/$defs/materialName" }
+              }
+            }
+          }
+        },
+        "probes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "z", "material"],
+            "properties": {
+              "x": { "type": "number" },
+              "z": { "type": "number" },
+              "material": { "$ref": "#/$defs/materialName" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "materialName": {
+      "description": "Material IDs are the index in this list. Append only; never reorder.",
+      "enum": ["rough", "fairway", "fringe", "green", "tee", "bunker", "water", "cartpath", "woods", "embankment"]
+    },
+    "xz": {
+      "type": "array",
+      "prefixItems": [{ "type": "number" }, { "type": "number" }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "pose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "z", "headingDeg"],
+      "description": "World position; heading in degrees clockwise from north (0 = -Z, 90 = +X).",
+      "properties": {
+        "x": { "type": "number" },
+        "z": { "type": "number" },
+        "headingDeg": { "type": "number" }
+      }
+    }
+  }
+}
