@@ -17,6 +17,7 @@ release rather than at Phase 5.
 | `drive/**` (free drive: its app, course pipeline and docs) | Apache License 2.0, except the rows below | `Apache-2.0` |
 | `drive/pipeline/courses/tee-time-links/**` and the packet built from it, `drive/apps/web/public/levels/tee-time-links/**` | Third-party data (NC lidar and orthoimagery, OSM); see "A note on free drive's course" and `drive/ATTRIBUTION.md` | — |
 | Shrikhand and Rubik fonts (`@fontsource/*`, bundled into the build; also in `drive/`) | SIL Open Font License 1.1 | `OFL-1.1` |
+| `art/brand/tee-time-links.svg` (the Tee Time Links logo; Shrikhand lettering converted to outlines) | First-party artwork; see "A note on the Tee Time Links logo" | — |
 | `server/**` | GNU Affero General Public License v3.0 or later | `AGPL-3.0-or-later` |
 | Human-authored assets, if any are ever added | Creative Commons BY-SA 4.0 | `CC-BY-SA-4.0` |
 | `docs/concept/**` (AI-generated reference art) | No license claimed — provenance-tracked | — |
@@ -124,6 +125,15 @@ in `drive/ATTRIBUTION.md`. Still open before a public release:
 
 The Apache-2.0 grant on `drive/**` covers this project's own code and docs, not that data. If a source
 goes the wrong way, the pipeline rebuilds the packet from whatever sources remain.
+
+## A note on the Tee Time Links logo
+
+`art/brand/tee-time-links.svg` is drawn in this repository, from the title art's own shapes. Its
+lettering is **Shrikhand** (Jonny Pinhorn, SIL Open Font License 1.1), converted to outlines by
+`art/brand/tee_time_links.py` from the `@fontsource/shrikhand` files, so the SVG carries no font and
+no `<text>`. The OFL allows this: a logo made with an OFL font is artwork, not Font Software, and the
+licence does not extend to it. Shrikhand declares no Reserved Font Name. The font is credited in
+`NOTICE` either way, because the game also bundles it as a webfont.
 
 ## Shipped 3D assets
 
