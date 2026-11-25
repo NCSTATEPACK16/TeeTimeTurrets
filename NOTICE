@@ -123,3 +123,24 @@ Ground textures
     The notice is as published with the shader's XScreenSaver port
     (prococean). The Shadertoy page was not reachable from the build
     environment, so it is still to be confirmed against the original header.
+
+
+--------------------------------------------------------------------------------
+Fonts
+
+  The title and Choose Your Ride (src/ui/title/) and free drive's menus and
+  HUD (drive/) use Shrikhand (Jonny Pinhorn) and Rubik (Hubert and Fischer,
+  Meir Sadan, Cyreal), bundled from the @fontsource/shrikhand and
+  @fontsource/rubik packages. Both are under the SIL Open Font License 1.1
+  (https://openfontlicense.org), whose text ships in those packages.
+
+
+--------------------------------------------------------------------------------
+Free drive (drive/)
+
+  drive/ is TeeTimeTurrets' free-drive mode, formerly the GolfCartSimulator
+  repository. Its third-party data and assets, with their terms, are listed in
+  drive/ATTRIBUTION.md: the NC 2024 QL1 lidar DEMs and NC OneMap
+  orthoimagery (NC public data), an OpenStreetMap snapshot
+  (c) OpenStreetMap contributors, ODbL 1.0, and the afl_ext ocean shader
+  (drive/apps/web/src/env/oceanWaves.ts, under the notice reproduced above).

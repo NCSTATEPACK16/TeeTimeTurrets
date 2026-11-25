@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gcs:level-packet/paths.schema.json",
+  "title": "GolfCartSimulator level packet v0.2: paths.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["paths", "bridges"],
+  "properties": {
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "width", "closed", "source", "points"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "width": { "type": "number", "exclusiveMinimum": 0 },
+          "closed": { "type": "boolean" },
+          "source": { "enum": ["osm", "astar", "authored"] },
+          "points": {
+            "type": "array",
+            "description": "Centerline samples [x, y, z] in world meters, about 1 m apart; y is the carved profile height.",
+            "minItems": 2,
+            "items": {
+              "type": "array",
+              "prefixItems": [{ "type": "number" }, { "type": "number" }, { "type": "number" }],
+              "minItems": 3,
+              "maxItems": 3
+            }
+          }
+        }
+      }
+    },
+    "bridges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pathId", "fromIndex", "toIndex"],
+        "properties": {
+          "pathId": { "type": "string" },
+          "fromIndex": { "type": "integer", "minimum": 0 },
+          "toIndex": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}

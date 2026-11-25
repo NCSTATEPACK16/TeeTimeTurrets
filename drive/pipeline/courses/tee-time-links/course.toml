@@ -1,0 +1,154 @@
+# Tee Time Links: a fictional course on real Piedmont NC terrain (2024 lidar). Not affiliated with
+# any club; it carries no club name or logo.
+# Every tunable number for this course lives here (CLAUDE.md: nothing inline).
+
+id = "tee-time-links"
+name = "Tee Time Links"
+
+[location]
+# John's pin (session 1). UTM 17N (EPSG:32617) of the same point.
+lat = 36.43859037
+lon = -79.31937903
+epsg = 32617
+easting = 650634
+northing = 4033909
+
+[osm]
+endpoint = "https://overpass-api.de/api/interpreter"
+# Overpass answers 406 to requests without a descriptive User-Agent.
+user_agent = "GolfCartSimulator/0.2 (course pipeline; https://github.com/NCSTATEPACK16/GolfCartSimulator)"
+radius_m = 2500
+timeout_s = 180
+# Committed snapshot (ODbL), relative to this folder. The pipeline reads only this file.
+snapshot = "osm/overpass.json"
+
+[aerial]
+# Orthoimagery used only as a tracing base for overrides.geojson; never shipped in a packet.
+# Sources are tried in order; the first ArcGIS ImageServer that answers without a token wins.
+sources = [
+  { name = "NC OneMap orthoimagery (latest)", url = "https://services.nconemap.gov/secure/rest/services/Imagery/Orthoimagery_Latest/ImageServer", bands = "0,1,2" },
+  { name = "NC OneMap orthoimagery 2024", url = "https://services.nconemap.gov/secure/rest/services/Imagery/Orthoimagery_2024/ImageServer", bands = "0,1,2" },
+  { name = "NC OneMap orthoimagery 2023", url = "https://services.nconemap.gov/secure/rest/services/Imagery/Orthoimagery_2023/ImageServer", bands = "0,1,2" },
+  { name = "USGS NAIP", url = "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer", bands = "0,1,2" },
+]
+# Square around the pin, meters east/south of it (+x east, +z south), and the pixel size.
+center_offset_m = [250.0, 150.0]
+size_m = 2400.0
+pixel_m = 0.4
+tile_px = 2000
+# Committed (JPEG-compressed GeoTIFF, UTM 17N), relative to this folder.
+out = "aerial/ortho.tif"
+
+# Course frame used by every pipeline step: meters east (x) and south (z) of the pin.
+# A stage's packet grid covers `bounds` = [x0, z0, x1, z1] and is centered on it.
+[stages.hole1]
+bounds = [-150.0, -60.0, 90.0, 580.0]
+holes = [1]
+horizon = true
+
+# All 18 (holes 2-18 are a routing draft: authoring/routing.toml).
+[stages.full]
+bounds = [-160.0, -350.0, 940.0, 740.0]
+holes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+horizon = true
+
+[layout]
+overrides = "overrides.geojson"
+# Higher wins where outlines overlap.
+priority = ["fairway", "tee", "green", "bunker", "water"]
+fringe_m = 1.5
+
+[layout.woods]
+# Tree canopy from the aerial where nothing is authored: dark or busy pixels, cleaned up at node scale.
+lum_max = 118.0
+texture_min = 9.0
+texture_window_px = 7
+min_area_m2 = 40.0
+
+[sculpt]
+# Authored over measured: smooth by surface, then shape greens, tees, bunkers and water.
+base_sigma_m = 0.8
+feather_m = 6.0
+fairway_sigma_m = 3.0
+rough_sigma_m = 1.5
+green_max_slope = 0.027      # PRD cap is 3%; margin for u16 quantization
+green_max_tilt = 0.02
+green_undulation_sigma_m = 3.0
+green_pad_m = 3.0            # the shaped area extends this far past the green edge
+tee_max_tilt = 0.01
+tee_pad_m = 1.5
+bunker_depth_m = 0.5
+bunker_ramp_m = 2.0
+bunker_lip_sigma_m = 4.0
+water_freeboard_m = 0.25
+water_shelf_depth_m = 0.35
+water_shelf_width_m = 2.0
+water_max_depth_m = 2.0
+water_deep_from_m = 6.0
+water_wade_depth_m = 0.5     # authored wading shelves (qa.waterEntry), flat at this depth
+water_wade_feather_m = 4.0
+drivable_max_slope = 0.33    # PRD cap is 35%; relax anything steeper, else mark embankment
+relax_iterations = 60
+
+[paths]
+width_m = 2.4
+flat_half_m = 1.5            # corridor flattened this far either side (PRD)
+sample_m = 0.25
+max_grade = 0.09             # PRD cap is 12%
+profile_smooth_m = 8.0
+spline_step_m = 1.0          # Catmull-Rom through the traced vertices, then resampled
+edge_margin_m = 3.0          # paths are clipped this far inside the stage grid
+join_snap_m = 4.0            # a path end this close to an earlier path joins it
+junction_pad_m = 4.0         # where paths meet, both are level this far around the junction
+
+[scatter]
+spacing_m = 6.0
+keep_fraction = 0.85
+clear_of_play_m = 3.0        # no trees this close to authored surfaces or paths
+clear_of_tee_m = 6.0         # ... or this close to a tee box (canopies overhang)
+pine_green_over_red = 0.0    # canopy where G - R exceeds this reads as evergreen (pine)
+seed = 17
+
+[qa]
+drive_surfaces = ["fairway", "tee", "cartpath"]
+drive_max_grade = 0.06       # per 5 m step; real fairways roll (John, M2: loosen for real courses)
+drive_max_cross = 0.03
+drive_min_run_m = 150.0      # among runs this long, the most level one wins (net grade near 0)
+drive_cross_half_m = 1.5
+drive_headings_deg = 5.0
+drive_start_step_m = 4.0
+water_entry_before_m = 4.0   # waterEntry stands this far before the shore, on dry ground
+water_entry_probe_m = 20.0   # ... and the web test reads 0.45 to 0.55 m this far ahead
+water_entry_depth = [0.45, 0.55]
+deep_water_min_m = 1.2       # qa.deepWater: deepest node at least this deep
+
+[[attribution]]
+name = "NC 2024 QL1 lidar DEM, NC Emergency Management (sdd.nc.gov)"
+license = "NC public data; terms to confirm"
+url = "https://sdd.nc.gov/"
+
+[[attribution]]
+name = "NC OneMap orthoimagery, NC CGIA and NC 911 Board (tracing base and canopy)"
+license = "NC public data; terms to confirm"
+url = "https://www.nconemap.gov/"
+
+[dem]
+# Cropped course DEM (gitignored cache). `gce-fetch-dem --course tee-time-links` rebuilds it:
+# downloads the county zip (4.86 GB, Deflate64, resumable), extracts, crops, deletes the 5 GB TIFF.
+course = "data/gis/course_dem03_crop4km.tif"
+url = "https://sdd.nc.gov/downloads/public/DEMMosaicsbyCounty/DEM03_CountywideRasters/Caswell_2024_QL1_03ft_CountywideRaster.zip"
+zip = "data/gis/raw/Caswell_2024_QL1_03ft_CountywideRaster.zip"
+zip_bytes = 4856682826
+crop_size_m = 4000.0
+crop_margin_m = 100.0
+horizon_url = "https://sdd.nc.gov/downloads/public/DEMMosaicsbyCounty/DEM20_CountywideRasters/Caswell_QL1_2024_20ft_CountywideRaster.zip"
+horizon_zip = "data/gis/raw/Caswell_QL1_2024_20ft_CountywideRaster.zip"
+
+[horizon]
+# Visual-only skirt from the 20 ft county DEM (same datum as the course DEM).
+dem_dir = "data/gis/dem20"   # extracted from dem.horizon_zip on first use (gitignored)
+radius_m = 3000.0
+cell_m = 10.0
+blend_m = 150.0              # smoothstep from the course edge height to the measured DEM
+sink_m = 0.5                 # under the course rectangle, so the course always draws on top
+scale = 0.002                # 131 m of u16 relief (82 m measured within 3 km)

@@ -1,22 +1,31 @@
-import * as THREE from "three";
-import { createBackdrop } from "../../render/backdrop";
-import type { Backdrop } from "../../render/backdrop";
-import { el, on } from "../dom";
+import type * as THREE from "three";
+import "@fontsource/shrikhand/latin-400.css";
+import "@fontsource/rubik/latin-400.css";
+import "@fontsource/rubik/latin-600.css";
+import "@fontsource/rubik/latin-700.css";
+import "@fontsource/rubik/latin-800.css";
+import "../title/title.css";
 import type { Screen } from "../../app/ScreenManager";
-import type { HoleSpec } from "../../sim/course";
+import { CLOUDS, FLAG_ICON, RIDE_SCENE, TITLE_SCENE, ballsHtml, cartSvg } from "../title/titleArt";
+import { RIDES, TITLE_CONFIG, freeDriveUrl, type Ride, type RideId } from "../title/titleConfig";
+import { TitleFlow } from "../title/titleFlow";
 
 /**
- * Image 10. Logo top-left, a right-hand action stack with the primary in orange, a version string
- * bottom-right, and a live course scene turning slowly behind the panel at golden hour.
+ * S1, the front door: the Clubhouse Sunset title and Choose Your Ride, shared by the whole game.
+ * TEE OFF goes to ride select, where Turrets starts the arena match and Chill or Joyride open free
+ * drive (the separate app in drive/, at /drive/). CLUBHOUSE and SETTINGS are the screens they were;
+ * MULTIPLAYER stays visibly disabled until it exists (`ROADMAP.md`: disabled, not absent).
  *
- * Buttons for screens that do not exist yet are rendered **disabled, not absent** -- `ROADMAP.md`
- * asks for that specifically. A missing button hides the roadmap from the player; a dead one that
- * looks alive is worse. Disabled says "not yet" honestly.
+ * DOM only: an illustrated scene, not the old live 3D backdrop, so the title builds no geometry and
+ * `exit` only has DOM and listeners to release. The canvas is cleared once so a finished match does
+ * not show through a resize.
  */
 
 export interface TitleActions {
-  /** Starts an arena match -- the game's one mode. */
+  /** Starts an arena match: the Turrets ride. */
   readonly play: () => void;
+  /** Opens free drive in a mode. Defaults to navigating to drive/ under the site's base. */
+  readonly freeDrive?: (mode: "chill" | "joyride") => void;
   readonly clubhouse?: () => void;
   readonly multiplayer?: () => void;
   readonly settings?: () => void;
@@ -25,86 +34,227 @@ export interface TitleActions {
 export interface TitleScreenOptions {
   readonly root: HTMLElement;
   readonly renderer: THREE.WebGLRenderer;
-  readonly backdropHole: HoleSpec;
   readonly version: string;
   readonly actions: TitleActions;
 }
 
+const KEYS = {
+  back: ["Escape", "Backspace"],
+  left: ["ArrowLeft", "KeyA"],
+  right: ["ArrowRight", "KeyD"],
+  confirm: ["Enter", "NumpadEnter", "Space"],
+} as const;
+
+const has = (list: readonly string[], code: string): boolean => list.includes(code);
+
 export class TitleScreen implements Screen {
   private readonly options: TitleScreenOptions;
-  private backdrop: Backdrop | null = null;
+  private readonly flow = new TitleFlow();
   private container: HTMLElement | null = null;
   private readonly teardown: (() => void)[] = [];
-  private lastFrameMs = 0;
 
   constructor(options: TitleScreenOptions) {
     this.options = options;
   }
 
   enter(): void {
-    const { root, renderer, backdropHole, version, actions } = this.options;
+    const { root, renderer, version, actions } = this.options;
+    renderer.clear();
 
-    this.backdrop = createBackdrop(backdropHole, renderer);
-    const size = renderer.getSize(new THREE.Vector2());
-    this.backdrop.resize(size.x, size.y);
+    const c = TITLE_CONFIG;
+    const box = document.createElement("div");
+    box.className = "mn-root";
+    box.style.setProperty("--mn-drive", `${c.driveSeconds}s`);
+    box.style.setProperty("--mn-swing", `${c.swingSeconds}s`);
+    box.style.setProperty("--mn-flight", `${c.swingSeconds * c.balls}s`);
+    box.innerHTML = `
+      <section class="mn-screen" data-view="title" aria-label="Title">
+        <div class="mn-stage mn-cover">${TITLE_SCENE}${CLOUDS}</div>
+        <div class="mn-stage mn-cover mn-fx">
+          <div class="mn-drive">
+            <div class="mn-puff" style="left:30px;top:222px;width:28px;height:28px"></div>
+            <div class="mn-puff" style="left:20px;top:230px;width:20px;height:20px;animation-delay:.3s"></div>
+            <div class="mn-puff" style="left:38px;top:232px;width:16px;height:16px;animation-delay:.6s"></div>
+            <div class="mn-bob"><div class="mn-recoil">${cartSvg({
+              firing: true,
+              driving: true,
+              speedLines: true,
+              label: "A golf cart with a club-swinging turret on its roof, firing golf balls down the fairway",
+            })}</div></div>
+            ${ballsHtml(c.balls, c.swingSeconds, c.contactAt)}
+          </div>
+        </div>
+        <div class="mn-stage mn-contain mn-ui">
+          <div class="mn-wordmark"><h1>Tee Time</h1><div class="mn-banner">TURRETS</div></div>
+          <nav class="mn-title-menu" data-title-menu aria-label="Main menu">
+            <button type="button" class="mn-btn mn-btn-primary" data-act="tee">${FLAG_ICON}<span>Tee Off</span></button>
+            <div class="mn-row">
+              <button type="button" class="mn-btn" data-act="clubhouse">Clubhouse</button>
+              <button type="button" class="mn-btn" data-act="settings">Settings</button>
+            </div>
+            <div class="mn-row">
+              <button type="button" class="mn-btn" data-act="multiplayer">Multiplayer</button>
+            </div>
+          </nav>
+          <div class="mn-hint mn-sticker"><span class="mn-key">Enter</span><span>to tee off</span></div>
+          <div class="mn-version">${escapeHtml(version)}</div>
+        </div>
+      </section>
+      <section class="mn-screen" data-view="ride" aria-label="Choose your ride" hidden>
+        <div class="mn-stage mn-cover">${RIDE_SCENE}</div>
+        <div class="mn-stage mn-contain mn-ui">
+          <div class="mn-ride-head"><h2>Choose your ride</h2><p class="mn-sticker">Turrets is the arena; Chill and Joyride are free drive on Tee Time Links</p></div>
+          <div class="mn-cards" role="group" aria-label="Rides">${RIDES.map(card).join("")}</div>
+          <div class="mn-ride-actions">
+            <button type="button" class="mn-btn" data-act="back">Back</button>
+            <button type="button" class="mn-btn mn-btn-primary" data-act="start">Tee Off</button>
+          </div>
+        </div>
+      </section>`;
 
-    const menu = el("div", { class: "title__menu" });
-    const button = (label: string, action: (() => void) | undefined, primary: boolean): void => {
-      const node = el("button", {
-        class: `btn btn--wide${primary ? " btn--primary" : ""}`,
-        type: "button",
-        text: label,
-        disabled: action === undefined,
-        title: action === undefined ? "Not built yet" : "",
-      });
-      if (action) this.teardown.push(on(node, "click", action));
-      menu.append(node);
+    // Buttons for screens that do not exist yet are disabled, not absent.
+    const wire: Record<string, (() => void) | undefined> = {
+      clubhouse: actions.clubhouse,
+      settings: actions.settings,
+      multiplayer: actions.multiplayer,
     };
+    for (const [act, fn] of Object.entries(wire)) {
+      const b = box.querySelector<HTMLButtonElement>(`[data-act="${act}"]`)!;
+      b.disabled = fn === undefined;
+      if (fn === undefined) b.title = "Not built yet";
+    }
 
-    button("PLAY", actions.play, true);
-    button("CLUBHOUSE", actions.clubhouse, false);
-    button("MULTIPLAYER", actions.multiplayer, false);
-    button("SETTINGS", actions.settings, false);
-
-    this.container = el("div", { class: "screen title" }, [
-      el("div", { class: "title__brand" }, [
-        el("div", { class: "title__logo", text: "TEE TIME" }),
-        el("div", { class: "title__logo title__logo--alt", text: "TURRETS" }),
-      ]),
-      menu,
-      el("div", { class: "title__version", text: version }),
-    ]);
-    root.append(this.container);
-
-    this.lastFrameMs = performance.now();
+    root.append(box);
+    this.container = box;
+    this.listen(box, "click", (e) => this.onClick(e as MouseEvent));
+    this.listen(window, "keydown", (e) => this.onKey(e as KeyboardEvent));
+    this.listen(window, "resize", () => this.fit());
+    this.flow.onChange(() => this.render());
+    this.fit();
+    this.render();
   }
 
   step(): void {
-    // Nothing simulated: the backdrop turns on wall time, which is what `draw` advances.
+    // Nothing simulated: the scene is CSS animation.
   }
 
   draw(): void {
-    if (!this.backdrop) return;
-    const now = performance.now();
-    // Clamped: a backgrounded tab hands back a multi-second delta on its first frame, which would
-    // snap the orbit round instead of resuming it.
-    const dt = Math.min(0.1, (now - this.lastFrameMs) / 1000);
-    this.lastFrameMs = now;
-
-    this.backdrop.update(dt);
-    this.options.renderer.render(this.backdrop.scene, this.backdrop.camera);
-  }
-
-  resize(width: number, height: number): void {
-    this.backdrop?.resize(width, height);
+    // Nothing to draw: the title is DOM over a cleared canvas.
   }
 
   exit(): void {
     for (const off of this.teardown) off();
     this.teardown.length = 0;
-    this.backdrop?.dispose();
-    this.backdrop = null;
     this.container?.remove();
     this.container = null;
   }
+
+  private listen(target: EventTarget, type: string, fn: (e: Event) => void): void {
+    target.addEventListener(type, fn);
+    this.teardown.push(() => target.removeEventListener(type, fn));
+  }
+
+  /** Scale factors for the 1280 x 720 stages: the scene covers the window, the buttons fit inside it. */
+  private fit(): void {
+    if (!this.container) return;
+    const { width, height } = TITLE_CONFIG.stage;
+    const sx = window.innerWidth / width;
+    const sy = window.innerHeight / height;
+    this.container.style.setProperty("--mn-cover", String(Math.max(sx, sy)));
+    this.container.style.setProperty("--mn-contain", String(Math.min(sx, sy)));
+  }
+
+  private render(): void {
+    const box = this.container;
+    if (!box) return;
+    const f = this.flow;
+    for (const s of box.querySelectorAll<HTMLElement>("[data-view]")) s.hidden = s.dataset.view !== f.view;
+    for (const cardEl of box.querySelectorAll<HTMLElement>(".mn-card")) {
+      cardEl.setAttribute("aria-pressed", String(cardEl.dataset.ride === f.ride));
+    }
+    // Keyboard focus follows the view, so Enter always does the obvious thing.
+    const target =
+      f.view === "title"
+        ? box.querySelector<HTMLElement>('[data-act="tee"]')
+        : box.querySelector<HTMLElement>(`.mn-card[data-ride="${f.ride}"]`);
+    if (target && !target.contains(document.activeElement)) target.focus();
+  }
+
+  private go(ride: Ride | null): void {
+    if (!ride) return;
+    const { actions } = this.options;
+    if (ride.kind === "match") {
+      actions.play();
+      return;
+    }
+    const mode = ride.id === "joyride" ? "joyride" : "chill";
+    if (actions.freeDrive) actions.freeDrive(mode);
+    else window.location.assign(freeDriveUrl(import.meta.env.BASE_URL, mode));
+  }
+
+  private onClick(e: MouseEvent): void {
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act], .mn-card");
+    if (!el) return;
+    const f = this.flow;
+    const { actions } = this.options;
+    if (el.dataset.ride) {
+      // A second click on the chosen card tees off.
+      if (f.ride === el.dataset.ride) this.go(f.start());
+      else f.pick(el.dataset.ride as RideId);
+      return;
+    }
+    switch (el.dataset.act) {
+      case "tee":
+        return f.teeOff();
+      case "start":
+        return this.go(f.start());
+      case "back":
+        f.back();
+        return;
+      case "clubhouse":
+        return actions.clubhouse?.();
+      case "settings":
+        return actions.settings?.();
+      case "multiplayer":
+        return actions.multiplayer?.();
+    }
+  }
+
+  private onKey(e: KeyboardEvent): void {
+    const f = this.flow;
+    if (has(KEYS.back, e.code)) {
+      if (f.back()) e.preventDefault();
+    } else if (f.view === "ride" && (has(KEYS.left, e.code) || has(KEYS.right, e.code))) {
+      e.preventDefault();
+      f.nudge(has(KEYS.left, e.code) ? -1 : 1);
+    } else if (f.view === "ride" && has(KEYS.confirm, e.code)) {
+      // Enter on a card (or anywhere on ride select but Back) tees off with the chosen ride.
+      if ((document.activeElement as HTMLElement | null)?.dataset.act === "back") return;
+      e.preventDefault();
+      this.go(f.start());
+    }
+  }
+}
+
+function card(ride: Ride): string {
+  const turret = ride.kind === "match";
+  const swing = TITLE_CONFIG.cardSwingSeconds;
+  const fast = ride.id === "joyride";
+  return `
+    <button type="button" class="mn-card" data-ride="${ride.id}" aria-pressed="false" style="--mn-swing:${swing}s;--mn-flight:${swing * TITLE_CONFIG.balls}s">
+      <div class="mn-card-stage">
+        ${fast ? '<svg class="mn-speedlines" width="90" height="60" viewBox="0 0 90 60" aria-hidden="true"><path d="M80 14 h-60 M86 30 h-80 M78 46 h-54" stroke="#FFF4DC" stroke-width="6" stroke-linecap="round"/></svg>' : ""}
+        <div class="mn-card-cart">
+          ${cartSvg({ firing: turret, turret, driving: true, speedLines: false })}
+          ${turret ? ballsHtml(TITLE_CONFIG.balls, swing, TITLE_CONFIG.contactAt) : ""}
+        </div>
+      </div>
+      <div class="mn-card-title"><span>${ride.name}</span><span class="mn-badge">${ride.badge}</span></div>
+      <p>${ride.blurb}</p>
+      <div class="mn-tags">${ride.tags.map((t) => `<span>${t}</span>`).join("")}</div>
+    </button>`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }

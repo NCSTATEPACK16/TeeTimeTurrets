@@ -14,6 +14,9 @@ release rather than at Phase 5.
 | `src/vendor/cot/**` (third-party, from Claude of Tanks) | MIT, notice in `src/vendor/cot/LICENSE` and `NOTICE` | `MIT` |
 | `reference/claude-of-tanks/**` (reading material, not built) | MIT, notice in that folder's `LICENSE` | `MIT` |
 | `art/textures-src/**` and `public/textures/ground/**` (ambientCG / Poly Haven, and files packed from them) | Public domain | `CC0-1.0` |
+| `drive/**` (free drive: its app, course pipeline and docs) | Apache License 2.0, except the rows below | `Apache-2.0` |
+| `drive/pipeline/courses/tee-time-links/**` and the packet built from it, `drive/apps/web/public/levels/tee-time-links/**` | Third-party data (NC lidar and orthoimagery, OSM); see "A note on free drive's course" and `drive/ATTRIBUTION.md` | — |
+| Shrikhand and Rubik fonts (`@fontsource/*`, bundled into the build; also in `drive/`) | SIL Open Font License 1.1 | `OFL-1.1` |
 | `server/**` | GNU Affero General Public License v3.0 or later | `AGPL-3.0-or-later` |
 | Human-authored assets, if any are ever added | Creative Commons BY-SA 4.0 | `CC-BY-SA-4.0` |
 | `docs/concept/**` (AI-generated reference art) | No license claimed — provenance-tracked | — |
@@ -105,6 +108,22 @@ drawing. No geometry was copied.
 Terms: no licence is claimed over the routing facts, and none is granted. If Caswell Pines objects,
 the remedy is to perturb the routing — the card and the returning-nines structure are what make the
 course play like a real one, and neither requires *that* course.
+
+## A note on free drive's course
+
+**Free drive (`drive/`) ships its course as Tee Time Links, a fictional name with no club logo.** Its
+terrain is the NC 2024 QL1 lidar of a real Piedmont NC golf course (Caswell Pines, the same course the
+arena's routing note above describes), its layout is traced over NC OneMap orthoimagery
+(`drive/pipeline/courses/tee-time-links/aerial/ortho.tif`, committed as the tracing base, never shipped
+in a packet), and it uses an OpenStreetMap snapshot. The club's name and logo were used with its
+permission until 2026-11-25 and are now removed, so the game stands on its own. Sources and terms are
+in `drive/ATTRIBUTION.md`. Still open before a public release:
+
+- **The NC lidar and the NC OneMap orthoimagery** are NC public data whose exact terms are unconfirmed.
+- **OpenStreetMap** data is under the ODbL 1.0, with attribution in the game's credits.
+
+The Apache-2.0 grant on `drive/**` covers this project's own code and docs, not that data. If a source
+goes the wrong way, the pipeline rebuilds the packet from whatever sources remain.
 
 ## Shipped 3D assets
 

@@ -1,0 +1,28 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Pipeline reports are local review material, not shipped
+pipeline/reports/
+
+# Smoke-test scratch
+apps/web/test-results/
+
+# Private course reference (flyover stills, notes): never commit
+data/reference/
+
+# Raw GIS downloads and crops (large, re-fetchable): never commit
+data/gis/
+
+# Aerial tile downloads (mosaicked into aerial/ortho.tif)
+pipeline/courses/*/aerial/.tiles/

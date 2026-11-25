@@ -852,3 +852,35 @@ Tufts take their colour from the same palette blend the ground shader draws (`gr
 
 A cell's tufts are generated on the CPU when the camera nears it, not in a shader. Filling a cell costs milliseconds (6.5 ms on Med in node) because each candidate asks the sim's surface queries. So the ring fills a slice at a time under 2 ms a frame, resuming the cell's seeded stream, rather than a whole cell or two a frame (which was a 37 ms hitch at every cell crossing). A GPU-placed carpet would be cheaper but could not ask the sim where the rough is.
 
+## Free drive lives in drive/, and the title is Clubhouse Sunset (user, 2026-11-25)
+
+**The free-driving golf cart sim (formerly the GolfCartSimulator repo) is this game's free-drive
+mode, and new work on both happens here.** It moved in as its own app under `drive/`: its own pnpm
+workspace, Python course pipeline, docs and the committed lidar-built course packet. It is
+not merged into `src/`, deliberately:
+
+- **It keeps its own dependencies.** It runs three 0.186's WebGPU build and Rapier 0.21 against the
+  arena's three 0.185 WebGL and Rapier 0.20. Folding it into `src/` would mean moving one side's
+  versions and re-verifying it, which is a project, not a move. Porting free drive onto the arena's
+  sim and render is a later, separate decision.
+- **One site, two apps.** `npm run build` ends with `tools/buildDrive.mjs`, which builds `drive/`
+  with `DRIVE_BASE=/drive/` and copies it to `dist/drive/`, so Netlify's one build command ships
+  both. A link between them is a URL, not an import.
+- **The GolfCartSimulator repo is frozen**: it keeps the history; `drive/` was imported as a
+  snapshot of its m2-close-out branch.
+
+**S1 changed look.** The front door is the illustrated Clubhouse Sunset title that free drive's
+menus already used, not image 10's panel over a live 3D backdrop. TEE OFF opens Choose Your Ride:
+Turrets (the arena match, what PLAY was), Chill and Joyride (free drive, which opens
+`drive/?level=tee-time-links&mode=<ride>&menu=0&home=/`; its pause menu's Main menu comes back). The
+title is DOM only, so it no longer shares the renderer with a scene; `ScreenManager` still owns its
+lifecycle. `UI-SPEC.md` S1 is updated to match. **The turret belongs to Turrets:** the title cart and
+the Turrets card carry it, and free drive's carts do not (free drive has no turret).
+
+**No real club's name or logo (user, 2026-11-25).** Free drive's course ships as **Tee Time Links**,
+a fictional name, so the game is for anyone and not tied to an NC golf course. The club's logo is
+deleted from the repo and the packet, the course id and every path are `tee-time-links`, and the
+arena's internal course name changed to match. Permission had been confirmed; this is a choice, not a
+takedown. The real place stays named only where provenance has to be honest: `drive/ATTRIBUTION.md`,
+`LICENSES.md` and the dated history in `drive/docs/`.
+

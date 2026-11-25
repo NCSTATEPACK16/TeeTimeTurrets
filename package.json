@@ -6,7 +6,7 @@
   "scripts": {
     "postinstall": "puppeteer browsers install chrome",
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node tools/buildDrive.mjs",
     "preview": "vite preview",
     "gate": "vite build -c tools/gate.vite.config.ts && node tools/sceneGate.mjs",
     "test": "vitest run",
@@ -32,6 +32,8 @@
   "type": "module",
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.20.0",
+    "@fontsource/rubik": "^5.3.0",
+    "@fontsource/shrikhand": "^5.3.0",
     "simplex-noise": "^4.0.3",
     "three": "^0.185.1"
   },

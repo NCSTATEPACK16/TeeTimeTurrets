@@ -1,0 +1,9 @@
+{
+  "source": "OpenStreetMap via Overpass API",
+  "license": "ODbL 1.0, (c) OpenStreetMap contributors",
+  "endpoint": "https://overpass-api.de/api/interpreter",
+  "query": "overpass.overpassql",
+  "osmBase": "2026-10-18T00:31:47Z",
+  "elements": 198,
+  "sha256": "b9baa8810c3094b2dc51e984f0d7ff5b7b42ec207c9ce8b964ffc8d6d87237a8"
+}
