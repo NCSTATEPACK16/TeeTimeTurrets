@@ -82,7 +82,7 @@ export class Menus {
               <button type="button" class="mn-btn" data-act="controls">Controls</button>
               <button type="button" class="mn-btn" data-act="credits">Credits</button>
             </div>
-            ${home ? '<button type="button" class="mn-btn" data-act="home">Main menu</button>' : ''}
+            ${home ? '<div class="mn-row"><button type="button" class="mn-btn" data-act="home">Main menu</button></div>' : ''}
           </nav>
           <div class="mn-hint mn-sticker" data-hint="fresh"><span class="mn-key">Enter</span><span>or</span><span class="mn-key mn-key-round">A</span><span>to tee off</span></div>
           <div class="mn-hint mn-sticker" data-hint="paused" hidden><span class="mn-key">Esc</span><span>or</span><span class="mn-key mn-key-round">B</span><span>to keep playing</span></div>
