@@ -1,10 +1,11 @@
 # Next-session prompts
 
-Written 2026-11-23, after slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested and merged. Three prompts follow. Paste the one that fits into a fresh Claude Code session; each stands alone.
+Written 2026-11-23, after slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested and merged. Four prompts follow. Paste the one that fits into a fresh Claude Code session; each stands alone.
 
 - **A. Slice D, loblolly pines.** The next thing to build. **Local only:** it needs Blender and the Blender MCP on the Mac.
 - **B. The 3.5c spec (mortar and capture flags).** For a cloud session when no Blender session is to hand. It writes a spec and stops for the user's answers; it builds nothing.
 - **C. Stage 4b, iOS and gamepad.** After 3.5c. Written on 7 Nov and still current.
+- **D. One cart in both games, and hole flags in free drive.** Added 25 Nov at the user's request. Three PRs, run one per session in order: the logo, then the flags and tee signs, then the shared cart. It runs in the cloud and is independent of A–C.
 
 ---
 
@@ -154,3 +155,41 @@ Written 2026-11-23, after slice C of the Caswell look (pine straw and grass tuft
 >   - on iPhone, two matches back to back, watching the governor.
 > - Mark each spec §6 VERIFY item as verified, or still open with the reason.
 > - Rewrite `docs/HANDOFF.md` and this file. Then **STOP** for the user's play-test. Don't merge, and don't start Stage 5.
+
+---
+
+## D. One cart in both games, and hole flags in free drive (cloud, three PRs)
+
+> You are building one PR of **the shared cart and hole flags** for TeeTimeTurrets: Turrets (the arena game, `src/`: three 0.185 WebGL, Rapier 0.20) and free drive (Chill and Joyride, `drive/`: its own pnpm workspace, three 0.186 WebGPU, Rapier 0.21). The design is decided in `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`. **Those are user decisions; do not relitigate them.** Build the next unbuilt PR from its §3–§5, in this order, and only that one:
+> 1. **PR 1, the Tee Time Links logo** (§3). It has a stop point in the middle: render the SVG variants and **wait for the user's approval** before wiring anything.
+> 2. **PR 2, hole flags and tee signs in free drive** (§4).
+> 3. **PR 3, the shared cart** (§5).
+>
+> Check `main` and the open PRs to see which ones are done. If the previous PR is not merged, stop and ask.
+>
+> ### Where to work
+> Branch from the latest `origin/main`. Run `npm ci` at the root, and `pnpm install` in `drive/` for PRs 2 and 3. Commit with `git commit -s` on every commit. Put no AI or session metadata in commits, PR titles or bodies. Stage files by name, never `git add -A`.
+>
+> ### Read first
+> - `AGENTS.md`: the testing policy (one smoke check of 15 s or less per change, `npm test` under 60 s), the licence split, and the `NOTICE` rule for ported code.
+> - `drive/CLAUDE.md`:
+>   - free drive's rules: shaders are TSL only;
+>   - every tunable goes in `cartTuning.ts` or `surfaces.ts`;
+>   - Rapier is pinned;
+>   - physics runs headless in Node.
+> - `docs/DECISIONS.md`, "Free drive lives in drive/", and `drive/docs/handoff/M2.md`, Part F ("Joyride is driving only").
+> - The spec, in full, and `docs/TEST-AND-SPEC-PITFALLS.md` before writing a test.
+>
+> ### Rules that bite
+> - **Never import a `src/` module that imports `three` into `drive/`.** It loads a second three core beside `three/webgpu`. Share data (the graph JSON, the SVG) and build it with drive's own code.
+> - **PR 3 touches `src/` for the wheels only, and render only.** The golden fingerprint must not move. A cloud session is Linux x64 and can check it directly (`src/sim/arenaGolden.test.ts`).
+> - **Do not lower Joyride below 20 m/s** without asking. If it rolls at full lock, tune the centre of mass, the rear grip and the rollover assist first.
+> - **See every new smoke check fail once** (break the thing, watch it go red, restore it) before you trust it.
+> - **Headless browser checks are unusable in a cloud container,** which renders at about one frame a second. Don't treat their failures as regressions without comparing against a `main` worktree in the same container.
+>
+> ### Finish
+> - Run `tsc` (root, and `drive/` for PRs 2 and 3), root `npm test`, and for PRs 2 and 3 `pnpm -r test` in `drive/`.
+> - Push and open a draft PR to `main` containing:
+>   - the check outputs;
+>   - the spec's play-test list for that PR, each item 60 s or less.
+> - Update `docs/HANDOFF.md`, `docs/SPEC-QUEUE.md` and this prompt's list of which PR is next. Then **STOP** for the user's play-test.

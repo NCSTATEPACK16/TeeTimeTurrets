@@ -7,6 +7,13 @@ Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #
 Chill / Joyride), and free drive's course is Tee Time Links, with no club name or logo. Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
 open items (its M2 gate, John's per-hole routing review) are in `drive/docs/handoff/M2.md`, Part F.
 
+**Specified (2026-11-25): one cart in both games, and hole flags in free drive.** Chill and Joyride get
+the Turrets cart (no turret, with the rider, team paint, engine and horn, and wheels that spin and steer in both games). It keeps free drive's
+vehicle physics, retuned so Joyride tops out at Turrets' 20 m/s. Free drive gets an oversized waving flag on
+every pin (hole number, PAR and a new Tee Time Links logo) and tee signs. Three PRs: the logo, then the flags, then the cart.
+Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; prompt D in
+`docs/NEXT-SESSION-PROMPT.md`. Independent of slice D and 3.5c, so it can run in any cloud session.
+
 ---
 
 **Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, restarted from `main` after #91 merged. Four code commits (straw; tufts; the tuft frame budget and clubhouse clearance; cattail sway and the first-frame fill) and docs. `tsc` is clean and `npm test` passes (125 files, 1,181 tests, 41.3 s against a 60 s cap).
