@@ -61,11 +61,11 @@ describe("rides", () => {
     }
   });
 
-  it("free drive opens drive/ on Caswell Pines, past its own menus, with a way home", () => {
+  it("free drive opens drive/ on Tee Time Links, past its own menus, with a way home", () => {
     const url = new URL(freeDriveUrl("/", "joyride"), "https://example.test");
     expect(url.pathname).toBe("/drive/");
     expect(Object.fromEntries(url.searchParams)).toEqual({
-      level: "caswell-pines",
+      level: "tee-time-links",
       mode: "joyride",
       menu: "0",
       home: "/",

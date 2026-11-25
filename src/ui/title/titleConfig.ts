@@ -33,7 +33,7 @@ export const RIDES: readonly Ride[] = [
     name: "Chill",
     badge: "Free drive",
     blurb:
-      "A Sunday loop of Caswell Pines. Gentle speed, steady handling, and a pond dunk puts you back on the cart path.",
+      "A Sunday loop of Tee Time Links. Gentle speed, steady handling, and a pond dunk puts you back on the cart path.",
     tags: ["Path respawn", "Auto hold on hills", "Rights itself"],
     kind: "drive",
   },
@@ -42,7 +42,7 @@ export const RIDES: readonly Ride[] = [
     name: "Joyride",
     badge: "Free drive",
     blurb:
-      "The cart the pro shop warned you about. Twice the speed, a boost button and handbrake drifts round Caswell Pines.",
+      "The cart the pro shop warned you about. Twice the speed, a boost button and handbrake drifts round Tee Time Links.",
     tags: ["Boost", "Handbrake drifts", "Flips allowed"],
     kind: "drive",
   },
@@ -62,7 +62,7 @@ export const TITLE_CONFIG = {
   /** The Turrets card's swing, seconds. */
   cardSwingSeconds: 1.6,
   /** Free drive: the course it opens on. */
-  driveLevel: "caswell-pines",
+  driveLevel: "tee-time-links",
 } as const;
 
 /**

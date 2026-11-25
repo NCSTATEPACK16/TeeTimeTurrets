@@ -4,7 +4,7 @@ Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #
 
 **Also landed (2026-11-25): free drive and the shared title.** The GolfCartSimulator repo moved in as
 `drive/` (served at `/drive/`), and the title is now Clubhouse Sunset with Choose Your Ride (Turrets /
-Chill / Joyride). Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
+Chill / Joyride), and free drive's course is Tee Time Links, with no club name or logo. Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
 open items (its M2 gate, John's per-hole routing review) are in `drive/docs/handoff/M2.md`, Part F.
 
 ---

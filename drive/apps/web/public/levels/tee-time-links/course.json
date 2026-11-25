@@ -20,7 +20,6 @@
     "height.u16.bin": "9ba9e85e35c8aed034c1e499744500b1c9dab61bf5999985b621d882c746b908",
     "holes.json": "9ccacaa6cf3c8caf6f9f84b164089ccccf0326bca5b4a06feafa9816ae946281",
     "horizon.u16.bin": "60abf98b894bfe11838f0d78b69600c0b322230ae1cf59363edfd0d2ffbf9410",
-    "logo.webp": "7371733acd1db9ea72caf5cb87cbee1e78a142db4d3ef732564e26a53480da32",
     "material.u8.bin": "4d1ea2edca3d4ea58497a6eac30025f1448e9d716b7b389ed4d73318ef56b7d4",
     "paths.json": "c22f2e50348985b0efd73cd81d4289c053cfcce24eedb44ec69f6ee5e8c815f0",
     "scatter.bin": "5cc155e39091f01edc7db25872ee0cb2b35d0fa9eca1d32870965c788b2dd282",
@@ -51,10 +50,7 @@
     "scale": 0.002,
     "width": 601
   },
-  "id": "caswell-pines",
-  "logo": {
-    "file": "logo.webp"
-  },
+  "id": "tee-time-links",
   "material": {
     "file": "material.u8.bin"
   },
@@ -110,7 +106,7 @@
       "name": "embankment"
     }
   ],
-  "name": "Caswell Pines Golf Club",
+  "name": "Tee Time Links",
   "paths": "paths.json",
   "qa": {
     "deepWater": {

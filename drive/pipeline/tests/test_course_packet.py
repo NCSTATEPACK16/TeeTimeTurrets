@@ -1,4 +1,4 @@
-"""M2 gate checks on the committed Caswell Pines packet (apps/web/public/levels/caswell-pines)."""
+"""M2 gate checks on the committed Tee Time Links packet (apps/web/public/levels/tee-time-links)."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from gcs_pipeline.heightmap import sample_height, triangle_slopes
 from gcs_pipeline.packet import packet_bytes, read_packet
 from gcs_pipeline.schema import load_schema, material_id, material_names
 
-PACKET = REPO / "apps" / "web" / "public" / "levels" / "caswell-pines"
+PACKET = REPO / "apps" / "web" / "public" / "levels" / "tee-time-links"
 pytestmark = pytest.mark.skipif(
-    not (PACKET / "course.json").exists(), reason="caswell-pines packet not built"
+    not (PACKET / "course.json").exists(), reason="tee-time-links packet not built"
 )
 
 
@@ -51,7 +51,7 @@ def test_schema_and_hashes() -> None:
 
 def test_identity_and_anchor(packet: dict) -> None:
     c = packet["course"]
-    assert (c["id"], c["name"]) == ("caswell-pines", "Caswell Pines Golf Club")
+    assert (c["id"], c["name"]) == ("tee-time-links", "Tee Time Links")
     assert c["crs"]["epsg"] == 32617
     assert c["attribution"], "attribution missing"
 
@@ -143,7 +143,7 @@ def test_holes_and_probes_on_their_surfaces(packet: dict) -> None:
 
 def test_rebuild_matches_committed_packet() -> None:
     """Same machine, same cached inputs: same bytes (M2 plan, risk 9)."""
-    cfg, folder = fetch.load_course("caswell-pines")
+    cfg, folder = fetch.load_course("tee-time-links")
     dem = course.REPO / cfg["dem"]["course"]
     if not dem.exists():
         pytest.skip(f"DEM cache {dem} not present (fresh container)")
@@ -154,7 +154,7 @@ def test_rebuild_matches_committed_packet() -> None:
     built, _ = course.build(cfg, folder, name, dem)
     fresh = packet_bytes(built)
     stale = [n for n, data in fresh.items() if data != (PACKET / n).read_bytes()]
-    assert not stale, f"committed caswell-pines is stale; rerun gce-course. Differs: {stale}"
+    assert not stale, f"committed tee-time-links is stale; rerun gce-course. Differs: {stale}"
 
 
 def _size(bounds: list[float]) -> tuple[int, int]:

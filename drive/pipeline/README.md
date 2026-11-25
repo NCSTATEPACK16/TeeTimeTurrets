@@ -12,17 +12,17 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-## Real course (M2): Caswell Pines
+## Real course (M2): Tee Time Links
 
 ```sh
-uv run gce-fetch-dem --course caswell-pines     # NC 2024 QL1 lidar: 4.9 GB download, crop to data/gis/ (gitignored)
-uv run gce-route --course caswell-pines         # authoring/routing.toml -> authoring/holes.json (holes 2-18 draft)
-uv run gce-author --course caswell-pines        # authoring/*.json -> overrides.geojson (WGS84, edit in QGIS)
-uv run gce-course --course caswell-pines --stage full --out ../apps/web/public/levels/caswell-pines
+uv run gce-fetch-dem --course tee-time-links     # NC 2024 QL1 lidar: 4.9 GB download, crop to data/gis/ (gitignored)
+uv run gce-route --course tee-time-links         # authoring/routing.toml -> authoring/holes.json (holes 2-18 draft)
+uv run gce-author --course tee-time-links        # authoring/*.json -> overrides.geojson (WGS84, edit in QGIS)
+uv run gce-course --course tee-time-links --stage full --out ../apps/web/public/levels/tee-time-links
 ```
 
-Every tunable lives in `courses/caswell-pines/course.toml` and `authoring/routing.toml`. The sculpt
-report (hillshades, slope stats) goes to `reports/caswell-pines/` (gitignored). Real-data steps
+Every tunable lives in `courses/tee-time-links/course.toml` and `authoring/routing.toml`. The sculpt
+report (hillshades, slope stats) goes to `reports/tee-time-links/` (gitignored). Real-data steps
 (Gaussian smoothing, reprojection) are deterministic per machine: same machine and cached inputs
 give the same bytes, and the committed packet is the reference (`test_rebuild_matches_committed_packet`).
 

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.filterwarnings("ignore::rasterio.errors.NotGeoreference
 
 
 def _cfg(**over) -> dict:
-    cfg, _ = fetch.load_course("caswell-pines")
+    cfg, _ = fetch.load_course("tee-time-links")
     a = dict(cfg["aerial"]) | {"size_m": 100.0, "pixel_m": 1.0, "tile_px": 40, "center_offset_m": [0.0, 0.0]}
     a |= over
     return cfg | {"aerial": a}

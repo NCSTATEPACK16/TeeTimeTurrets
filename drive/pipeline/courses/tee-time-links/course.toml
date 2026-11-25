@@ -1,10 +1,9 @@
-# Caswell Pines Golf Club, 2380 County Home Rd, Blanch, NC 27212.
+# Tee Time Links: a fictional course on real Piedmont NC terrain (2024 lidar). Not affiliated with
+# any club; it carries no club name or logo.
 # Every tunable number for this course lives here (CLAUDE.md: nothing inline).
 
-id = "caswell-pines"
-name = "Caswell Pines Golf Club"
-# Club logo, used with the club's permission (ATTRIBUTION.md). Copied into the packet.
-logo = "logo.webp"
+id = "tee-time-links"
+name = "Tee Time Links"
 
 [location]
 # John's pin (session 1). UTM 17N (EPSG:32617) of the same point.
@@ -134,9 +133,9 @@ license = "NC public data; terms to confirm"
 url = "https://www.nconemap.gov/"
 
 [dem]
-# Cropped course DEM (gitignored cache). `gce-fetch-dem --course caswell-pines` rebuilds it:
+# Cropped course DEM (gitignored cache). `gce-fetch-dem --course tee-time-links` rebuilds it:
 # downloads the county zip (4.86 GB, Deflate64, resumable), extracts, crops, deletes the 5 GB TIFF.
-course = "data/gis/caswell_dem03_crop4km.tif"
+course = "data/gis/course_dem03_crop4km.tif"
 url = "https://sdd.nc.gov/downloads/public/DEMMosaicsbyCounty/DEM03_CountywideRasters/Caswell_2024_QL1_03ft_CountywideRaster.zip"
 zip = "data/gis/raw/Caswell_2024_QL1_03ft_CountywideRaster.zip"
 zip_bytes = 4856682826

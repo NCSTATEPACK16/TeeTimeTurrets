@@ -1,4 +1,4 @@
-{"type": "FeatureCollection", "name": "caswell-pines overrides","features":[
+{"type": "FeatureCollection", "name": "tee-time-links overrides","features":[
 {"type":"Feature","properties":{"id":"clubhouse-rough","surface":"rough","source":"draft: clubhouse, parking and lawn (no trees)"},"geometry":{"type":"Polygon","coordinates":[[[-79.3200586,36.4389629],[-79.318921,36.4389469],[-79.3189339,36.4383522],[-79.3194477,36.4383233],[-79.3200683,36.4385124],[-79.3200586,36.4389629]]]}},
 {"type":"Feature","properties":{"id":"conn-01-02","surface":"cartpath","source":"draft (gce-route): 2024 NC orthoimagery + 2024 QL1 lidar + scorecard; review in QGIS"},"geometry":{"type":"LineString","coordinates":[[-79.3195337,36.4338175],[-79.3194979,36.4331986],[-79.3195517,36.4329794]]}},
 {"type":"Feature","properties":{"id":"conn-02-03","surface":"cartpath","source":"draft (gce-route): 2024 NC orthoimagery + 2024 QL1 lidar + scorecard; review in QGIS"},"geometry":{"type":"LineString","coordinates":[[-79.3157762,36.4329055],[-79.3153419,36.4325063]]}},

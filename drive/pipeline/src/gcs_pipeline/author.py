@@ -85,7 +85,7 @@ def to_feature(spec: dict, loc: dict) -> dict:
 def write_overrides(path: Path, features: list[dict]) -> None:
     lines = [json.dumps(f, separators=(",", ":"), ensure_ascii=False) for f in features]
     text = (
-        '{"type": "FeatureCollection", "name": "caswell-pines overrides","features":[\n'
+        '{"type": "FeatureCollection", "name": "tee-time-links overrides","features":[\n'
         + ",\n".join(lines)
         + "\n]}\n"
     )

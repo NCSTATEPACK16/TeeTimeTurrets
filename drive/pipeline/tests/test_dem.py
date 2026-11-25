@@ -12,7 +12,7 @@ from rasterio.transform import from_origin
 
 from gcs_pipeline.dem import SOURCE_EPSG, US_SURVEY_FOOT, NodeGrid, clean, crop_source, to_node_grid
 
-PIN = (650634.0, 4033909.0)  # Caswell Pines, UTM 17N
+PIN = (650634.0, 4033909.0)  # the course pin, UTM 17N
 FT = US_SURVEY_FOOT
 
 

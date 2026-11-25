@@ -103,7 +103,7 @@ export class TitleScreen implements Screen {
       <section class="mn-screen" data-view="ride" aria-label="Choose your ride" hidden>
         <div class="mn-stage mn-cover">${RIDE_SCENE}</div>
         <div class="mn-stage mn-contain mn-ui">
-          <div class="mn-ride-head"><h2>Choose your ride</h2><p class="mn-sticker">Turrets is the arena; Chill and Joyride are free drive on Caswell Pines</p></div>
+          <div class="mn-ride-head"><h2>Choose your ride</h2><p class="mn-sticker">Turrets is the arena; Chill and Joyride are free drive on Tee Time Links</p></div>
           <div class="mn-cards" role="group" aria-label="Rides">${RIDES.map(card).join("")}</div>
           <div class="mn-ride-actions">
             <button type="button" class="mn-btn" data-act="back">Back</button>

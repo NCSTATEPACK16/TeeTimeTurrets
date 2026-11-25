@@ -142,6 +142,5 @@ Free drive (drive/)
   repository. Its third-party data and assets, with their terms, are listed in
   drive/ATTRIBUTION.md: the NC 2024 QL1 lidar DEMs and NC OneMap
   orthoimagery (NC public data), an OpenStreetMap snapshot
-  (c) OpenStreetMap contributors, ODbL 1.0, the Caswell Pines Golf Club name
-  and logo (used with the club's permission), and the afl_ext ocean shader
+  (c) OpenStreetMap contributors, ODbL 1.0, and the afl_ext ocean shader
   (drive/apps/web/src/env/oceanWaves.ts, under the notice reproduced above).

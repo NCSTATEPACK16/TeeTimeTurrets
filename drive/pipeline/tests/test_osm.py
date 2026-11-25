@@ -34,7 +34,7 @@ SAMPLE = {
         {
             "type": "relation",
             "id": 40,
-            "tags": {"leisure": "golf_course", "name": "Caswell Pines"},
+            "tags": {"leisure": "golf_course", "name": "Example Golf Club"},
             "members": [
                 {"type": "way", "role": "outer", "geometry": [{"lat": 1, "lon": 2}, {"lat": 3, "lon": 4}]},
                 {"type": "node", "role": "", "lat": 0, "lon": 0},
@@ -82,21 +82,21 @@ def test_parse_and_coverage() -> None:
     assert boundary.members == [("outer", [(2.0, 1.0), (4.0, 3.0)])]
     cov = osm.coverage(features)
     assert cov["holes"] == [1, 13]
-    assert cov["courseNames"] == ["Caswell Pines"]
+    assert cov["courseNames"] == ["Example Golf Club"]
     assert cov["counts"]["cartpath"] == 1 and cov["counts"]["water"] == 1
     assert cov["counts"]["water_hazard"] == 1
 
 
 def test_course_config_loads() -> None:
-    cfg, folder = fetch.load_course("caswell-pines")
-    assert cfg["id"] == "caswell-pines"
-    assert folder.name == "caswell-pines"
+    cfg, folder = fetch.load_course("tee-time-links")
+    assert cfg["id"] == "tee-time-links"
+    assert folder.name == "tee-time-links"
     assert 2000 <= cfg["osm"]["radius_m"] <= 3000
     assert "GolfCartSimulator" in cfg["osm"]["user_agent"]
 
 
 def _cfg() -> dict:
-    cfg, _ = fetch.load_course("caswell-pines")
+    cfg, _ = fetch.load_course("tee-time-links")
     return cfg
 
 

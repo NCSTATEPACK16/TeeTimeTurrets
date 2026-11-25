@@ -67,7 +67,7 @@ def fetch_osm_main(argv: list[str] | None = None) -> int:
         prog="gce-fetch-osm", description="Save the course's OpenStreetMap snapshot from Overpass."
     )
     parser.add_argument(
-        "--course", required=True, help="course folder under pipeline/courses, e.g. caswell-pines"
+        "--course", required=True, help="course folder under pipeline/courses, e.g. tee-time-links"
     )
     args = parser.parse_args(argv)
 
@@ -91,7 +91,7 @@ def fetch_aerial_main(argv: list[str] | None = None) -> int:
         prog="gce-fetch-aerial", description="Save the course's aerial orthoimage (a tracing base)."
     )
     parser.add_argument(
-        "--course", required=True, help="course folder under pipeline/courses, e.g. caswell-pines"
+        "--course", required=True, help="course folder under pipeline/courses, e.g. tee-time-links"
     )
     args = parser.parse_args(argv)
 

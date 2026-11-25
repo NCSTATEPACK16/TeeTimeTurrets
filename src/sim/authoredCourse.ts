@@ -154,7 +154,7 @@ function authoredHoleSpec(courseSeed: number, authored: AuthoredHole): HoleSpec 
 export function authoredCourse(seed: number): Course {
   return {
     id: `authored-${seed >>> 0}`,
-    name: `Caswell Pines ${(seed >>> 0).toString(16).toUpperCase()}`,
+    name: `Tee Time Links ${(seed >>> 0).toString(16).toUpperCase()}`,
     seed: seed >>> 0,
     holes: AUTHORED_HOLES.map((authored) => authoredHoleSpec(seed, authored)),
   };

@@ -114,7 +114,7 @@ def draw(cfg: dict, folder: Path, stage: str) -> Image.Image:
             )
 
     legend = [
-        ("Caswell Pines routing (tee number at the back tee)", (255, 255, 255)),
+        ("Tee Time Links routing (tee number at the back tee)", (255, 255, 255)),
         ("high confidence", CONFIDENCE["high"]),
         ("medium confidence", CONFIDENCE["medium"]),
         ("low confidence", CONFIDENCE["low"]),

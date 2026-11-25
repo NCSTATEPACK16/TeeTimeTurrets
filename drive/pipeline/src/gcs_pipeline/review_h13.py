@@ -1,6 +1,6 @@
 """gce-review-h13: a synthetic look-dev stand-in for hole 13 (level `review-h13`), for reviewing water.
 
-This is **not** the real hole 13. Caswell Pines has no measured packet yet (M2), so this is an
+This is **not** the real hole 13. The real course had no measured packet yet (M2), so this is an
 analytic par 4 built from the flyover notes' one water cue for 13: a long pond down the left.
 Nothing here is traced from the private reference. It exists so the water shader has a
 believable pond to sit in; M2's measured packet replaces it.

@@ -5,7 +5,7 @@ This is TeeTimeTurrets' free-drive mode, in `drive/` of the TeeTimeTurrets repo 
 Git and PRs follow the repo-root `AGENTS.md`: DCO sign-off on every commit (`git commit -s`), no
 AI-session metadata in commits, PRs or comments, and that file's branch rules; they replace this
 file's branch naming. The site build (`npm run build` at the repo root) builds this app into
-`dist/drive/`; TeeTimeTurrets' title opens it with `?level=caswell-pines&mode=<ride>&menu=0&home=/`.
+`dist/drive/`; TeeTimeTurrets' title opens it with `?level=tee-time-links&mode=<ride>&menu=0&home=/`.
 
 Read PRD.md sections "Vision and modes" and the CURRENT milestone only. Don't read ahead.
 
@@ -15,7 +15,7 @@ Current milestone: M2 (handoff notes: docs/handoff/M2.md)
 - Install: pnpm install · (cd pipeline && uv sync)
 - Web: pnpm --filter web dev · pnpm -r build · pnpm -r test · pnpm -r typecheck · pnpm -r lint
 - Pipeline: (cd pipeline && uv run gce-dummy --out ../apps/web/public/levels/dummy-01) · uv run pytest -q · uv run ruff check .
-- Real course: (cd pipeline && uv run gce-fetch-dem --course caswell-pines && uv run gce-route --course caswell-pines && uv run gce-author --course caswell-pines && uv run gce-course --course caswell-pines --stage full --out ../apps/web/public/levels/caswell-pines) · GCS_LEVEL=caswell-pines pnpm --filter web test
+- Real course: (cd pipeline && uv run gce-fetch-dem --course tee-time-links && uv run gce-route --course tee-time-links && uv run gce-author --course tee-time-links && uv run gce-course --course tee-time-links --stage full --out ../apps/web/public/levels/tee-time-links) · GCS_LEVEL=tee-time-links pnpm --filter web test
 - Blender tools (local only): (cd tools/blender && uv run python export_asset.py <file.blend>)
 
 ## Conventions

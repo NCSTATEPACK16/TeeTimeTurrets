@@ -29,7 +29,7 @@ release to launch, R to reset the ball.
 It also builds free drive (`drive/`, its own pnpm workspace) into `dist/drive/`; it needs network
 access for pnpm the first time, and `SKIP_DRIVE=1 npm run build` skips it.
 
-**Free drive.** `drive/` is the free-driving golf cart sim on a lidar-built Caswell Pines, formerly
+**Free drive.** `drive/` is the free-driving golf cart sim on Tee Time Links (a fictional course on real NC lidar terrain), formerly
 the GolfCartSimulator repo. The title's Choose Your Ride opens it (Chill or Joyride); on its own,
 `cd drive && pnpm install && pnpm --filter web dev`. Its working notes are `drive/README.md` and
 `drive/CLAUDE.md`.

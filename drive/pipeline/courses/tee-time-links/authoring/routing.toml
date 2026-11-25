@@ -1,7 +1,7 @@
-# Caswell Pines, holes 2-18: routing draft (session 3, 2026-11-23).
+# Tee Time Links, holes 2-18: routing draft (session 3, 2026-11-23).
 #
 # Read off the 2024 NC orthoimagery and the 2024 QL1 lidar hillshade, with the scorecard yardages
-# and the flyover notes (docs/reference/caswell-pines/holes-*.md) for direction and sides.
+# and the flyover notes (docs/reference/tee-time-links/holes-*.md) for direction and sides.
 # Course frame: meters east (x) and south (z) of the pin. `gce-route` turns this table into
 # authoring/holes.json; `gce-author` compiles that into overrides.geojson.
 #
