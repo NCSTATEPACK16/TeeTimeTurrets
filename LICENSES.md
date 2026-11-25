@@ -14,6 +14,9 @@ release rather than at Phase 5.
 | `src/vendor/cot/**` (third-party, from Claude of Tanks) | MIT, notice in `src/vendor/cot/LICENSE` and `NOTICE` | `MIT` |
 | `reference/claude-of-tanks/**` (reading material, not built) | MIT, notice in that folder's `LICENSE` | `MIT` |
 | `art/textures-src/**` and `public/textures/ground/**` (ambientCG / Poly Haven, and files packed from them) | Public domain | `CC0-1.0` |
+| `drive/**` (free drive: its app, course pipeline and docs) | Apache License 2.0, except the rows below | `Apache-2.0` |
+| `drive/pipeline/courses/caswell-pines/**` and the packet built from it, `drive/apps/web/public/levels/caswell-pines/**` | Third-party data and the club's logo; see "A note on free drive's Caswell Pines" and `drive/ATTRIBUTION.md` | — |
+| Shrikhand and Rubik fonts (`@fontsource/*`, bundled into the build; also in `drive/`) | SIL Open Font License 1.1 | `OFL-1.1` |
 | `server/**` | GNU Affero General Public License v3.0 or later | `AGPL-3.0-or-later` |
 | Human-authored assets, if any are ever added | Creative Commons BY-SA 4.0 | `CC-BY-SA-4.0` |
 | `docs/concept/**` (AI-generated reference art) | No license claimed — provenance-tracked | — |
@@ -105,6 +108,23 @@ drawing. No geometry was copied.
 Terms: no licence is claimed over the routing facts, and none is granted. If Caswell Pines objects,
 the remedy is to perturb the routing — the card and the returning-nines structure are what make the
 course play like a real one, and neither requires *that* course.
+
+## A note on free drive's Caswell Pines
+
+**Free drive (`drive/`) goes further than the routing note above, and knowingly.** Its course is
+Caswell Pines under its real name, with the club's logo, the terrain of the NC 2024 QL1 lidar, a
+layout traced over NC OneMap orthoimagery (`drive/pipeline/courses/caswell-pines/aerial/ortho.tif`,
+committed as the tracing base, never shipped in a packet) and an OpenStreetMap snapshot. Each source
+and its terms are in `drive/ATTRIBUTION.md`. Three are still open, and stay open here until settled:
+
+- **The logo and the name** are used with the club's permission as relayed on 2026-10-17; whether that
+  permission is in writing is unconfirmed.
+- **The NC lidar and the NC OneMap orthoimagery** are NC public data whose exact terms are unconfirmed.
+- **OpenStreetMap** data is under the ODbL 1.0, with attribution in the game's credits.
+
+The Apache-2.0 grant on `drive/**` covers this project's own code and docs, not that data. Settle the
+three open items before a public release; if one goes the wrong way, the pipeline rebuilds the packet
+from whatever sources remain.
 
 ## Shipped 3D assets
 

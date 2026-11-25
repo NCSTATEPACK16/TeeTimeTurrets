@@ -26,9 +26,18 @@ Open the printed local URL. Controls: arrow keys to aim, hold Space to charge a 
 release to launch, R to reset the ball.
 
 `npm run build` type-checks (`tsc --noEmit`) and builds a production bundle.
+It also builds free drive (`drive/`, its own pnpm workspace) into `dist/drive/`; it needs network
+access for pnpm the first time, and `SKIP_DRIVE=1 npm run build` skips it.
+
+**Free drive.** `drive/` is the free-driving golf cart sim on a lidar-built Caswell Pines, formerly
+the GolfCartSimulator repo. The title's Choose Your Ride opens it (Chill or Joyride); on its own,
+`cd drive && pnpm install && pnpm --filter web dev`. Its working notes are `drive/README.md` and
+`drive/CLAUDE.md`.
 
 ## Project layout
 
+- `drive/` — free drive: a separate app (own dependencies, Python course pipeline) served at
+  `/drive/`. See `docs/DECISIONS.md` "Free drive lives in drive/".
 - `src/sim/`, `src/physics/` — authoritative, deterministic, DOM-free simulation. No
   `three`, no `window`/`document`, no unseeded randomness.
 - `src/render/`, `src/entities/`, `src/ui/` — pure consumers of simulation state.

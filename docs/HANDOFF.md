@@ -2,6 +2,11 @@
 
 Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, prompt B writes the 3.5c spec. Rewrite this file at the end of each session: it is a baton, not a log.
 
+**Also landed (2026-11-25): free drive and the shared title.** The GolfCartSimulator repo moved in as
+`drive/` (served at `/drive/`), and the title is now Clubhouse Sunset with Choose Your Ride (Turrets /
+Chill / Joyride). Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
+open items (its M2 gate, John's per-hole routing review) are in `drive/docs/handoff/M2.md`, Part F.
+
 ---
 
 **Where it stands:** branch `claude/relaxed-einstein-w3jhbf`, restarted from `main` after #91 merged. Four code commits (straw; tufts; the tuft frame budget and clubhouse clearance; cattail sway and the first-frame fill) and docs. `tsc` is clean and `npm test` passes (125 files, 1,181 tests, 41.3 s against a 60 s cap).
