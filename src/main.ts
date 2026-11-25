@@ -162,7 +162,6 @@ async function main(): Promise<void> {
     return new TitleScreen({
       root: screensRoot,
       renderer,
-      backdropHole: course.holes[0]!,
       version: VERSION,
       actions: {
         play: () => void startMatch(),

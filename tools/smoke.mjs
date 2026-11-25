@@ -162,42 +162,69 @@ check("canvas present and sized", canvas !== null && canvas.w > 0 && canvas.h > 
 // past: the title is the first screen a player ever sees.
 console.log("=== TITLE SCREEN ===");
 const title = await page.evaluate(() => {
-  const buttons = [...document.querySelectorAll("#screens .title__menu .btn")];
+  const buttons = [...document.querySelectorAll("#screens [data-title-menu] .mn-btn")];
   return {
     screen: window.__teetimeturrets.screen,
-    labels: buttons.map((b) => b.textContent),
+    labels: buttons.map((b) => b.textContent.trim()),
     disabled: buttons.map((b) => b.disabled),
     simBeforePlay: window.__teetimeturrets.sim,
-    version: document.querySelector("#screens .title__version")?.textContent ?? null,
+    version: document.querySelector("#screens .mn-version")?.textContent ?? null,
   };
 });
 check("boots to the title screen", title.screen === "title", title.screen);
-// The game is the arena and nothing else (docs/HANDOFF.md, 2026-09-24): PLAY is the arena, and
-// the image-10 menu keeps its other three actions.
+// The Clubhouse Sunset front door: TEE OFF leads to Choose Your Ride, and the other screens keep
+// their buttons.
 check(
-  "shows the four actions from image 10",
-  JSON.stringify(title.labels) === JSON.stringify(["PLAY", "CLUBHOUSE", "MULTIPLAYER", "SETTINGS"]),
+  "shows the title's four actions",
+  JSON.stringify(title.labels) === JSON.stringify(["Tee Off", "Clubhouse", "Settings", "Multiplayer"]),
   title.labels.join(" / "),
 );
-// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead or absent. SETTINGS was
-// built in Stage 2; MULTIPLAYER is the one still to come.
+// ROADMAP.md: buttons for unbuilt screens are visibly disabled, not dead or absent. MULTIPLAYER is
+// the one still to come.
 check(
   "built screens are live and unbuilt ones are disabled, not absent",
-  JSON.stringify(title.disabled) === JSON.stringify([false, false, true, false]),
+  JSON.stringify(title.disabled) === JSON.stringify([false, false, false, true]),
   JSON.stringify(title.disabled),
 );
-check("no sim exists before PLAY is pressed", title.simBeforePlay === null, String(title.simBeforePlay));
+check("no sim exists before a ride is chosen", title.simBeforePlay === null, String(title.simBeforePlay));
 check("shows a version string", typeof title.version === "string" && title.version.length > 0, title.version);
 
-const clickTitle = (label) =>
-  page.evaluate((l) => {
-    [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === l).click();
-  }, label);
+console.log("=== CHOOSE YOUR RIDE ===");
+await page.click('#screens [data-act="tee"]');
+const rides = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll("#screens .mn-card")];
+  return {
+    ids: cards.map((c) => c.dataset.ride),
+    picked: cards.filter((c) => c.getAttribute("aria-pressed") === "true").map((c) => c.dataset.ride),
+    visible: !document.querySelector('#screens [data-view="ride"]').hidden,
+  };
+});
+check("TEE OFF opens Choose Your Ride", rides.visible, String(rides.visible));
+check(
+  "the rides are Turrets, then free drive's Chill and Joyride",
+  JSON.stringify(rides.ids) === JSON.stringify(["turrets", "chill", "joyride"]),
+  rides.ids.join(" / "),
+);
+check("Turrets is picked first", JSON.stringify(rides.picked) === JSON.stringify(["turrets"]), rides.picked.join());
+await page.keyboard.press("Escape");
+check(
+  "Esc goes back to the title",
+  await page.evaluate(() => !document.querySelector('#screens [data-view="title"]').hidden),
+  "",
+);
+
+// The arena from the title: TEE OFF, then TEE OFF again with Turrets picked.
+const playArena = () =>
+  page.evaluate(() => {
+    document.querySelector('#screens [data-act="tee"]').click();
+    document.querySelector('#screens .mn-card[data-ride="turrets"]').click();
+    document.querySelector('#screens [data-act="start"]').click();
+  });
 
 console.log("=== PLAY (the arena) ===");
 // Eighteen holes routed and blended into one heightfield, built for the first time here, so this
 // is the one boot path in the file that earns a generous timeout.
-await clickTitle("PLAY");
+await playArena();
 await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 30000 });
 
 // A fresh profile has never seen the controls, so the first match opens on the controls card,
@@ -821,9 +848,7 @@ await page.evaluate(() => {
   document.querySelector(".clubhouse__actions .btn").click(); // BACK -> title
 });
 await page.waitForFunction(() => window.__teetimeturrets.screen === "title", { timeout: 10000 });
-await page.evaluate(() => {
-  [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "PLAY").click();
-});
+await playArena();
 await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 30000 });
 await new Promise((r) => setTimeout(r, 400));
 // TIRE_TUNING gives turf a different top speed, grip and off-road penalty from street, so the

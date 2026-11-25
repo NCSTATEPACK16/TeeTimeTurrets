@@ -432,36 +432,8 @@
          rather than as the smallest of three. */
       .meter__fill { height: 100%; min-width: 3px; background: var(--accent); }
 
-      /* ---- S1 Title (image 10) ------------------------------------------------------------
-         Logo top-left, actions right, version bottom-right, live course behind. The panel is
-         only the type: the backdrop is the WebGL canvas showing through. */
-      .title { padding: 44px 52px; }
-      .title__brand { position: absolute; top: 44px; left: 52px; }
-      .title__logo {
-        font-size: 46px;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        line-height: 0.98;
-        text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
-      }
-      .title__logo--alt { color: var(--accent); }
-      .title__menu {
-        position: absolute;
-        right: 52px;
-        top: 50%;
-        transform: translateY(-50%);
-        display: flex;
-        flex-direction: column;
-        gap: 11px;
-        width: 246px;
-      }
-      .title__version {
-        position: absolute;
-        right: 52px;
-        bottom: 30px;
-        font-size: 11px;
-        color: var(--ink-dim);
-      }
+      /* ---- S1 Title: Clubhouse Sunset, styled in src/ui/title/title.css (its own tokens,
+         scoped to .mn-root, so nothing here reaches it). */
 
       /* ---- Arena results (D12) --------------------------------------------------------------
          The team score, MVP and full roster, over PLAY AGAIN / MAIN MENU. `matchScoreboard.ts`'s

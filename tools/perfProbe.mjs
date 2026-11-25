@@ -90,8 +90,11 @@ const titleMs = Date.now() - t0;
 
 async function play() {
   const start = Date.now();
+  // The title's TEE OFF, then TEE OFF on Choose Your Ride with Turrets (the arena) picked.
   await page.evaluate(() => {
-    [...document.querySelectorAll("#screens .title__menu .btn")].find((b) => b.textContent === "PLAY").click();
+    document.querySelector('#screens [data-act="tee"]').click();
+    document.querySelector('#screens .mn-card[data-ride="turrets"]').click();
+    document.querySelector('#screens [data-act="start"]').click();
   });
   await page.waitForFunction(() => window.__teetimeturrets.screen === "match", { timeout: 120000, polling: 20 });
   const matchMs = Date.now() - start;
