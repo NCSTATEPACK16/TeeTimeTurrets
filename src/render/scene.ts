@@ -7,7 +7,7 @@ import { BattleAmbience } from "./battleAmbience";
 import { Knockables } from "./knockables";
 import { fxRandom } from "./fxRandom";
 import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
-import { GolfClub, placeCart } from "../entities/GolfClub";
+import { GolfClub, WHEEL_RADIUS, placeCart, wheelSteer } from "../entities/GolfClub";
 import { teamOf } from "../sim/matchConfig";
 import { TEAM_CANOPY, teamColors } from "./teamColors";
 import { createClubhouseKit, type ClubhouseKit } from "./clubhouse";
@@ -52,6 +52,13 @@ const FOG_DENSITY_X_FIELD = 0.75;
  * standing idle. It is the putter because that is the club every bot is built holding.
  */
 const BOT_DEFAULT_CLUB = ClubType.Putter;
+
+/** Wheels: a jump farther than this in one frame is a respawn, not driving, m. */
+const WHEEL_TELEPORT_M = 4;
+/** Below this speed the front wheels point straight, m/s (`wheelSteer`). */
+const WHEEL_CRAWL_MPS = 0.5;
+/** How fast the drawn steer follows the turn, as a per-60 Hz-frame lerp (`chaseSmoothing`). */
+const WHEEL_STEER_LERP = 0.25;
 
 /** The course a match is fought on, as the renderer needs it. */
 export interface ArenaSource {
@@ -135,6 +142,15 @@ export class RenderScene {
   private readonly botCarts: GolfClub[] = [];
   /** Render-only body tilt and bounce (#51): the player's, then one per bot. */
   private readonly suspensions: CartSuspension[] = [];
+  /**
+   * Each cart's last drawn position and heading, its wheel spin and its smoothed steer, for
+   * `turnWheels`. Index 0 is the player, bot i is i + 1. `wheelsKnown` is 0 until a first frame
+   * has been seen, and again after a death or a teleport.
+   */
+  private readonly wheelPrev: Float64Array;
+  private readonly wheelSpin: Float64Array;
+  private readonly wheelSteer: Float64Array;
+  private readonly wheelsKnown: Uint8Array;
   private readonly pooledBalls: BallSwarm;
   private readonly aimArc: AimArc;
   /** Puffs, sparks, death bursts and splashes; triggered by `MatchScreen` from `Sim.events`. */
@@ -260,6 +276,11 @@ export class RenderScene {
       this.scene.add(bot);
     }
 
+    this.wheelPrev = new Float64Array(3 * (botCount + 1));
+    this.wheelSpin = new Float64Array(botCount + 1);
+    this.wheelSteer = new Float64Array(botCount + 1);
+    this.wheelsKnown = new Uint8Array(botCount + 1);
+
     // Yaw first, then the suspension's pitch about the body's own x and roll about its own z.
     for (const model of [this.cart, ...this.botCarts]) {
       model.rotation.order = "YXZ";
@@ -362,6 +383,7 @@ export class RenderScene {
     this.pickups?.update(view.elapsedSeconds);
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
     this.suspend(0, this.cart, view.cart, view.playerDead, view.frameSeconds);
+    this.turnWheels(0, this.cart, view.cart, view.playerDead, view.frameSeconds);
     // A dead cart has burst (`EffectsLayer.death`) and is out of the world until it respawns.
     this.cart.visible = !view.playerDead;
     for (let i = 0; i < this.botCarts.length; i++) {
@@ -373,6 +395,7 @@ export class RenderScene {
       // bot that looks like it is shooting when it is not.
       this.poseCart(this.botCarts[i]!, transform, BOT_DEFAULT_CLUB, 0, 1, false);
       this.suspend(i + 1, this.botCarts[i]!, transform, view.botDead[i] === true, view.frameSeconds);
+      this.turnWheels(i + 1, this.botCarts[i]!, transform, view.botDead[i] === true, view.frameSeconds);
     }
     const shields = view.shields;
     this.shieldPlates.place(0, view.cart, shields?.[0] ?? 0, view.playerDead, view.elapsedSeconds);
@@ -493,6 +516,36 @@ export class RenderScene {
     model.position.y += suspension.heave;
     model.rotation.x = suspension.pitch;
     model.rotation.z = suspension.roll;
+  }
+
+  /**
+   * Spins the wheels by the distance the cart moved along its heading since the last frame, and
+   * steers the fronts from its turn (`wheelSteer`). Render only: the sim publishes no steer input.
+   */
+  private turnWheels(index: number, model: GolfClub, c: CartTransform, dead: boolean, frameSeconds: number): void {
+    const k = 3 * index;
+    const prev = this.wheelPrev;
+    const known = this.wheelsKnown[index] === 1;
+    const dx = c.position.x - prev[k]!;
+    const dz = c.position.z - prev[k + 1]!;
+    prev[k] = c.position.x;
+    prev[k + 1] = c.position.z;
+    let turn = c.heading - prev[k + 2]!;
+    prev[k + 2] = c.heading;
+    if (dead || !known || frameSeconds <= 0 || dx * dx + dz * dz > WHEEL_TELEPORT_M * WHEEL_TELEPORT_M) {
+      // Dead, first seen, a paused frame, or a respawn's jump: nothing to roll.
+      this.wheelsKnown[index] = dead ? 0 : 1;
+      return;
+    }
+    turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+    // Sim heading h faces (cos h, sin h) on x and z.
+    const along = dx * Math.cos(c.heading) + dz * Math.sin(c.heading);
+    const spin = (this.wheelSpin[index]! + along / WHEEL_RADIUS) % (2 * Math.PI);
+    this.wheelSpin[index] = spin;
+    const target = wheelSteer(along, turn, WHEEL_CRAWL_MPS * frameSeconds);
+    const steer = this.wheelSteer[index]! + (target - this.wheelSteer[index]!) * chaseSmoothing(WHEEL_STEER_LERP, frameSeconds);
+    this.wheelSteer[index] = steer;
+    model.setWheels(spin, steer);
   }
 
   private frameChase(view: FrameView): void {

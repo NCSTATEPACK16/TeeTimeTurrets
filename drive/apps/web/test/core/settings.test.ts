@@ -12,6 +12,7 @@ describe('readSettings', () => {
       view: null,
       menu: true,
       home: null,
+      paint: null,
     });
   });
 
@@ -25,6 +26,7 @@ describe('readSettings', () => {
       view: null,
       menu: true,
       home: null,
+      paint: null,
     });
   });
 
@@ -57,5 +59,11 @@ describe('readSettings', () => {
     for (const bad of ['//evil.example/', 'https://evil.example/', '/\\evil.example', 'javascript:alert(1)', '']) {
       expect(readSettings(`?home=${encodeURIComponent(bad)}`).home, bad).toBeNull();
     }
+  });
+
+  it('reads ?paint only as a canopy hex from the paint table', () => {
+    expect(readSettings('?paint=1e4d2b').paint).toMatchObject({ id: 'pine', canopy: 0x1e4d2b, shirt: 0x163a20 });
+    expect(readSettings('?paint=123456').paint).toBeNull();
+    expect(readSettings('?paint=red').paint).toBeNull();
   });
 });

@@ -58,7 +58,6 @@ export const envConfig = {
   },
   /** Tree colors; dimensions live in level/treeConfig.ts, shared with the trunk colliders. */
   trees: { trunkColor: '#5a4632', pineColor: '#2f4a26', oakColor: '#3f5f2a' },
-  cart: { body: '#ece8de', roof: '#f4f2ec', seat: '#3b3b3b', tire: '#202020', hub: '#9a9a9a' },
   /**
    * One oversized flag on every pin (env/holeFlags.ts). Colours are Clubhouse Sunset (ui/theme.css):
    * ink #142018, cream #fff4dc, clay #c84b31.

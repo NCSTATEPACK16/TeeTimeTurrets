@@ -1,20 +1,41 @@
 import type { MaterialName } from '@gcs/level-schema';
 
-/** Synthesized cart audio (no asset files): motor whine, tire noise per surface, squeal, splash. */
+/** Synthesized cart audio (no asset files): Turrets' engine and honk, tire noise per surface, squeal, splash. */
 export const audioConfig = {
   masterGain: 0.5,
-  motor: {
-    /** Sawtooth pitch at rest and per m/s, Hz. */
-    idleHz: 55,
-    hzPerMps: 14,
-    /** Extra pitch with the pedal down, Hz. */
-    throttleHz: 25,
-    /** Lowpass cutoff over the oscillator, Hz. */
-    cutoffHz: 900,
-    gainIdle: 0.04,
-    gainThrottle: 0.12,
-    /** Pitch and gain glide time constant, s. */
-    glide: 0.08,
+  /**
+   * The motor: Turrets' engine (src/audio/audioEngine.ts `engine(speed01)`), two detuned
+   * oscillators through a lowpass, all pitched by speed as a share of the mode's top speed.
+   */
+  engine: {
+    /** Oscillator pitch at rest, and the rise to full speed, Hz. */
+    baseHz: 38,
+    spanHz: 70,
+    /** The square's detune against the sawtooth, cents. */
+    detuneCents: 7,
+    /** Lowpass cutoff at rest, and the rise to full speed, Hz. */
+    cutoffHz: 280,
+    cutoffSpanHz: 900,
+    /** Gain at rest, and the rise to full speed. */
+    gain: 0.035,
+    gainSpan: 0.06,
+    /** Glide time constants for pitch, cutoff and gain, s. */
+    pitchGlide: 0.08,
+    glide: 0.1,
+    /**
+     * Turrets plays these through master 0.8; free drive's master is masterGain. This scales the
+     * engine and the honk so they sound as loud as they do in Turrets.
+     */
+    level: 1.6,
+  },
+  /** Turrets' honk cue: two square tones, [startHz, endHz, startS, lengthS, peak]. */
+  honk: {
+    tones: [
+      [415, 400, 0, 0.16, 0.2],
+      [523, 505, 0.17, 0.2, 0.2],
+    ] as readonly (readonly [number, number, number, number, number])[],
+    /** The cue's gain in Turrets (MatchScreen's HONK). */
+    gain: 0.9,
   },
   tires: {
     /** Gain at full speed (fullAt m/s) on each surface; band-pass center frequency. */

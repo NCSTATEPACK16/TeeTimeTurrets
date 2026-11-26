@@ -17,7 +17,7 @@ export const uiConfig = {
   /** Seconds the controls card stays up after the round starts before it fades. */
   controlsCardSeconds: 12,
   /** The speedometer ring's full sweep (degrees) and the speed (mph) that fills it. */
-  speedo: { sweepDeg: 270, fullMph: 35 },
+  speedo: { sweepDeg: 270, fullMph: 55 },
   rides: [
     {
       id: 'chill',
@@ -30,7 +30,7 @@ export const uiConfig = {
       id: 'joyride',
       badge: 'Mischief',
       blurb:
-        'The cart the pro shop warned you about. Twice the speed, a boost button and handbrake drifts. Pure driving: tear around the course and see what it can do.',
+        'The cart the pro shop warned you about. Three times the speed, a boost button and handbrake drifts. Pure driving: tear around the course and see what it can do.',
       tags: ['Boost', 'Handbrake drifts', 'Flips allowed'],
     },
   ] as const satisfies readonly { id: ModeName; badge: string; blurb: string; tags: readonly string[] }[],

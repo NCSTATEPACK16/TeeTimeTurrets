@@ -1,78 +1,125 @@
-import { BoxGeometry, CylinderGeometry, Group, Mesh, MeshStandardNodeMaterial, type Quaternion, type Vector3 } from 'three/webgpu';
-import { color } from 'three/tsl';
-import { envConfig } from '../env/envConfig';
+import { Group, type Mesh, Quaternion, Vector3 } from 'three/webgpu';
+// Shared data, not modules: the Turrets cart and its rider as authored in Blender (art/cart_v3_kit.py,
+// art/rider_kit.py). Built here with drive's own WebGPU builder; see cartGraph.ts.
+import cartJson from '../../../../../src/entities/graphs/cart.json';
+import driverJson from '../../../../../src/entities/graphs/driver.json';
+import { buildGraph, drawBySlot, type BuiltGraph, type PrimitiveGraph, type SlotDraw } from './cartGraph';
 import type { CartTuning } from './cartTuning';
 import type { Vec3, WheelState } from './VehicleModel';
 
-function solid(hex: string, roughness = 0.6): MeshStandardNodeMaterial {
-  const m = new MeshStandardNodeMaterial({ roughness, metalness: 0 });
-  m.colorNode = color(hex);
-  return m;
-}
+const CART_GRAPH = cartJson as unknown as PrimitiveGraph;
+const DRIVER_GRAPH = driverJson as unknown as PrimitiveGraph;
 
-/** Gray-box cart: the chassis box (same size as the collider), roof on posts, seat and four wheels. */
+/** The model's wheels (each with its rim as a child). Matched to drive's mounts by position, not name. */
+export const CART_WHEELS = ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'] as const;
+/** Everything the turret is hangs under this node; free drive hides it. */
+export const TURRET_NODE = 'turret_pivot';
+/** Nodes CartView poses or hides at runtime; drawBySlot merges everything else into them. */
+export const CART_POSED: readonly string[] = [...CART_WHEELS, TURRET_NODE];
+
+const Y = new Vector3(0, 1, 0);
+
+/**
+ * The Turrets cart without its turret: the cart and rider graphs, one draw per slot per posed part
+ * (19 draws). The model faces +Z and drive's chassis faces -Z, so the model turns by π, and it is
+ * offset so its wheel centres sit on drive's mounts at rest length. Each frame the wheels steer,
+ * spin, and ride the suspension from the physics state.
+ */
 export class CartView {
   readonly root = new Group();
-  private readonly wheelPivots: Group[] = [];
-  private readonly wheelSpins: Group[] = [];
+  /** The model in drive's chassis frame: turned by π and offset onto the mounts. */
+  readonly model = new Group();
+  private readonly cart: BuiltGraph;
+  private readonly rider: BuiltGraph;
+  private readonly draws: SlotDraw[] = [];
+  /** wheelFor[i] is the model wheel on drive's mount i (WHEEL_NAMES order: FL, FR, RL, RR). */
+  readonly wheelFor: Mesh[] = [];
+  private readonly restY: number[] = [];
+  private readonly restQuat: Quaternion[] = [];
+  private readonly steerQ = new Quaternion();
+  private readonly spinQ = new Quaternion();
 
   constructor(
-    tuning: CartTuning,
-    private readonly mounts: readonly Vec3[],
+    private readonly tuning: CartTuning,
+    mounts: readonly Vec3[],
   ) {
-    const c = envConfig.cart;
-    const { halfWidth: hx, halfHeight: hy, halfLength: hz } = tuning.body;
     this.root.name = 'cart';
+    this.cart = buildGraph(CART_GRAPH);
+    this.rider = buildGraph(DRIVER_GRAPH);
+    this.model.add(this.cart.root, this.rider.root);
+    this.root.add(this.model);
+    this.draws.push(drawBySlot(this.cart, CART_POSED), drawBySlot(this.rider, []));
+    this.node(TURRET_NODE).visible = false;
 
-    const body = new Mesh(new BoxGeometry(2 * hx, 2 * hy, 2 * hz), solid(c.body));
-    this.root.add(body);
-    // Hood at the front (-Z) so the heading is obvious from the chase camera.
-    const hood = new Mesh(new BoxGeometry(2 * hx * 0.9, 0.18, 0.5), solid(c.body));
-    hood.position.set(0, hy + 0.09, -hz + 0.25);
-    const seat = new Mesh(new BoxGeometry(2 * hx * 0.85, 0.5, 0.5), solid(c.seat, 0.8));
-    seat.position.set(0, hy + 0.25, 0.25);
-    const roofY = hy + 1.25;
-    const roof = new Mesh(new BoxGeometry(2 * hx + 0.1, 0.06, 2 * hz * 0.85), solid(c.roof));
-    roof.position.set(0, roofY, 0.05);
-    this.root.add(hood, seat, roof);
-    const postMat = solid(c.seat);
-    for (const [px, pz] of [
-      [-hx + 0.05, -hz * 0.55],
-      [hx - 0.05, -hz * 0.55],
-      [-hx + 0.05, hz * 0.8],
-      [hx - 0.05, hz * 0.8],
-    ] as const) {
-      const post = new Mesh(new BoxGeometry(0.05, roofY - hy, 0.05), postMat);
-      post.position.set(px, (roofY + hy) / 2, pz);
-      this.root.add(post);
-    }
-
-    const r = tuning.wheelRadius;
-    const tire = new CylinderGeometry(r, r, 0.2, 18).rotateZ(Math.PI / 2);
-    const hub = new BoxGeometry(0.21, r * 1.2, 0.08);
-    const tireMat = solid(c.tire, 0.9);
-    const hubMat = solid(c.hub, 0.4);
+    // Turn, then place: the mean offset from each model wheel centre to its mount's rest centre.
+    this.model.rotation.y = Math.PI;
+    this.model.updateMatrixWorld(true);
+    const centres = CART_WHEELS.map((n) => this.centreInRoot(n));
+    const offset = new Vector3();
     for (const mount of mounts) {
-      const pivot = new Group();
-      pivot.position.set(mount.x, mount.y - tuning.suspension.restLength, mount.z);
-      const spin = new Group();
-      spin.add(new Mesh(tire, tireMat), new Mesh(hub, hubMat));
-      pivot.add(spin);
-      this.root.add(pivot);
-      this.wheelPivots.push(pivot);
-      this.wheelSpins.push(spin);
+      let best = 0;
+      let bestD = Infinity;
+      centres.forEach((c, k) => {
+        const d = Math.hypot(c.x - mount.x, c.z - mount.z);
+        if (d < bestD) {
+          bestD = d;
+          best = k;
+        }
+      });
+      if (this.wheelFor.includes(this.node(CART_WHEELS[best]!))) throw new Error('CartView: two mounts matched one model wheel');
+      const wheel = this.node(CART_WHEELS[best]!);
+      this.wheelFor.push(wheel);
+      this.restY.push(wheel.position.y);
+      this.restQuat.push(wheel.quaternion.clone());
+      const c = centres[best]!;
+      offset.x += (mount.x - c.x) / mounts.length;
+      offset.y += (mount.y - tuning.suspension.restLength - c.y) / mounts.length;
+      offset.z += (mount.z - c.z) / mounts.length;
     }
+    this.model.position.copy(offset);
   }
 
-  /** Place the cart (interpolated pose) and pose each wheel from the physics state. */
+  /** The model wheel centre in the root's frame (drive's chassis frame), before the offset. */
+  private centreInRoot(name: string): Vector3 {
+    this.root.updateMatrixWorld(true);
+    const p = this.node(name).getWorldPosition(new Vector3());
+    return this.root.worldToLocal(p);
+  }
+
+  private node(name: string): Mesh {
+    const n = this.cart.named.get(name);
+    if (!n) throw new Error(`cart graph is missing the node "${name}" free drive poses`);
+    return n;
+  }
+
+  /** Canopy and the rider's shirt, as Turrets paints a team cart (src/render/teamColors.ts). */
+  setPaint(canopy: number, shirt: number): void {
+    this.cart.setSlotColor('canopy', canopy);
+    this.rider.setSlotColor('shirt', shirt);
+  }
+
+  /** Place the cart (interpolated pose) and pose each wheel from the physics state. No allocation. */
   update(position: Vector3, quaternion: Quaternion, wheels: readonly WheelState[]): void {
     this.root.position.copy(position);
     this.root.quaternion.copy(quaternion);
-    for (const [i, w] of wheels.entries()) {
-      const pivot = this.wheelPivots[i]!;
-      pivot.position.y = this.mounts[i]!.y - w.suspensionLength;
-      pivot.rotation.y = w.steering; // Rapier: positive steering turns left, same as +Y rotation
-      this.wheelSpins[i]!.rotation.x = -w.rotation; // Rapier's rotation grows when rolling toward -Z
+    const rest = this.tuning.suspension.restLength;
+    for (let i = 0; i < wheels.length; i++) {
+      const w = wheels[i]!;
+      const wheel = this.wheelFor[i]!;
+      // The model's frame differs from the chassis frame by a turn about Y, so heights carry over.
+      wheel.position.y = this.restY[i]! + (rest - w.suspensionLength);
+      // Rapier's positive steering turns left: +Y in both frames, since the π turn is about Y too.
+      this.steerQ.setFromAxisAngle(Y, w.steering);
+      // The tyre's own axis is its local Y, which the π turn points along drive's −X; Rapier's
+      // rotation grows rolling toward −Z, which is +rotation about that axis.
+      this.spinQ.setFromAxisAngle(Y, w.rotation);
+      wheel.quaternion.copy(this.steerQ).multiply(this.restQuat[i]!).multiply(this.spinQ);
     }
+  }
+
+  dispose(): void {
+    for (const d of this.draws) d.dispose();
+    this.cart.dispose();
+    this.rider.dispose();
   }
 }

@@ -138,10 +138,36 @@ function backswingScale(charge01: number): number {
   return SWING.minBackswing + (1 - SWING.minBackswing) * c;
 }
 
+/** The four wheels, each a tyre with its rim as a child. */
+const WHEEL_NODES = ["wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"] as const;
+
+/** The tyre radius in `cart.json`, m: spin is distance over this. */
+export const WHEEL_RADIUS = 0.3;
+/** Front-to-rear axle distance in `cart.json` (z +0.76 and -0.78), m: the steer angle's lever. */
+export const WHEELBASE = 1.54;
+/** The drawn steering lock, rad. */
+export const WHEEL_STEER_LOCK = 0.5;
+
+/**
+ * The front wheels' steer angle for one frame's motion, radians, positive turning left: a
+ * kinematic bicycle, atan(wheelbase x yaw rate / speed), which is atan(wheelbase x turn / distance)
+ * since the frame time cancels. `alongM` is the signed distance along the heading and `turnRad`
+ * the heading's change, in the sim's convention, where a right turn increases the heading.
+ * Below `crawlM` of travel the wheels point straight, so a cart pivoting in place does not flap.
+ *
+ * Derived rather than read because the renderer never receives a steer input: `CartTransform`
+ * carries position, heading and turret yaw, and the bots' intents stay in the sim.
+ */
+export function wheelSteer(alongM: number, turnRad: number, crawlM: number): number {
+  if (Math.abs(alongM) < crawlM) return 0;
+  const angle = Math.atan((WHEELBASE * -turnRad) / alongM);
+  return Math.min(WHEEL_STEER_LOCK, Math.max(-WHEEL_STEER_LOCK, angle));
+}
+
 /**
  * Every cart node something poses at runtime: the turret's yaw, the loft, the swing, the housing,
- * the heads that swap `visible`, and the slot the loaded ball rides in. `drawBySlot` merges
- * everything else into these, so a node missing from here would be drawn frozen at rest.
+ * the heads that swap `visible`, the slot the loaded ball rides in, and the wheels. `drawBySlot`
+ * merges everything else into these, so a node missing from here would be drawn frozen at rest.
  */
 const POSED_NODES: readonly string[] = [
   TURRET_PIVOT,
@@ -150,6 +176,7 @@ const POSED_NODES: readonly string[] = [
   HOUSING_PITCH,
   HEAD_SLOT,
   ...Object.values(HEAD_NODES),
+  ...WHEEL_NODES,
 ];
 
 export interface GolfClubOptions {
@@ -192,6 +219,17 @@ export class GolfClub extends THREE.Group {
    * animation state, and it lives here rather than being added to `Cart` for the renderer's sake.
    */
   private chargeAtRelease = 0;
+  /**
+   * The wheels as drawn: one tyre and one rim `InstancedMesh`, four instances each, on the slots'
+   * own materials so a tyre or rim cosmetic still repaints them. The wheel nodes' own merged
+   * merged meshes are hidden. Two draws for four wheels, rather than eight.
+   */
+  private readonly wheelDraws: THREE.InstancedMesh[] = [];
+  private readonly wheelRest: { position: THREE.Vector3; quaternion: THREE.Quaternion }[] = [];
+  private readonly steerQ = new THREE.Quaternion();
+  private readonly spinQ = new THREE.Quaternion();
+  private readonly wheelQ = new THREE.Quaternion();
+  private readonly wheelMatrix = new THREE.Matrix4();
 
   constructor(
     initialClub: ClubType = ClubType.Driver,
@@ -237,6 +275,53 @@ export class GolfClub extends THREE.Group {
     this.requireNode(HEAD_SLOT).add(this.loadedBall);
 
     this.applyLoft(initialClub);
+    this.buildWheels();
+  }
+
+  /**
+   * Hides the wheel nodes' own merged meshes and draws all four from the first wheel's, which is
+   * every wheel's: the four are the same primitives in the same frame, only placed apart.
+   */
+  private buildWheels(): void {
+    const first = this.requireNode(WHEEL_NODES[0]);
+    const parent = first.parent!;
+    for (const slot of ["tires", "rims"]) {
+      const merged = first.children.find((c) => c.name === `merged:${WHEEL_NODES[0]}:${slot}`) as THREE.Mesh | undefined;
+      if (!merged) throw new Error(`cart graph: wheel "${WHEEL_NODES[0]}" has no ${slot} to draw`);
+      const draw = new THREE.InstancedMesh(merged.geometry, merged.material, WHEEL_NODES.length);
+      draw.name = `wheels:${slot}`;
+      parent.add(draw);
+      this.wheelDraws.push(draw);
+    }
+    for (const name of WHEEL_NODES) {
+      const wheel = this.requireNode(name);
+      this.wheelRest.push({ position: wheel.position.clone(), quaternion: wheel.quaternion.clone() });
+      // Its own merged tyre and rim are not drawn; the rig node itself stays, for tests that measure it.
+      for (const child of wheel.children) if (child.name.startsWith("merged:")) child.visible = false;
+    }
+    this.setWheels(0, 0);
+    // The wheels spin and steer about their own centres, so the bounds set at rest hold.
+    for (const draw of this.wheelDraws) draw.computeBoundingSphere();
+  }
+
+  /**
+   * Turns the wheels: `spinRad` about the axle, positive rolling forward, and `steerRad` on the
+   * front pair, positive to the left. Render only; see `wheelSteer`. No allocation.
+   */
+  setWheels(spinRad: number, steerRad: number): void {
+    const Y = WHEEL_AXIS;
+    for (let i = 0; i < this.wheelRest.length; i++) {
+      const rest = this.wheelRest[i]!;
+      // The fronts sit toward +Z, where the model faces.
+      this.steerQ.setFromAxisAngle(UP, rest.position.z > 0 ? steerRad : 0);
+      // A tyre's axle is its local Y, which the rest pose (-pi/2 about Z) lays along +X. Rolling
+      // toward +Z turns its top forward: positive about +X, so positive about that local Y.
+      this.spinQ.setFromAxisAngle(Y, spinRad);
+      this.wheelQ.copy(this.steerQ).multiply(rest.quaternion).multiply(this.spinQ);
+      this.wheelMatrix.compose(rest.position, this.wheelQ, ONE);
+      for (const draw of this.wheelDraws) draw.setMatrixAt(i, this.wheelMatrix);
+    }
+    for (const draw of this.wheelDraws) draw.instanceMatrix.needsUpdate = true;
   }
 
   /** Swap the visible club head. Stats live in physics/Ballistics.ts; this only changes the look. */
@@ -299,6 +384,11 @@ export class GolfClub extends THREE.Group {
 
   /** Call once before this instance is discarded: frees geometries/materials, per AGENTS.md. */
   dispose(): void {
+    // The instanced wheels share the merged wheel geometry, which `draws` frees.
+    for (const draw of this.wheelDraws) {
+      draw.removeFromParent();
+      draw.dispose();
+    }
     for (const draw of this.draws) draw.dispose();
     this.graph.dispose();
     this.rider?.dispose();
@@ -358,6 +448,10 @@ export function placeCart(
   model.rotation.y = Math.PI / 2 - heading;
   model.setAimYaw(heading - turretYaw);
 }
+
+const UP = new THREE.Vector3(0, 1, 0);
+const WHEEL_AXIS = new THREE.Vector3(0, 1, 0);
+const ONE = new THREE.Vector3(1, 1, 1);
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));

@@ -8,6 +8,7 @@ import "../title/title.css";
 import logoUrl from "../../../art/brand/tee-time-links.svg?url";
 import type { Screen } from "../../app/ScreenManager";
 import { CLOUDS, FLAG_ICON, RIDE_SCENE, TITLE_SCENE, ballsHtml, cartSvg } from "../title/titleArt";
+import { PAINTS, paintHex, type Paint } from "../../render/teamColors";
 import { RIDES, TITLE_CONFIG, freeDriveUrl, type Ride, type RideId } from "../title/titleConfig";
 import { TitleFlow } from "../title/titleFlow";
 
@@ -26,7 +27,7 @@ export interface TitleActions {
   /** Starts an arena match: the Turrets ride. */
   readonly play: () => void;
   /** Opens free drive in a mode. Defaults to navigating to drive/ under the site's base. */
-  readonly freeDrive?: (mode: "chill" | "joyride") => void;
+  readonly freeDrive?: (mode: "chill" | "joyride", paint: number) => void;
   readonly clubhouse?: () => void;
   readonly multiplayer?: () => void;
   readonly settings?: () => void;
@@ -48,11 +49,34 @@ const KEYS = {
 
 const has = (list: readonly string[], code: string): boolean => list.includes(code);
 
+/** Where the free-drive paint choice is kept between visits. */
+const PAINT_KEY = "ttt.drivePaint";
+
+/** The saved paint, or the first (blue) when there is none, it is unknown, or storage is blocked. */
+function loadPaint(): Paint {
+  try {
+    const id = window.localStorage.getItem(PAINT_KEY);
+    return PAINTS.find((p) => p.id === id) ?? PAINTS[0]!;
+  } catch {
+    return PAINTS[0]!;
+  }
+}
+
+function savePaint(paint: Paint): void {
+  try {
+    window.localStorage.setItem(PAINT_KEY, paint.id);
+  } catch {
+    // Private windows and blocked storage: the choice lasts this page only.
+  }
+}
+
 export class TitleScreen implements Screen {
   private readonly options: TitleScreenOptions;
   private readonly flow = new TitleFlow();
   private container: HTMLElement | null = null;
   private readonly teardown: (() => void)[] = [];
+  /** Free drive's cart paint (Chill and Joyride; Turrets paints by team). */
+  private paint: Paint = PAINTS[0]!;
 
   constructor(options: TitleScreenOptions) {
     this.options = options;
@@ -107,6 +131,13 @@ export class TitleScreen implements Screen {
           <div class="mn-ride-head"><h2>Choose your ride</h2><p class="mn-sticker">Turrets is the arena; Chill and Joyride are free drive on Tee Time Links</p></div>
           <div class="mn-cards" role="group" aria-label="Rides">${RIDES.map(card).join("")}</div>
           <div class="mn-ride-actions">
+            <div class="mn-paint mn-sticker" role="radiogroup" aria-label="Free-drive cart paint">
+              <span>Paint</span>
+              ${PAINTS.map(
+                (p) =>
+                  `<button type="button" class="mn-swatch" role="radio" aria-checked="false" data-paint="${p.id}" title="${p.name}" aria-label="${p.name}" style="--mn-swatch:#${paintHex(p.canopy)}"></button>`,
+              ).join("")}
+            </div>
             <button type="button" class="mn-btn" data-act="back">Back</button>
             <button type="button" class="mn-btn mn-btn-primary" data-act="start">Tee Off</button>
           </div>
@@ -125,6 +156,7 @@ export class TitleScreen implements Screen {
       if (fn === undefined) b.title = "Not built yet";
     }
 
+    this.paint = loadPaint();
     root.append(box);
     this.container = box;
     this.listen(box, "click", (e) => this.onClick(e as MouseEvent));
@@ -165,10 +197,17 @@ export class TitleScreen implements Screen {
     this.container.style.setProperty("--mn-contain", String(Math.min(sx, sy)));
   }
 
+  private renderPaint(): void {
+    for (const el of this.container?.querySelectorAll<HTMLElement>(".mn-swatch") ?? []) {
+      el.setAttribute("aria-checked", String(el.dataset.paint === this.paint.id));
+    }
+  }
+
   private render(): void {
     const box = this.container;
     if (!box) return;
     const f = this.flow;
+    this.renderPaint();
     for (const s of box.querySelectorAll<HTMLElement>("[data-view]")) s.hidden = s.dataset.view !== f.view;
     for (const cardEl of box.querySelectorAll<HTMLElement>(".mn-card")) {
       cardEl.setAttribute("aria-pressed", String(cardEl.dataset.ride === f.ride));
@@ -189,13 +228,19 @@ export class TitleScreen implements Screen {
       return;
     }
     const mode = ride.id === "joyride" ? "joyride" : "chill";
-    if (actions.freeDrive) actions.freeDrive(mode);
-    else window.location.assign(freeDriveUrl(import.meta.env.BASE_URL, mode));
+    if (actions.freeDrive) actions.freeDrive(mode, this.paint.canopy);
+    else window.location.assign(freeDriveUrl(import.meta.env.BASE_URL, mode, this.paint.canopy));
   }
 
   private onClick(e: MouseEvent): void {
-    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act], .mn-card");
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act], [data-paint], .mn-card");
     if (!el) return;
+    if (el.dataset.paint) {
+      this.paint = PAINTS.find((p) => p.id === el.dataset.paint) ?? this.paint;
+      savePaint(this.paint);
+      this.renderPaint();
+      return;
+    }
     const f = this.flow;
     const { actions } = this.options;
     if (el.dataset.ride) {
@@ -230,7 +275,9 @@ export class TitleScreen implements Screen {
       f.nudge(has(KEYS.left, e.code) ? -1 : 1);
     } else if (f.view === "ride" && has(KEYS.confirm, e.code)) {
       // Enter on a card (or anywhere on ride select but Back) tees off with the chosen ride.
-      if ((document.activeElement as HTMLElement | null)?.dataset.act === "back") return;
+      const active = document.activeElement as HTMLElement | null;
+      // On Back or a paint swatch, the key presses that button instead.
+      if (active?.dataset.act === "back" || active?.dataset.paint) return;
       e.preventDefault();
       this.go(f.start());
     }

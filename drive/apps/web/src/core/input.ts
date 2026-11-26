@@ -5,6 +5,8 @@ export interface Controls extends VehicleInput {
   reset: boolean;
   /** Switch between Chill and Joyride. */
   mode: boolean;
+  /** Sound the horn (Turrets' H-key honk). */
+  honk: boolean;
 }
 
 export const IDLE: Controls = Object.freeze({
@@ -15,6 +17,7 @@ export const IDLE: Controls = Object.freeze({
   boost: false,
   reset: false,
   mode: false,
+  honk: false,
 });
 
 /** The subset of the Gamepad API the game reads; real Gamepad objects satisfy it. */
@@ -37,6 +40,7 @@ export function readKeyboard(keys: ReadonlySet<string>): Controls {
     boost: anyDown(keys, k.boost),
     reset: anyDown(keys, k.reset),
     mode: anyDown(keys, k.mode),
+    honk: anyDown(keys, k.honk),
   };
 }
 
@@ -60,6 +64,7 @@ export function readGamepad(pad: GamepadLike | null | undefined): Controls {
     boost: pressed(g.boostButton),
     reset: pressed(g.resetButton),
     mode: pressed(g.modeButton),
+    honk: pressed(g.honkButton),
   };
 }
 
@@ -74,12 +79,13 @@ export function mergeControls(...sources: Controls[]): Controls {
     out.boost ||= s.boost;
     out.reset ||= s.reset;
     out.mode ||= s.mode;
+    out.honk ||= s.honk;
   }
   return out;
 }
 
 /**
- * Listens to the keyboard and polls gamepads. `reset` and `mode` fire once per press. A key
+ * Listens to the keyboard and polls gamepads. `reset`, `mode` and `honk` fire once per press. A key
  * pressed and released between two polls (a quick tap on a slow frame) still counts once.
  */
 export class InputManager {
@@ -88,6 +94,7 @@ export class InputManager {
   private readonly tapped = new Set<string>();
   private resetHeld = false;
   private modeHeld = false;
+  private honkHeld = false;
   private readonly onDown = (e: KeyboardEvent) => {
     if (isBound(e.code)) e.preventDefault();
     this.keys.add(e.code);
@@ -116,9 +123,11 @@ export class InputManager {
     const merged = mergeControls(...sources);
     const resetEdge = merged.reset && !this.resetHeld;
     const modeEdge = merged.mode && !this.modeHeld;
+    const honkEdge = merged.honk && !this.honkHeld;
     this.resetHeld = merged.reset;
     this.modeHeld = merged.mode;
-    return { ...merged, reset: resetEdge, mode: modeEdge };
+    this.honkHeld = merged.honk;
+    return { ...merged, reset: resetEdge, mode: modeEdge, honk: honkEdge };
   }
 
   dispose(): void {

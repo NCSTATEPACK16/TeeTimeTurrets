@@ -79,6 +79,13 @@ describe('InputManager', () => {
     key('keydown', 'KeyM');
     expect(im.poll().mode).toBe(true);
     expect(im.poll().mode).toBe(false); // mode toggles once per press
+    key('keydown', 'KeyH');
+    expect(im.poll().honk).toBe(true);
+    expect(im.poll().honk).toBe(false); // one honk per press
+    key('keyup', 'KeyH');
+    expect(im.poll().honk).toBe(false);
+    pads = [pad({ buttons: { 3: 1, 2: 1 } })];
+    expect(im.poll().honk).toBe(true); // X / Square honks too
     key('keyup', 'KeyM');
     target.dispatchEvent(new Event('blur'));
     pads = [];

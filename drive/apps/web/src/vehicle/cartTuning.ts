@@ -1,7 +1,7 @@
 /**
  * Cart tuning. Every number the cart's feel depends on lives here (CLAUDE.md rule).
- * Geometry follows a Club Car Onward and is shared by both presets: switching modes
- * re-applies the feel values but never rebuilds the chassis.
+ * Geometry matches the TeeTimeTurrets cart model (`src/entities/graphs/cart.json`) and is shared
+ * by both presets: switching modes re-applies the feel values but never rebuilds the chassis.
  */
 export interface CartTuning {
   mass: number;
@@ -51,11 +51,30 @@ export interface CartTuning {
     reverseBelowSpeed: number;
   };
   steer: {
+    /** Steering lock at low speed, deg. */
     maxAngleDeg: number;
-    /** Steering lock at top speed; interpolated from maxAngleDeg by speed. */
-    highSpeedAngleDeg: number;
+    /**
+     * Heading rate the lock aims for, rad/s: above the speed where maxAngleDeg gives this rate,
+     * the lock shrinks to atan(yawRate × wheelbase ÷ speed). Turrets turns at 2.4 rad/s.
+     */
+    yawRate: number;
+    /** The lock never drops below this, however fast the cart goes, deg. */
+    minAngleDeg: number;
     rateDegPerS: number;
     returnRateDegPerS: number;
+  };
+  /** Turrets' drive feel (`src/sim/entities/Cart.ts` CART_TUNING), layered on the motor force. */
+  feel: {
+    /** Fraction of the motor force that arrives the instant the pedal opens. */
+    spoolInstant: number;
+    /** The rest ramps in linearly over this long, s. A change of direction or a release restarts it. */
+    spoolSeconds: number;
+    /** The governed top speed drops by this fraction at full steer. */
+    turnBleed: number;
+    /** The governed top speed rises by this much per unit of downhill grade (rise over run)... */
+    downhillPerGrade: number;
+    /** ...up to this multiple. */
+    downhillMaxScale: number;
   };
   resistance: {
     /** Rolling resistance coefficient (force = c * m * g). */
@@ -137,13 +156,17 @@ export interface CartTuning {
 
 export const chillTuning: CartTuning = {
   mass: 300,
-  wheelbase: 1.66,
-  trackFront: 0.91,
-  trackRear: 1.02,
-  wheelRadius: 0.24,
-  body: { halfWidth: 0.6, halfHeight: 0.3, halfLength: 1.2 },
-  centerOfMassY: -0.45,
-  hardpointY: -0.1,
+  // The model's wheels: x ±0.68, z +0.76 and −0.78, radius 0.3 (cart.json wheel_* under chassis_pan).
+  wheelbase: 1.54,
+  trackFront: 1.36,
+  trackRear: 1.36,
+  wheelRadius: 0.3,
+  // chassis_pan is 1.26 × 2.2. The box spans the model from the pan's underside (0.27 m above the
+  // ground) to the hood's top, so its centre sits 0.57 m above the ground at rest length.
+  body: { halfWidth: 0.63, halfHeight: 0.3, halfLength: 1.1 },
+  centerOfMassY: -0.43,
+  // Wheel centre at rest length: hardpointY − restLength = 0.3 − 0.57, the model's 0.3 m axle height.
+  hardpointY: -0.02,
   suspension: {
     restLength: 0.25,
     maxTravel: 0.18,
@@ -169,10 +192,18 @@ export const chillTuning: CartTuning = {
     reverseBelowSpeed: 0.3,
   },
   steer: {
-    maxAngleDeg: 30,
-    highSpeedAngleDeg: 14,
+    maxAngleDeg: 25,
+    yawRate: 2.4,
+    minAngleDeg: 9,
     rateDegPerS: 120,
     returnRateDegPerS: 180,
+  },
+  feel: {
+    spoolInstant: 0.25,
+    spoolSeconds: 0.6,
+    turnBleed: 0.15,
+    downhillPerGrade: 1.0,
+    downhillMaxScale: 1.15,
   },
   resistance: {
     rolling: 0.015,
@@ -198,30 +229,40 @@ export const chillTuning: CartTuning = {
 };
 
 /**
- * Joyride: the souped-up fantasy cart. Same chassis; ~3 s to 13.4 m/s (30 mph), boost to
- * 15 m/s, a looser rear end, longer suspension travel, and flips allowed.
+ * Joyride: the Turrets cart's numbers (`src/sim/entities/Cart.ts` CART_TUNING) on the raycast
+ * vehicle. 20 m/s top and 7 m/s reverse; 16 m/s² of drive (4,800 N at 300 kg) held to 15 m/s by
+ * 72 kW; 24 m/s² of brake; about 3.5 m/s² of coast with the drag; boost to 24 m/s. A looser rear
+ * end, longer suspension travel, and flips allowed.
+ *
+ * Steering aims for Turrets' 2.4 rad/s of heading. Up to 8 m/s the raycast car gets it. Above
+ * that the tyres cannot: 2.4 rad/s at 20 m/s is 48 m/s², about 4.9 g, which a tilting raycast car
+ * slides or rolls out of. The lock still asks for it, and the grip decides what it gets.
  */
 export const joyrideTuning: CartTuning = {
   ...chillTuning,
   suspension: { ...chillTuning.suspension, maxTravel: 0.24, stiffness: 34, compression: 3.0, relaxation: 4.0 },
   rearGrip: 0.85,
   drive: {
-    topSpeed: 13.4,
-    reverseTopSpeed: 4.5,
-    maxForce: 2_400,
-    power: 18_000,
+    topSpeed: 20,
+    reverseTopSpeed: 7,
+    maxForce: 4_800,
+    power: 72_000,
     governorBand: 0.6,
   },
-  brake: { ...chillTuning.brake, force: 3_000 },
+  // 1,050 N is Turrets' 3.5 m/s² coast at 300 kg; drag and rolling resistance supply about 200 N of it.
+  brake: { ...chillTuning.brake, force: 7_200, coastForce: 850 },
   steer: {
-    maxAngleDeg: 30,
-    highSpeedAngleDeg: 9,
+    maxAngleDeg: 25,
+    yawRate: 2.4,
+    minAngleDeg: 9,
     rateDegPerS: 180,
     returnRateDegPerS: 240,
   },
-  boost: { enabled: true, topSpeed: 15, power: 24_000, duration: 3, recharge: 6 },
+  boost: { enabled: true, topSpeed: 24, power: 96_000, duration: 3, recharge: 6 },
   handbrake: { rearGrip: 0.3, force: 3_000, yawDamping: 500 },
-  water: { ...chillTuning.water, respawnAfter: null },
+  // Drag doubled with the motor (2,400 to 4,800 N), so 0.5 m of water still holds it to the same
+  // wading speed, about 3.3 m/s (M1 gate, test/vehicle/waterEntry.test.ts).
+  water: { ...chillTuning.water, drag: 150, respawnAfter: null },
   rollover: { measure: 'tilt', aboveDeg: 70, delay: 2, releaseDeg: 15, torque: 4_000, damping: 700 },
   airSteerTorque: 250,
 };

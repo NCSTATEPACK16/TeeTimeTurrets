@@ -850,3 +850,34 @@
 .mn-title-menu .mn-btn:disabled:hover {
   transform: none;
 }
+
+/* free drive's cart paint, beside Back and Tee Off on Choose Your Ride */
+.mn-paint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 56px;
+  box-sizing: border-box;
+  font-family: var(--body);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ink);
+}
+.mn-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: var(--mn-swatch);
+  padding: 0;
+  cursor: pointer;
+}
+.mn-swatch[aria-checked="true"] {
+  outline: 4px solid var(--sunset);
+  outline-offset: 2px;
+}
+.mn-swatch:focus-visible {
+  outline: 4px solid var(--pine);
+  outline-offset: 2px;
+}
