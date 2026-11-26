@@ -14,7 +14,7 @@ every pin (hole number, PAR and a new Tee Time Links logo) and tee signs. Three 
 Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; prompt D in
 `docs/NEXT-SESSION-PROMPT.md`. Independent of slice D and 3.5c, so it can run in any cloud session.
 
-- **PR 1, the logo: #95, a draft awaiting the user's play-test.** The design was approved on 25 Nov
+- **PR 1, the logo, merged as #95 (26 Nov).** The design was approved on 25 Nov
   with these choices: one file with two views, the generator committed, free drive showing the logo
   with no banner, and the full name on the compact mark.
   - `art/brand/tee-time-links.svg` is the one file. Its root viewBox is the wordmark; `<view id="mark">`
@@ -22,7 +22,7 @@ Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; 
     Shrikhand file (Shrikhand as outlines, so there's no `<text>`). Edit the script, not the paths.
   - The Turrets title and free drive's menu import it with `?url`. `src/ui/title/teeTimeLinksLogo.test.ts`
     checks it parses, has its viewBoxes and has no `<text>`. Renders are in `docs/art/brand/`.
-- **Next: PR 2, flags and tee signs, once #95 merges.** For the cloth atlas, load the mark as
+- **Next: PR 2, flags and tee signs.** For the cloth atlas, load the mark as
   `` `${logoUrl}#mark` `` (Chromium draws the `#mark` view square, at 150 × 150 natural size, into a
   canvas; give `drawImage` an explicit size), and draw after the image has decoded.
 - **Trap:** free drive's dev server only serves files under `drive/`. `drive/apps/web/vite.config.ts`
