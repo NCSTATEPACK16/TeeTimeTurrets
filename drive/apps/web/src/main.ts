@@ -246,6 +246,7 @@ async function main(): Promise<void> {
 
       const controls = input.poll();
       if (controls.mode) setMode(nextMode(sim.mode.name));
+      if (controls.honk) audio.honk();
       if (controls.reset) {
         sim.reset();
         snapAll();
@@ -279,7 +280,7 @@ async function main(): Promise<void> {
       }
       skids.update(frameSeconds, dynamics);
       particles.update(frameSeconds, dynamics, cart.body.linvel());
-      audio.update({ speed: cart.forwardSpeed(), throttle: controls.throttle, wheels: dynamics });
+      audio.update({ speed: cart.forwardSpeed(), topSpeed: cart.tuning.drive.topSpeed, wheels: dynamics });
 
       drawPos.lerpVectors(prevPos, curPos, stepper.alpha);
       drawRot.slerpQuaternions(prevRot, curRot, stepper.alpha);

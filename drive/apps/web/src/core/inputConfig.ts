@@ -9,6 +9,7 @@ export const inputConfig = {
     boost: ['ShiftLeft', 'ShiftRight'],
     reset: ['KeyR'],
     mode: ['KeyM'],
+    honk: ['KeyH'],
   },
   /** Standard Gamepad mapping indices (https://w3c.github.io/gamepad/#remapping). */
   gamepad: {
@@ -19,6 +20,8 @@ export const inputConfig = {
     boostButton: 5, // right bumper
     resetButton: 3, // Y / Triangle
     modeButton: 8, // Back / Select
+    // X / Square: the one face button neither driving (0, 3, 5, 6, 7, 8) nor the menus (0, 1, 9, 14, 15) use.
+    honkButton: 2,
     deadzone: 0.15,
     triggerDeadzone: 0.05,
   },

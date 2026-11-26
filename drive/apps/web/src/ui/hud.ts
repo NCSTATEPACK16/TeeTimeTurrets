@@ -77,7 +77,7 @@ export class Hud {
       <div class="hud-corner hud-br" data-keys>
         <div class="hud-keys mn-sticker">
           <div><span class="mn-key">W</span><span class="mn-key">S</span> Drive and brake</div>
-          <div><span class="mn-key">Space</span> Handbrake drift</div>
+          <div><span class="mn-key">Space</span> Handbrake drift <span class="mn-key">H</span> Honk</div>
           <div><span class="mn-key">Shift</span> Boost <span class="mn-key">M</span> Ride <span class="mn-key">Esc</span> Pause</div>
         </div>
       </div>

@@ -4,7 +4,8 @@ import { audioConfig as cfg } from './audioConfig';
 
 export interface AudioFrame {
   speed: number;
-  throttle: number;
+  /** The mode's governed top speed, m/s: the engine pitches by speed as a share of it. */
+  topSpeed: number;
   wheels: readonly WheelDynamics[];
 }
 
@@ -14,8 +15,9 @@ export interface AudioFrame {
  */
 export class CartAudio {
   private ctx: AudioContext | null = null;
-  private motor!: OscillatorNode;
-  private motorGain!: GainNode;
+  private readonly engineOsc: OscillatorNode[] = [];
+  private engineFilter!: BiquadFilterNode;
+  private engineGain!: GainNode;
   private tireFilter!: BiquadFilterNode;
   private tireGain!: GainNode;
   private squealGain!: GainNode;
@@ -41,12 +43,20 @@ export class CartAudio {
     this.master = new GainNode(ctx, { gain: cfg.masterGain });
     this.master.connect(ctx.destination);
 
-    // Motor: sawtooth through a lowpass.
-    this.motor = new OscillatorNode(ctx, { type: 'sawtooth', frequency: cfg.motor.idleHz });
-    const motorFilter = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: cfg.motor.cutoffHz });
-    this.motorGain = new GainNode(ctx, { gain: 0 });
-    this.motor.connect(motorFilter).connect(this.motorGain).connect(this.master);
-    this.motor.start();
+    // Engine: Turrets' sawtooth and detuned square through a lowpass.
+    const e = cfg.engine;
+    this.engineFilter = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: e.cutoffHz });
+    this.engineGain = new GainNode(ctx, { gain: 0 });
+    this.engineFilter.connect(this.engineGain).connect(this.master);
+    for (const [type, detune] of [
+      ['sawtooth', 0],
+      ['square', e.detuneCents],
+    ] as const) {
+      const osc = new OscillatorNode(ctx, { type, frequency: e.baseHz, detune });
+      osc.connect(this.engineFilter);
+      osc.start();
+      this.engineOsc.push(osc);
+    }
 
     // Tires: looped noise through a band-pass whose center and gain follow the surface.
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -74,9 +84,11 @@ export class CartAudio {
     if (!ctx) return;
     const now = ctx.currentTime;
     const speed = Math.abs(f.speed);
-    const m = cfg.motor;
-    this.motor.frequency.setTargetAtTime(m.idleHz + m.hzPerMps * speed + m.throttleHz * f.throttle, now, m.glide);
-    this.motorGain.gain.setTargetAtTime(m.gainIdle + m.gainThrottle * f.throttle, now, m.glide);
+    const e = cfg.engine;
+    const s01 = Math.min(1, speed / Math.max(f.topSpeed, 1e-3));
+    for (const osc of this.engineOsc) osc.frequency.setTargetAtTime(e.baseHz + e.spanHz * s01, now, e.pitchGlide);
+    this.engineFilter.frequency.setTargetAtTime(e.cutoffHz + e.cutoffSpanHz * s01, now, e.glide);
+    this.engineGain.gain.setTargetAtTime((e.gain + e.gainSpan * s01) * e.level, now, e.glide);
 
     // Tire noise from the wheels on the ground: loudest surface wins the filter.
     let gain = 0;
@@ -97,6 +109,31 @@ export class CartAudio {
     this.tireFilter.frequency.setTargetAtTime(hz, now, 0.05);
     this.tireGain.gain.setTargetAtTime(gain, now, 0.05);
     this.squealGain.gain.setTargetAtTime(skidding ? cfg.squeal.gain : 0, now, 0.04);
+  }
+
+  /** Turrets' goofy two-tone golf-cart honk. */
+  honk(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const out = new GainNode(ctx, { gain: cfg.honk.gain * cfg.engine.level });
+    out.connect(this.master);
+    const t = ctx.currentTime;
+    let end = t;
+    for (const [f0, f1, at, length, peak] of cfg.honk.tones) {
+      // Turrets' tone(): a fast attack and an exponential decay over a gliding square.
+      const osc = new OscillatorNode(ctx, { type: 'square' });
+      osc.frequency.setValueAtTime(f0, t + at);
+      osc.frequency.exponentialRampToValueAtTime(f1, t + at + length);
+      const env = new GainNode(ctx, { gain: 0.0001 });
+      env.gain.setValueAtTime(0.0001, t + at);
+      env.gain.exponentialRampToValueAtTime(peak, t + at + 0.005);
+      env.gain.exponentialRampToValueAtTime(0.0001, t + at + length);
+      osc.connect(env).connect(out);
+      osc.start(t + at);
+      osc.stop(t + at + length + 0.02);
+      end = Math.max(end, t + at + length + 0.02);
+    }
+    setTimeout(() => out.disconnect(), (end - t) * 1000 + 100);
   }
 
   /** Noise burst for hitting water; speed in m/s. */
