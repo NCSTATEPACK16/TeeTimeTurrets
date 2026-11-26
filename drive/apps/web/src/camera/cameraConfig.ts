@@ -65,9 +65,11 @@ export const joyrideChase: ChaseSettings = {
   lookAhead: 5,
   positionRate: 6.5,
   lookRate: 12,
+  // Scaled with Joyride's top speed (13.4 to 20 m/s): the kick starts at the same share of the
+  // top speed and is full at boost's 24 m/s, as it was at the old boost's 15.
   fovKickDeg: 14,
-  fovKickFrom: 6,
-  fovKickTo: 15,
+  fovKickFrom: 9,
+  fovKickTo: 24,
   shakePerMps: 0.06,
   shakeMax: 0.35,
   idleOrbitAfter: null,

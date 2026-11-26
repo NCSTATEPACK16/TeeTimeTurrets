@@ -33,6 +33,28 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+/**
+ * Steering lock for a forward speed, radians: the full lock while it turns slower than
+ * `steer.yawRate`, then whatever lock gives that rate on a kinematic wheelbase, never under
+ * `steer.minAngleDeg`.
+ */
+export function steerLock(t: CartTuning, speed: number): number {
+  const s = t.steer;
+  const forRate = Math.atan((s.yawRate * t.wheelbase) / Math.max(Math.abs(speed), 1e-3));
+  return clamp(forRate, s.minAngleDeg * DEG, s.maxAngleDeg * DEG);
+}
+
+/** Motor force fraction after the pedal has been held `heldS` seconds: Turrets' throttle spool. */
+export function spool(heldS: number, f: CartTuning['feel']): number {
+  const ramp = Math.min(1, heldS / f.spoolSeconds);
+  return f.spoolInstant + (1 - f.spoolInstant) * ramp;
+}
+
+/** Top-speed multiplier on a grade (rise over run along the heading): above 1 only downhill. */
+export function downhillScale(grade: number, f: CartTuning['feel']): number {
+  return Math.min(f.downhillMaxScale, 1 + f.downhillPerGrade * Math.max(0, -grade));
+}
+
 /** One-step happenings the effects, camera and HUD react to. Cleared at the start of each update. */
 export interface CartEvents {
   /** Downward speed at touchdown after airtime, m/s; null when no landing this step. */
@@ -64,6 +86,9 @@ export class RapierCart implements VehicleModel {
   private time = 0;
   private lastNudge = -Infinity;
   private resetOffered = false;
+  /** Seconds the pedal has driven the motor one way, for the spool; and which way. */
+  private pedalHeld = 0;
+  private pedalSign = 0;
 
   constructor(
     R: Rapier,
@@ -160,9 +185,7 @@ export class RapierCart implements VehicleModel {
     const depth = this.water.depth;
 
     // Steering: rate-limited, with less lock at speed and in water.
-    const speedFrac = Math.min(Math.abs(v) / t.drive.topSpeed, 1);
-    const lock =
-      (t.steer.maxAngleDeg + (t.steer.highSpeedAngleDeg - t.steer.maxAngleDeg) * speedFrac) * DEG * steerFactor(depth, t.water);
+    const lock = steerLock(t, v) * steerFactor(depth, t.water);
     const target = -clamp(input.steer, -1, 1) * lock; // input +1 = right; Rapier + = left
     const returning = Math.abs(target) < Math.abs(this.steerAngle) || target * this.steerAngle < 0;
     const rate = (returning ? t.steer.returnRateDegPerS : t.steer.rateDegPerS) * DEG * dt;
@@ -176,8 +199,19 @@ export class RapierCart implements VehicleModel {
     this.boosting = t.boost.enabled && input.boost && throttle > 0 && !input.handbrake && this.boostLeft > 0;
     if (this.boosting) this.boostLeft = Math.max(this.boostLeft - dt / t.boost.duration, 0);
     else if (!input.boost) this.boostLeft = Math.min(this.boostLeft + dt / t.boost.recharge, 1);
-    const topSpeed = this.boosting ? t.boost.topSpeed : t.drive.topSpeed;
+    // Turrets' feel: less top speed in a turn, more downhill.
+    const fwdNow = this.forward();
+    const grade = fwdNow.y / Math.max(Math.hypot(fwdNow.x, fwdNow.z), 1e-6);
+    const capScale = (1 - t.feel.turnBleed * Math.abs(clamp(input.steer, -1, 1))) * downhillScale(grade, t.feel);
+    const topSpeed = (this.boosting ? t.boost.topSpeed : t.drive.topSpeed) * capScale;
     const power = this.boosting ? t.boost.power : t.drive.power;
+
+    // Spool: the motor's direction this step (+1 forward, -1 reverse, 0 none). Any change restarts it.
+    const pedal = input.handbrake ? 0 : throttle > 0 ? 1 : pedalBrake > 0 ? -1 : 0;
+    if (pedal === 0 || pedal !== this.pedalSign) this.pedalHeld = 0;
+    this.pedalSign = pedal;
+    if (pedal !== 0) this.pedalHeld += dt;
+    const spooled = spool(this.pedalHeld, t.feel);
 
     // Pedals: throttle drives; brake slows, then reverses once stopped; no input coasts or holds.
     // The handbrake cuts the motor and locks up the rears.
@@ -188,11 +222,12 @@ export class RapierCart implements VehicleModel {
       rearBrake = t.handbrake.force;
       if (pedalBrake > 0) brake = t.brake.force * pedalBrake;
     } else if (throttle > 0) {
+      // Against the motion the pedal brakes, at once: braking is not spooled.
       if (v < -t.brake.reverseBelowSpeed) brake = t.brake.force * throttle;
-      else drive = this.governedForce(v, topSpeed * throttle, power);
+      else drive = this.governedForce(v, topSpeed * throttle, power) * spooled;
     } else if (pedalBrake > 0) {
       if (v > t.brake.reverseBelowSpeed) brake = t.brake.force * pedalBrake;
-      else drive = -this.governedForce(-v, t.drive.reverseTopSpeed * pedalBrake, t.drive.power);
+      else drive = -this.governedForce(-v, t.drive.reverseTopSpeed * pedalBrake, t.drive.power) * spooled;
     } else {
       brake = Math.abs(v) < t.brake.holdSpeed ? t.brake.force : t.brake.coastForce;
     }
@@ -216,7 +251,7 @@ export class RapierCart implements VehicleModel {
     const rolling = t.resistance.rolling * t.mass * this.gravity * clamp(v / 0.5, -1, 1) * (surfaceDrag / 4);
     const air = t.resistance.airDrag * v * Math.abs(v);
     const j = -(rolling + air) * dt;
-    const fwd = this.forward();
+    const fwd = fwdNow;
     this.body.applyImpulse({ x: fwd.x * j, y: fwd.y * j, z: fwd.z * j }, true);
 
     const lin = this.body.linvel();
@@ -356,6 +391,8 @@ export class RapierCart implements VehicleModel {
     this.stuckTime = 0;
     this.lastNudge = -Infinity;
     this.resetOffered = false;
+    this.pedalHeld = 0;
+    this.pedalSign = 0;
     this.braking.fill(false);
   }
 

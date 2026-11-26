@@ -34,6 +34,6 @@ describe('HUD helpers', () => {
 describe('ride cards', () => {
   it('show each mode’s real top speed, rounded to 5 mph', () => {
     expect(rideTopMph('chill')).toBe(15);
-    expect(rideTopMph('joyride')).toBe(30);
+    expect(rideTopMph('joyride')).toBe(45);
   });
 });

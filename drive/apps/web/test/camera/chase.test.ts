@@ -57,7 +57,7 @@ describe('ChaseCamera mode presets', () => {
     const calm = new ChaseCamera(chillChase);
     for (const cam of [joy, calm]) {
       cam.snap(origin, forward, flat);
-      for (let i = 0; i < 300; i++) cam.update(1 / 60, origin, forward, flat, { speed: 15 });
+      for (let i = 0; i < 300; i++) cam.update(1 / 60, origin, forward, flat, { speed: joyrideChase.fovKickTo });
     }
     expect(joy.fovDeg).toBeCloseTo(joyrideChase.fovDeg + joyrideChase.fovKickDeg, 1);
     expect(calm.fovDeg).toBeCloseTo(chillChase.fovDeg, 6);

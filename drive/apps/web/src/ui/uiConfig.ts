@@ -17,7 +17,7 @@ export const uiConfig = {
   /** Seconds the controls card stays up after the round starts before it fades. */
   controlsCardSeconds: 12,
   /** The speedometer ring's full sweep (degrees) and the speed (mph) that fills it. */
-  speedo: { sweepDeg: 270, fullMph: 35 },
+  speedo: { sweepDeg: 270, fullMph: 55 },
   rides: [
     {
       id: 'chill',
