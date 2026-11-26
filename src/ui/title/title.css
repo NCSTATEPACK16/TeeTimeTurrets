@@ -146,26 +146,25 @@
 .mn-wordmark {
   position: absolute;
   left: 64px;
-  top: 46px;
+  top: 40px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
 }
+/* The Tee Time Links logo (art/brand/tee-time-links.svg), which carries its own outline and shadow. */
 .mn-wordmark h1 {
   margin: 0;
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: 100px;
-  line-height: 0.95;
-  color: var(--pine);
-  text-shadow:
-    4px 4px 0 var(--sunset),
-    8px 8px 0 var(--ink);
+  line-height: 0;
   transform-origin: left bottom;
   animation: mn-wiggle 3.2s ease-in-out infinite;
 }
+.mn-wordmark h1 img {
+  display: block;
+  width: 430px;
+  height: auto;
+}
 .mn-banner {
-  margin: 18px 0 0 14px;
+  margin: 8px 0 0 14px;
   padding: 6px 22px 8px;
   background: var(--sun);
   border: 5px solid var(--ink);
@@ -179,7 +178,7 @@
 .mn-title-menu {
   position: absolute;
   left: 64px;
-  top: 268px;
+  top: 318px;
   display: flex;
   flex-direction: column;
   gap: 16px;

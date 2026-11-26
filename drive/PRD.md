@@ -322,7 +322,7 @@ Hard caps on High: ≤ 300 draw calls, ≤ 2 M visible triangles, ≤ 768 MB GPU
 
 ### Non-goals
 
-Golf swing gameplay, multiplayer, accounts, AI golfers, mobile and touch, VR, real course names or logos in builds (except Caswell Pines Golf Club, whose name and logo are used with the club's permission; see ATTRIBUTION.md), runtime GIS in the browser.
+Golf swing gameplay, multiplayer, accounts, AI golfers, mobile and touch, VR, real course names or logos in builds (the course ships as Tee Time Links, a fictional name with its own logo, `art/brand/tee-time-links.svg` at the TeeTimeTurrets root; see `docs/DECISIONS.md` there, "No real club's name or logo"), runtime GIS in the browser.
 
 ### Top risks
 

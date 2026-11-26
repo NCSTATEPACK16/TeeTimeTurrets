@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
 
 export default defineConfig({
   // Served at the site root on its own, and at /drive/ inside TeeTimeTurrets (tools/buildDrive.mjs
@@ -10,6 +11,17 @@ export default defineConfig({
     // build, which inlines its WASM as base64. Well inside the 60 MB first-download budget.
     chunkSizeWarningLimit: 6144,
   },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // The dev server only serves files under drive/ (the pnpm workspace root) unless told otherwise.
+    // Shared art lives at the TeeTimeTurrets root, outside it: the Tee Time Links logo is imported
+    // from art/brand/ so both apps use the one file. Builds are unaffected; this is dev only.
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        fileURLToPath(new URL('../../../art/brand', import.meta.url)),
+      ],
+    },
+  },
   preview: { port: 4173 },
 });

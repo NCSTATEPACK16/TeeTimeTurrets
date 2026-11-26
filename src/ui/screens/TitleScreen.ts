@@ -5,6 +5,7 @@ import "@fontsource/rubik/latin-600.css";
 import "@fontsource/rubik/latin-700.css";
 import "@fontsource/rubik/latin-800.css";
 import "../title/title.css";
+import logoUrl from "../../../art/brand/tee-time-links.svg?url";
 import type { Screen } from "../../app/ScreenManager";
 import { CLOUDS, FLAG_ICON, RIDE_SCENE, TITLE_SCENE, ballsHtml, cartSvg } from "../title/titleArt";
 import { RIDES, TITLE_CONFIG, freeDriveUrl, type Ride, type RideId } from "../title/titleConfig";
@@ -85,7 +86,7 @@ export class TitleScreen implements Screen {
           </div>
         </div>
         <div class="mn-stage mn-contain mn-ui">
-          <div class="mn-wordmark"><h1>Tee Time</h1><div class="mn-banner">TURRETS</div></div>
+          <div class="mn-wordmark"><h1><img src="${logoUrl}" alt="Tee Time Links" width="430" height="190"></h1><div class="mn-banner">TURRETS</div></div>
           <nav class="mn-title-menu" data-title-menu aria-label="Main menu">
             <button type="button" class="mn-btn mn-btn-primary" data-act="tee">${FLAG_ICON}<span>Tee Off</span></button>
             <div class="mn-row">
