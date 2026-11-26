@@ -7,7 +7,7 @@ Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #
 Chill / Joyride), and free drive's course is Tee Time Links, with no club name or logo. Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
 open items (its M2 gate, John's per-hole routing review) are in `drive/docs/handoff/M2.md`, Part F.
 
-**In progress (2026-11-25; PR 2 merged 26 Nov, PR 3 planned): one cart in both games, and hole flags in free drive.** Chill and Joyride get
+**In progress (2026-11-25; PR 2 merged 26 Nov, PR 3 built 26 Nov as draft #98, waiting on the user's play-test): one cart in both games, and hole flags in free drive.** Chill and Joyride get
 the Turrets cart (no turret, with the rider, team paint, engine and horn, and wheels that spin and steer in both games). It keeps free drive's
 vehicle physics, retuned so Joyride tops out at Turrets' 20 m/s. Free drive gets an oversized waving flag on
 every pin (hole number, PAR and a new Tee Time Links logo) and tee signs. Three PRs: the logo, then the flags, then the cart.
@@ -44,14 +44,39 @@ Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; 
   - Smoke check: `drive/apps/web/test/env/holeFlags.test.ts` (1.3 s), on the shipped packet.
     Screenshots are in `drive/docs/screens/m2/flags/`: WebGL2 headless, because WebGPU had no
     adapter in the container.
-- **Next: PR 3, the shared cart (§5).** The plan is
-  `docs/superpowers/plans/2026-11-26-shared-cart-implementation.md`, saved on 26 Nov for a fresh
-  session; prompt D runs it. The user's call that day: Turrets' wheels steer from the turn rate,
-  because the renderer never receives a steer input (`CartTransform` is position, heading and
-  turret yaw only).
-- **Trap, now handled for PR 3:** free drive's dev server only serves files under `drive/`.
-  `drive/apps/web/vite.config.ts` lists `art/brand/` and, since PR 2, `src/entities/graphs/` in
-  `server.fs.allow`. Anything else shared from the root must be added too, or `pnpm dev` answers 403
+- **PR 3, the shared cart: draft #98 (26 Nov), waiting on the user's play-test. Do not merge before it.**
+  Built from `docs/superpowers/plans/2026-11-26-shared-cart-implementation.md`; the PR body has
+  the checks, the deviations and the play-test list.
+  - **Model:** `drive/apps/web/src/vehicle/cartGraph.ts` is the WebGPU twin of `buildGraph` and
+    `drawBySlot`. `roundedBox.ts` ports three's `RoundedBoxGeometry` (MIT, in `NOTICE`).
+    `test/vehicle/cartGraphParity.test.ts` keeps the two builders in step: it compares names, boxes,
+    a per-node shape moment, and triangles per slot. Bounds alone missed a changed rbox radius.
+  - **`CartView`:**
+    - turns the model by π and hides `turret_pivot`;
+    - maps wheels to mounts by position;
+    - sits the wheel centres on the mounts at rest length;
+    - draws 19 meshes.
+  - **Physics (`cartTuning.ts`):**
+    - Geometry is the model's: wheel radius 0.3, track 1.36, wheelbase 1.54.
+    - Joyride is 20 m/s, boost 24. Its water drag doubled with the motor, to keep the M1
+      water-entry gate.
+    - New `feel` fields: spool, turn bleed and downhill bonus.
+    - Steering aims for 2.4 rad/s of heading.
+    - **Full lock at 20 m/s spins the cart round** (tilt under 7°). That is the play-test's call.
+  - **Paint:** the `PAINTS` table in `src/render/teamColors.ts` (pure data, read by both apps),
+    the swatch row on Choose Your Ride, and `&paint=<hex>`.
+  - **Sound:** Turrets' engine and honk are in `cartAudio.ts`. The honk is on H and gamepad
+    button 2.
+  - **Turrets' wheels:**
+    - `GolfClub.setWheels` drives one tyre and one rim `InstancedMesh` per cart;
+    - `scene.ts` derives spin and steer from each cart's motion;
+    - **the cart draw cap is now 21** (`GolfClub.test.ts`);
+    - the golden is unchanged.
+  - **Root `npm test` ran in 57.7 s**, against the 60 s cap. The next addition to `src/` tests
+    should trim the slowest file first.
+- **Trap:** free drive's dev server only serves files under `drive/`.
+  `drive/apps/web/vite.config.ts` lists `art/brand/`, `src/entities/graphs/` and, since PR 3,
+  `src/render/teamColors.ts` in `server.fs.allow`. Anything else shared from the root must be added too, or `pnpm dev` answers 403
   (the build is unaffected, so a build check won't catch it).
 - **Headless drive screenshots:** `?view=x,z,height,heading,pitch&level=tee-time-links` skips the menus.
   Many 60 m lines onto a pin run through woods; hole 18 from (−40.25, −144.18), heading 310, is open.
