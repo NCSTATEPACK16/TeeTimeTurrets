@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { GolfClub, SWING, placeCart, swingAngle } from "./GolfClub";
+import { GolfClub, SWING, WHEEL_STEER_LOCK, placeCart, swingAngle, wheelSteer } from "./GolfClub";
 import { CLUB_STATS, ClubType } from "../physics/Ballistics";
 import { Cart, CART_COLLIDER, TURRET_GEOMETRY, computeMuzzle } from "../sim/entities/Cart";
 
@@ -394,29 +394,44 @@ describe("what a cart costs to draw", () => {
     return out;
   }
 
+  /** Each copy a mesh draws, as a world matrix: one for a mesh, one per instance for the wheels. */
+  function copies(mesh: THREE.Mesh): THREE.Matrix4[] {
+    if (!(mesh as THREE.InstancedMesh).isInstancedMesh) return [mesh.matrixWorld];
+    const inst = mesh as THREE.InstancedMesh;
+    return Array.from({ length: inst.count }, (_, i) => {
+      const m = new THREE.Matrix4();
+      inst.getMatrixAt(i, m);
+      return m.premultiply(inst.matrixWorld);
+    });
+  }
+
   /** Bounds of the actual vertices in world space: a transformed bounding box is not tight. */
   function worldBox(meshes: THREE.Mesh[]): THREE.Box3 {
     const box = new THREE.Box3();
     const v = new THREE.Vector3();
     for (const mesh of meshes) {
       const position = mesh.geometry.getAttribute("position");
-      for (let i = 0; i < position.count; i++) box.expandByPoint(v.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld));
+      for (const matrix of copies(mesh)) {
+        for (let i = 0; i < position.count; i++) box.expandByPoint(v.fromBufferAttribute(position, i).applyMatrix4(matrix));
+      }
     }
     return box;
   }
 
   function vertices(meshes: THREE.Mesh[]): number {
-    return meshes.reduce((sum, mesh) => sum + mesh.geometry.getAttribute("position").count, 0);
+    return meshes.reduce((sum, mesh) => sum + mesh.geometry.getAttribute("position").count * copies(mesh).length, 0);
   }
 
   /**
    * Eight carts were about 78 draw calls each, over 600 a frame for the carts alone. The target
    * is about 150 for eight: one draw per material slot per posed part, not one per primitive.
+   * 21 since the wheels turn: one instanced tyre and one instanced rim draw for all four, the
+   * fewest that keep the tyre and rim cosmetics paintable (posed separately they cost 8).
    */
-  it("draws a riding cart, loaded, in at most 20 meshes", () => {
+  it("draws a riding cart, loaded, in at most 21 meshes", () => {
     const cart = new GolfClub(ClubType.Driver);
     cart.setBallLoaded(true);
-    expect(drawn(cart).length).toBeLessThanOrEqual(20);
+    expect(drawn(cart).length).toBeLessThanOrEqual(21);
     cart.dispose();
   });
 
@@ -474,6 +489,47 @@ describe("what a cart costs to draw", () => {
       (mesh) => (mesh.material as THREE.MeshStandardMaterial).color.getHex() === 0xff0000,
     );
     expect(red.length).toBeGreaterThan(0);
+    cart.dispose();
+  });
+});
+
+describe("the wheels turn", () => {
+  /** Where instance `i` of the instanced tyres puts a point given in the tyre's own frame, in the cart's frame. */
+  function tyrePoint(cart: GolfClub, i: number, local: THREE.Vector3): THREE.Vector3 {
+    const tyres = cart.getObjectByName("wheels:tires") as THREE.InstancedMesh;
+    const m = new THREE.Matrix4();
+    tyres.getMatrixAt(i, m);
+    cart.updateMatrixWorld(true);
+    return local.clone().applyMatrix4(m).applyMatrix4(tyres.parent!.matrixWorld);
+  }
+
+  it("rolls the tyres' tops forward, steers the fronts left for a left turn, and leaves the rears straight", () => {
+    const cart = new GolfClub();
+    // Rest: the tyre's local -X is its top (cart.json lays the axle along X by -pi/2 about Z).
+    const top = new THREE.Vector3(-0.3, 0, 0);
+    const restTop = tyrePoint(cart, 0, top);
+    cart.setWheels(0.5, 0);
+    const rolled = tyrePoint(cart, 0, top);
+    // The model faces +Z: rolling forward carries the top toward +Z.
+    expect(rolled.z - restTop.z).toBeCloseTo(0.3 * Math.sin(0.5), 4);
+
+    const axle = new THREE.Vector3(0, 1, 0);
+    const centre = new THREE.Vector3();
+    const axleDir = (i: number) => tyrePoint(cart, i, axle).sub(tyrePoint(cart, i, centre));
+    cart.setWheels(0, 0.3);
+    // wheel_fl and wheel_fr sit at +Z: their axles turn; the rears' stay along X.
+    for (const i of [0, 1]) expect(Math.abs(axleDir(i).z)).toBeCloseTo(Math.sin(0.3), 4);
+    for (const i of [2, 3]) expect(axleDir(i).z).toBeCloseTo(0, 6);
+    // Left for a +Z-facing cart is +X; a left-steered front points its nose there, so the axle's
+    // +X end swings back toward -Z.
+    const a = axleDir(0);
+    expect(Math.sign(a.x) * a.z).toBeLessThan(0);
+
+    // A right turn raises the sim heading, so a falling heading going forward is a left turn.
+    expect(wheelSteer(1, -0.05, 0.01)).toBeGreaterThan(0);
+    expect(wheelSteer(1, 0.05, 0.01)).toBeLessThan(0);
+    expect(wheelSteer(0.001, 0.5, 0.01)).toBe(0);
+    expect(wheelSteer(0.05, -1, 0.01)).toBe(WHEEL_STEER_LOCK);
     cart.dispose();
   });
 });
