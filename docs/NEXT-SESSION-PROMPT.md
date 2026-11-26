@@ -6,7 +6,7 @@ Written 2026-11-23, after slice C of the Caswell look (pine straw and grass tuft
 - **B. The 3.5c spec (mortar and capture flags).** For a cloud session when no Blender session is to hand. It writes a spec and stops for the user's answers; it builds nothing.
 - **C. Stage 4b, iOS and gamepad.** After 3.5c. Written on 7 Nov and still current.
 - **D. One cart in both games, and hole flags in free drive.** Added 25 Nov at the user's request. Three PRs, run one per session in order: the logo, then the flags and tee signs, then the shared cart. It runs in the cloud and is independent of A–C.
-  - **PR 1, the logo, merged as #95** (26 Nov). **PR 2, flags and tee signs, is draft #96** (26 Nov), waiting on the user's play-test. **PR 3, the shared cart, is next once #96 merges;** if it hasn't, stop and ask. What PR 2 left for PR 3 (the dev-server allow-list now covers `src/entities/graphs/`, and the shared colour-merge helper) is in `docs/HANDOFF.md`.
+  - **PR 1, the logo, merged as #95** (26 Nov). **PR 2, flags and tee signs, merged as #96** (26 Nov). **PR 3, the shared cart, is next.** Build it from `docs/superpowers/plans/2026-11-26-shared-cart-implementation.md`, which records the facts read from the code, the task order and the user's 26 Nov call: Turrets' wheels steer from the turn rate, since the renderer never receives a steer input.
 
 ---
 

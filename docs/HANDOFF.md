@@ -7,7 +7,7 @@ Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #
 Chill / Joyride), and free drive's course is Tee Time Links, with no club name or logo. Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
 open items (its M2 gate, John's per-hole routing review) are in `drive/docs/handoff/M2.md`, Part F.
 
-**In progress (2026-11-25; PR 2 in review 26 Nov): one cart in both games, and hole flags in free drive.** Chill and Joyride get
+**In progress (2026-11-25; PR 2 merged 26 Nov, PR 3 planned): one cart in both games, and hole flags in free drive.** Chill and Joyride get
 the Turrets cart (no turret, with the rider, team paint, engine and horn, and wheels that spin and steer in both games). It keeps free drive's
 vehicle physics, retuned so Joyride tops out at Turrets' 20 m/s. Free drive gets an oversized waving flag on
 every pin (hole number, PAR and a new Tee Time Links logo) and tee signs. Three PRs: the logo, then the flags, then the cart.
@@ -22,8 +22,8 @@ Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; 
     Shrikhand file (Shrikhand as outlines, so there's no `<text>`). Edit the script, not the paths.
   - The Turrets title and free drive's menu import it with `?url`. `src/ui/title/teeTimeLinksLogo.test.ts`
     checks it parses, has its viewBoxes and has no `<text>`. Renders are in `docs/art/brand/`.
-- **PR 2, flags and tee signs: draft #96 (26 Nov), waiting on the user's play-test.** Don't merge it
-  yourself. Free drive only; the root `src/` and the golden are untouched.
+- **PR 2, flags and tee signs: merged as #96 (26 Nov).** Free drive only; the root `src/` and the
+  golden are untouched.
   - `drive/apps/web/src/env/holeFlags.ts`: a 4 m pole and a 1.6 × 1.1 m cloth on all 18 pins, 2 draws.
     The cloth faces its tee. The face is one canvas atlas: the logo's `#mark`, the number and PAR.
     It is painted after the fonts load and the mark decodes, and is two-sided (the back flips `u` on
@@ -44,7 +44,11 @@ Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; 
   - Smoke check: `drive/apps/web/test/env/holeFlags.test.ts` (1.3 s), on the shipped packet.
     Screenshots are in `drive/docs/screens/m2/flags/`: WebGL2 headless, because WebGPU had no
     adapter in the container.
-- **Next: PR 3, the shared cart (§5), once #96 merges.** Prompt D.
+- **Next: PR 3, the shared cart (§5).** The plan is
+  `docs/superpowers/plans/2026-11-26-shared-cart-implementation.md`, saved on 26 Nov for a fresh
+  session; prompt D runs it. The user's call that day: Turrets' wheels steer from the turn rate,
+  because the renderer never receives a steer input (`CartTransform` is position, heading and
+  turret yaw only).
 - **Trap, now handled for PR 3:** free drive's dev server only serves files under `drive/`.
   `drive/apps/web/vite.config.ts` lists `art/brand/` and, since PR 2, `src/entities/graphs/` in
   `server.fs.allow`. Anything else shared from the root must be added too, or `pnpm dev` answers 403
