@@ -2,7 +2,7 @@ import { joyrideChase } from '../camera/cameraConfig';
 import { joyrideTuning } from '../vehicle/cartTuning';
 import type { ModeConfig } from './modes';
 
-/** Joyride: 30 mph plus boost, drifts and flips; skid marks stay until the buffer wraps. */
+/** Joyride: 45 mph plus boost, drifts and flips; skid marks stay until the buffer wraps. */
 export const joyride: ModeConfig = {
   name: 'joyride',
   label: 'Joyride',

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PAINTS, paintFromHex } from "../../render/teamColors";
 import { RIDES, freeDriveUrl } from "./titleConfig";
 import { TitleFlow } from "./titleFlow";
 
@@ -71,5 +72,14 @@ describe("rides", () => {
       home: "/",
     });
     expect(freeDriveUrl("/sub", "chill")).toMatch(/^\/sub\/drive\/\?.*home=%2Fsub%2F/);
+  });
+
+  it("carries the chosen paint as its canopy hex, which drive reads back to the same paint", () => {
+    for (const paint of PAINTS) {
+      const url = new URL(freeDriveUrl("/", "chill", paint.canopy), "https://example.test");
+      expect(paintFromHex(url.searchParams.get("paint"))).toBe(paint);
+    }
+    expect(paintFromHex("123456")).toBeNull();
+    expect(paintFromHex("#2f7be0")).toBeNull();
   });
 });

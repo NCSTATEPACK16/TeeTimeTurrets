@@ -6,6 +6,8 @@
  * free-drive rides, Chill and Joyride, which are the separate app in drive/ served at /drive/.
  */
 
+import { paintHex } from "../../render/teamColors";
+
 export type RideId = "turrets" | "chill" | "joyride";
 
 export interface Ride {
@@ -42,7 +44,7 @@ export const RIDES: readonly Ride[] = [
     name: "Joyride",
     badge: "Free drive",
     blurb:
-      "The cart the pro shop warned you about. Twice the speed, a boost button and handbrake drifts round Tee Time Links.",
+      "The cart the pro shop warned you about. Three times the speed, a boost button and handbrake drifts round Tee Time Links.",
     tags: ["Boost", "Handbrake drifts", "Flips allowed"],
     kind: "drive",
   },
@@ -69,8 +71,10 @@ export const TITLE_CONFIG = {
  * Where a free-drive ride goes: drive/ under the site's base, straight into driving (its own
  * menus skipped), with a Main menu button on its pause menu that comes back here.
  */
-export function freeDriveUrl(base: string, mode: "chill" | "joyride"): string {
+export function freeDriveUrl(base: string, mode: "chill" | "joyride", paint?: number): string {
   const root = base.endsWith("/") ? base : `${base}/`;
   const q = new URLSearchParams({ level: TITLE_CONFIG.driveLevel, mode, menu: "0", home: root });
+  // The canopy hex of a PAINTS entry (src/render/teamColors.ts); drive accepts nothing else.
+  if (paint !== undefined) q.set("paint", paintHex(paint));
   return `${root}drive/?${q.toString()}`;
 }

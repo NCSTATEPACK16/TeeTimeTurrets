@@ -3,8 +3,12 @@
  * ?view=x,z,height,headingDeg,pitchDeg (a fixed review camera instead of the chase camera),
  * ?menu=0 (skip the title and ride menus and start driving; a ?view bookmark skips them too),
  * ?home=<same-site path> (a Main menu button on the pause menu, back to the page that launched free
- * drive: TeeTimeTurrets' title passes ?home=/).
+ * drive: TeeTimeTurrets' title passes ?home=/), ?paint=<hex> (the cart's canopy and the rider's shirt;
+ * only a canopy hex from TeeTimeTurrets' paint table is accepted).
  */
+// Shared data with no imports: the paint table Choose Your Ride offers.
+import { paintFromHex, type Paint } from '../../../../../src/render/teamColors';
+
 export interface Settings {
   debug: boolean;
   /** Show the lil-gui tuning panel. */
@@ -17,6 +21,8 @@ export interface Settings {
   menu: boolean;
   /** Where the pause menu's Main menu button goes; null hides the button. */
   home: string | null;
+  /** The chosen paint, or null for the model's own colours. */
+  paint: Paint | null;
 }
 
 /** A fixed camera for look reviews: ground position, eye height above the terrain, compass heading, pitch. */
@@ -57,5 +63,6 @@ export function readSettings(search: string): Settings {
     view: readView(q.get('view')),
     menu: !['0', 'false', 'no'].includes((q.get('menu') ?? '').toLowerCase()) && !q.get('view'),
     home: readHome(q.get('home')),
+    paint: paintFromHex(q.get('paint')),
   };
 }

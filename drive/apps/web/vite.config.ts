@@ -15,13 +15,15 @@ export default defineConfig({
     port: 5173,
     // The dev server only serves files under drive/ (the pnpm workspace root) unless told otherwise.
     // Shared art lives at the TeeTimeTurrets root, outside it: the Tee Time Links logo is imported
-    // from art/brand/ and the tee sign's frame from src/entities/graphs/, so both apps use the one
+    // from art/brand/, the graphs from src/entities/graphs/ and the paint table from src/render/, so both apps use the one
     // file. Builds are unaffected; this is dev only.
     fs: {
       allow: [
         searchForWorkspaceRoot(process.cwd()),
         fileURLToPath(new URL('../../../art/brand', import.meta.url)),
         fileURLToPath(new URL('../../../src/entities/graphs', import.meta.url)),
+        // The paint table (pure data) that Choose Your Ride also reads.
+        fileURLToPath(new URL('../../../src/render/teamColors.ts', import.meta.url)),
       ],
     },
   },

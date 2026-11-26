@@ -140,6 +140,7 @@ async function main(): Promise<void> {
 
     const cart = sim.cart;
     const cartView = new CartView(cart.tuning, cart.mounts);
+    if (settings.paint) cartView.setPaint(settings.paint.canopy, settings.paint.shirt);
     scene.add(cartView.root);
     const colliderView = settings.debug ? new ColliderView(cart.tuning, sim.heights) : null;
     if (colliderView) {
