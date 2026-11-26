@@ -18,6 +18,8 @@ import { TuningPanel } from './debug/tuningPanel';
 import { WaterPanel } from './debug/waterPanel';
 import { envConfig } from './env/envConfig';
 import { addLights } from './env/lights';
+import { createHoleFlags } from './env/holeFlags';
+import { createTeeSigns } from './env/teeSigns';
 import { createTrees } from './env/trees';
 import { skyColor, waterUniforms } from './env/oceanWaves';
 import { createWater } from './env/water';
@@ -119,6 +121,21 @@ async function main(): Promise<void> {
     if (horizon) scene.add(horizon);
     scene.add(createWater(level));
     scene.add(createTrees(level, sim.heights));
+    // A flag on every pin and a sign at every tee. Their faces fill in once fonts and the logo load.
+    const holeFlags = createHoleFlags(level.holes.holes, sim.heights);
+    const teeSigns = createTeeSigns(level.holes.holes, level.paths.paths, sim.heights, sim.paths);
+    scene.add(holeFlags.group, teeSigns.group);
+    void holeFlags.paintFaces();
+    void teeSigns.paintFaces();
+    // Free drive loads one level per page, so leaving the page is the level's teardown.
+    window.addEventListener(
+      'pagehide',
+      () => {
+        holeFlags.dispose();
+        teeSigns.dispose();
+      },
+      { once: true },
+    );
     if (settings.debug) scene.add(createTerrainMeshes(level, createTerrainWireframeMaterial()));
 
     const cart = sim.cart;
@@ -241,6 +258,7 @@ async function main(): Promise<void> {
         physicsMs += sim.lastStepMs;
         landing = Math.max(landing, cart.events.landing ?? 0);
         respawned ||= sim.respawned;
+        holeFlags.step(FIXED_DT, cart.position(), cart.body.linvel());
         capture();
       }
       if (respawned) snapAll();
@@ -266,6 +284,7 @@ async function main(): Promise<void> {
       drawRot.slerpQuaternions(prevRot, curRot, stepper.alpha);
       const wheels = cart.wheels();
       cartView.update(drawPos, drawRot, wheels);
+      holeFlags.update();
       colliderView?.update(cart);
       const idle =
         controls.throttle === 0 && controls.brake === 0 && controls.steer === 0 && Math.abs(cart.forwardSpeed()) < 0.2;
