@@ -94,23 +94,28 @@ async function playScriptedMatch(world: CourseWorld): Promise<number> {
 
 describe("arena determinism fingerprint", () => {
   let world: CourseWorld;
-  beforeAll(() => {
+  /** One fresh match on the default clock: the run every check below is measured against. */
+  let fresh: number;
+  beforeAll(async () => {
     world = buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED);
-  });
-
-  it("replays identically from the same seed", async () => {
-    expect(await playScriptedMatch(world)).toBe(await playScriptedMatch(world));
+    fresh = await playScriptedMatch(world);
   }, 60_000);
 
-  it("plays a rematch identically to the match before it", async () => {
-    // What "play again" promises: after `reset()` the same script gives the same match, down to
-    // every cart's position on every tick. Anything the first match leaves behind -- a ball on the
-    // ground, a bucket on cooldown, a bot's memory, a half-charged shot, the physics world's own
-    // history -- shows up here as a different number. The clock is the script's length, so the
-    // first match runs to its buzzer and the reset comes where PLAY AGAIN does, after it.
+  it("replays identically from the same seed, and a rematch replays the match before it", async () => {
+    // Three matches cover what five used to, to keep `npm test` under its 60 s cap. A second,
+    // separate Sim from the same seed must play `fresh` again: that is the replay. Its clock is the
+    // script's length rather than the default 180 s, which changes nothing a tick computes -- the
+    // tick that ends a match is still a whole tick -- so a mismatch here is a real divergence.
+    //
+    // Then "play again": after `reset()` the same script gives the same match, down to every cart's
+    // position on every tick. Anything the first match leaves behind -- a ball on the ground, a
+    // bucket on cooldown, a bot's memory, a half-charged shot, the physics world's own history --
+    // shows up as a different number. The first match runs to its buzzer, and the reset comes where
+    // PLAY AGAIN does, after it.
     const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS, matchDurationS: TICKS / 60 });
     try {
       const first = playScript(sim);
+      expect(first).toBe(fresh);
       expect(sim.matchOver).toBe(true);
       sim.reset();
       expect(playScript(sim)).toBe(first);
@@ -119,7 +124,7 @@ describe("arena determinism fingerprint", () => {
     }
   }, 60_000);
 
-  it("matches the recorded fingerprint", async () => {
-    expect(await playScriptedMatch(world)).toBe(4165176536);
+  it("matches the recorded fingerprint", () => {
+    expect(fresh).toBe(4165176536);
   });
 });
