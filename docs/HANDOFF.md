@@ -1,13 +1,13 @@
 # Handoff — next session
 
-Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, prompt B writes the 3.5c spec. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md` starts with slice 1, the flags. Root `npm test` is at 57.7 s against the 60 s cap, so each slice trims the slowest file first (the plan's Task 0). Rewrite this file at the end of each session: it is a baton, not a log.
 
 **Also landed (2026-11-25): free drive and the shared title.** The GolfCartSimulator repo moved in as
 `drive/` (served at `/drive/`), and the title is now Clubhouse Sunset with Choose Your Ride (Turrets /
 Chill / Joyride), and free drive's course is Tee Time Links, with no club name or logo. Why and how: `docs/DECISIONS.md`, "Free drive lives in drive/". Free drive's own
 open items (its M2 gate, John's per-hole routing review) are in `drive/docs/handoff/M2.md`, Part F.
 
-**In progress (2026-11-25; PR 2 merged 26 Nov, PR 3 built 26 Nov as draft #98, waiting on the user's play-test): one cart in both games, and hole flags in free drive.** Chill and Joyride get
+**Done (2026-11-27; PR 1 #95, PR 2 #96 and PR 3 #98 all merged): one cart in both games, and hole flags in free drive.** Chill and Joyride get
 the Turrets cart (no turret, with the rider, team paint, engine and horn, and wheels that spin and steer in both games). It keeps free drive's
 vehicle physics, retuned so Joyride tops out at Turrets' 20 m/s. Free drive gets an oversized waving flag on
 every pin (hole number, PAR and a new Tee Time Links logo) and tee signs. Three PRs: the logo, then the flags, then the cart.
@@ -44,7 +44,7 @@ Spec: `docs/superpowers/specs/2026-11-25-shared-cart-and-hole-flags-design.md`; 
   - Smoke check: `drive/apps/web/test/env/holeFlags.test.ts` (1.3 s), on the shipped packet.
     Screenshots are in `drive/docs/screens/m2/flags/`: WebGL2 headless, because WebGPU had no
     adapter in the container.
-- **PR 3, the shared cart: draft #98 (26 Nov), waiting on the user's play-test. Do not merge before it.**
+- **PR 3, the shared cart: merged as #98 (27 Nov), with no play-test notes left on it.**
   Built from `docs/superpowers/plans/2026-11-26-shared-cart-implementation.md`; the PR body has
   the checks, the deviations and the play-test list.
   - **Model:** `drive/apps/web/src/vehicle/cartGraph.ts` is the WebGPU twin of `buildGraph` and
