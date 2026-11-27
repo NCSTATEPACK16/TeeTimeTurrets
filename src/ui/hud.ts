@@ -1,4 +1,4 @@
-import { createHudStateScratch, deriveHudState } from "./hudState";
+import { HUD_FLAG_CHIPS, createHudStateScratch, deriveHudState } from "./hudState";
 import type { HudSource } from "./hudState";
 
 /** Reused every call rather than allocated per frame -- see deriveHudState's docstring. */
@@ -27,6 +27,9 @@ export interface Hud {
   teamScore: HTMLElement;
   points: HTMLElement;
   zoneWarning: HTMLElement;
+  /** One chip per capture flag, built here into `#hud-flags`, which ships empty. */
+  flagChips: HTMLElement[];
+  bleed: HTMLElement;
 }
 
 export function readHud(): Hud | null {
@@ -42,6 +45,8 @@ export function readHud(): Hud | null {
     "hud-team-score",
     "hud-points",
     "hud-zone-warning",
+    "hud-flags",
+    "hud-bleed",
   ] as const;
 
   const found = ids.map((id) => document.getElementById(id));
@@ -58,7 +63,21 @@ export function readHud(): Hud | null {
     teamScore,
     points,
     zoneWarning,
+    flagRow,
+    bleed,
   ] = found as HTMLElement[];
+
+  // The chips are made here, not in markup, so an empty row is all the page shows until the code
+  // under test fills it (docs/TEST-AND-SPEC-PITFALLS.md §1, instances 5 and 6).
+  flagRow!.replaceChildren();
+  const flagChips: HTMLElement[] = [];
+  for (let i = 0; i < HUD_FLAG_CHIPS; i++) {
+    const chip = document.createElement("span");
+    chip.className = "hud-flag";
+    chip.hidden = true;
+    flagRow!.append(chip);
+    flagChips.push(chip);
+  }
 
   return {
     powerFill: powerFill!,
@@ -72,6 +91,8 @@ export function readHud(): Hud | null {
     teamScore: teamScore!,
     points: points!,
     zoneWarning: zoneWarning!,
+    flagChips,
+    bleed: bleed!,
   };
 }
 
@@ -87,11 +108,29 @@ export function drawHud(hud: Hud, source: HudSource): void {
   setText(hud.teamScore, state.teamScoreText);
   setText(hud.points, state.pointsText);
   setText(hud.zoneWarning, state.zoneWarning);
+  for (let i = 0; i < hud.flagChips.length; i++) drawFlagChip(hud.flagChips[i]!, state.flags[i]!);
+  setText(hud.bleed, state.bleedText);
+  hud.bleed.classList.toggle("us", state.bleedingUs);
 
   if (hud.combat.hidden) hud.combat.hidden = false;
   setWidth(hud.healthFill, state.healthFraction);
   setText(hud.healthText, state.healthText);
   setText(hud.ammoCount, state.ammoText);
+}
+
+/**
+ * A chip is its letter, coloured by owner, with a fill that leans toward whoever is taking it.
+ * The fill is a CSS custom property so the stylesheet decides how it is drawn.
+ */
+function drawFlagChip(chip: HTMLElement, flag: (typeof stateScratch.flags)[number]): void {
+  if (chip.hidden === flag.shown) chip.hidden = !flag.shown;
+  if (!flag.shown) return;
+  setText(chip, flag.letter);
+  if (chip.dataset.owner !== flag.owner) chip.dataset.owner = flag.owner;
+  if (chip.dataset.lean !== flag.leanTo) chip.dataset.lean = flag.leanTo;
+  chip.classList.toggle("contested", flag.contested);
+  const lean = `${Math.round(flag.lean01 * 100)}%`;
+  if (chip.style.getPropertyValue("--lean") !== lean) chip.style.setProperty("--lean", lean);
 }
 
 /** Guarded so an unchanged string does not dirty the DOM every frame at 60fps. */

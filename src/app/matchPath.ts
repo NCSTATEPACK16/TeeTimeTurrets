@@ -11,7 +11,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
  */
 export { Sim } from "../sim/world";
 export { buildCourseWorld } from "../sim/courseWorld";
-export { arenaFromCourse, courseArenaZone, coursePickupSites } from "../sim/arena";
+export { arenaFromCourse, captureSites, courseArenaZone, coursePickupSites } from "../sim/arena";
 export { AUTHORED_CLUBHOUSE } from "../sim/authoredLayout";
 export { MatchScreen } from "../ui/screens/MatchScreen";
 export { MatchResultsScreen } from "../ui/screens/MatchResultsScreen";

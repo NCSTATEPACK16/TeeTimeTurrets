@@ -139,6 +139,8 @@ async function main(): Promise<void> {
         // renderer's sites are the sim's.
         pickupSites: path.coursePickupSites(courseWorld),
         zone: path.courseArenaZone(courseWorld).polygon,
+        // The sim derives the same list in `arenaFromCourse`, so the flags drawn are the flags fought for.
+        captureSites: path.captureSites(courseWorld),
       };
       // The M map's holes, sampled now, while PLAY is already loading, rather than on first open
       // in the middle of a fight. Cached for the page, like the course.

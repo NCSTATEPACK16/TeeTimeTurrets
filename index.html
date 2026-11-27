@@ -73,6 +73,29 @@
       }
       #hud-status { min-height: 1.2em; color: var(--status); margin-top: 5px; }
       #hud-timer { font-variant-numeric: tabular-nums; }
+      #hud-flags { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
+      #hud-flags:empty { display: none; }
+      .hud-flag {
+        --lean: 0%;
+        --lean-colour: transparent;
+        position: relative; overflow: hidden; width: 26px; height: 26px; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 14px; color: #fff; text-shadow: 0 1px 2px #0009;
+        background: #5c6168; border: 2px solid #ffffff55; isolation: isolate;
+      }
+      .hud-flag[hidden] { display: none; }
+      .hud-flag::before {
+        content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--lean);
+        background: var(--lean-colour); opacity: 0.85; z-index: -1;
+      }
+      .hud-flag[data-lean="us"] { --lean-colour: #6fb6ff; }
+      .hud-flag[data-lean="them"] { --lean-colour: #ff9a5c; }
+      .hud-flag[data-owner="us"] { background: #2f78c4; border-color: #6fb6ff; }
+      .hud-flag[data-owner="them"] { background: #c4612f; border-color: #ff9a5c; }
+      .hud-flag.contested { animation: flag-contested 0.6s ease-in-out infinite alternate; }
+      @keyframes flag-contested { from { transform: scale(1); } to { transform: scale(1.18); border-color: #fff; } }
+      #hud-bleed { text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #ffd0b0; min-height: 0; }
+      #hud-bleed.us { color: #ff8a6a; }
       /* Stage 4 (#52): out of the arena zone. Empty is hidden, so only the code can show it.
          Inside #hud so it hides with it; #hud's transform makes it the containing block, so this is
          placed from #hud's bottom edge, high enough to clear the cart in the chase framing. */
@@ -582,6 +605,9 @@
         <span id="hud-team-score"></span>
         <span id="hud-points"></span>
       </div>
+      <!-- Capture flags A-C: hud.ts builds the chips, so the row is empty until it does. -->
+      <div id="hud-flags"></div>
+      <div id="hud-bleed"></div>
       <div id="power-track"><div id="power-fill"></div></div>
       <div id="hud-status"></div>
       <!-- Empty by design, like the score spans above. -->

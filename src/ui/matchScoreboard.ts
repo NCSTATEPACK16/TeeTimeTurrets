@@ -50,6 +50,19 @@ export interface ScoreboardState {
   readonly mvpText: string;
   /** One row per player in the roster, in rig order. */
   readonly rows: readonly ScoreboardRow[];
+  /**
+   * One line per side that bled strokes to the other side's capture flags (Stage 3.5c), and none
+   * for a side that bled nothing. A bleed stroke is no player's death, so without this line a
+   * side's rows would not add up to the `usText`/`themText` total printed above them.
+   */
+  readonly flagRows: readonly FlagRow[];
+}
+
+/** `strokes` a side bled to flags, which `Match.teamStrokes` counts and no player's row does. */
+export interface FlagRow {
+  readonly team: number;
+  readonly strokes: number;
+  readonly text: string;
 }
 
 export function deriveScoreboard(match: Match): ScoreboardState {
@@ -65,6 +78,12 @@ export function deriveScoreboard(match: Match): ScoreboardState {
     });
   }
 
+  const flagRows: FlagRow[] = [];
+  for (const team of [PLAYER_TEAM, ENEMY_TEAM]) {
+    const strokes = match.bleedFor(team);
+    if (strokes > 0) flagRows.push({ team, strokes, text: `FLAGS +${strokes} ${strokes === 1 ? "STROKE" : "STROKES"}` });
+  }
+
   const mvp = match.mvp();
 
   return {
@@ -75,6 +94,7 @@ export function deriveScoreboard(match: Match): ScoreboardState {
     themText: `THEM ${match.teamStrokes(ENEMY_TEAM)}`,
     mvpText: `MVP  ${nameOf(mvp)} — ${killsText(match.pointsFor(mvp))}`,
     rows,
+    flagRows,
   };
 }
 

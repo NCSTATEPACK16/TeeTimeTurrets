@@ -1,5 +1,5 @@
 import { deriveScoreboard } from "../matchScoreboard";
-import type { ScoreboardRow } from "../matchScoreboard";
+import type { FlagRow, ScoreboardRow } from "../matchScoreboard";
 import { el, on } from "../dom";
 import type { Screen } from "../../app/ScreenManager";
 import type { Match } from "../../sim/match";
@@ -67,7 +67,7 @@ export class MatchResultsScreen implements Screen {
         el(
           "div",
           { class: "arena-results__rows" },
-          state.rows.map(buildRow),
+          [...state.rows.map(buildRow), ...state.flagRows.map(buildFlagRow)],
         ),
         buttons,
       ]),
@@ -91,6 +91,16 @@ export class MatchResultsScreen implements Screen {
     this.container?.remove();
     this.container = null;
   }
+}
+
+/** A side's strokes bled to the other side's flags: its own line, under that side's players. */
+function buildFlagRow(row: FlagRow): HTMLElement {
+  const side = row.team === 0 ? "ally" : "enemy";
+  return el("div", { class: "arena-results__row" }, [
+    el("span", { class: `arena-results__row-name arena-results__row-name--${side}`, text: row.team === 0 ? "US" : "THEM" }),
+    el("span", { class: "arena-results__row-stat", text: "" }),
+    el("span", { class: "arena-results__row-stat", text: row.text }),
+  ]);
 }
 
 /** Team colour on the name only, matching `Nameplates`' identical convention. */

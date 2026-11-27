@@ -33,6 +33,35 @@ export interface HudSource {
     teamStrokes(team: number): number;
     pointsFor(index: number): number;
   };
+  /**
+   * Capture flags A-C (`sim/flags.ts`, Stage 3.5c). Absent, or with no sites, on a ground without
+   * them: the HUD then shows no flag row at all.
+   */
+  readonly captures?: {
+    readonly sites: { readonly length: number };
+    readonly owner: ArrayLike<number>;
+    readonly contested: ArrayLike<number>;
+    progress(i: number): number;
+    readonly bleedHolder: number;
+    readonly bleedInS: number;
+  };
+}
+
+/** The most flags a HUD row has chips for. */
+export const HUD_FLAG_CHIPS = 3;
+const FLAG_LETTERS = ["A", "B", "C"] as const;
+
+/** One capture flag's chip, from the player's side of the field. */
+export interface HudFlag {
+  /** False for a chip past the ground's flag count: hide it. */
+  shown: boolean;
+  letter: string;
+  /** Who owns it, as the player sees it. */
+  owner: "us" | "them" | "none";
+  /** How far the capture leans, 0..1, and toward whom. */
+  lean01: number;
+  leanTo: "us" | "them" | "none";
+  contested: boolean;
 }
 
 /** The player is always rig 0 and always team 0; see `matchConfig.teamOf`. */
@@ -54,6 +83,12 @@ export interface HudState {
   pointsText: string;
   /** The out-of-zone warning, or empty while inside it (or dead). */
   zoneWarning: string;
+  /** One chip per capture flag, A to C. Fixed length; `shown` says which are real. */
+  flags: HudFlag[];
+  /** Who is bleeding strokes to the flags and when the next goes, or empty while nobody is. */
+  bleedText: string;
+  /** True while the player's side is the one bleeding. */
+  bleedingUs: boolean;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -70,6 +105,16 @@ export function createHudStateScratch(): HudState {
     teamScoreText: "",
     pointsText: "",
     zoneWarning: "",
+    flags: Array.from({ length: HUD_FLAG_CHIPS }, (_, i) => ({
+      shown: false,
+      letter: FLAG_LETTERS[i]!,
+      owner: "none" as const,
+      lean01: 0,
+      leanTo: "none" as const,
+      contested: false,
+    })),
+    bleedText: "",
+    bleedingUs: false,
   };
 }
 
@@ -90,6 +135,36 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.teamScoreText = `US ${source.match.teamStrokes(PLAYER_TEAM)} — THEM ${source.match.teamStrokes(ENEMY_TEAM)}`;
   out.pointsText = `KILLS ${source.match.pointsFor(PLAYER)}`;
   out.zoneWarning = zoneWarningText(source);
+  deriveFlags(source, out);
+}
+
+/**
+ * The flag row, seen from team 0, which is the player's. `progress` runs -1 (team 0's) to +1
+ * (team 1's), so the player's lean is its negative.
+ */
+function deriveFlags(source: HudSource, out: HudState): void {
+  const captures = source.captures;
+  const count = captures === undefined ? 0 : Math.min(captures.sites.length, HUD_FLAG_CHIPS);
+  for (let i = 0; i < HUD_FLAG_CHIPS; i++) {
+    const chip = out.flags[i]!;
+    chip.shown = i < count;
+    if (!chip.shown || captures === undefined) continue;
+    const owner = captures.owner[i]!;
+    chip.owner = owner === PLAYER_TEAM ? "us" : owner === ENEMY_TEAM ? "them" : "none";
+    const lean = -captures.progress(i);
+    chip.lean01 = clamp01(Math.abs(lean));
+    chip.leanTo = lean > 0 ? "us" : lean < 0 ? "them" : "none";
+    chip.contested = captures.contested[i] === 1;
+  }
+
+  const holder = captures === undefined ? -1 : captures.bleedHolder;
+  out.bleedingUs = holder === ENEMY_TEAM;
+  if (captures === undefined || (holder !== PLAYER_TEAM && holder !== ENEMY_TEAM)) {
+    out.bleedText = "";
+    return;
+  }
+  const next = Math.max(0, Math.ceil(captures.bleedInS));
+  out.bleedText = holder === ENEMY_TEAM ? `WE BLEED −1 IN ${next}s` : `THEY BLEED −1 IN ${next}s`;
 }
 
 /**

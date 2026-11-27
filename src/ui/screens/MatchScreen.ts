@@ -36,6 +36,8 @@ import { Sightlines } from "../sightlines";
 import { CountdownDisplay, countdownBeat } from "../countdown";
 import type { CountdownBeat } from "../countdown";
 import { StreakTracker } from "../streaks";
+import { FLAG_LETTERS, flagBanner } from "../flagBanners";
+import { NO_TEAM } from "../../sim/flags";
 import { musicIntensity } from "../../audio/music";
 import type { Screen } from "../../app/ScreenManager";
 
@@ -111,6 +113,8 @@ export class MatchScreen implements Screen {
   private countdown = new CountdownDisplay(null);
   private readonly beatScratch: CountdownBeat = { label: "", beat: 0 };
   private streaks = new StreakTracker();
+  /** Scratch for `flagBanner`: each side's flags at the moment an event is read. */
+  private readonly flagsHeld = { us: 0, them: 0 };
   /** Set once the final-30 banner has fired this match. */
   private finalStretch = false;
   /**
@@ -247,6 +251,8 @@ export class MatchScreen implements Screen {
       botDead: sim.bots.map((b) => b.dead),
       speed01: 0,
       pickupCharged: sim.pickups.map(() => true),
+      // The sim's own array, read in place: a frame never copies it, and the render only reads it.
+      flagOwners: sim.captures.owner,
       shields: [sim.cart, ...sim.bots].map(() => 0),
     };
     this.lastDrawMs = performance.now();
@@ -436,6 +442,13 @@ export class MatchScreen implements Screen {
         this.killFeed.onKill(e.actor, e.target);
         this.onKillPacing(e.actor, e.target, e.tick);
       }
+      if (e.kind === "flagCaptured" || e.kind === "flagNeutral") {
+        const held = this.flagsHeld;
+        held.us = sim.captures.ownedBy(teamOf(0));
+        held.them = sim.captures.ownedBy(1 - teamOf(0));
+        const banner = flagBanner(e.kind, e.target, e.amount, held);
+        if (banner) this.bannerFeed.push(banner.headline, banner.consequence);
+      }
       if (e.target === 0 && (e.kind === "hit" || e.kind === "ram")) this.hitstop(HITSTOP_HURT_TICKS, FLASH_HURT);
       this.playEffect(e.kind, e.x, e.y, e.z);
       this.addTrauma(sim, e.kind, e.actor, e.target, e.club, e.x, e.z);
@@ -563,6 +576,13 @@ export class MatchScreen implements Screen {
       if (!sim.pickupCharged(i)) continue;
       const site = pickups[i]!.site;
       markers.push({ x: site.x, z: site.z, kind: "pickup", heading: 0 });
+    }
+    const captures = sim.captures;
+    for (let i = 0; i < captures.sites.length; i++) {
+      const site = captures.sites[i]!;
+      const owner = captures.owner[i]!;
+      const side = owner === teamOf(0) ? "us" : owner === NO_TEAM ? "none" : "them";
+      markers.push({ x: site.x, z: site.z, kind: "flag", heading: 0, label: FLAG_LETTERS[i] ?? "", side });
     }
     const holes = courseMapHoles(this.options.arena);
     map.draw(markers, nearestHoleNumber(holes, view.cart.position.x, view.cart.position.z));
