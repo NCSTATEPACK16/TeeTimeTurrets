@@ -6,7 +6,7 @@ Written 2026-11-23, after slice C of the Caswell look (pine straw and grass tuft
 - **B. The 3.5c spec (mortar and capture flags).** For a cloud session when no Blender session is to hand. It writes a spec and stops for the user's answers; it builds nothing.
 - **C. Stage 4b, iOS and gamepad.** After 3.5c. Written on 7 Nov and still current.
 - **D. One cart in both games, and hole flags in free drive.** Added 25 Nov at the user's request. Three PRs, run one per session in order: the logo, then the flags and tee signs, then the shared cart. It runs in the cloud and is independent of A–C.
-  - **PR 1, the logo, merged as #95** (26 Nov). **PR 2, flags and tee signs, merged as #96** (26 Nov). **PR 3, the shared cart, is built as draft #98** (26 Nov) and waits on the user's play-test. A session picking D up again addresses that play-test's notes on #98; with all three merged, prompt D is done.
+  - **PR 1, the logo, merged as #95** (26 Nov). **PR 2, flags and tee signs, merged as #96** (26 Nov). **PR 3, the shared cart, merged as #98** (27 Nov). **Prompt D is done.**
 
 ---
 
