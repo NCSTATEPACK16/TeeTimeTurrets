@@ -37,6 +37,7 @@ import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
+import { CaptureField } from "./flags";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import type { SouthBoundary } from "./courseBarrier";
@@ -297,6 +298,12 @@ export class Sim {
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   /** The clock and the scoreboard. Its roster is set in `create`, once every rig exists. */
   readonly match: Match;
+  /**
+   * Capture flags A, B and C (Stage 3.5c). Read-only outside the sim, like `match`: the HUD, the
+   * map and the flags on the greens read it, and only `step` changes it. No flags on a ground
+   * with no `captureSites`.
+   */
+  readonly captures: CaptureField;
   /** Seconds left on the match clock. Counts down every `step()` until it hits zero. */
   get matchTimeRemaining(): number {
     return this.match.remaining;
@@ -342,6 +349,9 @@ export class Sim {
     this.pickupStates = createPickupStates(ground.pickupSites);
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS, countdownS });
+    this.captures = new CaptureField(
+      ground.captureSites.map((p) => ({ x: p.x, y: heightAt(p.x, p.z), z: p.z })),
+    );
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
     this.currentCart = createCartTransform();
     this.previousCart = createCartTransform();
@@ -624,6 +634,10 @@ export class Sim {
     processContacts(this.eventQueue, this.combatContext);
     this.ballPool.sync();
     this.syncCurrentPool();
+
+    // Flags after contacts, so a cart killed this tick holds nothing. Live ticks only: the
+    // countdown takes no flag, and the tick that ends the match bleeds nothing.
+    if (!counting && !this.match.over) this.captures.tick(this.carts, this.match, this.events, this.tickCount);
 
     // The tick that ends the match is still a whole tick -- carts move, balls fly, a hit lands and
     // a kill scores -- and only then does the world freeze. Every previous/current pair collapses
@@ -1123,6 +1137,7 @@ export class Sim {
   reset(): void {
     this.lastShotWasStrike = false;
     this.match.reset();
+    this.captures.reset();
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.freePhysics();
     this.buildPhysics();

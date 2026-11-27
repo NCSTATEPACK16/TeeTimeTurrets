@@ -221,6 +221,26 @@ const SYNTHS: Record<Cue, Synth> = {
   splash: (ctx, out, noise, t) => {
     burst(ctx, out, noise, t, 0.5, "bandpass", 1200, 0.6);
   },
+  // Our side took a flag: a rising bugle-ish fifth.
+  flagUp: (ctx, out, _noise, t) => {
+    tone(ctx, out, "triangle", 523, 523, t, 0.12, 0.25);
+    tone(ctx, out, "triangle", 784, 790, t + 0.11, 0.3, 0.28);
+  },
+  // A flag went to them, or we lost one: the same two notes, falling.
+  flagDown: (ctx, out, _noise, t) => {
+    tone(ctx, out, "triangle", 784, 784, t, 0.12, 0.25);
+    tone(ctx, out, "triangle", 523, 500, t + 0.11, 0.32, 0.28);
+  },
+  // Their flag knocked to neutral: a wooden thunk.
+  flagThunk: (ctx, out, noise, t) => {
+    burst(ctx, out, noise, t, 0.07, "bandpass", 700, 0.45);
+    tone(ctx, out, "sine", 180, 120, t, 0.12, 0.35);
+  },
+  // A bleed stroke: one polite golf clap.
+  clap: (ctx, out, noise, t) => {
+    burst(ctx, out, noise, t, 0.03, "bandpass", 2200, 0.4);
+    burst(ctx, out, noise, t + 0.05, 0.025, "bandpass", 1900, 0.25);
+  },
   // A countdown beat: a short, clean start-light tone.
   beep: (ctx, out, _noise, t) => {
     tone(ctx, out, "square", 660, 660, t, 0.16, 0.18);

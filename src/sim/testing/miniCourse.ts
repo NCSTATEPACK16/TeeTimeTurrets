@@ -60,6 +60,7 @@ export function miniCourse(holeCount: number, cellM = 8, seed = 2026): MiniCours
       pickupSites: [],
       // Nor do they include the zone's holes.
       zone: null,
+      captureSites: [],
       seed: specs[0]!.seed,
     },
   };
