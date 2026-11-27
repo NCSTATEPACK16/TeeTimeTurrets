@@ -1,9 +1,9 @@
 # Stage 3.5c: the Mulligan Mortar and capture flags
 
-Written 2026-11-27. The spec for the last slice of Stage 3.5 (`docs/REVAMP-PLAN.md`, "3.5c: new
-warfare rules"). It settles everything `docs/SPEC-QUEUE.md` item 1 lists as missing. **Nothing is
-built until the user answers §8.** Every question there has a default, and the build follows the
-defaults wherever the user does not say otherwise.
+Written 2026-11-27, and answered by the user the same day (§8: every default stands). The spec
+for the last slice of Stage 3.5 (`docs/REVAMP-PLAN.md`, "3.5c: new warfare rules"). It settles
+everything `docs/SPEC-QUEUE.md` item 1 lists as missing. The implementation plan is
+`docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md`.
 
 What is already decided, and not reopened here (`docs/DECISIONS.md`, "Stage 3.5", and its
 7 Nov follow-up):
@@ -84,7 +84,7 @@ A and C mirror each other to within 8 m, so each side has a near flag. B is the 
 
 B is not perfectly neutral: it is 31 m nearer team 0's pad. Hole 15 is neutral to the metre, but
 it is 480 m out, 24 s at the cart's 20 m/s top speed and more over real ground. That is too
-far for a 3-minute match. The default takes hole 10 and accepts the 31 m. It is Q1 in case the
+far for a 3-minute match. The default takes hole 10 and accepts the 31 m. The user confirmed hole 10 (Q1). It was Q1 in case the
 user would rather have it fair.
 
 The sites are **derived, not authored**: `arena.ts` gains `captureSites(world)`, which returns the
@@ -200,14 +200,15 @@ directly.
   does not already hold one. It holds **at most one** (Q5).
 - **A held mortar survives death** and is lost at the match's end and on `Sim.reset` (Q6).
 - A new event, `mortarEarned` (`actor` = the cart), fires on the tick it is earned. The banner
-  shows it in place of ON THE GREEN's consequence line: `ON THE GREEN / MORTAR READY [F]`.
+  shows it in place of ON THE GREEN's consequence line: `ON THE GREEN / MORTAR READY [G]`.
   `StreakTracker` stays the thing that writes the headline. The sim event decides the
   consequence, so the two cannot disagree about whether a mortar was earned.
 
 ### 3.2 Calling it, and where it lands (Q7)
 
 - **Intent.** `PlayerIntent` gains `callMortar: boolean`, false in `neutralIntent()`. The keyboard
-  binds it to **F**. The gamepad binding (**Y / Triangle**) arrives with Stage 4b, and the touch
+  binds it to **G**. F is already a fire key (`src/input/mapping.ts`, beside Space and the
+  left mouse button), and G is free and next to it. The gamepad binding (**Y / Triangle**) arrives with Stage 4b, and the touch
   button with the touch layer. Nothing reads it during the countdown (`holdIntent` drops it).
 - **Where it lands.** On the call tick, the target point is the **landing point of the arc the
   player is aiming**: the equipped club at full charge, along the turret's current yaw, as
@@ -299,7 +300,7 @@ stuck/unstick logic gets them off trees and walls. The flags have to work with t
 - **Every other bot keeps today's behaviour**, with one addition: when its target is farther than
   `BOT_FLAG_DIVERT_M = 120` away, it drives at the nearest flag not owned by its team instead. A
   bot that would otherwise cross the course for a kill picks up a flag on the way.
-- **Defending (default off, Q10):** a bot within 80 m of a flag its team owns, while an enemy is
+- **Defending (off, Q10, confirmed):** a bot within 80 m of a flag its team owns, while an enemy is
   inside the capture radius, drives to the flag. Off by default because it can strip the fight
   from the middle of the map. Slice 3's play-test decides.
 - **Where it plugs in.** `world.ts`'s `botTargetScratch` already writes `driveX/driveZ`.
@@ -322,7 +323,7 @@ New and changed rows for UI-SPEC §2, added in the slice that builds each:
 |---|---|---|---|
 | H14 | Team score strip (changed) | `Match.teamStrokes`, `CaptureField` | Already `US n — THEM m`. It gains three flag chips, **A B C**, under it: filled in the owner's team colour (`teamColors.ts`), grey when neutral, with a progress arc for `progress`. A chip pulses while `contested`. When a side bleeds, a small `−1 IN 12s` timer shows under the side that is losing strokes. |
 | H18 | Flag on the green (new, render) | `captureSites`, `owner` | A `Flagstick` (`src/entities/Flagstick.ts`, drawn today only on the title backdrop) on each capture green, its cloth in the owner's colour with the flag's letter, and a ring decal at `CAPTURE_RADIUS_M` so the edge is visible. Render-only. |
-| H19 | Mortar chip (new) | `Cart.mortars` | Beside the ammo card (H7): `MORTAR [F]` while one is held. Hidden otherwise, not shown empty (UI-SPEC §5's rule about inert elements). |
+| H19 | Mortar chip (new) | `Cart.mortars` | Beside the ammo card (H7): `MORTAR [G]` while one is held. Hidden otherwise, not shown empty (UI-SPEC §5's rule about inert elements). |
 | H20 | Mortar telegraph (new, render) | `mortarCalled` | The red ring, the whistle, and a minimap marker, as §3.3 describes. |
 | H8 | Minimap (changed) | `captureSites`, `owner`, `mortarCalled` | `MapMarker.kind` gains `"flag"`, drawn as its letter in the owner's colour, and `"mortar"` for the 3 s of a barrage. |
 | H12 | Event banner (changed) | `flagCaptured`, `flagNeutral`, `flagBleed`, `mortarEarned`, `mortarCalled` | `FLAG A TAKEN / THEY BLEED A STROKE EVERY 20 S` when the player's side reaches two. `WE LOST FLAG B` on a neutral. `INCOMING! / MOVE`. A bleed stroke is **not** a banner (it fires every 20 s): it is the H14 timer and a sound. |
@@ -387,7 +388,7 @@ it trimmed in the PR.
 
 ### Slice 2: the mortar, for the player
 
-- `Cart.killStreak` and `mortars`, `mortarEarned`, `PlayerIntent.callMortar` and the F key, the
+- `Cart.killStreak` and `mortars`, `mortarEarned`, `PlayerIntent.callMortar` and the G key, the
   target point, the barrage slots, `mortarRandom`, splash damage, `PooledBall.mortar`, H19, H20,
   the banner and the sounds. Bots earn mortars but never call them.
 - **Smoke check:** `src/sim/mortar.test.ts`, on a single-hole arena `Sim`, under 10 s. It must be
@@ -415,8 +416,8 @@ it trimmed in the PR.
 
 ## 8. Questions for the user
 
-Each has a default. The build starts from the defaults the moment you answer, and an unanswered
-question takes its default.
+**Answered 27 Nov 2026: every default stands.** The table is kept as the record of what was
+asked. The one change made since is the mortar's key: G, not F, because F already fires.
 
 | # | Question | Default |
 |---|---|---|
@@ -426,7 +427,7 @@ question takes its default.
 | Q4 | Does holding all three bleed faster? | **No.** 1 stroke every 20 s for two or three. |
 | Q5 | How many mortars can a cart hold, and is one earned every 3 kills in a streak? | **One at a time, earned at 3, 6, 9…** in a streak. |
 | Q6 | Is a held mortar kept after you die? | **Kept.** The streak resets; the reward does not. |
-| Q7 | How does the player aim it? | **Where your full-charge arc lands**, capped at 160 m. Alternatives: the enemy nearest the crosshair, or a point picked on the map. |
+| Q7 | How does the player aim it? | **Where your full-charge arc lands**, capped at 160 m, called with G. Alternatives: the enemy nearest the crosshair, or a point picked on the map. |
 | Q8 | Telegraph length and ring size? | **2 s and an 8 m ring.** |
 | Q9 | Splash damage? | **1 point within 3 m** of each ball's touchdown. Without it, the mortar rarely hits anything. |
 | Q10 | Bot flag behaviour? | **One runner per side, plus a divert for bots with a far target. Defending off.** |

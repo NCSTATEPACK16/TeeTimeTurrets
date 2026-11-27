@@ -28,9 +28,10 @@ the existing files there use. Build order is unchanged: 3.5b, 3.5c, 4b, 5, 6, 8,
 
 In priority order.
 
-1. **3.5c, mortar and capture flags.** **Spec written 27 Nov:**
-   `specs/2026-11-27-mortar-and-capture-flags-design.md`. It waits on the user's answers to its §8,
-   and then needs a plan. What it had to settle:
+1. **3.5c, mortar and capture flags.** **Specified, answered and planned on 27 Nov**, so it is
+   ready to build: `specs/2026-11-27-mortar-and-capture-flags-design.md` (every default
+   answered yes) and `plans/2026-11-27-mortar-and-capture-flags-implementation.md`, three slices.
+   What the spec had to settle:
    - Mortar: how the owner aims it, the telegraph (what the target sees and for how long), the
      barrage's seeded spread, damage per ball, whether it uses the ball pool, and what a bot does
      with one.

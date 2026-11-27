@@ -114,6 +114,9 @@ The lobby (12) names three, which is the first time the mode set is stated anywh
 - **STROKE** — the golf loop. Non-combat, first to hole out. BACKLOG #20 called this the good
   low-risk mode to ship first, and it is the one already playable.
 - **CTF** — the flag-ball. Phase 3.5.
+  Not built by Stage 3.5c: the arena's capture flags A/B/C on three greens are the game's flags
+  (user, 27 Nov 2026; `superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md`), and the
+  flag-ball stays unscheduled.
 - **TARGETS** — scoring on struck ragdolls (05, and image 13's `TARGETS DOWN` tile). Named
   here for the first time; previously implied by Phase 3 without being a mode.
 

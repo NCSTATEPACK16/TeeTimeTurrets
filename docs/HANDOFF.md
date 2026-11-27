@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, prompt B writes the 3.5c spec. Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md` starts with slice 1, the flags. Root `npm test` is at 57.7 s against the 60 s cap, so each slice trims the slowest file first (the plan's Task 0). Rewrite this file at the end of each session: it is a baton, not a log.
 
 **Also landed (2026-11-25): free drive and the shared title.** The GolfCartSimulator repo moved in as
 `drive/` (served at `/drive/`), and the title is now Clubhouse Sunset with Choose Your Ride (Turrets /

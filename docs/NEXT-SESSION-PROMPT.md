@@ -3,7 +3,7 @@
 Written 2026-11-23, after slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested and merged. Four prompts follow. Paste the one that fits into a fresh Claude Code session; each stands alone.
 
 - **A. Slice D, loblolly pines.** The next thing to build. **Local only:** it needs Blender and the Blender MCP on the Mac.
-- **B. The 3.5c spec (mortar and capture flags).** For a cloud session when no Blender session is to hand. It writes a spec and stops for the user's answers; it builds nothing. **Written 27 Nov** as `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md`; it waits on the answers to its §8.
+- **B. The 3.5c spec (mortar and capture flags).** For a cloud session when no Blender session is to hand. It writes a spec and stops for the user's answers; it builds nothing. **Done 27 Nov:** the spec (`docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md`) is answered, every default stands, and the plan is `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md`. **Next: build its slice 1, the flags,** in a cloud session: read the plan, start at Task 0, stop at play-test stop 1.
 - **C. Stage 4b, iOS and gamepad.** After 3.5c. Written on 7 Nov and still current.
 - **D. One cart in both games, and hole flags in free drive.** Added 25 Nov at the user's request. Three PRs, run one per session in order: the logo, then the flags and tee signs, then the shared cart. It runs in the cloud and is independent of A–C.
   - **PR 1, the logo, merged as #95** (26 Nov). **PR 2, flags and tee signs, merged as #96** (26 Nov). **PR 3, the shared cart, merged as #98** (27 Nov). **Prompt D is done.**
