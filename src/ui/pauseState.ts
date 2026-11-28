@@ -26,8 +26,13 @@ export class PauseState {
     this.panel = this.panel === "pause" ? "none" : "pause";
   }
 
-  pointerLockLost(matchOver: boolean): void {
-    if (matchOver || this.panel !== "none") return;
+  /**
+   * The pointer lock went. That is Esc only for keyboard and mouse, the one input that holds it.
+   * A pad player has nothing to lose, and iOS has no pointer lock at all, so `input` must be
+   * `"keyboard"` for this to pause (Stage 4b, spec §1). It defaults to that, as before pads.
+   */
+  pointerLockLost(matchOver: boolean, input: "keyboard" | "pad" = "keyboard"): void {
+    if (matchOver || this.panel !== "none" || input !== "keyboard") return;
     this.panel = "pause";
   }
 

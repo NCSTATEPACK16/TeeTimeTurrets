@@ -102,6 +102,14 @@ export class KeyboardMouseSource implements InputSource {
     canvas.addEventListener("click", this.onCanvasClick);
   }
 
+  /**
+   * True when a key or button is held, or the mouse moved this tick: the keyboard and mouse are
+   * the input in use. `MatchInput` reads it to tell which input the player last touched.
+   */
+  get active(): boolean {
+    return this.keysDown.size > 0 || this.pointerAimDelta !== 0;
+  }
+
   sample(): PlayerIntent {
     return intentFromKeys(this.keysDown, this.pressedThisTick, this.pointerAimDelta, this.intent);
   }

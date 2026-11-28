@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { QualityPreset } from "../../render/quality";
-import { KeyboardMouseSource } from "../../input/KeyboardMouseSource";
+import { MatchInput } from "../../input/MatchInput";
 import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
 import { CLUB_STATS, ClubType as Club } from "../../physics/Ballistics";
@@ -71,7 +71,7 @@ export interface MatchScreenOptions {
 export class MatchScreen implements Screen {
   private readonly options: MatchScreenOptions;
   private render: RenderScene | null = null;
-  private input: KeyboardMouseSource | null = null;
+  private input: MatchInput | null = null;
   private nameplates: Nameplates | null = null;
   private hud: Hud | null = null;
   /** UI-SPEC H12. Optional: if index.html has no #event-banner the match still runs without it. */
@@ -139,26 +139,41 @@ export class MatchScreen implements Screen {
   private flash = 0;
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
-    if (event.code === "KeyH" && !this.pause.paused) {
-      gameAudio.play(HONK);
-      return;
-    }
-    if (event.code === "KeyM" && !this.pause.paused) {
-      this.courseMap?.cycle();
-      return;
-    }
-    if (event.code !== "Escape") return;
-    // Esc closes an open map before it pauses anything.
+    if (event.code === "KeyH") this.honk();
+    else if (event.code === "KeyM") this.cycleMap();
+    else if (event.code === "Escape") this.escape();
+  };
+
+  /** H, or the pad's horn button. */
+  private honk(): void {
+    if (!this.pause.paused) gameAudio.play(HONK);
+  }
+
+  /** M, or the pad's Select. */
+  private cycleMap(): void {
+    if (!this.pause.paused) this.courseMap?.cycle();
+  }
+
+  /** Esc, or the pad's Start: closes an open map before it pauses anything. */
+  private escape(): void {
     if (this.courseMap?.visible) {
       this.courseMap.close();
       return;
     }
     this.pause.escape(this.options.sim.matchOver);
     this.syncPause();
-  };
+  }
+
+  /** The pad's match-screen buttons, read once a tick whether or not the match is paused. */
+  private readPadButtons(input: MatchInput): void {
+    const edges = input.menuEdges();
+    if (edges.horn) this.honk();
+    if (edges.map) this.cycleMap();
+    if (edges.pause) this.escape();
+  }
   private readonly onPointerLockChange = (): void => {
     if (document.pointerLockElement !== null) return;
-    this.pause.pointerLockLost(this.options.sim.matchOver);
+    this.pause.pointerLockLost(this.options.sim.matchOver, this.input?.active ?? "keyboard");
     this.syncPause();
   };
   private damageRoot: HTMLElement | null = null;
@@ -205,7 +220,7 @@ export class MatchScreen implements Screen {
     );
     this.lastSeenAtMs.length = 0;
     this.sightlines = new Sightlines(sim.bots.length, sim.obstacles);
-    this.input = new KeyboardMouseSource(renderer.domElement);
+    this.input = new MatchInput(renderer.domElement);
     this.settings = { ...this.options.settings };
     this.input.sensitivity = this.settings.sensitivity;
     this.pause = new PauseState({ showControls: !this.settings.seenControls });
@@ -269,16 +284,20 @@ export class MatchScreen implements Screen {
   step(): void {
     const { sim } = this.options;
     if (!this.input) return;
+    if (this.hitstopTicks > 0 && !this.pause.paused) {
+      // Held, not sampled: a press or a mouse move made during the stop lands on the next tick. The
+      // pad is not even read, so its presses stay presses until then too.
+      this.hitstopTicks--;
+      return;
+    }
+    this.input.poll();
+    this.readPadButtons(this.input);
     if (this.pause.paused) {
       // Frozen: nothing advances, and keys pressed meanwhile are not replayed on resume.
       this.input.endTick();
       return;
     }
-    if (this.hitstopTicks > 0) {
-      // Held, not sampled: a press or a mouse move made during the stop lands on the next tick.
-      this.hitstopTicks--;
-      return;
-    }
+    this.input.club = sim.cart.equippedClub;
     sim.step(this.input.sample());
     this.input.endTick();
     this.elapsedSeconds += FIXED_DT;
@@ -663,18 +682,37 @@ export class MatchScreen implements Screen {
     return el("div", { class: "screen screen--scrim match-overlay" }, [
       el("div", { class: "panel match-overlay__panel" }, [
         el("h1", { class: "match-overlay__title", text: "CONTROLS" }),
-        el("div", { class: "controls" }, [
-          row("W A S D", "Drive"),
-          row("CLICK", "Take the mouse, then aim the turret with it"),
-          row("LEFT CLICK", "Hold to charge, release to fire"),
-          row("RIGHT CLICK", "Cancel a charge"),
-          row("1  2  3", "Putter · iron · driver"),
-          row("SHIFT", "Brake"),
-          row("M", "Course map"),
-          row("G", "Call in a Mulligan Mortar (earned at 3 kills)"),
-          row("H", "Honk the horn"),
-          row("ESC", "Pause"),
-        ]),
+        // The labels of whichever input was used last: key names, or the SN30 Pro's own letters.
+        el(
+          "div",
+          { class: "controls" },
+          this.input?.active === "pad"
+            ? [
+                row("LEFT STICK", "Drive"),
+                row("RIGHT STICK", "Aim the turret"),
+                row("R2", "Hold to charge, release to fire"),
+                row("B", "Cancel a charge"),
+                row("D-PAD ← ↑ →", "Putter · iron · driver"),
+                row("L1  R1", "Previous · next club"),
+                row("L2", "Brake"),
+                row("SELECT", "Course map"),
+                row("X", "Call in a Mulligan Mortar (earned at 3 kills)"),
+                row("Y", "Honk the horn"),
+                row("START", "Pause"),
+              ]
+            : [
+                row("W A S D", "Drive"),
+                row("CLICK", "Take the mouse, then aim the turret with it"),
+                row("LEFT CLICK", "Hold to charge, release to fire"),
+                row("RIGHT CLICK", "Cancel a charge"),
+                row("1  2  3", "Putter · iron · driver"),
+                row("SHIFT", "Brake"),
+                row("M", "Course map"),
+                row("G", "Call in a Mulligan Mortar (earned at 3 kills)"),
+                row("H", "Honk the horn"),
+                row("ESC", "Pause"),
+              ],
+        ),
         el("p", { class: "match-overlay__note", text: "Knock the other team out. Every time you drop to zero, your team takes a stroke. Fewest strokes wins." }),
         go,
       ]),
