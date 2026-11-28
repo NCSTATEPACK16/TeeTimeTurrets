@@ -320,10 +320,18 @@ export class Cart {
   readonly desiredTranslation: Vec3;
   readonly shot: CartShot;
   ammo: number;
+  // Stage 8's purchased stats, written only by `applyKit` (through `sim/upgrades.ts`'s
+  // `applyLoadout`). The defaults are the unupgraded cart, which every bot is.
+  /** Ammo capacity: what `addAmmo` clamps to. `MAX_AMMO` until an AMMO BAG is bought. */
+  maxAmmo = MAX_AMMO;
+  /** Multiplies every club's `reloadSeconds` in `fire`. */
+  reloadScale = 1;
+  /** Below the unlock level: `selectClub(Driver)` is ignored. */
+  driverLocked = false;
 
   private club: ClubType;
   /** The club this cart was built with, which a rematch goes back to. See `rearm`. */
-  private readonly startingClub: ClubType;
+  private startingClub: ClubType;
   private reload = 0;
   /** Seconds the throttle has been held open in one direction, for the spool. See `CART_TUNING`. */
   private throttleHeld = 0;
@@ -391,6 +399,7 @@ export class Cart {
    */
   selectClub(club: ClubType): void {
     if (club === this.club) return;
+    if (club === ClubType.Driver && this.driverLocked) return;
     this.club = club;
     this.chargeHeld = 0;
   }
@@ -490,9 +499,27 @@ export class Cart {
     return true;
   }
 
-  /** Clamps to MAX_AMMO. Used by bucket refills and landed-ball pickups alike. */
+  /** Clamps to `maxAmmo`. Used by bucket refills and landed-ball pickups alike. */
   addAmmo(n: number): void {
-    this.ammo = Math.min(MAX_AMMO, this.ammo + n);
+    this.ammo = Math.min(this.maxAmmo, this.ammo + n);
+  }
+
+  /**
+   * The purchased stats, all at once. Only `applyLoadout` (`sim/upgrades.ts`) calls this, once,
+   * as the cart is built: it is the one place a purchase becomes a stat. The health bar is resized
+   * and refilled; a locked driver in hand is swapped for the iron, which is then the club a
+   * rematch goes back to.
+   */
+  applyKit(tire: TireType, maxHealth: number, maxAmmo: number, reloadScale: number, driver: boolean): void {
+    this.tire = tire;
+    setMaxHealth(this.health, maxHealth);
+    this.maxAmmo = maxAmmo;
+    this.reloadScale = reloadScale;
+    this.driverLocked = !driver;
+    if (this.driverLocked && this.club === ClubType.Driver) {
+      this.club = ClubType.Iron;
+      this.startingClub = ClubType.Iron;
+    }
   }
 
   /**
@@ -514,7 +541,7 @@ export class Cart {
     const charge = clamp01(charge01);
     const launchSpeed = stats.minSpeed + (stats.maxSpeed - stats.minSpeed) * charge;
 
-    this.reload = stats.reloadSeconds;
+    this.reload = stats.reloadSeconds * this.reloadScale;
     this.chargeHeld = 0;
 
     const hasBall = this.ammo > 0;

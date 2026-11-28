@@ -40,6 +40,8 @@ import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import { MatchTally } from "./scoring";
+import { DEFAULT_KIT, applyLoadout } from "./upgrades";
+import type { CartKit } from "./upgrades";
 import { CaptureField } from "./flags";
 import {
   Barrage,
@@ -236,10 +238,10 @@ export interface SimOptions {
    */
   readonly countdownS?: number;
   /**
-   * The player cart's tire. Defaults to `TireType.Street`. The one clubhouse purchase that is a
-   * stat rather than a skin: `TIRE_TUNING` scales top speed, grip and surface penalties.
+   * The player cart's purchased stats: tyre, armour, ammo capacity, reload and the driver lock
+   * (Stage 8, `sim/upgrades.ts`). Defaults to `DEFAULT_KIT`, today's cart. Bots always get that.
    */
-  readonly tire?: TireType;
+  readonly kit?: CartKit;
 }
 
 /**
@@ -427,8 +429,10 @@ export class Sim {
       ground,
       options.matchDurationS ?? MATCH_DURATION_S,
       options.countdownS ?? 0,
-      options.tire ?? TireType.Street,
+      (options.kit ?? DEFAULT_KIT).tire,
     );
+    // The one place the player's purchases become stats (Stage 8).
+    applyLoadout(sim.cart, options.kit ?? DEFAULT_KIT);
 
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {

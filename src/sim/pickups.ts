@@ -1,4 +1,4 @@
-import { BUCKET_REFILL_AMMO, MAX_AMMO } from "./entities/Cart";
+import { BUCKET_REFILL_AMMO } from "./entities/Cart";
 import type { Cart } from "./entities/Cart";
 import type { PickupSite, PickupType } from "./pickupSites";
 
@@ -43,7 +43,7 @@ export function isCharged(state: PickupState, now: number): boolean {
 export function canUse(cart: Cart, type: PickupType): boolean {
   switch (type) {
     case "bucket":
-      return cart.ammo < MAX_AMMO;
+      return cart.ammo < cart.maxAmmo;
     case "hot_dog":
       return cart.health.hp < cart.health.max;
     case "drink":

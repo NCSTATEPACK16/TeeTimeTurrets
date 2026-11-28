@@ -8,7 +8,8 @@ import { authoredCourse } from "./sim/authoredCourse";
 import type { CourseWorld } from "./sim/courseWorld";
 import type { Sim } from "./sim/world";
 import { ARENA_BOTS, MATCH_COUNTDOWN_S } from "./sim/matchConfig";
-import { createLoadout, tireTypeFor } from "./sim/loadout";
+import { createLoadout } from "./sim/loadout";
+import { DRIVER_UNLOCK_LEVEL, kitFor, noUpgrades } from "./sim/upgrades";
 import type { ArenaSource } from "./render/scene";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import type { MatchScreen } from "./ui/screens/MatchScreen";
@@ -159,9 +160,9 @@ async function main(): Promise<void> {
     // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
     // match's has to be freed by hand or every rematch leaks a whole course.
     sim?.dispose();
-    // The tire the player bought is the tire the physics uses: the one purchase that is a stat.
+    // What the player bought is what the physics uses: tyre, armour, ammo, reload, the driver.
     sim = await path.Sim.create(path.arenaFromCourse(courseWorld, arenaSource?.pickupSites), {
-      tire: tireTypeFor(loadout),
+      kit: kitFor(loadout, noUpgrades(), DRIVER_UNLOCK_LEVEL),
       botCount: ARENA_BOTS,
       matchDurationS: matchSecondsFromQuery(window.location.search),
       countdownS: MATCH_COUNTDOWN_S,
