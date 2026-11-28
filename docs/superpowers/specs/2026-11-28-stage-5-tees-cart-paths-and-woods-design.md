@@ -49,13 +49,14 @@ Read from `main` at `9fb3c91`.
   bevel. The steepest point of the bevel is a 0.19 grade, which every tyre climbs. The raise is a
   built structure, like the causeway, so it follows `TerrainSources.crossings`: `generateHole`
   validates the hole without it, and routing cannot move (spec D9).
-- **Class.** `SurfaceId.Tee`, appended to `SURFACE_CODES`. Priority: after the green, before
-  everything else (validation already keeps tees out of water).
+- **Class.** `SurfaceId.Tee`, appended to `SURFACE_CODES`. Priority: after the green, the bridge,
+  water and sand, before the corridor, so a bunker cut into a tee box is still a bunker.
 - **Tuning.** Ball: rolling **0.09**, bounce **0.75** (a little firmer than fairway). Cart:
   resistance **1.0**, the fairway's.
 - **Drawn.** As mown turf. `weightsAt` reports a tee box's green weight as 0 inside it, rising to 1
-  over a 2 m edge, so the ground shader draws a putting-surface tone with its collar, and grass
-  tufts and trees keep off it. The minimap gets a tee colour.
+  over a 1 m edge just inside the box, so the ground shader draws a putting-surface tone, and grass
+  tufts and trees keep off it. The edge is inside the box so that outside it the mask is still
+  exactly what `tuningAt` blends with (`surfaces.test.ts`). The minimap gets a tee colour.
 
 ## 3. Cart paths (slice 2)
 

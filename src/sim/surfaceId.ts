@@ -16,4 +16,8 @@ export enum SurfaceId {
    * standing on one must not be charged a water stroke for it.
    */
   Bridge = "bridge",
+  /** The raised, mown box round a hole's tee (`teeBox.ts`, Stage 5). */
+  Tee = "tee",
+  /** A paved cart path (`cartPaths.ts`, Stage 5): faster than fairway. Only the baked grids carry it. */
+  Path = "path",
 }

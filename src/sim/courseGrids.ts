@@ -15,9 +15,10 @@
  * - Heights and the mown tuning (rolling, bounce, cart speed) are bilinear: continuous things
  *   stay continuous.
  * - The surface class is nearest-vertex. It is a category; there is no half-sand to interpolate.
- * - Where the nearest vertex is sand, water or the bridge, tuning is that vertex's own, not a
- *   blend: those edges are hard on purpose (see `surfaces.ts`), and a cart charged a water stroke
- *   is charged on the same vertex that says the tuning is a hazard.
+ * - Where the nearest vertex is a hard surface (`isHardSurface`: sand, water, bridge, tee, path),
+ *   tuning is that vertex's own, not a blend: those edges are hard on purpose (see `surfaces.ts`),
+ *   and a cart charged a water stroke is charged on the same vertex that says the tuning is a
+ *   hazard.
  *
  * `weightsAt` is the renderer's, never the sim's, and asks the blended surfaces: it draws mown
  * edges at a finer grain than 2 m and is not on any per-tick path.
@@ -27,7 +28,7 @@
 import type { Bounds } from "./courseLayout";
 import type { CourseSurfaces } from "./courseSurfaces";
 import type { CourseTerrain } from "./courseTerrain";
-import { SURFACE_CODES, SurfaceId, createSurfaceTuning } from "./surfaces";
+import { SURFACE_CODES, SurfaceId, createSurfaceTuning, isHardSurface } from "./surfaces";
 import type { MutableSurfaceTuning, SurfaceWeights, Surfaces } from "./surfaces";
 
 export interface CourseGrids {
@@ -52,8 +53,8 @@ export interface CourseGrids {
 }
 
 const WATER = SURFACE_CODES.indexOf(SurfaceId.Water);
-const SAND = SURFACE_CODES.indexOf(SurfaceId.Sand);
-const BRIDGE = SURFACE_CODES.indexOf(SurfaceId.Bridge);
+/** Per stored code: is its tuning hard-edged (`isHardSurface`)? */
+const HARD = SURFACE_CODES.map(isHardSurface);
 
 /**
  * Samples every vertex once. One `weightsInto` per vertex feeds height, class and tuning, which is
@@ -141,7 +142,7 @@ export function bakeCourseGrids(terrain: CourseTerrain, surfaces: CourseSurfaces
     const i = nearest();
     const code = surface[i]!;
     out.isHazard = code === WATER;
-    if (code === SAND || code === WATER || code === BRIDGE) {
+    if (HARD[code]) {
       out.rolling = rolling[i]!;
       out.bounceScale = bounceScale[i]!;
       out.cartSpeedScale = cartSpeedScale[i]!;

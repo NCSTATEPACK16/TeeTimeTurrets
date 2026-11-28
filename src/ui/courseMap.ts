@@ -72,6 +72,8 @@ const SURFACE_FILL: Readonly<Record<SurfaceId, string>> = {
   [SurfaceId.Sand]: "#d9c48a",
   [SurfaceId.Water]: "#3f7fb5",
   [SurfaceId.Bridge]: "#9a7b52",
+  [SurfaceId.Tee]: "#86d266",
+  [SurfaceId.Path]: "#d8d2c0",
 };
 
 const MARKER_FILL: Readonly<Record<MapMarker["kind"], string>> = {
