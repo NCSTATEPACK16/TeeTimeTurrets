@@ -36,7 +36,7 @@ import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
 import { createWaterSurface, type WaterSurface } from "./water";
-import { setTreeWindTime } from "./Trees";
+import { clearTreeSightLine, setTreeSightLine, setTreeWindTime } from "./Trees";
 import { placeCattails } from "./cattailPlacement";
 import { createCattails, type Cattails } from "./cattails";
 import { createGrassCarpet, type GrassCarpet } from "./grassCarpet";
@@ -446,6 +446,9 @@ export class RenderScene {
     setTreeWindTime(view.elapsedSeconds);
 
     this.frameChase(view);
+    // After the camera has moved, so the trees cleared are the ones in front of this frame's view.
+    if (view.playerDead) clearTreeSightLine();
+    else setTreeSightLine(this.camera.position.x, this.camera.position.z, view.cart.position.x, view.cart.position.z);
     this.battle.update(view.frameSeconds, this.camera.position.x, this.camera.position.z, view.cart.turretYaw);
 
     // After `frameChase`, so the tiles refine toward where the camera now is rather than where it
@@ -468,6 +471,8 @@ export class RenderScene {
    */
   dispose(): void {
     window.removeEventListener("resize", this.resizeListener);
+    // The sight line is shared by every tree material; the title's woods draw whole.
+    clearTreeSightLine();
     this.cart.dispose();
     for (const bot of this.botCarts) bot.dispose();
     this.pooledBalls.dispose();

@@ -144,7 +144,9 @@ Unchanged. They still steer at targets. Stage 6's navGraph prices cart paths che
   the course, use a **low-poly stand-in** of their species:
   - the same unit-height graph, rebuilt at the authored segment counts (7-segment cones, 6×4
     spheres) instead of the smoothed minimum;
-  - about a third of the triangles.
+  - about a third of the triangles, estimated. Measured at build: 62 and 164 triangles against 116
+    and 432 (54% and 38%). With 1,474 of the course's 2,564 trees far, the woods draw 0.28M
+    triangles instead of 0.39M.
 - They are separate InstancedMeshes, a static split built once. A per-frame distance switch would
   rebuild instance buffers every frame.
 - The plan asked for cross-quad impostors past 250 m. A crossed quad needs a baked alpha texture

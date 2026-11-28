@@ -77,6 +77,34 @@ const SWAY_AMPLITUDE = 0.022;
  */
 const TREE_WIND = { uTreeTime: { value: 0 } };
 
+/**
+ * The sight line (Stage 5 spec, §4.2): a tree whose trunk stands within `SIGHT_RADIUS_M` of the
+ * line from the camera to the player's cart, in plan, is screen-door dithered out, fading over the
+ * next `SIGHT_FADE_M`. A tree within `SIGHT_CART_CLEAR_M` of the cart stays, so cover the cart is
+ * hiding in still reads as cover. Shared by every tree material, like the wind clock, and set once
+ * a frame by the match scene. Render-only: trees never blocked line of sight in the sim.
+ */
+export const SIGHT_RADIUS_M = 3;
+export const SIGHT_FADE_M = 2;
+export const SIGHT_CART_CLEAR_M = 4;
+const TREE_SIGHT = {
+  uSightFrom: { value: new THREE.Vector2() },
+  uSightTo: { value: new THREE.Vector2() },
+  uSightOn: { value: 0 },
+};
+
+/** The sight line from the camera to the cart, in plan. Allocation-free; call once per frame. */
+export function setTreeSightLine(fromX: number, fromZ: number, toX: number, toZ: number): void {
+  TREE_SIGHT.uSightFrom.value.set(fromX, fromZ);
+  TREE_SIGHT.uSightTo.value.set(toX, toZ);
+  TREE_SIGHT.uSightOn.value = 1;
+}
+
+/** No sight line: every tree drawn whole (the title, a dead cart). */
+export function clearTreeSightLine(): void {
+  TREE_SIGHT.uSightOn.value = 0;
+}
+
 /** The wind clock's uniform, for other swaying things (`grassCarpet.ts`) to bind. */
 export const TREE_WIND_TIME = TREE_WIND.uTreeTime;
 
@@ -96,6 +124,12 @@ function smoothedNode(node: PrimitiveNode): PrimitiveNode {
   return { ...node, params: p, children: node.children ? node.children.map(smoothedNode) : node.children };
 }
 
+/**
+ * Trees this far outside the arena zone are drawn as the authored low-poly species (§4.1): no
+ * one fights out there, and the camera only sees them from across the course.
+ */
+export const FAR_TREE_OUTSIDE_M = 60;
+
 function smoothedGraph(graph: PrimitiveGraph): PrimitiveGraph {
   return { ...graph, root: smoothedNode(graph.root) };
 }
@@ -110,8 +144,25 @@ function treeMaterial(): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTreeTime = TREE_WIND.uTreeTime;
+    shader.uniforms.uSightFrom = TREE_SIGHT.uSightFrom;
+    shader.uniforms.uSightTo = TREE_SIGHT.uSightTo;
+    shader.uniforms.uSightOn = TREE_SIGHT.uSightOn;
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\n varying float vSightFade;")
+      .replace(
+        "#include <clipping_planes_fragment>",
+        `#include <clipping_planes_fragment>
+         if (vSightFade > 0.0) {
+           // Interleaved gradient noise: a screen-door pattern with no texture.
+           float door = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+           if (door < vSightFade) discard;
+         }`,
+      );
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\n uniform float uTreeTime;")
+      .replace(
+        "#include <common>",
+        "#include <common>\n uniform float uTreeTime;\n uniform vec2 uSightFrom;\n uniform vec2 uSightTo;\n uniform float uSightOn;\n varying float vSightFade;",
+      )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
@@ -126,6 +177,14 @@ function treeMaterial(): THREE.MeshStandardMaterial {
            float phase = uTreeTime * 1.25 + dot(treeAt, vec2(0.071, 0.053));
            transformed.x += (sin(phase) + 0.35 * sin(phase * 2.3 + 1.7)) * ${SWAY_AMPLITUDE.toFixed(4)} * bend;
            transformed.z += cos(phase * 0.8) * ${(SWAY_AMPLITUDE * 0.6).toFixed(4)} * bend;
+
+           vec2 sight = uSightTo - uSightFrom;
+           float along = clamp(dot(treeAt - uSightFrom, sight) / max(dot(sight, sight), 1e-4), 0.0, 1.0);
+           float off = length(treeAt - (uSightFrom + sight * along));
+           float fromCart = length(treeAt - uSightTo);
+           vSightFade = uSightOn
+             * (1.0 - smoothstep(${SIGHT_RADIUS_M.toFixed(1)}, ${(SIGHT_RADIUS_M + SIGHT_FADE_M).toFixed(1)}, off))
+             * smoothstep(${SIGHT_CART_CLEAR_M.toFixed(1)}, ${(SIGHT_CART_CLEAR_M + 1).toFixed(1)}, fromCart);
          }`,
       );
   };
@@ -141,7 +200,11 @@ function treeMaterial(): THREE.MeshStandardMaterial {
  * course reads as a change of continent. Each species is authored at unit height, so the caller's
  * `palette.treeHeight` scale is the tree's height in metres.
  */
-export function buildTreeGeometries(palette: BiomePalette): [THREE.BufferGeometry, THREE.BufferGeometry] {
+export function buildTreeGeometries(
+  palette: BiomePalette,
+  /** The authored segment counts instead of the smoothed ones: the far stand-in (§4.1). */
+  lowPoly = false,
+): [THREE.BufferGeometry, THREE.BufferGeometry] {
   const overrides = {
     tree_trunk: palette.trunk,
     tree_foliage_dark: palette.foliageDark,
@@ -150,7 +213,7 @@ export function buildTreeGeometries(palette: BiomePalette): [THREE.BufferGeometr
   const geometryOf = (name: (typeof TREE_SPECIES)[typeof palette.treeForm][number]): THREE.BufferGeometry => {
     // No contact shade: a species is authored at unit height and scaled to metres later, so graph
     // space is not metres above the ground and the shade would darken most of the tree.
-    const merged = mergeGraph(smoothedGraph(treeGraph(name)), overrides, { contactShade: false });
+    const merged = mergeGraph(lowPoly ? treeGraph(name) : smoothedGraph(treeGraph(name)), overrides, { contactShade: false });
     // Only the geometry is kept: the instanced meshes below bring their own material.
     (merged.mesh.material as THREE.Material).dispose();
     return merged.mesh.geometry;
@@ -185,21 +248,32 @@ export function plantTrees(
   matrices: readonly THREE.Matrix4[],
   species: readonly number[],
   tints?: readonly number[],
+  /**
+   * Which trees are far (`FAR_TREE_OUTSIDE_M`), drawn with the low-poly species in meshes of their
+   * own. A split made once here: switching by distance per frame would rewrite instance buffers.
+   */
+  far?: readonly boolean[],
 ): Trees {
   if (matrices.length === 0) return NO_TREES;
 
-  const geometries = buildTreeGeometries(palette);
+  const anyFar = far !== undefined && far.some((f) => f);
+  const geometries = [...buildTreeGeometries(palette), ...(anyFar ? buildTreeGeometries(palette, true) : [])];
   const material = treeMaterial();
   const colour = new THREE.Color();
   const meshes: THREE.InstancedMesh[] = [];
-  for (let s = 0; s < 2; s++) {
+  // Near species 0 and 1, then far species 0 and 1.
+  for (let g = 0; g < geometries.length; g++) {
+    const s = g & 1;
+    const wantFar = g >= 2;
+    const belongs = (i: number): boolean => species[i] === s && (far?.[i] === true) === wantFar;
     let count = 0;
-    for (let i = 0; i < species.length; i++) if (species[i] === s) count++;
+    for (let i = 0; i < species.length; i++) if (belongs(i)) count++;
     if (count === 0) continue;
-    const mesh = new THREE.InstancedMesh(geometries[s]!, material, count);
+    const mesh = new THREE.InstancedMesh(geometries[g]!, material, count);
+    if (wantFar) mesh.name = "far-trees";
     let slot = 0;
     for (let i = 0; i < matrices.length; i++) {
-      if (species[i] !== s) continue;
+      if (!belongs(i)) continue;
       if (tints) mesh.setColorAt(slot, tintColour(tints[i]!, colour));
       mesh.setMatrixAt(slot++, matrices[i]!);
     }
@@ -298,6 +372,24 @@ export interface CourseWoodsOptions {
   /** Trees stay on the playing side of the road; the treeline owns the far side. */
   readonly southBoundary?: SouthBoundary | undefined;
   readonly clubhouse?: Vec2 | undefined;
+  /** The arena zone's edge; trees `FAR_TREE_OUTSIDE_M` beyond it get the low-poly species. */
+  readonly zone?: readonly Vec2[] | undefined;
+}
+
+/** Metres outside a closed polygon: 0 inside it, the distance to its nearest edge outside. */
+export function outsideBy(polygon: readonly Vec2[], x: number, z: number): number {
+  let inside = false;
+  let nearest = Infinity;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i]!;
+    const b = polygon[j]!;
+    if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+    const ex = b.x - a.x;
+    const ez = b.z - a.z;
+    const t = Math.min(1, Math.max(0, ((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez || 1)));
+    nearest = Math.min(nearest, Math.hypot(x - a.x - ex * t, z - a.z - ez * t));
+  }
+  return inside ? 0 : nearest;
 }
 
 /**
@@ -324,7 +416,8 @@ export function createCourseTrees(
 ): Trees {
   const placed = clumpOrder(placement ?? placeCourseWoods(course, surfaces, options), options.seed);
 
-  const byBiome = new Map<BiomeId, { matrices: THREE.Matrix4[]; species: number[]; tints: number[] }>();
+  const byBiome = new Map<BiomeId, { matrices: THREE.Matrix4[]; species: number[]; tints: number[]; far: boolean[] }>();
+  const zone = options.zone;
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
@@ -332,7 +425,7 @@ export function createCourseTrees(
   for (const tree of placed) {
     let wood = byBiome.get(tree.biome);
     if (wood === undefined) {
-      wood = { matrices: [], species: [], tints: [] };
+      wood = { matrices: [], species: [], tints: [], far: [] };
       byBiome.set(tree.biome, wood);
     }
     position.set(tree.x, tree.y, tree.z);
@@ -341,10 +434,11 @@ export function createCourseTrees(
     wood.matrices.push(new THREE.Matrix4().compose(position, quaternion, scale));
     wood.species.push(tree.species);
     wood.tints.push(tree.tint);
+    wood.far.push(zone !== undefined && zone.length >= 3 && outsideBy(zone, tree.x, tree.z) > FAR_TREE_OUTSIDE_M);
   }
 
   const woods = [...byBiome.entries()].map(([biome, wood]) =>
-    plantTrees(BIOMES[biome], wood.matrices, wood.species, wood.tints),
+    plantTrees(BIOMES[biome], wood.matrices, wood.species, wood.tints, wood.far),
   );
   const count = woods.reduce((sum, wood) => sum + wood.count, 0);
   return {

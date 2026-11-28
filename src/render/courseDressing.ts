@@ -58,6 +58,7 @@ export function courseDressingFor(arena: ArenaSource): CourseDressing {
       seed: arena.seed ?? 0,
       southBoundary: arena.southBoundary,
       clubhouse: arena.clubhouse,
+      zone: arena.zone,
     };
     // Placed once: the trees are instanced from it and the woods floor is drawn from it.
     const placed = placeCourseWoods(arena.course, arena.surfaces, woodsOptions);
