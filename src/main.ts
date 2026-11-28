@@ -139,7 +139,9 @@ async function main(): Promise<void> {
       courseWorld = path.buildCourseWorld(course, COURSE_SEED);
       arenaSource = {
         course: courseWorld.terrain,
-        surfaces: courseWorld.surfaces,
+        // With the cart paths on, so the woods, the tufts and the map keep to them (Stage 5).
+        surfaces: path.withCartPaths(courseWorld.surfaces, path.rasterizeCartPaths(courseWorld.cartPaths, courseWorld.terrain.bounds)),
+        cartPaths: courseWorld.cartPaths,
         southBoundary: courseWorld.southBoundary,
         seed: COURSE_SEED,
         clubhouse: path.AUTHORED_CLUBHOUSE,

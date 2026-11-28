@@ -65,6 +65,8 @@ const ROOST: Partial<Record<SurfaceId, SpriteSpec>> = {
   [SurfaceId.Green]: { count: 1, speed: 1.2, lift: 0.8, life: 0.4, sizeStart: 0.15, sizeEnd: 0.3, gravity: 4, drag: 2, color: 0x8fc25a, alpha: 0.5, frame: SpriteFrame.Clump, focus: 0.6 },
   [SurfaceId.Sand]: { count: 3, speed: 2.8, lift: 2, life: 1.1, sizeStart: 0.35, sizeEnd: 1.4, gravity: 1.5, drag: 2, color: 0xe6d3a3, alpha: 0.65, frame: SpriteFrame.Smoke, focus: 0.55 },
   [SurfaceId.Water]: { count: 3, speed: 3, lift: 3, life: 0.7, sizeStart: 0.25, sizeEnd: 0.8, gravity: 8, drag: 1, color: 0xeaf6ff, alpha: 0.7, frame: SpriteFrame.Drop, focus: 0.5 },
+  [SurfaceId.Path]: { count: 1, speed: 1.8, lift: 1.2, life: 0.8, sizeStart: 0.25, sizeEnd: 0.9, gravity: 1.5, drag: 2, color: 0xbab3a2, alpha: 0.4, frame: SpriteFrame.Smoke, focus: 0.55 },
+  [SurfaceId.Tee]: { count: 1, speed: 1.2, lift: 0.8, life: 0.4, sizeStart: 0.15, sizeEnd: 0.3, gravity: 4, drag: 2, color: 0x86d266, alpha: 0.5, frame: SpriteFrame.Clump, focus: 0.6 },
 };
 
 const SMOKE_CAPACITY = 1200;
