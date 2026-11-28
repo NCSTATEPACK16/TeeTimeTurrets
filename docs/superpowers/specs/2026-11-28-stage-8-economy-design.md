@@ -53,8 +53,9 @@ Typed arrays, one slot per cart, preallocated: no allocation in the tick.
 - **Assists** (Q1): a cart that damaged the victim within the **5 s** before a teammate's kill. One
   per kill per cart, never to the killer. A kill with no killer (water, the zone) still pays assists
   to whoever damaged the victim, because they put it there.
-- **Pickups:** every bucket, ball, hot dog and drink the cart picked up (the `pickup` and
-  `shieldGained` events).
+- **Pickups:** every bucket, hot dog and drink the cart took from a site (Q10). A loose ball
+  picked off the ground does not count: driving over spent rounds is how a cart reloads, and at
+  15 points a ball it would out-earn the kills.
 
 It is written at the same places those events are pushed (`creditHit`, the ram callback,
 `killCart`, the pickup paths), so the tally and the log cannot disagree.
@@ -230,6 +231,7 @@ slice 1, trim the slowest file, measured on `main` and on the branch back to bac
 | Q7 | Upgrades through preview-and-confirm? | No. They buy at once. |
 | Q8 | The two team-hued paints: retune or drop? | Retune to plum and slate, same ids and prices. |
 | Q9 | Should a profile that existed before Stage 8 (none did: coins were never saved) be migrated? | No. There is nothing to migrate. |
+| Q10 | Do loose balls count as pickups? | No. Sites only: buckets, hot dogs and drinks. |
 
 ## 9. Slices
 
