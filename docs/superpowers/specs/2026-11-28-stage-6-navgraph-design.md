@@ -57,11 +57,13 @@ tables of our own. Every per-plan buffer is preallocated, so a plan allocates no
 
 - **Cell: 4 m** (Q1). The cart hull is 1.8 m across, and the cart paths are planned on the same
   4 m pitch (`cartPaths.ts`).
-- **Extent: the zone's bounds**, padded by one cell. On the shipped course that is about
-  150 × 90 cells, 13–14 thousand in all.
-- **In the zone:** a cell counts only if its centre is inside the zone polygon. A cell outside the
-  zone is refused, so no route can leave the zone. This holds because a route is a chain of cells
-  and every cell in it is passable.
+- **Extent: the zone's bounds**, padded by one cell. On the shipped course that is
+  202 × 156 cells, about 31 thousand in all.
+- **In the zone:** a cell counts only if its corners and edge midpoints, pushed 1 m further out,
+  are all inside the zone polygon. Lines are walked at 1 m steps (§2.3), so every point on a clear
+  line is within 0.5 m of a sample, and that sample is at least 1 m inside the zone. No route can
+  leave the zone. A first build tested only each cell's centre, and pulled legs clipped the zone's
+  concave corners.
 
 ### 2.2 Passability and cost
 
@@ -104,7 +106,7 @@ plan(fromX, fromZ, toX, toZ, out: NavRoute): boolean
 - **The search is capped at 20,000 expansions** (Q4). Past that `plan` returns false and the bot
   drives straight, as it does today.
 - **The cells are pulled tight** into waypoints. From each kept point, skip ahead to the farthest
-  later cell that a straight line reaches over passable cells only, walking the line at half-cell
+  later cell that a straight line reaches over passable cells only, walking the line at 1 m
   steps. Waypoints are cell centres. The last waypoint is the exact goal when the goal's own cell
   is passable, and the snapped centre when it is not.
 - **`NavRoute` is preallocated:** a `Float32Array` of 64 waypoints (x, z) and a count. A longer
@@ -117,7 +119,8 @@ The graph is built once per `Sim`, in the constructor, from the playfield, the z
 obstacles. It is cached on the playfield and zone pair (a `WeakMap`), so a rematch on the same
 ground does not rebuild it.
 
-- **Budget: 150 ms** on the CI machine. Measured cost is in the PR.
+- **Budget: 150 ms** on the CI machine. Measured: 16–41 ms in a cloud container, for 202 × 156
+  cells (the zone's bounds are wider than its 600 × 350 m core).
 - Building means five ground samples per cell plus the obstacle test. The grids answer those in
   well under a microsecond each.
 
@@ -145,7 +148,7 @@ Whatever it is driving at, after `world.ts` has chosen it: the target's drive po
 - **Following the route.**
   - The bot steers at its current waypoint, and moves on to the next one within 6 m (Q5).
   - Each tick it also moves on when the waypoint after next is in direct sight, which smooths
-    corners the half-cell pull left.
+    corners the pull left.
 - **A failed plan** (no passable goal, or over the expansion cap) leaves the bot steering
   straight, as today, until the next planning tick.
 
