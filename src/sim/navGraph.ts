@@ -21,8 +21,15 @@ import type { Surfaces } from "./surfaces";
 
 /** Cell pitch (§2.1, Q1): the cart paths' pitch, about twice the hull's width. */
 export const NAV_CELL_M = 4;
-/** How far out from a cell's centre its four edge samples sit. */
+/** How far out from a cell's centre its four grade samples sit. */
 const SAMPLE_OUT_M = 1.2;
+/**
+ * How far out the water test looks: a 3 x 3 lattice at this pitch round the centre, so a passable
+ * cell keeps about a metre of dry ground past its own edge. A cart turning at speed does not hold a
+ * route's line exactly (measured: 2.6 m wide of it on a corner), and a cell whose edge touched the
+ * waterline put it in the pond.
+ */
+const WATER_CLEAR_M = 3;
 /** Share of the climb limit a route may use (§2.2, Q2). */
 export const NAV_CLIMB_MARGIN = 0.8;
 /** Cost per unit grade squared. */
@@ -122,15 +129,17 @@ export class NavGraph {
         const surface = source.surfaces.surfaceAt(x, z);
         if (surface === SurfaceId.Water) continue;
         const h = source.heightAt(x, z);
-        let steepest = 0;
         let wet = false;
+        for (let k = 0; k < 8 && !wet; k++) {
+          wet = source.surfaces.surfaceAt(x + STEP_DX[k]! * WATER_CLEAR_M, z + STEP_DZ[k]! * WATER_CLEAR_M) === SurfaceId.Water;
+        }
+        if (wet) continue;
+        let steepest = 0;
         for (let k = 0; k < 4; k++) {
           const sx = x + STEP_DX[k]! * SAMPLE_OUT_M;
           const sz = z + STEP_DZ[k]! * SAMPLE_OUT_M;
-          if (source.surfaces.surfaceAt(sx, sz) === SurfaceId.Water) wet = true;
           steepest = Math.max(steepest, Math.abs(source.heightAt(sx, sz) - h) / SAMPLE_OUT_M);
         }
-        if (wet) continue;
         source.surfaces.tuningAt(x, z, tuning);
         const limit = Math.tan(NAV_CLIMB_MARGIN * maxClimbRad(tire, tuning.cartSpeedScale, CART_TUNING.accel));
         if (steepest > limit) continue;

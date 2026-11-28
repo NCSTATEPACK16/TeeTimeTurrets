@@ -67,11 +67,13 @@ tables of our own. Every per-plan buffer is preallocated, so a plan allocates no
 
 ### 2.2 Passability and cost
 
-A cell is sampled at its centre and four points 1.2 m out (centre ± 1.2 m on each axis), so a cell
-whose edge dips into water is caught. Each cell is **refused** when any of these holds:
+Each cell is **refused** when any of these holds:
 
-- **Water** at any sample.
-- **Too steep to drive.** The grade between samples is above `maxClimbRad` for street tyres on
+- **Water** at its centre, or at any of eight points 3 m out (the corners and edge midpoints of a
+  6 m square), so a passable cell keeps about a metre of dry ground past its own edge. A first
+  build sampled only 1.2 m out. A routed cart then cut a corner 2.6 m wide of its line, into the
+  pond.
+- **Too steep to drive.** The grade from the centre to any of four points 1.2 m out is above `maxClimbRad` for street tyres on
   that cell's surface, times a 0.8 margin (Q2). On sand and rough the limit is lower than on
   fairway, so a steep bunker face is refused while a fairway bank of the same grade is not.
 - **A clubhouse building,** grown by the hull radius plus 1 m (`clubhouseObstacles`).
@@ -131,7 +133,7 @@ ground does not rebuild it.
 Whatever it is driving at, after `world.ts` has chosen it: the target's drive point
 (`botTargetScratch` and `flagDrive`), the ammo it needs, or the hot dog it is going for.
 
-- **`detourAround` goes:** the graph refuses the buildings, so routes already go round them.
+- **`detourAround` goes** (built): the graph refuses the buildings, so routes already go round them.
 - **Unchanged:** distances, holding, standoff and firing are still measured to the real target and
   goal. Only the direction the bot **steers** changes.
 
@@ -139,12 +141,12 @@ Whatever it is driving at, after `world.ts` has chosen it: the target's drive po
 
 - **Direct sight skips the plan.** If the goal is within 80 m and `lineClear` from the bot to it
   holds, the bot steers straight at the goal, as today.
-- **Otherwise replan once a second at most.** Bot `i` plans on ticks where `tick % 60 === (i × 7) %
-  60`, so seven bots never plan on the same tick. A bot also replans as soon as any of these
-  happens:
-  - its goal moves more than 12 m from the goal its route was planned to;
-  - it finishes backing off after being stuck;
-  - it respawns.
+- **Otherwise plans are rationed.** Bot `i`'s slot is the tick where `tick % 60 === (i × 7) % 60`,
+  so no two of seven bots plan on the same tick.
+  - **At once:** after it respawns, after it finishes backing off from being stuck, and when it has
+    no route and its goal has moved 12 m from the last goal it planned to.
+  - **On its slot, at most once a second:** when it has no route (the last plan failed), or when its
+    goal has moved more than 12 m from the goal its route was planned to.
 - **Following the route.**
   - The bot steers at its current waypoint, and moves on to the next one within 6 m (Q5).
   - Each tick it also moves on when the waypoint after next is in direct sight, which smooths
@@ -182,16 +184,22 @@ One file per slice, each under 15 s, each seen to fail when the code it checks i
     every 1 m step along every leg is inside the zone.
   - **Build budget.** Building takes 150 ms or less, measured on a second build from fresh after
     one warm-up.
-- **Slice 2, `src/sim/botRouting.test.ts`.** A real `Sim` on the shipped course with one bot set to
-  drive at a point across the hole-18 pond.
-  - The bot reaches that point within 30 s of sim time, and never touches water.
-  - With routing off, which is the control, the same bot does not reach it.
+- **Slice 2, in the same file** (one course bake for both; the suite is near its cap). A real `Sim`
+  on the shipped course, with no capture flags, because a lone bot is its side's flag runner and
+  drives to the flags. One bot stands on one bank of the zone's widest pond and the idle player
+  stands on the other.
+  - **The pond:** hole 10's, 143 m bank to bank. The hole-18 pond the plan named is only about 11 m
+    across inside the zone, and a straight-line bot crossed it dry.
+  - **Routed:** the bot comes within `BOT_STANDOFF` + 6 m of the player within 30 s and never
+    touches water.
+  - **Control:** the same match with the graph removed. The straight-line bot is in the water
+    first.
 
 ## 6. Slices
 
 1. **The graph:** `navGraph.ts` and its test. Nothing wired. Golden unchanged.
 2. **Bots follow it:** `BotMind`, `computeBotIntent`'s steer point and `world.ts`'s replanning;
-   `detourAround` removed. `botRouting.test.ts`. The golden is re-recorded. Play-test stop.
+   `detourAround` removed. The routing case in `navGraph.test.ts`. The golden is re-recorded. Play-test stop.
 
 ## 7. Questions (built to the default)
 

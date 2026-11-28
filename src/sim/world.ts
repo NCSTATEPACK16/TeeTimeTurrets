@@ -30,7 +30,9 @@ import {
 import type { PickupState } from "./pickups";
 import { clubhouseObstacles, clubhouseShapes } from "./clubhouse";
 import type { StaticShape } from "./clubhouse";
-import { clearOfObstacles, firstBlocking, obstacleCorner } from "./lineOfSight";
+import { clearOfObstacles } from "./lineOfSight";
+import { navGraphFor } from "./navGraph";
+import type { NavGraph } from "./navGraph";
 import type { Obstacle } from "./lineOfSight";
 import { CombatRegistry, STROKE_DAMAGE, processContacts, sameSide } from "./combat";
 import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
@@ -313,6 +315,11 @@ export class Sim {
   private readonly countdownIntent: PlayerIntent = { ...neutralIntent(), brake: true, cancelCharge: true };
   /** Ticks stepped since the match started, stamped on each event. */
   private tickCount = 0;
+  /**
+   * The bots' navigation graph over the zone (Stage 6, `navGraph.ts`), or null on a ground with no
+   * zone, where bots drive straight as they always did. Shared by every `Sim` on the same ground.
+   */
+  private readonly nav: NavGraph | null;
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   /** The clock and the scoreboard. Its roster is set in `create`, once every rig exists. */
   readonly match: Match;
@@ -377,6 +384,10 @@ export class Sim {
     this.teamPads = ground.clubhouse === null ? null : createTeamPads(ground.clubhouse, heightAt);
     this.staticShapes = ground.clubhouse === null ? [] : clubhouseShapes(ground.clubhouse, heightAt);
     this.obstacles = ground.clubhouse === null ? [] : clubhouseObstacles(ground.clubhouse, heightAt);
+    this.nav =
+      ground.zone === null
+        ? null
+        : navGraphFor({ heightAt, surfaces: ground.playfield.surfaces, zone: ground.zone, obstacles: this.obstacles });
     this.pickupStates = createPickupStates(ground.pickupSites);
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.mortarRandom = mulberry32(hashChannel(this.seed, MORTAR_CHANNEL));
@@ -845,7 +856,11 @@ export class Sim {
     if (rig.intentScratch === null) return IDLE_INTENT;
     // A dead cart's intent is never read by stepRig, so computing one here would only spend the
     // bot's RNG stream on a throwaway draw and make the draw count depend on death timing.
-    if (rig.cart.dead) return IDLE_INTENT;
+    if (rig.cart.dead) {
+      // A respawned bot plans from where it now stands, not from where it died.
+      if (rig.mind !== null) rig.mind.replanNow = true;
+      return IDLE_INTENT;
+    }
     rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
     const target = this.botTargetScratch(rig.cart, rig.targetIndex);
     // The same scratch `botTargetScratch` just wrote, through its writable type.
@@ -853,6 +868,7 @@ export class Sim {
     if (rig.mind !== null) {
       this.findAmmoFor(rig.cart, rig.mind);
       this.findHealFor(rig.cart, rig.mind, target);
+      this.routeSteer(rig.index, rig.cart, rig.mind, target);
     }
     computeBotIntent(
       rig.cart,
@@ -907,38 +923,72 @@ export class Sim {
     t.driveX = site.x;
     t.driveZ = site.z;
     t.holdAtDrive = true;
-    this.detourAround(p.x, p.z, t);
   }
 
   /**
-   * The one piece of routing flags need before Stage 6: a clubhouse building in the straight line.
-   * Without it, team 1's runner drove into a barn from its pad and backed off and back into it for
-   * the whole match. When the line to the drive point passes through a building (grown by
-   * `DETOUR_PAD_M`), the bot drives to whichever of that building's grown corners it can reach
-   * directly and that makes the shorter way round; each tick it asks again, so it heads for the
-   * flag the moment the line is clear.
+   * Where a bot points its cart this tick (Stage 6 spec, §3): at the next waypoint of a route over
+   * the navigation graph, or, with the goal in direct sight inside `ROUTE_DIRECT_M`, nowhere special
+   * (`hasSteer` false: it steers at the goal itself). The goal is what `computeBotIntent` is about to
+   * drive at -- ammo, a hot dog, or the target's drive point -- chosen in the same order.
+   *
+   * Plans are rationed: at once after a respawn or a back-off (`replanNow`) or when there is no
+   * route, and otherwise only on the bot's own tick of each second (`ROUTE_SLOT_STRIDE`), when its
+   * goal has moved `ROUTE_GOAL_MOVED_M` from the one the route was planned to. Allocation-free.
    */
-  private detourAround(x: number, z: number, t: Sim["botTarget"]): void {
-    const blocking = firstBlocking(this.obstacles, x, z, t.driveX, t.driveZ, CART_HULL.radius);
-    if (blocking < 0) return;
-    const o = this.obstacles[blocking]!;
-    const corner = this.seekScratch;
-    let bestX = 0;
-    let bestZ = 0;
-    let best = Infinity;
-    for (let k = 0; k < 4; k++) {
-      obstacleCorner(o, DETOUR_PAD_M, k, corner);
-      if (firstBlocking(this.obstacles, x, z, corner.x, corner.z, CART_HULL.radius) >= 0) continue;
-      const length = Math.hypot(corner.x - x, corner.z - z) + Math.hypot(t.driveX - corner.x, t.driveZ - corner.z);
-      if (length < best) {
-        best = length;
-        bestX = corner.x;
-        bestZ = corner.z;
-      }
+  private routeSteer(index: number, cart: Cart, mind: BotMind, target: BotTarget): void {
+    mind.hasSteer = false;
+    const nav = this.nav;
+    if (nav === null || mind.unstickFor > 0) return;
+    let gx: number;
+    let gz: number;
+    if (cart.ammo <= 0 && mind.hasAmmoTarget) {
+      gx = mind.ammoX;
+      gz = mind.ammoZ;
+    } else if (mind.hasHealTarget) {
+      gx = mind.healX;
+      gz = mind.healZ;
+    } else if (target.dead && target.holdAtDrive !== true) {
+      return;
+    } else {
+      gx = target.driveX ?? target.x;
+      gz = target.driveZ ?? target.z;
     }
-    if (best === Infinity) return;
-    t.driveX = bestX;
-    t.driveZ = bestZ;
+    const px = cart.position.x;
+    const pz = cart.position.z;
+    if (Math.hypot(gx - px, gz - pz) <= ROUTE_DIRECT_M && nav.lineClear(px, pz, gx, gz)) {
+      mind.routeOn = false;
+      return;
+    }
+    const onSlot = this.tickCount % ROUTE_PERIOD_TICKS === (index * ROUTE_SLOT_STRIDE) % ROUTE_PERIOD_TICKS;
+    const moved = Math.hypot(gx - mind.routeGoalX, gz - mind.routeGoalZ) > ROUTE_GOAL_MOVED_M;
+    if (mind.replanNow || (!mind.routeOn && onSlot) || (mind.routeOn && moved && onSlot) || (!mind.routeOn && moved)) {
+      mind.replanNow = false;
+      mind.routeGoalX = gx;
+      mind.routeGoalZ = gz;
+      mind.routeOn = nav.plan(px, pz, gx, gz, mind.route);
+      mind.routeAt = 0;
+    }
+    if (!mind.routeOn) return;
+    const route = mind.route;
+    const last = route.count - 1;
+    while (
+      mind.routeAt < last &&
+      Math.hypot(route.points[mind.routeAt * 2]! - px, route.points[mind.routeAt * 2 + 1]! - pz) < ROUTE_REACH_M
+    ) {
+      mind.routeAt++;
+    }
+    // One look ahead a tick: on to the waypoint after this one when it is already in sight.
+    if (mind.routeAt < last && nav.lineClear(px, pz, route.points[mind.routeAt * 2 + 2]!, route.points[mind.routeAt * 2 + 3]!)) {
+      mind.routeAt++;
+    }
+    mind.hasSteer = true;
+    mind.steerX = route.points[mind.routeAt * 2]!;
+    mind.steerZ = route.points[mind.routeAt * 2 + 1]!;
+    // The route's own end is where the goal was; steer at where it is now.
+    if (mind.routeAt === last) {
+      mind.steerX = gx;
+      mind.steerZ = gz;
+    }
   }
 
   /** The nearest flag `team` owns (`owned`) or does not, or -1 when there is none. */
@@ -1517,11 +1567,16 @@ export function addStaticColliders(world: RAPIER.World, shapes: readonly StaticS
 const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
 
 /** Handed to Rapier; read, never kept. */
-/**
- * How far past a building's footprint a detouring bot aims its corner: the hull's radius and room
- * to turn, so it clears the wall rather than scraping along it.
- */
-const DETOUR_PAD_M = 4;
+/** Metres. A goal this near and in direct sight is driven at straight, with no plan (Stage 6 spec, §3.2). */
+const ROUTE_DIRECT_M = 80;
+/** Ticks between a bot's scheduled planning chances: once a second. */
+const ROUTE_PERIOD_TICKS = 60;
+/** Bot `i` plans on tick `(i x stride) % period` of each second, so no two bots of seven share one. */
+const ROUTE_SLOT_STRIDE = 7;
+/** Metres a goal may move before the route to it is planned again. */
+const ROUTE_GOAL_MOVED_M = 12;
+/** Metres from a waypoint at which a bot moves on to the next (Q5). */
+const ROUTE_REACH_M = 6;
 const IDENTITY_ROTATION = Object.freeze({ x: 0, y: 0, z: 0, w: 1 });
 const ZERO_VECTOR = Object.freeze({ x: 0, y: 0, z: 0 });
 

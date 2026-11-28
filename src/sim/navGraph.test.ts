@@ -1,5 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { courseArenaZone } from "./arena";
+import { arenaFromCourse, courseArenaZone } from "./arena";
+import { BOT_STANDOFF } from "./bot";
+import type { Cart } from "./entities/Cart";
+import { CART_COLLIDER } from "./entities/Cart";
+import { neutralIntent } from "./intent";
+import { Sim } from "./world";
 import type { ArenaZone } from "./arenaZone";
 import { authoredCourse } from "./authoredCourse";
 import { AUTHORED_CLUBHOUSE } from "./authoredLayout";
@@ -13,13 +18,14 @@ import { mulberry32 } from "./rng";
 import { SurfaceId } from "./surfaceId";
 
 /** The bots' graph on the shipped course (Stage 6 spec, §5). One course, one graph. */
+/** One course for the whole file: baking its grids is most of the file's time. */
+const world: CourseWorld = buildCourseWorld(authoredCourse(2026), 2026);
+
 describe("nav graph", () => {
-  let world: CourseWorld;
   let zone: ArenaZone;
   let source: NavSource;
   let graph: NavGraph;
   beforeAll(() => {
-    world = buildCourseWorld(authoredCourse(2026), 2026);
     zone = courseArenaZone(world);
     const grids = world.grids;
     source = {
@@ -165,4 +171,99 @@ describe("nav graph", () => {
     console.log(`[navGraph] built in ${ms.toFixed(0)} ms, ${graph.cols} x ${graph.rows} cells`);
     expect(ms).toBeLessThan(150);
   });
+});
+
+/**
+ * Stage 6, slice 2 (spec §5): a bot routes round the zone's widest pond to reach a target on the far
+ * bank, through the real `Sim` and Rapier, and never gets wet. The control is the same match with
+ * the graph taken away: the straight-line bot of before.
+ */
+
+const TPS = 60;
+
+interface RigLike {
+  cart: Cart;
+  body: { setTranslation(v: { x: number; y: number; z: number }, wake: boolean): void };
+}
+
+
+/**
+ * The widest run of water inside the zone, north-south or east-west, by the ground's own classes,
+ * with 10 m of bank at each end. On the shipped course that is hole 10's pond, about 125 m long; the
+ * hole-18 pond the plan named is only about 11 m across inside the zone.
+ */
+function crossing(sim: Sim): { ax: number; az: number; bx: number; bz: number } {
+  const zone = arenaFromCourse(world).zone!;
+  const wet = (x: number, z: number) => sim.surfaces.surfaceAt(x, z) === SurfaceId.Water;
+  const xs = zone.polygon.map((p) => p.x);
+  const zs = zone.polygon.map((p) => p.z);
+  let best = { ax: 0, az: 0, bx: 0, bz: 0, width: 0 };
+  for (const [ux, uz] of [[1, 0], [0, 1]] as const) {
+    for (let z = Math.min(...zs); z <= Math.max(...zs); z += 2) {
+      for (let x = Math.min(...xs); x <= Math.max(...xs); x += 2) {
+        if (!zone.contains(x, z) || !wet(x, z) || wet(x - ux, z - uz)) continue;
+        let b = 0;
+        while (wet(x + ux * (b + 1), z + uz * (b + 1))) b++;
+        const ax = x - ux * 10;
+        const az = z - uz * 10;
+        const bx = x + ux * (b + 10);
+        const bz = z + uz * (b + 10);
+        if (!zone.contains(ax, az) || !zone.contains(bx, bz) || wet(ax, az) || wet(bx, bz)) continue;
+        if (b + 20 > best.width) best = { ax, az, bx, bz, width: b + 20 };
+      }
+    }
+  }
+  return best;
+}
+
+async function run(routing: boolean): Promise<{ closest: number; wetTicks: number; width: number }> {
+  // No capture flags: a lone bot is its side's flag runner and would drive to them instead.
+  const sim = await Sim.create({ ...arenaFromCourse(world), captureSites: [] }, { botCount: 1 });
+  try {
+    if (!routing) (sim as unknown as { nav: null }).nav = null;
+    const { ax, az, bx, bz } = crossing(sim);
+    const rigs = (sim as unknown as { rigs: RigLike[] }).rigs;
+    const place = (cart: Cart, x: number, z: number, heading: number) => {
+      const y = sim.heightAt(x, z) + CART_COLLIDER.groundOffset;
+      cart.position.x = x;
+      cart.position.y = y;
+      cart.position.z = z;
+      cart.heading = heading;
+      rigs.find((r) => r.cart === cart)!.body.setTranslation({ x, y, z }, true);
+    };
+    const toward = Math.atan2(bz - az, bx - ax);
+    place(sim.cart, bx, bz, toward + Math.PI);
+    place(sim.bots[0]!, ax, az, toward);
+
+    let closest = Infinity;
+    let wetTicks = 0;
+    const bot = sim.bots[0]!;
+    for (let tick = 0; tick < 30 * TPS; tick++) {
+      // The target stays put: kept alive so a kill does not send it back to its pad.
+      sim.cart.health.hp = sim.cart.health.max;
+      sim.step(neutralIntent());
+      if (sim.surfaces.surfaceAt(bot.position.x, bot.position.z) === SurfaceId.Water) wetTicks++;
+      closest = Math.min(closest, Math.hypot(bot.position.x - bx, bot.position.z - bz));
+      // Settled either way: there, or in the water.
+      if (wetTicks > 0 || closest < BOT_STANDOFF + 6) break;
+    }
+    return { closest, wetTicks, width: Math.hypot(bx - ax, bz - az) };
+  } finally {
+    sim.dispose();
+  }
+}
+
+describe("bot routing", () => {
+  it("takes a bot round the zone's widest pond to a target on the far bank, dry", async () => {
+    const routed = await run(true);
+    const straight = await run(false);
+    console.log(`[botRouting] width ${routed.width.toFixed(0)} m; routed closest ${routed.closest.toFixed(1)} m, wet ${routed.wetTicks}; straight closest ${straight.closest.toFixed(1)} m, wet ${straight.wetTicks}`);
+    // A premise: a pond worth going round.
+    expect(routed.width).toBeGreaterThan(80);
+    expect(routed.wetTicks).toBe(0);
+    expect(routed.closest).toBeLessThan(BOT_STANDOFF + 6);
+    // The control: without the graph the bot drives into the water first.
+    expect(straight.wetTicks).toBeGreaterThan(0);
+    expect(straight.closest).toBeGreaterThan(BOT_STANDOFF + 6);
+  }, 60_000);
 });

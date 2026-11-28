@@ -43,7 +43,9 @@ In priority order.
      what they do without it.
    - HUD and map elements, against `UI-SPEC.md`.
    - It moves the golden once: say which commit records it.
-2. **Stage 6, navGraph.** Missing: the cell size over the zone, how a cell's passability is derived
+2. **Stage 6, navGraph.** **Specified and built as a draft PR on 28 Nov:**
+   `specs/2026-11-28-stage-6-navgraph-design.md`, two slices, waiting on the play-test. What the
+   spec had to settle: the cell size over the zone, how a cell's passability is derived
    from the Stage 4 mobility table (the climb limit now depends on tyre and surface, so "passable"
    differs per cart), how woods count now that trees stand in clumps (`woodsPlacement.ts`), the
    replan schedule without per-tick allocation, and how a route replaces the bots' current
@@ -52,7 +54,7 @@ In priority order.
    28 Nov:** `specs/2026-11-28-stage-5-tees-cart-paths-and-woods-design.md`, four slices, waiting on
    the play-test. Impostors past 250 m stay open (§4.1). What the spec had to settle:
    `SurfaceId.Tee` and `sim/cartPaths.ts` are sim changes. Missing: the path polylines' source, the speed bonus as a mobility resistance, how
-   paths cross the zone edge, and the golden. The render parts (impostors past 250 m, sight-line
+   paths cross the zone edge, and the golden. **Merged as #102 (28 Nov).** The render parts (impostors past 250 m, sight-line
    dither, the 12 outer holes' lower LOD, the golden-hour title) need only a plan.
 4. **Stage 8, economy.** The formulas are decided. Missing: the profile's schema and its migration
    from today's saved state, the `UPGRADES` table's actual numbers and prices, how `applyLoadout`
