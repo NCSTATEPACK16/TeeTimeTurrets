@@ -14,6 +14,11 @@ import {
 import type { Barrage } from "./mortar";
 import type { PooledBall } from "./entities/BallPool";
 import { Sim } from "./world";
+import { killCart } from "./respawn";
+import { placeRig } from "./rigs";
+import type { CartRig } from "./rigs";
+import type { Cart } from "./entities/Cart";
+import type { SpawnPoint } from "./spawn";
 
 /**
  * Stage 3.5c's Mulligan Mortar, against
@@ -22,20 +27,21 @@ import { Sim } from "./world";
  *
  * Rigs alternate teams: the player (0) and rig 2 are team 0; rigs 1, 3 and 5 are team 1.
  *
- * Two private seams are used, each named where it is. `killCart` scores a kill without
+ * Two internal seams are used, each named where it is. `killCart` scores a kill without
  * choreographing three real ones; what combat does to reach it is `combat.test.ts`'s subject, and
  * the streak is what is under test here. `placeRig` holds a cart still where a case needs it.
  */
 
-interface Seams {
-  killCart(cart: unknown, victim: number, killer: number): void;
-  placeRig(rig: unknown, spawn: { x: number; y: number; z: number; heading: number }): void;
-  readonly rigs: { cart: Sim["cart"] }[];
-  readonly barrages: Barrage[];
-  readonly ballPool: { readonly all: readonly PooledBall[] };
+/** The `Sim`'s package-internal members and the two module functions, under one name. */
+function seams(sim: Sim) {
+  return {
+    killCart: (cart: Cart, victim: number, killer: number): void => killCart(sim, cart, victim, killer),
+    placeRig: (rig: CartRig, spawn: Omit<SpawnPoint, "hole">): void => placeRig(rig, { hole: 0, ...spawn }),
+    rigs: sim.rigs,
+    barrages: sim.barrages,
+    ballPool: sim.ballPool,
+  };
 }
-
-const seams = (sim: Sim): Seams => sim as unknown as Seams;
 const sims: Sim[] = [];
 
 async function arena(bots: number, spec: HoleSpec = fixedHoleSpec()): Promise<Sim> {

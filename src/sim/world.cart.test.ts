@@ -15,6 +15,8 @@ import { SurfaceId } from "./surfaces";
 import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing";
 import type { Crossing } from "./crossing";
 import { MATCH_DURATION_S, POOL_TRANSFORM_STRIDE, Sim } from "./world";
+import { killCart } from "./respawn";
+import { resolveShot } from "./shots";
 import { neutralIntent } from "./intent";
 
 /** A match on one hole: its own field, the player on the tee, a bot (if any) on the cup. */
@@ -234,7 +236,7 @@ describe("damage and respawn", () => {
   /** The private hook combat.ts calls on a kill. Driving HP to zero through a real contact is
    * combat.test.ts's job; what this suite owns is what the *world* does about a death. */
   function kill(s: Sim): void {
-    (s as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(s.cart, 0, -1);
+    killCart(s, s.cart, 0, -1);
   }
 
   it("counts a shot that spawned a ball, and does not count a blank", () => {
@@ -404,16 +406,15 @@ describe("bot carts", () => {
     expect(bot.position.y - ground).toBeLessThan(2);
   });
 
-  /** `resolveShot` is private and, since carts became rigs, reachable by any of them. Calling it
+  /** `resolveShot` (`shots.ts`) is internal and, since carts became rigs, reachable by any of them. Calling it
    *  directly is the point: it is the seam where a bot could write the player's counters.
    *
    *  It takes the rig rather than the cart as of Stage C -- the rig is what knows the index a
    *  fired ball is attributed to -- so the cart is looked up here rather than at every caller. */
   function resolveShotFor(s: Sim, cart: Cart): void {
-    const rigs = (s as unknown as { rigs: { cart: Cart }[] }).rigs;
-    const rig = rigs.find((r) => r.cart === cart);
+    const rig = s.rigs.find((r) => r.cart === cart);
     expect(rig).toBeDefined();
-    (s as unknown as { resolveShot: (r: unknown) => void }).resolveShot(rig);
+    resolveShot(s, rig!);
   }
 
   it("a bot's cart-mode shot spawns its own pooled ball without counting a player shot", async () => {
@@ -524,7 +525,7 @@ describe("bot carts", () => {
     const bot = sim.bots[0]!;
     sim.cart.position.x = bot.position.x - 15;
     sim.cart.position.z = bot.position.z;
-    (sim as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(sim.cart, 0, -1);
+    killCart(sim, sim.cart, 0, -1);
     const ammoBefore = bot.ammo;
 
     // Shorter than RESPAWN_DELAY_S, so the player is dead for the whole window.
@@ -690,7 +691,7 @@ describe("driving into water", () => {
   it("charges nothing while the cart is dead and awaiting respawn", () => {
     const water = findWater(sim);
     play(sim, [{ ticks: 30, intent: {} }]);
-    (sim as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(sim.cart, 0, -1);
+    killCart(sim, sim.cart, 0, -1);
     const hpBefore = sim.cart.health.hp;
 
     sim.cart.position.x = water.x;
@@ -765,7 +766,7 @@ describe("the match clock", () => {
     // down) before the 5th ends the match.
     const sim = await holeSim(fixedHoleSpec(), 1, 5 / 60);
     for (let i = 0; i < 3; i++) sim.step();
-    (sim as unknown as { killCart: (cart: Cart, victim: number, killer: number) => void }).killCart(sim.bots[0]!, 1, 0);
+    killCart(sim, sim.bots[0]!, 1, 0);
 
     sim.step();
     expect(sim.matchOver).toBe(false); // the 4th tick is real, not the early return

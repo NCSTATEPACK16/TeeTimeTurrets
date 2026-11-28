@@ -1,110 +1,81 @@
+/**
+ * The match simulation: the `Sim` class, its state, and the fixed step.
+ *
+ * Since Stage 9 (docs/superpowers/specs/2026-11-28-stage-9-refactor-design.md §4) the work lives in
+ * modules beside this one, as functions over the `Sim`: `physicsWorld.ts` (the Rapier world and the
+ * cart bodies), `rigs.ts`, `hazardRules.ts`, `respawn.ts`, `shots.ts`, `botDriver.ts`,
+ * `simPickups.ts` and `snapshot.ts`. This file keeps the fields they read, `create`, `step` -- which
+ * calls them in the order the tick has always run, so every RNG draw and every event keeps its
+ * place -- `reset` and `dispose`. Members marked `@internal` are for those modules and tests, not
+ * for anything outside `src/sim/**`.
+ */
 import RAPIER from "@dimforge/rapier3d-compat";
-import { CLUB_STATS, ClubType, computeLaunchVelocityInto } from "../physics/Ballistics";
+import { ClubType } from "../physics/Ballistics";
 import { neutralIntent } from "./intent";
 import type { PlayerIntent } from "./intent";
-import {
-  BUCKET_REFILL_AMMO,
-  CART_COLLIDER,
-  CART_HULL,
-  CART_TUNING,
-  Cart,
-  RESPAWN_DELAY_S,
-  TIRE_TUNING,
-  TireType,
-  computeMuzzle,
-} from "./entities/Cart";
-import { maxClimbRad } from "./mobility";
+import { Cart, TireType, computeMuzzle } from "./entities/Cart";
 import { BallPool, POOL_SIZE } from "./entities/BallPool";
 import type { PooledBall } from "./entities/BallPool";
-import { BALL_RADIUS } from "./entities/ballShape";
-import {
-  HOT_DOG_HEAL,
-  SHIELD_DECAY_S,
-  createPickupStates,
-  isCharged,
-  nearestCharged,
-  resetPickups,
-  siteInReach,
-  take,
-} from "./pickups";
+import { SHIELD_DECAY_S, createPickupStates, isCharged, resetPickups } from "./pickups";
 import type { PickupState } from "./pickups";
 import { clubhouseObstacles, clubhouseShapes } from "./clubhouse";
 import type { StaticShape } from "./clubhouse";
-import { clearOfObstacles } from "./lineOfSight";
 import { navGraphFor } from "./navGraph";
 import type { NavGraph } from "./navGraph";
 import type { Obstacle } from "./lineOfSight";
-import { CombatRegistry, STROKE_DAMAGE, processContacts, sameSide } from "./combat";
-import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
+import { CombatRegistry, processContacts } from "./combat";
 import type { CombatContext } from "./combat";
-import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import { MatchTally } from "./scoring";
 import { DEFAULT_KIT, applyLoadout } from "./upgrades";
 import type { CartKit } from "./upgrades";
 import { CaptureField } from "./flags";
-import {
-  Barrage,
-  MAX_BARRAGES,
-  MORTAR_BALLS,
-  MORTAR_BALL_DAMAGE,
-  MORTAR_CHANNEL,
-  MORTAR_DROP_HEIGHT_M,
-  MORTAR_DROP_SPEED,
-  MORTAR_MAX_RANGE_M,
-  MORTAR_SPLASH_DAMAGE,
-  MORTAR_SPLASH_M,
-  MORTAR_SPREAD_M,
-  MORTAR_STREAK,
-} from "./mortar";
+import { Barrage, MAX_BARRAGES, MORTAR_CHANNEL, MORTAR_DROP_SPEED } from "./mortar";
 import type { Vec3 } from "./course";
-import { clampToPlayable } from "./courseBarrier";
 import type { SouthBoundary } from "./courseBarrier";
-import { SURFACES, SurfaceId, createSurfaceTuning } from "./surfaces";
+import { createSurfaceTuning } from "./surfaces";
 import type { MutableSurfaceTuning, Surfaces } from "./surfaces";
 import type { Playfield, PlayfieldHeightfield } from "./playfield";
 import type { Bounds } from "./courseLayout";
 import type { ArenaGround } from "./arena";
-import { ZONE_DRAIN_HP, ZONE_DRAIN_INTERVAL_S, ZONE_HARD_LIMIT_M } from "./arenaZone";
 import type { ArenaZone } from "./arenaZone";
-import {
-  BOT_CHANNEL,
-  BOT_FIRE_RANGE,
-  BOT_FLAG_DIVERT_M,
-  BOT_HEAL_FRACTION,
-  BOT_HEAL_RANGE_M,
-  BOT_SKILL_CHANNEL,
-  NO_TARGET,
-  computeBotIntent,
-  createBotMind,
-  pickTarget,
-  shouldCallMortar,
-} from "./bot";
-import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
 import type { MatchPhase } from "./match";
-import {
-  ARENA_MAX_HEALTH,
-  MATCH_DURATION_S,
-  NO_KILLER,
-  SPAWN_CHANNEL,
-  SPAWN_PROTECTION_S,
-  TEAM_COUNT,
-  teamOf,
-} from "./matchConfig";
-import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
+import { ARENA_MAX_HEALTH, MATCH_DURATION_S, SPAWN_CHANNEL } from "./matchConfig";
+import { createSpawnSet, createTeamPads } from "./spawn";
 import type { SpawnPoint } from "./spawn";
 import { hashChannel, mulberry32 } from "./rng";
 import { NO_RIG, SimEventLog } from "./events";
+import { FIXED_DT, POOL_TRANSFORM_STRIDE, PREVIEW_MAX_POINTS } from "./tickConstants";
+import { buildPhysics, freePhysics, moveCartBody } from "./physicsWorld";
+import type { CartTransform, CartRig } from "./rigs";
+import { createCartTransform, placeRig, cartsOf, gradeAlong } from "./rigs";
+import { killCart, stepRespawn, openingPoint } from "./respawn";
+import { checkCartWater, checkCartZone } from "./hazardRules";
 import {
-  FIXED_DT,
-  POOL_TRANSFORM_STRIDE,
-  PREVIEW_MAX_POINTS,
-  PREVIEW_MAX_TICKS,
-  PREVIEW_SAMPLE_STRIDE,
-} from "./tickConstants";
+  callMortar,
+  stepBarrages,
+  applySplash,
+  creditHit,
+  resolveShot,
+  previewTrajectory,
+} from "./shots";
+import { IDLE_INTENT, intentFor } from "./botDriver";
+import { collectPickups } from "./simPickups";
+import { holdPrevious, syncCurrentCart, syncCurrentPool } from "./snapshot";
 
 export type { Vec3 } from "./course";
+export type { CartTransform } from "./rigs";
+export {
+  CART_AUTOSTEP_HEIGHT,
+  CART_AUTOSTEP_MIN_WIDTH,
+  CART_MAX_SLOPE_CLIMB_DEG,
+  CART_MIN_SLOPE_SLIDE_DEG,
+  CART_SNAP_TO_GROUND,
+  CHARACTER_OFFSET,
+  GRAVITY,
+  addStaticColliders,
+} from "./physicsWorld";
 
 /**
  * The tick's constants, and the preview buffer, live in `tickConstants.ts`: the renderer needs
@@ -124,104 +95,6 @@ export {
  * Kept exported here because the smoke driver imports it from this module.
  */
 export { MATCH_DURATION_S };
-
-function writePreviewPoint(out: Vec3[], i: number, x: number, y: number, z: number): void {
-  const p = out[i]!;
-  p.x = x;
-  p.y = y;
-  p.z = z;
-}
-
-/**
- * Air drag on a fired ball, mirrored by `previewTrajectory` so the aim arc matches the flight.
- * Must equal `BallPool`'s own linear damping; `previewTrajectory.test.ts` holds the two together
- * by landing a real shot where the preview said it would.
- */
-const LINEAR_DAMPING = 0.05;
-
-export const GRAVITY = 9.81;
-
-/**
- * How close a cart has to be to a landed ball to collect it. Ammo is the only thing a landed ball
- * is for, so driving over your own spent rounds is how a cart reloads between buckets. Pickup
- * sites have their own radius, `PICKUP_GRAB_RADIUS_M`.
- */
-const PICKUP_RANGE = 3.0;
-
-/**
- * Height above a cart's position a sight line is taken from and to, for bots: the hull's middle,
- * about where a putter ball flies. `clearOfObstacles` compares it against building tops.
- */
-const BOT_EYE_M = 1;
-
-/** Half the baseline the downhill grade is read over: about the cart's own wheelbase. */
-const GRADE_SPAN_M = 1.2;
-
-/**
- * KCC tuning. Slope limits are what stop the cart driving up a wall or sticking to one.
- *
- * The two slope angles are exported because the causeway is designed against them: at a 1.0 m
- * heightfield cell there is no deck width that behaves like a bridge, only shoulders the cart drives
- * up (under the climb limit) or cannot leave (over it). A second copy of 32 in a terrain test would
- * let the crossing and the controller drift apart.
- *
- * The rest are exported for `tools/terrainProbe.ts`, for the same reason: a probe that times
- * `computeColliderMovement` against its own controller settings is timing a different vehicle.
- */
-export const CHARACTER_OFFSET = 0.02;
-/**
- * The steepest grade a stock (street-tyred) cart climbs on a fairway, degrees: `mobility.ts`'s
- * `maxClimbRad` for that pair, about 38.7. **Not what the controller uses** -- `moveCartBody` sets the
- * climb limit per cart per tick from its tyre and the ground under it. Exported as the one figure the
- * terrain tests and the probe hold corridors to, since a corridor is fairway.
- */
-export const CART_MAX_SLOPE_CLIMB_DEG =
-  (maxClimbRad(TIRE_TUNING[TireType.Street], SURFACES[SurfaceId.Fairway].cartSpeedScale, CART_TUNING.accel) * 180) / Math.PI;
-export const CART_MIN_SLOPE_SLIDE_DEG = 32;
-export const CART_AUTOSTEP_HEIGHT = 0.45;
-export const CART_AUTOSTEP_MIN_WIDTH = 0.25;
-export const CART_SNAP_TO_GROUND = 0.6;
-
-export interface CartTransform {
-  position: Vec3;
-  /** Chassis yaw, radians. */
-  heading: number;
-  /** Turret yaw, radians, absolute in world space. */
-  turretYaw: number;
-}
-
-/**
- * Everything the world owns for one cart: the state machine, the kinematic body it drives, the
- * collider that generates its contacts, and the fall speed the KCC does not integrate for us.
- *
- * Bundled rather than kept as parallel arrays because every one of these is looked up together,
- * every time. Rig 0 is always the player's; the rest are bots, in `bots` order.
- */
-interface CartRig {
-  /**
-   * Its own position in `Sim.rigs`. 0 is always the player's. It is the identity of a player
-   * everywhere in the project -- `bots[i - 1]`, the nameplates and the scoreboard all index by it.
-   */
-  readonly index: number;
-  readonly cart: Cart;
-  readonly body: RAPIER.RigidBody;
-  readonly collider: RAPIER.Collider;
-  fallSpeed: number;
-  /**
-   * The bot's own seeded stream. `null` for the player's rig, which is not AI-driven.
-   * Deliberately not `readonly`: `reset()` re-seeds it so "play again" is a genuine rerun.
-   */
-  random: (() => number) | null;
-  /** Reused per tick so the bot's intent costs no allocation. `null` for the player's rig. */
-  readonly intentScratch: PlayerIntent | null;
-  /** The rig this bot is fighting, per `pickTarget`, or `NO_TARGET`. Unused by the player's rig. */
-  targetIndex: number;
-  /**
-   * What the bot remembers between ticks (`sim/bot.ts`): its skill, its progress tracking and the
-   * ammo it is heading for. `null` for the player's rig. Written in place every tick.
-   */
-  readonly mind: BotMind | null;
-}
 
 export interface SimOptions {
   /**
@@ -249,16 +122,18 @@ export interface SimOptions {
  * decide it. There is one mode -- the arena -- and `create` is handed the ground to fight on.
  */
 export class Sim {
-  private world!: RAPIER.World;
-  /** Rig 0 is the player's; rigs 1.. are `bots`, in the same order. */
-  private readonly rigs: CartRig[] = [];
-  private controller!: RAPIER.KinematicCharacterController;
-  /** Set by `dispose`. A disposed Sim has freed its Rapier world and must not be stepped. */
-  private disposed = false;
-  /** The ground under everything: heights, materials, bounds and the collider's heightfield. */
-  private readonly playfield: Playfield;
-  /** The playfield's collider heights, built by the first `buildGround` and reused after it. */
-  private heightfield: PlayfieldHeightfield | null = null;
+  /** @internal */
+  world!: RAPIER.World;
+  /** @internal Rig 0 is the player's; rigs 1.. are `bots`, in the same order. */
+  readonly rigs: CartRig[] = [];
+  /** @internal */
+  controller!: RAPIER.KinematicCharacterController;
+  /** @internal Set by `dispose`. A disposed Sim has freed its Rapier world and must not be stepped. */
+  disposed = false;
+  /** @internal The ground under everything: heights, materials, bounds and the collider's heightfield. */
+  readonly playfield: Playfield;
+  /** @internal The playfield's collider heights, built by the first `buildGround` and reused after it. */
+  heightfield: PlayfieldHeightfield | null = null;
   /**
    * Cart state from the previous fixed step, for render interpolation. Two buffers for the player
    * and two per bot, swapped every step and written in place: a render reads one pair while the
@@ -275,11 +150,12 @@ export class Sim {
   previousBotCarts: CartTransform[] = [];
   /** Bot cart transforms from the most recent fixed step. One per bot. */
   currentBotCarts: CartTransform[] = [];
-  private ballPool!: BallPool;
-  /** Every pickup site's live state, in `ArenaGround.pickupSites` order. */
-  private readonly pickupStates: PickupState[];
-  /** The clubhouse complex's colliders, rebuilt into every fresh Rapier world. */
-  private readonly staticShapes: readonly StaticShape[];
+  /** @internal */
+  ballPool!: BallPool;
+  /** @internal Every pickup site's live state, in `ArenaGround.pickupSites` order. */
+  readonly pickupStates: PickupState[];
+  /** @internal The clubhouse complex's colliders, rebuilt into every fresh Rapier world. */
+  readonly staticShapes: readonly StaticShape[];
   /** The buildings as sight-line blockers, for bots here and for the nameplates. */
   readonly obstacles: readonly Obstacle[];
   /** Pooled ball transforms from the previous fixed step, for render interpolation. */
@@ -294,41 +170,49 @@ export class Sim {
    */
   readonly tally = new MatchTally();
 
-  /** Collider handle -> entity, so a drained collision event can be dispatched. */
-  private readonly registry = new CombatRegistry();
-  private eventQueue!: RAPIER.EventQueue;
-  /** Built once: `processContacts` runs every tick and must not allocate its context. */
-  private combatContext!: CombatContext;
-  /** Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
-  private simTime = 0;
+  /** @internal Collider handle -> entity, so a drained collision event can be dispatched. */
+  readonly registry = new CombatRegistry();
+  /** @internal */
+  eventQueue!: RAPIER.EventQueue;
+  /** @internal Built once: `processContacts` runs every tick and must not allocate its context. */
+  combatContext!: CombatContext;
+  /** @internal Seconds of sim time elapsed, used only for BallPool's landed-ball despawn timer. */
+  simTime = 0;
   /** True when the player's last trigger pull put a ball in the air rather than firing a blank. */
   lastShotWasStrike = false;
-  /** Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
-  private readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  /** Landed balls in pickup range of one cart, filled by `BallPool.ballsNear`. */
-  private readonly nearScratch: PooledBall[] = [];
-  private readonly launchScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  /** Reused by `moveCartBody`'s barrier clamp: no per-tick allocation in the fixed loop. */
-  private readonly clampScratch = { x: 0, z: 0 };
-  private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  private readonly botTarget = { x: 0, z: 0, dead: false, hidden: false, driveX: 0, driveZ: 0, holdAtDrive: false };
-  private readonly seekScratch = { x: 0, z: 0 };
+  /** @internal Reused per-tick scratch, per the AGENTS.md no-allocation-in-the-hot-loop rule. */
+  readonly moveScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  /** @internal Landed balls in pickup range of one cart, filled by `BallPool.ballsNear`. */
+  readonly nearScratch: PooledBall[] = [];
+  /** @internal */
+  readonly launchScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  /** @internal Reused by `moveCartBody`'s barrier clamp: no per-tick allocation in the fixed loop. */
+  readonly clampScratch = { x: 0, z: 0 };
+  /** @internal */
+  readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  /** @internal */
+  readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
+  /** @internal */
+  readonly botTarget = { x: 0, z: 0, dead: false, hidden: false, driveX: 0, driveZ: 0, holdAtDrive: false };
+  /** @internal */
+  readonly seekScratch = { x: 0, z: 0 };
   /**
    * Everything that happened, for whatever reacts to it: markers, the kill feed, effects, audio.
    * Every cart's events, not just the player's; a reader filters. See `events.ts`.
    */
   readonly events = new SimEventLog();
-  /** `holdIntent`'s output, reused every countdown tick. */
-  private readonly countdownIntent: PlayerIntent = { ...neutralIntent(), brake: true, cancelCharge: true };
-  /** Ticks stepped since the match started, stamped on each event. */
-  private tickCount = 0;
+  /** @internal `holdIntent`'s output, reused every countdown tick. */
+  readonly countdownIntent: PlayerIntent = { ...neutralIntent(), brake: true, cancelCharge: true };
+  /** @internal Ticks stepped since the match started, stamped on each event. */
+  tickCount = 0;
   /**
    * The bots' navigation graph over the zone (Stage 6, `navGraph.ts`), or null on a ground with no
    * zone, where bots drive straight as they always did. Shared by every `Sim` on the same ground.
+   * @internal
    */
-  private readonly nav: NavGraph | null;
-  private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
+  readonly nav: NavGraph | null;
+  /** @internal */
+  readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   /** The clock and the scoreboard. Its roster is set in `create`, once every rig exists. */
   readonly match: Match;
   /**
@@ -349,38 +233,42 @@ export class Sim {
   get matchPhase(): MatchPhase {
     return this.match.phase;
   }
-  /** The road carts are held north of, or null where the ground has none. */
-  private readonly southBoundary: SouthBoundary | null;
+  /** @internal The road carts are held north of, or null where the ground has none. */
+  readonly southBoundary: SouthBoundary | null;
   /** Where the match is fought, or null on a ground without one. See `ArenaGround.zone`. */
   readonly zone: ArenaZone | null;
-  private readonly zoneScratch = { x: 0, z: 0 };
-  /** One tee per spawn hole, in the course frame. */
-  private readonly spawnSet: SpawnPoint[];
-  /** The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
-  private readonly teamPads: SpawnPoint[][] | null;
-  /** Root of the match's seeded streams; see `ArenaGround.seed`. */
-  private readonly seed: number;
+  /** @internal */
+  readonly zoneScratch = { x: 0, z: 0 };
+  /** @internal One tee per spawn hole, in the course frame. */
+  readonly spawnSet: SpawnPoint[];
+  /** @internal The clubhouse team pads, `[team][slot]`, or null on a ground with no clubhouse. */
+  readonly teamPads: SpawnPoint[][] | null;
+  /** @internal Root of the match's seeded streams; see `ArenaGround.seed`. */
+  readonly seed: number;
   /**
    * The stream respawn tees are drawn from. Seeded from the ground rather than the clock, per the
    * `AGENTS.md` no-`Math.random`-in-the-sim rule, and re-seeded by `reset()` so "play again" is a
    * genuine rerun.
+   * @internal
    */
-  private spawnRandom: () => number;
+  spawnRandom: () => number;
   /**
    * The Mulligan Mortar's spread (Stage 3.5c): one stream for the match, seeded on its own channel
    * and rebuilt by `reset`, as `spawnRandom` is. A bot's own stream is never drawn on for a mortar,
    * so calling one shifts no bot's later decisions.
+   * @internal
    */
-  private mortarRandom: () => number;
-  /** Mortars in the air, in fixed slots. See `mortar.ts`. */
-  private readonly barrages: Barrage[] = Array.from({ length: MAX_BARRAGES }, () => new Barrage());
-  /** The arc a mortar is aimed along, written by `previewTrajectory`. Made once. */
-  private readonly mortarArc: Vec3[] = Array.from({ length: PREVIEW_MAX_POINTS }, () => ({ x: 0, y: 0, z: 0 }));
-  private readonly mortarVelocity: Vec3 = { x: 0, y: -MORTAR_DROP_SPEED, z: 0 };
-  /** `flagToDefend`'s per-flag enemy counts, reused. Three flags at most. */
-  private readonly flagCounts = new Int32Array(3);
-  /** See `Sim.carts`. Grown once and reused, per the no-allocation-in-the-tick rule. */
-  private readonly cartsScratch: Cart[] = [];
+  mortarRandom: () => number;
+  /** @internal Mortars in the air, in fixed slots. See `mortar.ts`. */
+  readonly barrages: Barrage[] = Array.from({ length: MAX_BARRAGES }, () => new Barrage());
+  /** @internal The arc a mortar is aimed along, written by `previewTrajectory`. Made once. */
+  readonly mortarArc: Vec3[] = Array.from({ length: PREVIEW_MAX_POINTS }, () => ({ x: 0, y: 0, z: 0 }));
+  /** @internal */
+  readonly mortarVelocity: Vec3 = { x: 0, y: -MORTAR_DROP_SPEED, z: 0 };
+  /** @internal `flagToDefend`'s per-flag enemy counts, reused. Three flags at most. */
+  readonly flagCounts = new Int32Array(3);
+  /** @internal See `Sim.carts`. Grown once and reused, per the no-allocation-in-the-tick rule. */
+  readonly cartsScratch: Cart[] = [];
 
   private constructor(ground: ArenaGround, matchDurationS: number, countdownS: number, tire: TireType) {
     this.playfield = ground.playfield;
@@ -443,16 +331,16 @@ export class Sim {
       // stand off at. The putter is flat, so its shot lands on the target at `BOT_STANDOFF`.
       sim.bots.push(new Cart({ maxHealth: ARENA_MAX_HEALTH, club: ClubType.Putter }));
     }
-    sim.buildPhysics();
+    buildPhysics(sim);
 
     sim.combatContext = {
       registry: sim.registry,
-      onBallHit: (shooter, victim, damage, x, y, z) => sim.creditHit(shooter, victim, damage, x, y, z),
+      onBallHit: (shooter, victim, damage, x, y, z) => creditHit(sim, shooter, victim, damage, x, y, z),
       onRamDamage: (rammer, victim, damage, x, y, z) => {
         sim.tally.damaged(rammer, victim, damage, sim.tickCount);
         sim.events.push("ram", sim.tickCount, rammer, victim, damage, x, y, z);
       },
-      onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
+      onCartKilled: (cart, victim, killer) => killCart(sim, cart, victim, killer),
       onShieldHit: (attacker, victim, byBall, x, y, z) => {
         if (byBall && attacker === 0) sim.stats.directHits += 1;
         sim.events.push("plateBroken", sim.tickCount, attacker, victim, sim.rigs[victim]!.cart.shield, x, y, z);
@@ -460,97 +348,14 @@ export class Sim {
     };
     // Now that every rig exists. The scoreboard is indexed by rig index.
     sim.match.setRoster(sim.rigs.length);
-    for (const rig of sim.rigs) sim.placeRig(rig, sim.openingPoint(rig.index));
+    for (const rig of sim.rigs) placeRig(rig, openingPoint(sim, rig.index));
 
-    sim.syncCurrentCart();
-    sim.holdPrevious();
+    syncCurrentCart(sim);
+    holdPrevious(sim);
     sim.ballPool.sync();
-    sim.syncCurrentPool();
+    syncCurrentPool(sim);
     sim.previousPoolTransforms.set(sim.currentPoolTransforms);
     return sim;
-  }
-
-  /**
-   * Bot `i`'s seeded stream. The `0` is the slot a hole index occupied when arena was built on top
-   * of a hole-1 `Sim`; it stays so a recorded match replays unchanged.
-   */
-  private botStreamSeed(botIndex: number): number {
-    return hashChannel(this.seed, 0, BOT_CHANNEL, botIndex);
-  }
-
-  /**
-   * Bot `i`'s skill, 0..1: the first draw of its own `BOT_SKILL_CHANNEL` stream, so it is fixed
-   * per seed and giving bots a skill moves none of their `BOT_CHANNEL` draws.
-   */
-  private botSkill(botIndex: number): number {
-    return mulberry32(hashChannel(this.seed, 0, BOT_SKILL_CHANNEL, botIndex))();
-  }
-
-  /**
-   * The Rapier world and everything in it: the ground, the character controller, a body per cart
-   * and the ball pool, each registered for contact dispatch, and a rig per cart with a fresh bot
-   * stream and mind. Every cart must already exist; `placeRig` puts them down afterwards.
-   *
-   * `create` and `reset` both build through here, in this order, so a rematch runs in a world
-   * with the same handles and no history -- exactly the world the first match had. Teleporting
-   * carts around the old world instead leaves its broadphase and contact state behind, and a
-   * rematch then drifts from the first match from its very first tick.
-   */
-  private buildPhysics(): void {
-    this.world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
-    this.world.timestep = FIXED_DT;
-    this.buildGround();
-    addStaticColliders(this.world, this.staticShapes);
-
-    this.controller = this.world.createCharacterController(CHARACTER_OFFSET);
-    this.controller.setUp({ x: 0, y: 1, z: 0 });
-    this.controller.setMaxSlopeClimbAngle((CART_MAX_SLOPE_CLIMB_DEG * Math.PI) / 180);
-    this.controller.setMinSlopeSlideAngle((CART_MIN_SLOPE_SLIDE_DEG * Math.PI) / 180);
-    this.controller.enableAutostep(CART_AUTOSTEP_HEIGHT, CART_AUTOSTEP_MIN_WIDTH, true);
-    this.controller.enableSnapToGround(CART_SNAP_TO_GROUND);
-    // A future flag-ball has to be shovable by the cart, and a KCC ignores dynamic bodies unless
-    // told otherwise. Nudging a landed ball by driving into it is correct behaviour anyway.
-    this.controller.setApplyImpulsesToDynamicBodies(true);
-
-    this.rigs.length = 0;
-    this.registry.clear();
-    this.addCartRig(this.cart, null);
-
-    this.ballPool = new BallPool(this.world, {
-      heightAt: (x, z) => this.playfield.heightAt(x, z),
-      tuningAt: (x, z, out) => this.playfield.surfaces.tuningAt(x, z, out),
-    });
-    this.eventQueue = new RAPIER.EventQueue(true);
-    for (const pooled of this.ballPool.all) {
-      this.registry.registerBall(pooled.body.collider(0).handle, pooled);
-    }
-    for (let i = 0; i < this.bots.length; i++) this.addCartRig(this.bots[i]!, i);
-  }
-
-  /** Frees what `buildPhysics` made. Rapier's WASM heap is not garbage-collected. */
-  private freePhysics(): void {
-    this.world.removeCharacterController(this.controller);
-    this.eventQueue.free();
-    this.world.free();
-  }
-
-  /**
-   * Builds the heightfield collider for the ground. The heights are computed once per `Sim` and
-   * kept, so a rematch does not rebuild them.
-   */
-  private buildGround(): void {
-    this.heightfield ??= this.playfield.buildHeightfield();
-    const field = this.heightfield;
-    const groundDesc = RAPIER.ColliderDesc.heightfield(field.rows, field.cols, field.heights, {
-      x: field.extentX,
-      y: 1,
-      z: field.extentZ,
-    })
-      // The course is a box that is not centred on anything, so the collider goes where its middle is.
-      .setTranslation(field.centreX, 0, field.centreZ)
-      .setFriction(0.8)
-      .setRestitution(0.15);
-    this.world.createCollider(groundDesc);
   }
 
   /**
@@ -564,213 +369,6 @@ export class Sim {
   /** Whether pickup site `i` is charged right now. */
   pickupCharged(i: number): boolean {
     return isCharged(this.pickupStates[i]!, this.simTime);
-  }
-
-  /**
-   * Creates one cart's body and collider, registers it for contact dispatch, and files the rig.
-   * Every cart -- the player's and every bot's -- goes through here, so a bot is physically
-   * identical to the player rather than a cheaper approximation of one. `placeRig` puts it down.
-   *
-   * `botIndex` is the cart's place in `bots`, or `null` for the player. It is passed in rather than
-   * read off `rigs.length`, which only equals it while the player's rig is the one already filed.
-   */
-  private addCartRig(cart: Cart, botIndex: number | null): void {
-    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
-    const collider = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(CART_COLLIDER.halfHeight, CART_COLLIDER.radius)
-        .setCollisionGroups(CART_GROUPS)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
-        // Rapier computes no contacts between two kinematic bodies by default, and every cart
-        // here is kinematic -- without this, cart-vs-cart shunting generates no events at all.
-        .setActiveCollisionTypes(
-          RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
-        ),
-      body,
-    );
-    // Before the push, so it is the index this rig is about to occupy.
-    const index = this.rigs.length;
-    this.registry.registerCart(collider.handle, cart, index);
-    // What a shot hits. Same body, so it moves with the cart for free; ball-only, so the cart
-    // drives exactly as it did without it.
-    const hull = this.world.createCollider(
-      RAPIER.ColliderDesc.cylinder(CART_HULL.height / 2, CART_HULL.radius)
-        .setTranslation(0, CART_HULL.centreOffset, 0)
-        .setCollisionGroups(HULL_GROUPS)
-        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
-      body,
-    );
-    this.registry.registerCart(hull.handle, cart, index);
-    this.rigs.push({
-      index,
-      cart,
-      body,
-      collider,
-      fallSpeed: 0,
-      random: botIndex === null ? null : mulberry32(this.botStreamSeed(botIndex)),
-      intentScratch: botIndex === null ? null : neutralIntent(),
-      targetIndex: NO_TARGET,
-      mind: botIndex === null ? null : createBotMind(this.botSkill(botIndex)),
-    });
-  }
-
-  /**
-   * Death: the cart is out of the world for `RESPAWN_DELAY_S` and comes back at a spawn point.
-   * Guarded on `dead` so two lethal contacts in one tick do not restart the timer. The death is
-   * the stroke: `Match.scoreKill` charges it to the victim's team.
-   */
-  private killCart(cart: Cart, victim: number, killer: number): void {
-    if (cart.dead) return;
-    cart.dead = true;
-    cart.respawnTimer = RESPAWN_DELAY_S;
-    this.match.scoreKill(killer, victim);
-    this.tally.killed(killer, victim, this.tickCount);
-    const p = cart.position;
-    this.events.push("kill", this.tickCount, killer, victim, 0, p.x, p.y, p.z);
-    // The streak ends with the death, however it came. An enemy kill -- the rule `scoreKill` pays a
-    // point by -- adds to the killer's, and every third earns a mortar if none is held.
-    cart.killStreak = 0;
-    if (killer === NO_KILLER || killer < 0 || killer >= this.rigs.length || teamOf(killer) === teamOf(victim)) return;
-    const by = this.rigs[killer]!.cart;
-    by.killStreak += 1;
-    if (by.killStreak % MORTAR_STREAK === 0 && by.mortars === 0) {
-      by.mortars = 1;
-      const at = by.position;
-      this.events.push("mortarEarned", this.tickCount, killer, NO_RIG, by.killStreak, at.x, at.y, at.z);
-    }
-  }
-
-  /**
-   * A mortar call: where it lands, then a barrage slot with its six impact points drawn now.
-   * The player's lands where the full-charge arc of the equipped club does, along the turret,
-   * capped at `MORTAR_MAX_RANGE_M` and pulled inside the zone. Refused, keeping the mortar, only
-   * when every slot is in use.
-   */
-  private callMortar(rig: CartRig): void {
-    const cart = rig.cart;
-    let slot: Barrage | null = null;
-    for (const b of this.barrages) if (!b.active && slot === null) slot = b;
-    if (slot === null) return;
-    const target = this.mortarTarget(rig, this.clampScratch);
-    cart.mortars = 0;
-    slot.start(rig.index, this.tickCount, target.x, target.z, this.mortarRandom);
-    const y = this.playfield.heightAt(target.x, target.z);
-    this.events.push("mortarCalled", this.tickCount, rig.index, NO_RIG, 0, target.x, y, target.z);
-  }
-
-  private mortarTarget(rig: CartRig, out: { x: number; z: number }): { x: number; z: number } {
-    const cart = rig.cart;
-    const from = cart.position;
-    let dx: number;
-    let dz: number;
-    if (rig.random === null) {
-      // The player aims with the arc: `previewTrajectory` reads rig 0's cart.
-      const n = this.previewTrajectory(1, cart.turretYaw, this.mortarArc);
-      const land = this.mortarArc[Math.max(0, n - 1)]!;
-      dx = land.x - from.x;
-      dz = land.z - from.z;
-    } else {
-      // A bot aims where its target is now, with no lead, so a target that keeps moving escapes
-      // the ring as the player can (spec §3.5). `shouldCallMortar` only calls on a living one.
-      const target = rig.targetIndex === NO_TARGET ? cart : this.rigs[rig.targetIndex]!.cart;
-      dx = target.position.x - from.x;
-      dz = target.position.z - from.z;
-    }
-    const d = Math.hypot(dx, dz);
-    if (d > MORTAR_MAX_RANGE_M) {
-      dx *= MORTAR_MAX_RANGE_M / d;
-      dz *= MORTAR_MAX_RANGE_M / d;
-    }
-    out.x = from.x + dx;
-    out.z = from.z + dz;
-    if (this.zone !== null) this.zone.clampInside(out.x, out.z, out);
-    return out;
-  }
-
-  /**
-   * Drops each live barrage's balls on their ticks. A ball is a pooled body like any shot, so every
-   * rule that makes a shot hurt applies to it unchanged; one the pool cannot supply is skipped.
-   */
-  private stepBarrages(): void {
-    for (let b = 0; b < this.barrages.length; b++) {
-      const barrage = this.barrages[b]!;
-      if (!barrage.active) continue;
-      while (barrage.spawned < MORTAR_BALLS && barrage.dropTick(barrage.spawned) <= this.tickCount) {
-        const i = barrage.spawned++;
-        const pooled = this.ballPool.acquire(barrage.owner, true);
-        if (pooled === null) continue;
-        const x = barrage.impacts[i * 2]!;
-        const z = barrage.impacts[i * 2 + 1]!;
-        const at = this.muzzleScratch;
-        at.x = x;
-        at.y = this.playfield.heightAt(x, z) + MORTAR_DROP_HEIGHT_M;
-        at.z = z;
-        pooled.body.setTranslation(at, true);
-        pooled.body.setRotation(IDENTITY_ROTATION, true);
-        pooled.body.setAngvel(ZERO_VECTOR, true);
-        pooled.body.setLinvel(this.mortarVelocity, true);
-        pooled.body.setGravityScale(1, true);
-        pooled.damage = MORTAR_BALL_DAMAGE;
-        pooled.mortar = true;
-      }
-      if (barrage.spawned >= MORTAR_BALLS) barrage.clear();
-    }
-  }
-
-  /**
-   * One point to every enemy within `MORTAR_SPLASH_M` of each mortar ball that touched down this
-   * step, credited to the caller. The only splash in the game, so it repeats the guards a direct
-   * hit has in `combat.ts`: a dead, protected or same-side cart is untouched, a shield plate takes
-   * it whole, and the cart the ball already hit is spared.
-   */
-  private applySplash(): void {
-    const pool = this.ballPool;
-    const balls = pool.all;
-    for (let t = 0; t < pool.touchdownCount; t++) {
-      const ball = balls[pool.touchdowns[t]!]!;
-      const bx = ball.position[0]!;
-      const by = ball.position[1]!;
-      const bz = ball.position[2]!;
-      for (let i = 0; i < this.rigs.length; i++) {
-        const cart = this.rigs[i]!.cart;
-        if (i === ball.struck || cart.dead || cart.protectedFor > 0 || sameSide(ball.firedBy, i)) continue;
-        if (Math.hypot(cart.position.x - bx, cart.position.z - bz) > MORTAR_SPLASH_M) continue;
-        if (cart.absorbHit()) {
-          this.events.push("plateBroken", this.tickCount, ball.firedBy, i, cart.shield, bx, by, bz);
-          continue;
-        }
-        this.tally.damaged(ball.firedBy, i, MORTAR_SPLASH_DAMAGE, this.tickCount);
-        this.events.push("hit", this.tickCount, ball.firedBy, i, MORTAR_SPLASH_DAMAGE, bx, by, bz);
-        if (applyDamage(cart.health, MORTAR_SPLASH_DAMAGE)) this.killCart(cart, i, ball.firedBy);
-      }
-    }
-  }
-
-  /**
-   * A fired ball connected, and `shooter` is the rig that fired it. `Sim.stats` is the **player's**
-   * -- it is the accuracy the results screen reports -- so only rig 0's hits may write it. The event
-   * is everyone's: whoever reads the log decides whose hits it shows.
-   */
-  private creditHit(shooter: number, victim: number, damage: number, x: number, y: number, z: number): void {
-    if (shooter === 0) this.stats.directHits += 1;
-    this.tally.damaged(shooter, victim, damage, this.tickCount);
-    this.events.push("hit", this.tickCount, shooter, victim, damage, x, y, z);
-  }
-
-  /** One cart onto one spawn point: position, facing, momentum and the body, in that order. */
-  private placeRig(rig: CartRig, spawn: SpawnPoint): void {
-    const cart = rig.cart;
-    cart.position.x = spawn.x;
-    cart.position.y = spawn.y + CART_COLLIDER.groundOffset;
-    cart.position.z = spawn.z;
-    cart.heading = spawn.heading;
-    cart.turretOffset = 0;
-    // The drop point after a hazard is where it now stands, not wherever it drowned.
-    cart.lastSafePosition.x = cart.position.x;
-    cart.lastSafePosition.y = cart.position.y;
-    cart.lastSafePosition.z = cart.position.z;
-    cart.wasInWater = false;
-    rig.fallSpeed = 0;
-    rig.body.setTranslation(cart.position, true);
   }
 
   /**
@@ -800,34 +398,26 @@ export class Sim {
     this.previousBotCarts = this.currentBotCarts;
     this.currentBotCarts = swapBots;
     this.stepCarts(counting ? this.holdIntent(intent) : intent, counting);
-    this.syncCurrentCart();
+    syncCurrentCart(this);
 
     // Stepping with the queue is what fills it; combat.ts drains it immediately afterwards, so
     // no contact is ever carried into the following tick.
     this.world.step(this.eventQueue);
     processContacts(this.eventQueue, this.combatContext);
     this.ballPool.sync();
-    this.syncCurrentPool();
+    syncCurrentPool(this);
 
     // Flags after contacts, so a cart killed this tick holds nothing. Live ticks only: the
     // countdown takes no flag, and the tick that ends the match bleeds nothing.
-    if (!counting && !this.match.over) this.captures.tick(this.carts, this.match, this.events, this.tickCount);
+    if (!counting && !this.match.over) this.captures.tick(cartsOf(this), this.match, this.events, this.tickCount);
 
     // The tick that ends the match is still a whole tick -- carts move, balls fly, a hit lands and
     // a kill scores -- and only then does the world freeze. Every previous/current pair collapses
     // onto its current value, so a renderer lerping between them holds still rather than hanging
     // one tick apart forever.
     if (this.match.over) {
-      this.holdPrevious();
+      holdPrevious(this);
       this.previousPoolTransforms.set(this.currentPoolTransforms);
-    }
-  }
-
-  /** Every previous cart transform made equal to its current one, so interpolation holds still. */
-  private holdPrevious(): void {
-    copyCartTransform(this.currentCart, this.previousCart);
-    for (let i = 0; i < this.currentBotCarts.length; i++) {
-      copyCartTransform(this.currentBotCarts[i]!, this.previousBotCarts[i]!);
     }
   }
 
@@ -840,14 +430,14 @@ export class Sim {
     // pickups keep recharging (against `simTime`). Only the cart is frozen.
     this.simTime += FIXED_DT;
     this.ballPool.step(FIXED_DT, this.simTime);
-    this.applySplash();
-    this.stepBarrages();
+    applySplash(this);
+    stepBarrages(this);
 
     for (let i = 0; i < this.rigs.length; i++) {
       const rig = this.rigs[i]!;
       // During the countdown a bot idles without drawing on its RNG stream, so its first live
       // tick is the same whatever the countdown's length.
-      const rigIntent = counting && rig.random !== null ? IDLE_INTENT : this.intentFor(rig, intent);
+      const rigIntent = counting && rig.random !== null ? IDLE_INTENT : intentFor(this, rig, intent);
       this.stepRig(rig, rigIntent);
     }
   }
@@ -863,287 +453,11 @@ export class Sim {
     return held;
   }
 
-  /** The player's rig gets the player's intent; a bot's gets whatever `sim/bot.ts` decides. */
-  private intentFor(rig: CartRig, playerIntent: PlayerIntent): PlayerIntent {
-    if (rig.random === null) return playerIntent;
-    // Unreachable by construction (addCartRig always pairs a non-null random with a non-null
-    // intentScratch) -- but a bot with no scratch must idle, not mirror the player's controls.
-    if (rig.intentScratch === null) return IDLE_INTENT;
-    // A dead cart's intent is never read by stepRig, so computing one here would only spend the
-    // bot's RNG stream on a throwaway draw and make the draw count depend on death timing.
-    if (rig.cart.dead) {
-      // A respawned bot plans from where it now stands, not from where it died.
-      if (rig.mind !== null) rig.mind.replanNow = true;
-      return IDLE_INTENT;
-    }
-    rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
-    const target = this.botTargetScratch(rig.cart, rig.targetIndex);
-    // The same scratch `botTargetScratch` just wrote, through its writable type.
-    this.flagDrive(rig, this.botTarget);
-    if (rig.mind !== null) {
-      this.findAmmoFor(rig.cart, rig.mind);
-      this.findHealFor(rig.cart, rig.mind, target);
-      this.routeSteer(rig.index, rig.cart, rig.mind, target);
-    }
-    computeBotIntent(
-      rig.cart,
-      target,
-      FIXED_DT,
-      rig.random,
-      rig.intentScratch,
-      rig.mind,
-    );
-    if (rig.cart.mortars > 0) {
-      rig.intentScratch.callMortar = shouldCallMortar(
-        rig.cart,
-        target,
-        this.sideNear(teamOf(rig.index), target.x, target.z, MORTAR_SPREAD_M),
-        MORTAR_MAX_RANGE_M,
-      );
-    }
-    return rig.intentScratch;
-  }
-
-  /**
-   * Capture flags without routing (Stage 3.5c, spec §4). Each side's lowest-index bot -- rig 2 for
-   * team 0, rig 1 for team 1 -- is its flag runner: it drives to the nearest flag its side does not
-   * own, or, when its side owns all three, to the owned flag the most enemies are nearest.
-   *
-   * **It goes whether or not an enemy is close**, which is a change from the spec's "unless an
-   * enemy is within `BOT_ENGAGE_RANGE`". The team pads are 50 m apart, so from the whistle there is
-   * always an enemy inside 40 m of the clubhouse, and a runner that stopped to fight never left it
-   * (measured: 99 m from the nearest flag after 30 s). It still aims and shoots whatever is in
-   * range, on the way and on the flag; only where it drives changed. Every other bot keeps fighting, but
-   * one whose target is dead or more than `BOT_FLAG_DIVERT_M` away takes the nearest flag its side
-   * does not own on the way. Either way the bot holds on the flag (`holdAtDrive`). Straight lines,
-   * as everything a bot drives is: Stage 6's routing replaces this.
-   */
-  private flagDrive(rig: CartRig, t: Sim["botTarget"]): void {
-    t.holdAtDrive = false;
-    const captures = this.captures;
-    if (captures.sites.length === 0) return;
-    const team = teamOf(rig.index);
-    const p = rig.cart.position;
-    const away = t.dead ? Infinity : Math.hypot(t.x - p.x, t.z - p.z);
-    const runner = rig.index >= 1 && rig.index <= TEAM_COUNT;
-    let goal = -1;
-    if (runner) {
-      goal = this.nearestFlag(team, p.x, p.z, false);
-      if (goal < 0) goal = this.flagToDefend(team);
-    } else if (away > BOT_FLAG_DIVERT_M) {
-      goal = this.nearestFlag(team, p.x, p.z, false);
-    }
-    if (goal < 0) return;
-    const site = captures.sites[goal]!;
-    t.driveX = site.x;
-    t.driveZ = site.z;
-    t.holdAtDrive = true;
-  }
-
-  /**
-   * Where a bot points its cart this tick (Stage 6 spec, §3): at the next waypoint of a route over
-   * the navigation graph, or, with the goal in direct sight inside `ROUTE_DIRECT_M`, nowhere special
-   * (`hasSteer` false: it steers at the goal itself). The goal is what `computeBotIntent` is about to
-   * drive at -- ammo, a hot dog, or the target's drive point -- chosen in the same order.
-   *
-   * Plans are rationed: at once after a respawn or a back-off (`replanNow`) or when there is no
-   * route, and otherwise only on the bot's own tick of each second (`ROUTE_SLOT_STRIDE`), when its
-   * goal has moved `ROUTE_GOAL_MOVED_M` from the one the route was planned to. Allocation-free.
-   */
-  private routeSteer(index: number, cart: Cart, mind: BotMind, target: BotTarget): void {
-    mind.hasSteer = false;
-    const nav = this.nav;
-    if (nav === null || mind.unstickFor > 0) return;
-    let gx: number;
-    let gz: number;
-    if (cart.ammo <= 0 && mind.hasAmmoTarget) {
-      gx = mind.ammoX;
-      gz = mind.ammoZ;
-    } else if (mind.hasHealTarget) {
-      gx = mind.healX;
-      gz = mind.healZ;
-    } else if (target.dead && target.holdAtDrive !== true) {
-      return;
-    } else {
-      gx = target.driveX ?? target.x;
-      gz = target.driveZ ?? target.z;
-    }
-    const px = cart.position.x;
-    const pz = cart.position.z;
-    if (Math.hypot(gx - px, gz - pz) <= ROUTE_DIRECT_M && nav.lineClear(px, pz, gx, gz)) {
-      mind.routeOn = false;
-      return;
-    }
-    const onSlot = this.tickCount % ROUTE_PERIOD_TICKS === (index * ROUTE_SLOT_STRIDE) % ROUTE_PERIOD_TICKS;
-    const moved = Math.hypot(gx - mind.routeGoalX, gz - mind.routeGoalZ) > ROUTE_GOAL_MOVED_M;
-    if (mind.replanNow || (!mind.routeOn && onSlot) || (mind.routeOn && moved && onSlot) || (!mind.routeOn && moved)) {
-      mind.replanNow = false;
-      mind.routeGoalX = gx;
-      mind.routeGoalZ = gz;
-      mind.routeOn = nav.plan(px, pz, gx, gz, mind.route);
-      mind.routeAt = 0;
-    }
-    if (!mind.routeOn) return;
-    const route = mind.route;
-    const last = route.count - 1;
-    while (
-      mind.routeAt < last &&
-      Math.hypot(route.points[mind.routeAt * 2]! - px, route.points[mind.routeAt * 2 + 1]! - pz) < ROUTE_REACH_M
-    ) {
-      mind.routeAt++;
-    }
-    // One look ahead a tick: on to the waypoint after this one when it is already in sight.
-    if (mind.routeAt < last && nav.lineClear(px, pz, route.points[mind.routeAt * 2 + 2]!, route.points[mind.routeAt * 2 + 3]!)) {
-      mind.routeAt++;
-    }
-    mind.hasSteer = true;
-    mind.steerX = route.points[mind.routeAt * 2]!;
-    mind.steerZ = route.points[mind.routeAt * 2 + 1]!;
-    // The route's own end is where the goal was; steer at where it is now.
-    if (mind.routeAt === last) {
-      mind.steerX = gx;
-      mind.steerZ = gz;
-    }
-  }
-
-  /** The nearest flag `team` owns (`owned`) or does not, or -1 when there is none. */
-  private nearestFlag(team: number, x: number, z: number, owned: boolean): number {
-    const captures = this.captures;
-    let best = -1;
-    let bestD = Infinity;
-    for (let i = 0; i < captures.sites.length; i++) {
-      if ((captures.owner[i] === team) !== owned) continue;
-      const site = captures.sites[i]!;
-      const d = Math.hypot(site.x - x, site.z - z);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  /**
-   * With every flag its side's, the one most living enemies stand nearest -- the one they are
-   * likeliest to go for. A tie goes to the lower index, and with no living enemy to the first.
-   */
-  private flagToDefend(team: number): number {
-    const captures = this.captures;
-    const counts = this.flagCounts;
-    counts.fill(0);
-    for (let i = 0; i < this.rigs.length; i++) {
-      const cart = this.rigs[i]!.cart;
-      if (cart.dead || teamOf(i) === team) continue;
-      const nearest = this.nearestFlag(team, cart.position.x, cart.position.z, true);
-      if (nearest >= 0) counts[nearest]! += 1;
-    }
-    let best = 0;
-    for (let i = 1; i < captures.sites.length; i++) if (counts[i]! > counts[best]!) best = i;
-    return best;
-  }
-
-  /** Whether a living cart of `team` stands within `radius` of a point. */
-  private sideNear(team: number, x: number, z: number, radius: number): boolean {
-    for (let i = 0; i < this.rigs.length; i++) {
-      const cart = this.rigs[i]!.cart;
-      if (cart.dead || teamOf(i) !== team) continue;
-      if (Math.hypot(cart.position.x - x, cart.position.z - z) <= radius) return true;
-    }
-    return false;
-  }
-
-  /**
-   * Writes the nearest ammo a cart could collect right now into `mind`: a charged bucket or a
-   * landed ball, whoever fired it -- the same two things `stepRig` refills from. Only while the
-   * magazine is empty, since that is the only time the bot reads it. Reads the pool's cached
-   * positions (`BallPool.sync`) rather than asking Rapier, which hands back a fresh object per ask.
-   */
-  private findAmmoFor(cart: Cart, mind: BotMind): void {
-    mind.hasAmmoTarget = false;
-    if (cart.ammo > 0) return;
-    const px = cart.position.x;
-    const pz = cart.position.z;
-    let best = Infinity;
-    const bucket = this.seekScratch;
-    if (nearestCharged(this.pickupStates, "bucket", this.simTime, px, pz, Infinity, bucket)) {
-      best = Math.hypot(bucket.x - px, bucket.z - pz);
-      mind.ammoX = bucket.x;
-      mind.ammoZ = bucket.z;
-    }
-    const balls = this.ballPool.all;
-    for (let i = 0; i < balls.length; i++) {
-      const ball = balls[i]!;
-      if (ball.state !== "landed") continue;
-      const x = ball.position[0]!;
-      const z = ball.position[2]!;
-      // A ball out of the zone is not worth the drain it would cost, and a bot only drives inside.
-      if (this.zone !== null && !this.zone.contains(x, z)) continue;
-      const d = Math.hypot(x - px, z - pz);
-      if (d < best) {
-        best = d;
-        mind.ammoX = x;
-        mind.ammoZ = z;
-      }
-    }
-    mind.hasAmmoTarget = best < Infinity;
-  }
-
-  /**
-   * Writes a hot dog into `mind` for a hurt bot to head for: at `BOT_HEAL_FRACTION` of its health
-   * or below, a charged one within `BOT_HEAL_RANGE_M`, and only while its enemy is out of firing
-   * range. A bot that broke off mid-fight to heal would read as cowardly and be easy to farm.
-   */
-  private findHealFor(cart: Cart, mind: BotMind, target: BotTarget): void {
-    mind.hasHealTarget = false;
-    if (cart.health.hp > cart.health.max * BOT_HEAL_FRACTION) return;
-    const px = cart.position.x;
-    const pz = cart.position.z;
-    if (!target.dead && Math.hypot(target.x - px, target.z - pz) <= BOT_FIRE_RANGE) return;
-    const at = this.seekScratch;
-    if (!nearestCharged(this.pickupStates, "hot_dog", this.simTime, px, pz, BOT_HEAL_RANGE_M, at)) return;
-    mind.hasHealTarget = true;
-    mind.healX = at.x;
-    mind.healZ = at.z;
-  }
-
-  /**
-   * The enemy `self` is fighting, written into one reused object per the no-allocation rule; a bot
-   * never sees its target's `Cart` itself. With no living enemy it reads as a dead target, which
-   * the bot idles against. `hidden` is true when a building stands between them: the bot still
-   * closes, but holds its fire rather than shooting a wall.
-   */
-  private botTargetScratch(self: Cart, targetIndex: number): BotTarget {
-    const target = targetIndex === NO_TARGET ? null : this.rigs[targetIndex]!.cart;
-    const t = this.botTarget;
-    t.x = target?.position.x ?? 0;
-    t.z = target?.position.z ?? 0;
-    // Drive at the target, or at the zone's edge nearest it when it is outside (#52).
-    t.driveX = t.x;
-    t.driveZ = t.z;
-    if (this.zone !== null && this.zone.clampInside(t.x, t.z, this.zoneScratch)) {
-      t.driveX = this.zoneScratch.x;
-      t.driveZ = this.zoneScratch.z;
-    }
-    t.dead = target === null || target.dead;
-    t.hidden =
-      target !== null &&
-      !clearOfObstacles(
-        this.obstacles,
-        self.position.x,
-        self.position.y + BOT_EYE_M,
-        self.position.z,
-        target.position.x,
-        target.position.y + BOT_EYE_M,
-        target.position.z,
-      );
-    return t;
-  }
-
   /** Intent -> cart state -> body movement -> shot resolution, for exactly one cart. */
   private stepRig(rig: CartRig, intent: PlayerIntent): void {
     const cart = rig.cart;
     if (cart.dead) {
-      this.stepRespawn(rig);
+      stepRespawn(this, rig);
       return;
     }
 
@@ -1151,258 +465,22 @@ export class Sim {
 
     const c = cart.position;
     this.surfaces.tuningAt(c.x, c.z, this.cartTuningScratch);
-    cart.step(intent, FIXED_DT, this.cartTuningScratch, this.gradeAlong(c.x, c.z, cart.heading));
+    cart.step(intent, FIXED_DT, this.cartTuningScratch, gradeAlong(this, c.x, c.z, cart.heading));
     if (cart.stepShield(FIXED_DT, SHIELD_DECAY_S)) {
       this.events.push("plateBroken", this.tickCount, NO_RIG, rig.index, cart.shield, c.x, c.y, c.z);
     }
-    this.moveCartBody(rig);
-    this.checkCartWater(rig);
+    moveCartBody(this, rig);
+    checkCartWater(this, rig);
     // Water can kill: a dead cart is out of the world, and the zone has nothing more to say to it.
-    if (!cart.dead) this.checkCartZone(rig);
+    if (!cart.dead) checkCartZone(this, rig);
 
-    // Rigs are stepped in order, and a take starts the site's cooldown at once, so two carts on
-    // one site in one tick yield exactly one take: the lower rig index's.
-    const site = siteInReach(this.pickupStates, cart, this.simTime);
-    if (site >= 0) {
-      const type = this.pickupStates[site]!.site.type;
-      take(this.pickupStates, site, cart, this.simTime);
-      // A site, not a loose ball: driving over spent rounds is reloading, and at 15 points a ball
-      // it would out-earn the kills (Stage 8 spec, Q10).
-      this.tally.pickedUp(rig.index);
-      if (type === "drink") {
-        this.events.push("shieldGained", this.tickCount, rig.index, NO_RIG, cart.shield, c.x, c.y, c.z);
-      } else {
-        const amount = type === "bucket" ? BUCKET_REFILL_AMMO : HOT_DOG_HEAL;
-        this.events.push("pickup", this.tickCount, rig.index, NO_RIG, amount, c.x, c.y, c.z);
-      }
-    }
-    const near = this.ballPool.ballsNear(c.x, c.z, PICKUP_RANGE, this.nearScratch);
-    for (let i = 0; i < near; i++) {
-      cart.addAmmo(1);
-      this.ballPool.release(this.nearScratch[i]!);
-      this.events.push("pickup", this.tickCount, rig.index, NO_RIG, 1, c.x, c.y, c.z);
-    }
+    collectPickups(this, rig);
 
     if (cart.shot.fired) {
       cart.shot.fired = false;
-      this.resolveShot(rig);
+      resolveShot(this, rig);
     }
-    if (intent.callMortar && cart.mortars > 0) this.callMortar(rig);
-  }
-
-  /**
-   * The ground's slope along a heading at a point, rise over run, positive uphill: a central
-   * difference across `GRADE_SPAN_M` either side, for the cart's downhill bonus.
-   */
-  private gradeAlong(x: number, z: number, heading: number): number {
-    const dx = Math.cos(heading) * GRADE_SPAN_M;
-    const dz = Math.sin(heading) * GRADE_SPAN_M;
-    const ahead = this.playfield.heightAt(x + dx, z + dz);
-    const behind = this.playfield.heightAt(x - dx, z - dz);
-    return (ahead - behind) / (2 * GRADE_SPAN_M);
-  }
-
-  /**
-   * Counts one cart's respawn delay down and puts it back on a tee when it expires. Intent is not
-   * read at all while dead, so ammo, reload and position are frozen for the duration.
-   */
-  private stepRespawn(rig: CartRig): void {
-    rig.cart.respawnTimer -= FIXED_DT;
-    if (rig.cart.respawnTimer > 0) return;
-    this.placeRig(rig, this.respawnPointFor(rig.index));
-    rig.cart.revive();
-    const p = rig.cart.position;
-    this.events.push("respawn", this.tickCount, rig.index, NO_RIG, 0, p.x, p.y, p.z);
-    // After `revive`, which clears it: protection is a property of respawning, granted here and
-    // nowhere else, so `reset` starting a fresh match does not start it behind a shield.
-    rig.cart.protectedFor = SPAWN_PROTECTION_S;
-  }
-
-  /** Where rig `index` starts a match: its team's pad by the clubhouse, or its dealt tee. */
-  private openingPoint(index: number): SpawnPoint {
-    return this.teamPads === null ? openingSpawn(this.spawnSet, index) : padSpawn(this.teamPads, index);
-  }
-
-  /**
-   * Where rig `index` comes back: its own slot on its team's pad. With no clubhouse, a random tee
-   * avoiding whoever is alive and standing on one -- `index` is passed because the cart's own body
-   * is still lying where it died, and counting it would make its nearest tee unavailable to it.
-   */
-  private respawnPointFor(index: number): SpawnPoint {
-    if (this.teamPads !== null) return padSpawn(this.teamPads, index);
-    return respawnPoint(this.spawnSet, this.spawnRandom, this.carts, index);
-  }
-
-  /**
-   * Every cart in rig order, for the spawn module's clearance check. Rebuilt lazily and cached:
-   * `respawnPoint` wants an indexable list, but a `map` per respawn would allocate inside a tick.
-   */
-  private get carts(): readonly Cart[] {
-    if (this.cartsScratch.length !== this.rigs.length) {
-      this.cartsScratch.length = 0;
-      for (const rig of this.rigs) this.cartsScratch.push(rig.cart);
-    }
-    return this.cartsScratch;
-  }
-
-  /**
-   * A KCC has no gravity and receives no impulses, so both are this class's problem: fall speed
-   * is integrated here, and the recoil that shoves the cart arrives already baked into
-   * `cart.desiredTranslation` as a velocity term the cart decays itself.
-   *
-   * `computedMovement()` allocates inside the binding. That is the one unavoidable per-tick
-   * allocation in this loop; everything on our side of the call reuses `moveScratch`.
-   */
-  private moveCartBody(rig: CartRig): void {
-    rig.fallSpeed -= GRAVITY * FIXED_DT;
-    this.moveScratch.x = rig.cart.desiredTranslation.x;
-    this.moveScratch.y = rig.fallSpeed * FIXED_DT;
-    this.moveScratch.z = rig.cart.desiredTranslation.z;
-
-    // The climb limit is this cart's, on this ground: its tyre's grip on the surface under it
-    // (`mobility.ts`), which `stepRig` sampled into `cartTuningScratch` this tick. One controller
-    // serves every cart, so it is set before each one moves.
-    this.controller.setMaxSlopeClimbAngle(
-      maxClimbRad(TIRE_TUNING[rig.cart.tire], this.cartTuningScratch.cartSpeedScale, CART_TUNING.accel),
-    );
-    // Filtered by the capsule's own groups, so the controller does not collide with hulls.
-    this.controller.computeColliderMovement(rig.collider, this.moveScratch, undefined, CART_GROUPS);
-    const corrected = this.controller.computedMovement();
-
-    const p = rig.cart.position;
-    // Held inside the ground's own box -- past it there are no heights, so nothing to stand on --
-    // and, where there is one, north of the road: the box is axis-aligned and County Home Road is
-    // not, so the box alone leaves a wedge of playable ground on the road side. See courseBarrier.ts.
-    let nextX = p.x + corrected.x;
-    let nextZ = p.z + corrected.z;
-    // No further than `ZONE_HARD_LIMIT_M` out of the zone. Before the box and the road, so they
-    // still have the last word.
-    if (this.zone !== null && this.zone.clampWithin(nextX, nextZ, ZONE_HARD_LIMIT_M, this.zoneScratch)) {
-      nextX = this.zoneScratch.x;
-      nextZ = this.zoneScratch.z;
-    }
-    clampToPlayable(
-      this.playfield.bounds,
-      this.southBoundary,
-      CART_COLLIDER.radius,
-      nextX,
-      nextZ,
-      this.clampScratch,
-    );
-    p.x = this.clampScratch.x;
-    p.y += corrected.y;
-    p.z = this.clampScratch.z;
-
-    if (this.controller.computedGrounded()) rig.fallSpeed = 0;
-    rig.body.setNextKinematicTranslation(p);
-  }
-
-  /**
-   * A cart in the water loses a point of health and is dropped back where it was last on dry land.
-   * Edge-triggered on `wasInWater`, so a cart nosing into a pond pays once rather than once per tick.
-   * A drowning that empties the bar is a death nobody caused: a stroke, and a point for nobody.
-   */
-  private checkCartWater(rig: CartRig): void {
-    const cart = rig.cart;
-    const p = cart.position;
-    const inWater = this.surfaces.surfaceAt(p.x, p.z) === SurfaceId.Water;
-
-    if (!inWater) {
-      cart.wasInWater = false;
-      // Recorded every dry tick: wherever the cart is now is somewhere it can be put back down.
-      cart.lastSafePosition.x = p.x;
-      cart.lastSafePosition.y = p.y;
-      cart.lastSafePosition.z = p.z;
-      return;
-    }
-
-    if (cart.wasInWater) return;
-    cart.wasInWater = true;
-    this.events.push("splash", this.tickCount, rig.index, NO_RIG, 0, p.x, p.y, p.z);
-
-    if (applyDamage(cart.health, STROKE_DAMAGE)) this.killCart(cart, rig.index, NO_KILLER);
-
-    const safe = cart.lastSafePosition;
-    p.x = safe.x;
-    p.y = safe.y;
-    p.z = safe.z;
-    cart.speed = 0;
-    rig.fallSpeed = 0;
-    rig.body.setTranslation(p, true);
-  }
-
-  /**
-   * Outside the zone a cart is warned at once (`outOfZoneS > 0`), then loses `ZONE_DRAIN_HP` every
-   * `ZONE_DRAIN_INTERVAL_S` until it comes back. Like drowning, a drain that empties the bar is a
-   * death nobody caused: a stroke, and a point for nobody. Back inside, the clock resets.
-   */
-  private checkCartZone(rig: CartRig): void {
-    if (this.zone === null) return;
-    const cart = rig.cart;
-    if (this.zone.contains(cart.position.x, cart.position.z)) {
-      cart.outOfZoneS = 0;
-      return;
-    }
-    if (cart.outOfZoneS === 0) cart.zoneDrainIn = ZONE_DRAIN_INTERVAL_S;
-    cart.outOfZoneS += FIXED_DT;
-    cart.zoneDrainIn -= FIXED_DT;
-    if (cart.zoneDrainIn > 1e-9) return;
-    cart.zoneDrainIn += ZONE_DRAIN_INTERVAL_S;
-    if (applyDamage(cart.health, ZONE_DRAIN_HP)) this.killCart(cart, rig.index, NO_KILLER);
-  }
-
-  /**
-   * A trigger pull. With ammo it spawns a pooled ball at the muzzle; at zero ammo it was a blank,
-   * whose recoil `Cart` has already applied. Only the player's shots count toward `Sim.stats`.
-   */
-  private resolveShot(rig: CartRig): void {
-    const cart = rig.cart;
-    const isPlayer = rig.index === 0;
-    if (!cart.shot.hasBall) {
-      if (isPlayer) this.lastShotWasStrike = false;
-      this.pushDry(rig);
-      return;
-    }
-
-    // The player's shot may take a bot's ball out of the air rather than be refused; a bot's may
-    // not (BallPool.acquire, and docs/DECISIONS.md, 2026-09-27).
-    const pooled = this.ballPool.acquire(rig.index, isPlayer);
-    if (!pooled) {
-      // Every pooled body is in flight at once. `Cart.fire()` already spent the round on the
-      // assumption a ball would spawn; refund it so this degrades to a true no-op.
-      cart.addAmmo(1);
-      if (isPlayer) this.lastShotWasStrike = false;
-      this.pushDry(rig);
-      return;
-    }
-
-    if (isPlayer) {
-      this.lastShotWasStrike = true;
-      // "A shot fired" for accuracy purposes is a ball actually leaving the muzzle -- distinct
-      // from ammo's own decrement, which a 0-ammo blank also triggers.
-      this.stats.shotsFired += 1;
-    }
-    computeMuzzle(cart, this.muzzleScratch);
-    pooled.body.setTranslation(this.muzzleScratch, true);
-    pooled.body.setRotation(IDENTITY_ROTATION, true);
-    pooled.body.setAngvel(ZERO_VECTOR, true);
-    pooled.body.setLinvel(
-      computeLaunchVelocityInto(cart.shot.club, cart.shot.charge01, cart.shot.yaw, this.launchScratch),
-      true,
-    );
-    // Set on every shot: the pool recycles bodies, so a putter ball may last have been a driver's.
-    const stats = CLUB_STATS[cart.shot.club];
-    pooled.body.setGravityScale(stats.gravityScale, true);
-    pooled.damage = stats.damage;
-    const m = this.muzzleScratch;
-    this.events.push("shot", this.tickCount, rig.index, NO_RIG, 0, m.x, m.y, m.z, cart.shot.club);
-  }
-
-  /** A trigger pull that put nothing in the air, at the cart's own muzzle. */
-  private pushDry(rig: CartRig): void {
-    computeMuzzle(rig.cart, this.muzzleScratch);
-    const m = this.muzzleScratch;
-    this.events.push("dry", this.tickCount, rig.index, NO_RIG, 0, m.x, m.y, m.z);
+    if (intent.callMortar && cart.mortars > 0) callMortar(this, rig);
   }
 
   /** Where a shot from the player's turret would leave from. */
@@ -1411,58 +489,12 @@ export class Sim {
   }
 
   /**
-   * A read-only forward integration of the shot that firing *now* would make, for the aim-preview
-   * arc (UI-SPEC H10). Fills `out` with points from the muzzle to the ball's first ground contact
-   * and returns how many it wrote.
-   *
-   * **It touches no Rapier state and advances nothing** -- `Sim` is byte-identical before and after.
-   * It mirrors the ball's own flight integration (the club's scaled gravity plus `LINEAR_DAMPING` at `FIXED_DT`)
-   * rather than reading the live world, so it is a pure function of its inputs. It predicts the
-   * carry, not the roll: the arc ends where the ball lands, because that is what a player aims with.
-   *
-   * The equipped club is read from the cart, not passed: its loft sets both the muzzle and the
-   * launch elevation. `out` is a caller-held buffer of at least `PREVIEW_MAX_POINTS` reused `Vec3`s.
+   * The aim-preview arc of the shot that firing *now* would make (UI-SPEC H10): `shots.ts`'s
+   * `previewTrajectory`, which touches no Rapier state. `out` is a caller-held buffer of at least
+   * `PREVIEW_MAX_POINTS` reused `Vec3`s; returns how many points it wrote.
    */
   previewTrajectory(charge01: number, yaw: number, out: Vec3[]): number {
-    computeMuzzle(this.cart, this.previewScratch);
-    let px = this.previewScratch.x;
-    let py = this.previewScratch.y;
-    let pz = this.previewScratch.z;
-
-    const v = computeLaunchVelocityInto(this.cart.equippedClub, charge01, yaw, this.launchScratch);
-    let vx = v.x;
-    let vy = v.y;
-    let vz = v.z;
-
-    const gravity = GRAVITY * CLUB_STATS[this.cart.equippedClub].gravityScale;
-    const damp = 1 / (1 + LINEAR_DAMPING * FIXED_DT);
-    const bounds = this.playfield.bounds;
-    const capacity = Math.min(out.length, PREVIEW_MAX_POINTS);
-
-    let n = 0;
-    writePreviewPoint(out, n++, px, py, pz); // the muzzle itself
-
-    for (let tick = 1; tick <= PREVIEW_MAX_TICKS && n < capacity; tick++) {
-      // Gravity then damping then integrate, the order Rapier applies to the real ball.
-      vy -= gravity * FIXED_DT;
-      vx *= damp;
-      vy *= damp;
-      vz *= damp;
-      px += vx * FIXED_DT;
-      py += vy * FIXED_DT;
-      pz += vz * FIXED_DT;
-
-      const ground = this.playfield.heightAt(px, pz) + BALL_RADIUS;
-      const landed = py <= ground;
-      const outside = px < bounds.minX || px > bounds.maxX || pz < bounds.minZ || pz > bounds.maxZ;
-
-      if (landed || outside || tick % PREVIEW_SAMPLE_STRIDE === 0) {
-        if (landed) py = ground; // the last point rests on the surface, not just under it
-        writePreviewPoint(out, n++, px, py, pz);
-      }
-      if (landed || outside) break;
-    }
-    return n;
+    return previewTrajectory(this, charge01, yaw, out);
   }
 
   /**
@@ -1485,22 +517,22 @@ export class Sim {
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.mortarRandom = mulberry32(hashChannel(this.seed, MORTAR_CHANNEL));
     for (const barrage of this.barrages) barrage.clear();
-    this.freePhysics();
-    this.buildPhysics();
+    freePhysics(this);
+    buildPhysics(this);
     resetPickups(this.pickupStates);
     this.simTime = 0;
     this.tickCount = 0;
 
     for (const rig of this.rigs) {
-      this.placeRig(rig, this.openingPoint(rig.index));
+      placeRig(rig, openingPoint(this, rig.index));
       rig.cart.revive();
       rig.cart.rearm();
     }
 
-    this.syncCurrentCart();
-    this.holdPrevious();
+    syncCurrentCart(this);
+    holdPrevious(this);
     this.ballPool.sync();
-    this.syncCurrentPool();
+    syncCurrentPool(this);
     this.previousPoolTransforms.set(this.currentPoolTransforms);
   }
 
@@ -1511,111 +543,7 @@ export class Sim {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.freePhysics();
-  }
-
-  /**
-   * Snapshots each cart's own position rather than its rigid body's: a kinematic body only moves
-   * when `world.step()` consumes the queued translation, so reading the body here would render
-   * every cart one tick behind everything else.
-   */
-  private syncCurrentCart(): void {
-    writeCartTransform(this.cart, this.currentCart);
-    for (let i = 0; i < this.bots.length; i++) {
-      writeCartTransform(this.bots[i]!, this.currentBotCarts[i]!);
-    }
-  }
-
-  /**
-   * Flattens the pool into the current buffer. An idle ball is parked far below the world, so the
-   * active flag is what stops the renderer drawing thirty-two spheres at y = -1000.
-   *
-   * A slot transitioning idle -> active this tick also gets `previousPoolTransforms` seeded with
-   * the same transform, or the renderer would lerp the ball in from wherever its slot last was.
-   */
-  private syncCurrentPool(): void {
-    const buffer = this.currentPoolTransforms;
-    const previous = this.previousPoolTransforms;
-    const balls = this.ballPool.all;
-    for (let i = 0; i < POOL_SIZE; i++) {
-      const flat = i * POOL_TRANSFORM_STRIDE;
-      const ball = balls[i];
-      if (!ball || ball.state === "idle") {
-        buffer[flat + 7] = 0;
-        continue;
-      }
-      const wasActive = previous[flat + 7] === 1;
-      // Position from the pool's cache, filled by `sync` a moment ago; the rotation is only drawn,
-      // so it is the one thing still asked of Rapier here.
-      const r = ball.body.rotation();
-      buffer[flat] = ball.position[0]!;
-      buffer[flat + 1] = ball.position[1]!;
-      buffer[flat + 2] = ball.position[2]!;
-      buffer[flat + 3] = r.x;
-      buffer[flat + 4] = r.y;
-      buffer[flat + 5] = r.z;
-      buffer[flat + 6] = r.w;
-      buffer[flat + 7] = 1;
-      if (!wasActive) {
-        for (let k = 0; k < POOL_TRANSFORM_STRIDE; k++) previous[flat + k] = buffer[flat + k]!;
-      }
-    }
+    freePhysics(this);
   }
 }
 
-/**
- * The clubhouse complex into a fresh Rapier world: fixed colliders with no body, like the ground,
- * and the same friction and bounce as the ground, so a ball off a wall behaves like one off the
- * turf. Default collision groups: carts and balls both hit them, and a hull's ball-only filter
- * already keeps it out. Freed with the world (`freePhysics`), which is their removal path.
- */
-export function addStaticColliders(world: RAPIER.World, shapes: readonly StaticShape[]): void {
-  for (const s of shapes) {
-    const desc =
-      s.kind === "box" ? RAPIER.ColliderDesc.cuboid(s.hx, s.hy, s.hz) : RAPIER.ColliderDesc.cylinder(s.hy, s.hx);
-    desc
-      .setTranslation(s.x, s.y, s.z)
-      .setRotation({ x: 0, y: Math.sin(s.yaw / 2), z: 0, w: Math.cos(s.yaw / 2) })
-      .setFriction(0.8)
-      .setRestitution(0.15);
-    world.createCollider(desc);
-  }
-}
-
-/** Neutral intent for callers that step without driving. Frozen: `Sim` never writes to it. */
-const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
-
-/** Handed to Rapier; read, never kept. */
-/** Metres. A goal this near and in direct sight is driven at straight, with no plan (Stage 6 spec, §3.2). */
-const ROUTE_DIRECT_M = 80;
-/** Ticks between a bot's scheduled planning chances: once a second. */
-const ROUTE_PERIOD_TICKS = 60;
-/** Bot `i` plans on tick `(i x stride) % period` of each second, so no two bots of seven share one. */
-const ROUTE_SLOT_STRIDE = 7;
-/** Metres a goal may move before the route to it is planned again. */
-const ROUTE_GOAL_MOVED_M = 12;
-/** Metres from a waypoint at which a bot moves on to the next (Q5). */
-const ROUTE_REACH_M = 6;
-const IDENTITY_ROTATION = Object.freeze({ x: 0, y: 0, z: 0, w: 1 });
-const ZERO_VECTOR = Object.freeze({ x: 0, y: 0, z: 0 });
-
-function createCartTransform(): CartTransform {
-  return { position: { x: 0, y: 0, z: 0 }, heading: 0, turretYaw: 0 };
-}
-
-function writeCartTransform(cart: Cart, out: CartTransform): void {
-  const p = cart.position;
-  out.position.x = p.x;
-  out.position.y = p.y;
-  out.position.z = p.z;
-  out.heading = cart.heading;
-  out.turretYaw = cart.turretYaw;
-}
-
-function copyCartTransform(from: CartTransform, to: CartTransform): void {
-  to.position.x = from.position.x;
-  to.position.y = from.position.y;
-  to.position.z = from.position.z;
-  to.heading = from.heading;
-  to.turretYaw = from.turretYaw;
-}
