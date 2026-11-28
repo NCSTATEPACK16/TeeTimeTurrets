@@ -1,6 +1,6 @@
 # Handoff — next session
 
-Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan is `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md`. **All three slices (the flags, the player's mortar, and bots with the golden) are built together in draft #100 (27-28 Nov), stacked at the user's request, and wait on the user's play-test. Do not merge before it.** The golden is now `1822785344` (Linux x64) and hashes both sides' `teamStrokes`. Slice 3 changed two of the spec's §4 rules; see its §4.1. After #100 merges, Stage 4b (prompt C) is next.
+Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan is `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md`. **All three slices (the flags, the player's mortar, and bots with the golden) are built together in draft #100 (27-28 Nov), stacked at the user's request, and wait on the user's play-test. Do not merge before it.** The golden is now `1822785344` (Linux x64) and hashes both sides' `teamStrokes`. Slice 3 changed two of the spec's §4 rules; see its §4.1. #100 merged on 28 Nov. **Stage 4b is built as draft #101**, waiting on the play-test; see its section below.
 - **Test time:** `main` ran in 63.0 s on a fresh cloud container, over the cap. #100's Task 0 trimmed it to about 58–60 s on the same machine. Timings vary by about ±3 s between runs there, so compare back to back on one machine, never across sessions. The slowest files are `tools/simAllocation.test.mjs` (24 s, and the Rapier-read warm-up is not where its time goes), `src/sim/arenaGolden.test.ts` (15 s), `src/render/courseGround.test.ts` (18 s), `poolPressure` and `botAcceptance`.
 - **Open bug, not 3.5c's:** a headless Turrets match crashes within seconds in a cloud container. Rapier's `world.step` throws "recursive use of an object detected which would lead to unsafe aliasing in rust", then the renderer segfaults. It reproduces on a clean build of `main` (`a9076f9`), from `vite preview` or `vite dev`, and at `quality: "low"`. #98 had a headless match running, so it may be a regression since then. Until it is fixed, nobody can screenshot the arena headless.
   - **Narrowed on 28 Nov.** The browser is Chrome for Testing 153.0.8010.12 (`/opt/pw-browsers/chromium-1243`, both the full binary and the headless shell).
@@ -291,13 +291,34 @@ Six commits, one or more per issue. Each sim commit re-recorded the golden itsel
 - **Rough now caps climbs at 29.7° for street tyres,** under the KCC's 32° slide angle. Slopes between the two neither climb nor slide. Watch for carts or bots wedged on rough banks.
 - **The thin wedge between holes 1 and 9** east of the hub is outside the zone. Stakes run down both sides of it.
 
-## Next: Stage 4b, iOS and gamepad
+## Stage 4b, iOS and gamepad: built as draft #101 (28 Nov), waiting on the user's play-test
 
-The prompt is in `docs/NEXT-SESSION-PROMPT.md` and the spec in `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`. What Stage 4 changed that 4b must respect:
+Built from prompt C and `docs/superpowers/specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md`, all seven slices, on
+`claude/modest-brahmagupta-alqfjt` (the session's branch, not the prompt's `stage-4b-ios-gamepad`). **Do not merge before the
+play-test.** The golden is unchanged (`1822785344`): nothing under `src/sim/**` or `src/physics/**` changed, and `PlayerIntent`
+did not change.
 
-- **Throttle spool resets when the throttle's sign changes or it reaches 0.** An analog stick that jitters around zero would keep restarting it. The gamepad's deadzone must hand the sim a clean 0, not noise.
-- **The camera is off-centre.** The chase eye sits 0.7 m to the turret's right, so the screen centre is not the turret line. Aim assist must measure from the turret's yaw, not from the screen centre.
-- **`MatchScreen` is unchanged by Stage 4.** The pointer-lock pause is still at `MatchScreen.ts:122`. The zone warning is a HUD element inside `#hud` (`hudState.zoneWarning`), not a screen, so controller navigation does not need to reach it.
+- **Input** (`src/input/`): `gamepadMapping.ts` (the pure binding table), `GamepadSource.ts` and `MatchInput.ts` (keys and pad
+  together, plus which was used last), and `aimAssist.ts`.
+  - The standard mapping names positions, so on the SN30 Pro's Nintendo letters, B is the bottom button and X the top.
+  - X calls a mortar and Y honks. A is free.
+- **Menus:** `src/ui/padMenuNavigator.ts` and `focusNav.ts`. They run on their own animation frame.
+  - B presses a `[data-pad-back]` control or sends Esc.
+  - `body[data-input]` drives the focus ring and the glyphs.
+- **iOS:** `ios/` (Capacitor 8.6.3, Swift Package Manager), `capacitor.config.json`, `npm run ios:sync` / `ios:open`.
+  - `docs/IOS.md` has the Mac, signing and TestFlight steps, and the spec §6 VERIFY table.
+  - **Nobody has built it in Xcode.**
+  - The bundle id `com.teetimeturrets.app` is a placeholder.
+- **Governor:** `src/engine/frameGovernor.ts`, wired in `main.ts`, with its mode on the perf overlay. Each match starts uncapped.
+- **Size budget:** `tools/sizeBudget.mjs` ends `npm run build`. The budgets are in `docs/ASSET_BUDGETS.md` (28 MB total; 5 MiB a
+  data file; 6 MiB a JS chunk, because free drive's bundle is 5.3 MiB). The build is 26.86 MB.
+- **Not run here** (no `toktx`, no Blender in the container):
+  - `tools/textures/groundKtx2.mjs`;
+  - `tools/blender/rebuild_graphs.py`, which must still show byte-identical output.
+  The game still loads the ground `.bin` files.
+- **HDRI:** `public/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr` (CC0), the clubhouse turntable's environment only.
+- **A match still can't run headless here** (Rapier's WASM faults in this container's Chrome 153; see the 3.5c notes above). So the
+  pad in a match is the user's first look. The menus were checked headless with a stubbed pad.
 
 ## Then: Stage 5, the rest (#54–#61)
 

@@ -7,7 +7,7 @@ fails, and with it the Netlify deploy preview on a pull request. The rules are t
 
 | Budget | Limit | Measured 28 Nov 2026 |
 |---|---|---|
-| All of `dist/` (game and free drive) | 28,000,000 bytes | 25,420,080 (60 files) |
+| All of `dist/` (game and free drive) | 28,000,000 bytes | 25,420,080 (60 files); 26.86 MB once the clubhouse HDRI (1.4 MB) was added |
 | Any one data file (textures, level data, models) | 5 MiB | 5,242,880: `textures/ground/normal.bin`, exactly at the limit |
 | Any one JavaScript chunk | 6 MiB | 5,546,245: `drive/assets/index-*.js` |
 
