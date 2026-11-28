@@ -26,6 +26,11 @@ export class MatchInput implements InputSource {
   readonly pad = new GamepadSource();
   private readonly intent: PlayerIntent = neutralIntent();
   active: ActiveInput = "keyboard";
+  /**
+   * This tick's aim-assist factor (`aimAssist.ts`), set by the match screen before `sample()`.
+   * It multiplies the pad's aim only: a mouse never gets assist.
+   */
+  assistScale = 1;
 
   constructor(canvas: HTMLElement) {
     this.keyboard = new KeyboardMouseSource(canvas);
@@ -61,7 +66,7 @@ export class MatchInput implements InputSource {
     out.fire = k.fire || p.fire;
     out.cancelCharge = k.cancelCharge || p.cancelCharge;
     out.callMortar = k.callMortar || p.callMortar;
-    out.aimDelta = k.aimDelta + p.aimDelta;
+    out.aimDelta = k.aimDelta + p.aimDelta * this.assistScale;
     out.selectClub = k.selectClub ?? p.selectClub;
     return out;
   }

@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import type { QualityPreset } from "../../render/quality";
 import { MatchInput } from "../../input/MatchInput";
+import { aimAssistScale } from "../../input/aimAssist";
+import type { AssistTarget } from "../../input/aimAssist";
 import { RenderScene } from "../../render/scene";
 import type { ArenaSource, FrameView } from "../../render/scene";
 import { CLUB_STATS, ClubType as Club } from "../../physics/Ballistics";
@@ -164,6 +166,26 @@ export class MatchScreen implements Screen {
     this.syncPause();
   }
 
+  /**
+   * Pad aim assist for this tick, from the enemies the player can see: the nameplates' sight lines
+   * (`lastSeenAtMs`), so an enemy behind a ridge never pulls the aim. Measured from the turret's
+   * yaw. Render-side only; it changes how fast the pad turns the turret, nothing the sim keeps.
+   */
+  private aimAssist(sim: Sim): number {
+    const now = performance.now();
+    const targets = this.assistTargets;
+    for (let i = 0; i < targets.length; i++) {
+      const bot = sim.bots[i]!;
+      const t = targets[i]!;
+      const seen = this.lastSeenAtMs[i];
+      t.x = bot.position.x;
+      t.z = bot.position.z;
+      t.eligible = teamOf(i + 1) !== teamOf(0) && !bot.dead && seen !== undefined && now - seen < ASSIST_SEEN_MS;
+    }
+    const me = sim.cart.position;
+    return aimAssistScale(sim.cart.turretYaw, me.x, me.z, targets, targets.length);
+  }
+
   /** The pad's match-screen buttons, read once a tick whether or not the match is paused. */
   private readPadButtons(input: MatchInput): void {
     const edges = input.menuEdges();
@@ -192,6 +214,8 @@ export class MatchScreen implements Screen {
    * purpose: this is a presentation fade and need not be reproducible frame-for-frame.
    */
   private readonly lastSeenAtMs: number[] = [];
+  /** One per bot, refilled each tick for pad aim assist. Grown once per match in `enter`. */
+  private readonly assistTargets: AssistTarget[] = [];
   /** When each enemy plate walks its sight line, and what it found: see `sightlines.ts`. */
   private sightlines = new Sightlines(0);
   /** Wall-clock time of the last drawn frame, for `FrameView.frameSeconds`. */
@@ -219,6 +243,8 @@ export class MatchScreen implements Screen {
       sim.bots.map((_, i) => plateTeamOf(i + 1, 0)),
     );
     this.lastSeenAtMs.length = 0;
+    this.assistTargets.length = 0;
+    for (let i = 0; i < sim.bots.length; i++) this.assistTargets.push({ x: 0, z: 0, eligible: false });
     this.sightlines = new Sightlines(sim.bots.length, sim.obstacles);
     this.input = new MatchInput(renderer.domElement);
     this.settings = { ...this.options.settings };
@@ -298,6 +324,7 @@ export class MatchScreen implements Screen {
       return;
     }
     this.input.club = sim.cart.equippedClub;
+    this.input.assistScale = this.aimAssist(sim);
     sim.step(this.input.sample());
     this.input.endTick();
     this.elapsedSeconds += FIXED_DT;
@@ -786,6 +813,8 @@ export class MatchScreen implements Screen {
   }
 }
 
+/** An enemy seen by its nameplate's sight line this recently counts as visible for aim assist. */
+const ASSIST_SEEN_MS = 250;
 /** The streak callout's second line when the kill also earned a mortar. */
 const MORTAR_READY = "MORTAR READY [G]";
 
