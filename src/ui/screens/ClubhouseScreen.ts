@@ -4,7 +4,9 @@ import type { Showroom } from "../../render/showroom";
 import { ClubhouseState, clubStatCards } from "./clubhouseState";
 import type { Category } from "./clubhouseState";
 import { CHASSIS_PAINTS, TIRE_OPTIONS, TURRET_SKINS } from "../../sim/loadout";
-import type { Loadout } from "../../sim/loadout";
+import { DRIVER_UNLOCK_LEVEL, UPGRADES } from "../../sim/upgrades";
+import type { UpgradeId } from "../../sim/upgrades";
+import type { Profile } from "../../app/profile";
 import { ClubType } from "../../physics/Ballistics";
 import { el, on } from "../dom";
 import type { Screen } from "../../app/ScreenManager";
@@ -29,10 +31,9 @@ const CATEGORIES: readonly { id: Category; label: string }[] = [
 export interface ClubhouseScreenOptions {
   readonly root: HTMLElement;
   readonly renderer: THREE.WebGLRenderer;
-  readonly loadout: Loadout;
-  readonly coins: number;
-  /** Called on CONFIRM with the equipped loadout and the coins left. */
-  readonly onConfirm: (loadout: Loadout, coins: number) => void;
+  readonly profile: Profile;
+  /** Called after every purchase (CONFIRM or an upgrade) with the profile to save. */
+  readonly onChange: (profile: Profile) => void;
   readonly onBack: () => void;
 }
 
@@ -45,12 +46,13 @@ export class ClubhouseScreen implements Screen {
   private coinValue: HTMLElement | null = null;
   private confirmButton: HTMLButtonElement | null = null;
   private readonly swatchNodes = new Map<string, HTMLButtonElement>();
+  private readonly upgradeNodes = new Map<UpgradeId, { pips: HTMLElement; note: HTMLElement; buy: HTMLButtonElement }>();
   private lastFrameMs = 0;
   private club = ClubType.Driver;
 
   constructor(options: ClubhouseScreenOptions) {
     this.options = options;
-    this.state = new ClubhouseState(options.loadout, options.coins);
+    this.state = new ClubhouseState(options.profile);
   }
 
   enter(): void {
@@ -62,6 +64,7 @@ export class ClubhouseScreen implements Screen {
 
     this.container = el("div", { class: "screen clubhouse" }, [
       this.buildCategories(),
+      this.buildUpgrades(),
       this.buildCoins(),
       this.buildClubCards(),
       this.buildActions(),
@@ -93,6 +96,7 @@ export class ClubhouseScreen implements Screen {
     for (const off of this.teardown) off();
     this.teardown.length = 0;
     this.swatchNodes.clear();
+    this.upgradeNodes.clear();
     this.showroom?.dispose();
     this.showroom = null;
     this.container?.remove();
@@ -137,9 +141,36 @@ export class ClubhouseScreen implements Screen {
 
   private buildCoins(): HTMLElement {
     this.coinValue = el("span", { text: String(this.state.coins) });
+    const { level } = this.options.profile;
     return el("div", { class: "clubhouse__coins" }, [
+      el("span", { class: "chip", text: `LEVEL ${level}` }),
       el("span", { class: "chip" }, [el("span", { class: "chip__coin", text: "◉" }), this.coinValue]),
     ]);
+  }
+
+  /**
+   * Stage 8's stat upgrades: a row each, with tier pips, what the next tier gives and a BUY button.
+   * A purchase is immediate and saved at once; there is nothing to preview.
+   */
+  private buildUpgrades(): HTMLElement {
+    const list = el("div", { class: "clubhouse__upgrades" });
+    for (const upgrade of UPGRADES) {
+      const pips = el("span", { class: "upgrade__pips" });
+      const note = el("span", { class: "upgrade__note" });
+      const buy = el("button", { class: "btn upgrade__buy", type: "button" });
+      this.teardown.push(
+        on(buy, "click", () => {
+          if (!this.state.buyUpgrade(upgrade.id)) return;
+          this.options.onChange(this.state.profile);
+          this.refresh();
+        }),
+      );
+      this.upgradeNodes.set(upgrade.id, { pips, note, buy });
+      list.append(
+        el("div", { class: "upgrade" }, [el("span", { class: "upgrade__label", text: upgrade.label }), pips, note, buy]),
+      );
+    }
+    return list;
   }
 
   /**
@@ -162,6 +193,10 @@ export class ClubhouseScreen implements Screen {
 
       const node = el("button", { class: "club-card", type: "button" }, [
         el("span", { class: "club-card__name", text: card.label }),
+        // Stage 8: the driver is a level-2 unlock. The card still shows its stats, so it is worth wanting.
+        ...(card.club === ClubType.Driver && !this.state.driverUnlocked
+          ? [el("span", { class: "club-card__locked", text: `UNLOCKS AT LEVEL ${DRIVER_UNLOCK_LEVEL}` })]
+          : []),
         el("div", { class: "club-card__bars" }, bars),
       ]);
       this.teardown.push(
@@ -191,7 +226,7 @@ export class ClubhouseScreen implements Screen {
     this.teardown.push(
       on(this.confirmButton, "click", () => {
         if (!this.state.confirm()) return;
-        this.options.onConfirm({ ...this.state.equipped }, this.state.coins);
+        this.options.onChange(this.state.profile);
         this.refresh();
       }),
     );
@@ -215,6 +250,17 @@ export class ClubhouseScreen implements Screen {
         // clubhouse sells before they can buy it.
         node.disabled = !this.state.affordable(category.id, option.id);
       }
+    }
+
+    for (const upgrade of UPGRADES) {
+      const nodes = this.upgradeNodes.get(upgrade.id);
+      if (!nodes) continue;
+      const tier = this.state.upgradeTier(upgrade.id);
+      const price = this.state.nextUpgradePrice(upgrade.id);
+      nodes.pips.textContent = "●".repeat(tier) + "○".repeat(upgrade.tiers.length - tier);
+      nodes.note.textContent = upgrade.tiers[tier]?.note ?? "MAXED";
+      nodes.buy.textContent = price === null ? "MAXED" : `BUY — ${price}`;
+      nodes.buy.disabled = price === null || price > this.state.coins;
     }
 
     if (this.coinValue) this.coinValue.textContent = String(this.state.coins);

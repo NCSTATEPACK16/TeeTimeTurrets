@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ClubhouseState, clubStatCards } from "./clubhouseState";
-import { CHASSIS_PAINTS, TIRE_OPTIONS, TURRET_SKINS, createLoadout } from "../../sim/loadout";
+import { CHASSIS_PAINTS, TIRE_OPTIONS, TURRET_SKINS } from "../../sim/loadout";
 import { CLUB_STATS, ClubType } from "../../physics/Ballistics";
+import { newProfile } from "../../app/profile";
 
 /**
  * The clubhouse's decisions, with no DOM in sight -- the `hudState.ts` / `hud.ts` split again,
@@ -15,7 +16,7 @@ import { CLUB_STATS, ClubType } from "../../physics/Ballistics";
  */
 
 function state(coins = 5000): ClubhouseState {
-  return new ClubhouseState(createLoadout(), coins);
+  return new ClubhouseState({ ...newProfile(), coins });
 }
 
 describe("previewing", () => {

@@ -8,6 +8,9 @@ import {
 import type { Loadout } from "../../sim/loadout";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../../physics/Ballistics";
 import type { TireType } from "../../sim/entities/Cart";
+import { DRIVER_UNLOCK_LEVEL, upgradeById } from "../../sim/upgrades";
+import type { UpgradeId, UpgradeTiers } from "../../sim/upgrades";
+import type { Profile } from "../../app/profile";
 
 /**
  * Every decision the clubhouse makes, with no DOM. `ClubhouseScreen.ts` is the writer; this is
@@ -17,6 +20,12 @@ import type { TireType } from "../../sim/entities/Cart";
  * swatch repaints the cart on the turntable immediately and costs nothing; only CONFIRM spends
  * coins and equips. BACK throws the preview away. Anything else would charge a player for
  * looking.
+ *
+ * **Built from the profile** (Stage 8), owned set and all, and handing the updated profile back
+ * through `profile`. Before Stage 8 the owned set was rebuilt from what was equipped, so a paint
+ * bought and then swapped away from was for sale again on the next visit.
+ *
+ * **Upgrades buy at once**, outside preview-and-confirm: there is nothing to preview (Q7).
  */
 
 export type Category = "skin" | "paint" | "tire";
@@ -26,18 +35,59 @@ export class ClubhouseState {
   private equippedLoadout: Loadout;
   private previewLoadout: Loadout;
   private balance: number;
+  private readonly tiers: UpgradeTiers;
+  private readonly level: number;
+  private readonly xp: number;
 
-  constructor(equipped: Loadout, coins: number) {
-    this.equippedLoadout = { ...equipped };
-    this.previewLoadout = { ...equipped };
-    this.balance = coins;
-    // Whatever the player arrives wearing is theirs, as is anything priced at zero.
+  constructor(profile: Profile) {
+    this.equippedLoadout = { ...profile.loadout };
+    this.previewLoadout = { ...profile.loadout };
+    this.balance = profile.coins;
+    this.tiers = { ...profile.upgrades };
+    this.level = profile.level;
+    this.xp = profile.xp;
+    // What the profile says was bought, and anything priced at zero.
     for (const option of [...CHASSIS_PAINTS, ...TURRET_SKINS, ...TIRE_OPTIONS]) {
       if (option.price === 0) this.owned.add(option.id);
     }
-    this.owned.add(equipped.paint);
-    this.owned.add(equipped.skin);
-    this.owned.add(equipped.tire);
+    for (const id of profile.owned) this.owned.add(id);
+  }
+
+  /** The profile as it now stands: what to save, and what the next visit is built from. */
+  get profile(): Profile {
+    const owned = [...CHASSIS_PAINTS, ...TURRET_SKINS, ...TIRE_OPTIONS]
+      .filter((o) => o.price > 0 && this.owned.has(o.id))
+      .map((o) => o.id);
+    return {
+      coins: this.balance,
+      xp: this.xp,
+      level: this.level,
+      owned,
+      loadout: { ...this.equippedLoadout },
+      upgrades: { ...this.tiers },
+    };
+  }
+
+  get driverUnlocked(): boolean {
+    return this.level >= DRIVER_UNLOCK_LEVEL;
+  }
+
+  upgradeTier(id: UpgradeId): number {
+    return this.tiers[id];
+  }
+
+  /** The next tier's price, or null once the upgrade is maxed. */
+  nextUpgradePrice(id: UpgradeId): number | null {
+    return upgradeById(id).tiers[this.tiers[id]]?.price ?? null;
+  }
+
+  /** Buy the next tier now. False, changing nothing, when maxed or unaffordable. */
+  buyUpgrade(id: UpgradeId): boolean {
+    const price = this.nextUpgradePrice(id);
+    if (price === null || price > this.balance) return false;
+    this.balance -= price;
+    this.tiers[id] += 1;
+    return true;
   }
 
   get coins(): number {
