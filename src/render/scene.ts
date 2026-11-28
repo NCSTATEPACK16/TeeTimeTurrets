@@ -14,6 +14,7 @@ import { createClubhouseKit, type ClubhouseKit } from "./clubhouse";
 import { createTeeSigns, type TeeSigns } from "./teeSigns";
 import { createPickupView, type PickupView } from "./pickups";
 import { createCaptureFlagView, type CaptureFlagView } from "./captureFlags";
+import { createMortarRings, type MortarRings } from "./mortarRings";
 import { ShieldPlates } from "./shieldPlates";
 import type { PickupSite } from "../sim/pickupSites";
 import type { Vec2 as GroundVec2 } from "../sim/mapGeometry";
@@ -184,6 +185,8 @@ export class RenderScene {
   private readonly teeSigns: TeeSigns;
   private readonly pickups: PickupView | null;
   private readonly captureFlags: CaptureFlagView | null;
+  /** The mortar telegraph (H20); `MatchScreen` shows one per `mortarCalled` event. */
+  readonly mortarRings: MortarRings;
   private readonly zoneStakes: ZoneStakes | null;
   private readonly shieldPlates: ShieldPlates;
   private readonly takenScratch = new THREE.Vector3();
@@ -270,6 +273,8 @@ export class RenderScene {
     this.captureFlags =
       arena.captureSites && arena.captureSites.length > 0 ? createCaptureFlagView(arena.captureSites, heightAt) : null;
     if (this.captureFlags) for (const object of this.captureFlags.objects) this.scene.add(object);
+    this.mortarRings = createMortarRings();
+    for (const object of this.mortarRings.objects) this.scene.add(object);
     // Stage 4: the arena zone's edge, staked and roped.
     this.zoneStakes = arena.zone ? createZoneStakes(arena.zone, heightAt) : null;
     if (this.zoneStakes) for (const object of this.zoneStakes.objects) this.scene.add(object);
@@ -395,6 +400,7 @@ export class RenderScene {
     this.syncPickups(view);
     this.pickups?.update(view.elapsedSeconds);
     this.captureFlags?.update(view.flagOwners ?? NO_OWNERS, view.elapsedSeconds);
+    this.mortarRings.update(view.elapsedSeconds);
     this.poseCart(this.cart, view.cart, view.club, view.charge01, view.reload01, view.turretLoaded);
     this.suspend(0, this.cart, view.cart, view.playerDead, view.frameSeconds);
     this.turnWheels(0, this.cart, view.cart, view.playerDead, view.frameSeconds);
@@ -469,6 +475,7 @@ export class RenderScene {
     this.teeSigns.dispose();
     this.pickups?.dispose();
     this.captureFlags?.dispose();
+    this.mortarRings.dispose();
     this.zoneStakes?.dispose();
     this.shieldPlates.dispose();
     this.courseGround.decorateMaterial = null;

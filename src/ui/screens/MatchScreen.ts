@@ -38,6 +38,7 @@ import type { CountdownBeat } from "../countdown";
 import { StreakTracker } from "../streaks";
 import { FLAG_LETTERS, flagBanner } from "../flagBanners";
 import { NO_TEAM } from "../../sim/flags";
+import { MAX_BARRAGES, MORTAR_BALLS, MORTAR_BALL_GAP_S, MORTAR_SPREAD_M, MORTAR_TELEGRAPH_S } from "../../sim/mortar";
 import { musicIntensity } from "../../audio/music";
 import type { Screen } from "../../app/ScreenManager";
 
@@ -115,6 +116,12 @@ export class MatchScreen implements Screen {
   private streaks = new StreakTracker();
   /** Scratch for `flagBanner`: each side's flags at the moment an event is read. */
   private readonly flagsHeld = { us: 0, them: 0 };
+  /**
+   * Mortars on their way, for the map marker and the INCOMING warning: where each lands, until
+   * when (in this screen's elapsed seconds), and whether the player has been warned of it.
+   */
+  private readonly incoming = Array.from({ length: MAX_BARRAGES }, () => ({ x: 0, z: 0, until: -Infinity, warned: false }));
+  private incomingNext = 0;
   /** Set once the final-30 banner has fired this match. */
   private finalStretch = false;
   /**
@@ -227,6 +234,7 @@ export class MatchScreen implements Screen {
     this.matchOverReported = false;
     this.countdown = new CountdownDisplay(document.getElementById("countdown"));
     this.streaks = new StreakTracker();
+    for (const slot of this.incoming) slot.until = -Infinity;
     this.finalStretch = false;
     this.hitstopTicks = 0;
     this.killTimes.fill(-Infinity);
@@ -440,7 +448,19 @@ export class MatchScreen implements Screen {
       if (cue) gameAudio.play(cue);
       if (e.kind === "kill") {
         this.killFeed.onKill(e.actor, e.target);
-        this.onKillPacing(e.actor, e.target, e.tick);
+        // `killCart` pushes a `mortarEarned` straight after the kill that earned it.
+        const next = log.at(s + 1);
+        const earned = next !== null && next.kind === "mortarEarned" && next.actor === 0;
+        this.onKillPacing(e.actor, e.target, e.tick, earned);
+      }
+      if (e.kind === "mortarCalled") {
+        this.render?.mortarRings.show(e.x, e.y, e.z, this.elapsedSeconds);
+        const slot = this.incoming[this.incomingNext]!;
+        this.incomingNext = (this.incomingNext + 1) % this.incoming.length;
+        slot.x = e.x;
+        slot.z = e.z;
+        slot.until = this.elapsedSeconds + MORTAR_TELEGRAPH_S + (MORTAR_BALLS - 1) * MORTAR_BALL_GAP_S;
+        slot.warned = false;
       }
       if (e.kind === "flagCaptured" || e.kind === "flagNeutral") {
         const held = this.flagsHeld;
@@ -467,6 +487,19 @@ export class MatchScreen implements Screen {
       }
     }
     cursor.end();
+    this.warnIncoming(sim);
+  }
+
+  /** `INCOMING! / MOVE` once per barrage, the first frame the player's cart is inside its ring. */
+  private warnIncoming(sim: Sim): void {
+    if (sim.cart.dead) return;
+    const me = sim.cart.position;
+    for (const slot of this.incoming) {
+      if (slot.warned || this.elapsedSeconds > slot.until) continue;
+      if (Math.hypot(me.x - slot.x, me.z - slot.z) > MORTAR_SPREAD_M) continue;
+      slot.warned = true;
+      this.bannerFeed.push("INCOMING!", "MOVE");
+    }
   }
 
   /**
@@ -507,7 +540,7 @@ export class MatchScreen implements Screen {
   }
 
   /** Streak callouts and the kill hitstop, for kills the player made or suffered. */
-  private onKillPacing(killer: number, victim: number, tick: number): void {
+  private onKillPacing(killer: number, victim: number, tick: number, earnedMortar = false): void {
     this.killTimes[this.killSlot] = tick * FIXED_DT;
     this.killSlot = (this.killSlot + 1) % RECENT_KILL_SLOTS;
     if (victim === 0) {
@@ -517,9 +550,12 @@ export class MatchScreen implements Screen {
     if (killer !== 0) return;
     this.hitstop(HITSTOP_KILL_TICKS, FLASH_KILL);
     const callout = this.streaks.onKill(tick * FIXED_DT);
+    // The sim decides whether a mortar was earned; the streak tracker only words the headline.
     if (callout) {
-      this.bannerFeed.push(callout.headline, callout.consequence);
+      this.bannerFeed.push(callout.headline, earnedMortar ? MORTAR_READY : callout.consequence);
       gameAudio.play(STINGER);
+    } else if (earnedMortar) {
+      this.bannerFeed.push("MORTAR READY", "PRESS G TO CALL IT IN");
     }
   }
 
@@ -583,6 +619,9 @@ export class MatchScreen implements Screen {
       const owner = captures.owner[i]!;
       const side = owner === teamOf(0) ? "us" : owner === NO_TEAM ? "none" : "them";
       markers.push({ x: site.x, z: site.z, kind: "flag", heading: 0, label: FLAG_LETTERS[i] ?? "", side });
+    }
+    for (const slot of this.incoming) {
+      if (this.elapsedSeconds <= slot.until) markers.push({ x: slot.x, z: slot.z, kind: "mortar", heading: 0 });
     }
     const holes = courseMapHoles(this.options.arena);
     map.draw(markers, nearestHoleNumber(holes, view.cart.position.x, view.cart.position.z));
@@ -708,6 +747,9 @@ export class MatchScreen implements Screen {
     }
   }
 }
+
+/** The streak callout's second line when the kill also earned a mortar. */
+const MORTAR_READY = "MORTAR READY [G]";
 
 /** Longest frame the camera smoothing is given: a frame after a hidden tab is not 30 s long. */
 /** Camera trauma per event (0..1; shake is its square). See `addTrauma`. */

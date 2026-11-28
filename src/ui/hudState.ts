@@ -24,6 +24,8 @@ export interface HudSource {
     /** Seconds outside the arena zone, and until its next drain (#52). Absent: never outside. */
     readonly outOfZoneS?: number;
     readonly zoneDrainIn?: number;
+    /** Mulligan Mortars held (Stage 3.5c). Absent: none. */
+    readonly mortars?: number;
   };
   /**
    * The scoreboard. Two methods rather than the arrays behind them, because `Match` keeps those
@@ -89,6 +91,8 @@ export interface HudState {
   bleedText: string;
   /** True while the player's side is the one bleeding. */
   bleedingUs: boolean;
+  /** H19: a mortar is held and G will call it. */
+  mortarReady: boolean;
 }
 
 /** A blank scratch object shaped like HudState, for a caller to hold and repeatedly pass to
@@ -115,6 +119,7 @@ export function createHudStateScratch(): HudState {
     })),
     bleedText: "",
     bleedingUs: false,
+    mortarReady: false,
   };
 }
 
@@ -136,6 +141,7 @@ export function deriveHudState(source: HudSource, out: HudState): void {
   out.pointsText = `KILLS ${source.match.pointsFor(PLAYER)}`;
   out.zoneWarning = zoneWarningText(source);
   deriveFlags(source, out);
+  out.mortarReady = !cart.dead && (cart.mortars ?? 0) > 0;
 }
 
 /**

@@ -30,6 +30,7 @@ export interface Hud {
   /** One chip per capture flag, built here into `#hud-flags`, which ships empty. */
   flagChips: HTMLElement[];
   bleed: HTMLElement;
+  mortar: HTMLElement;
 }
 
 export function readHud(): Hud | null {
@@ -47,6 +48,7 @@ export function readHud(): Hud | null {
     "hud-zone-warning",
     "hud-flags",
     "hud-bleed",
+    "hud-mortar",
   ] as const;
 
   const found = ids.map((id) => document.getElementById(id));
@@ -65,6 +67,7 @@ export function readHud(): Hud | null {
     zoneWarning,
     flagRow,
     bleed,
+    mortar,
   ] = found as HTMLElement[];
 
   // The chips are made here, not in markup, so an empty row is all the page shows until the code
@@ -93,6 +96,7 @@ export function readHud(): Hud | null {
     zoneWarning: zoneWarning!,
     flagChips,
     bleed: bleed!,
+    mortar: mortar!,
   };
 }
 
@@ -111,6 +115,7 @@ export function drawHud(hud: Hud, source: HudSource): void {
   for (let i = 0; i < hud.flagChips.length; i++) drawFlagChip(hud.flagChips[i]!, state.flags[i]!);
   setText(hud.bleed, state.bleedText);
   hud.bleed.classList.toggle("us", state.bleedingUs);
+  if (hud.mortar.hidden === state.mortarReady) hud.mortar.hidden = !state.mortarReady;
 
   if (hud.combat.hidden) hud.combat.hidden = false;
   setWidth(hud.healthFill, state.healthFraction);
