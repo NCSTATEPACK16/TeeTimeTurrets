@@ -1,7 +1,8 @@
 /**
- * Headless feel probe. Imports the REAL src/sim modules (no copies) and measures
- * carry / rollout / settle time / out-of-bounds for each club, plus terrain slope stats.
- * Run via a vite SSR build (see build-probe.config.ts) then `node out/probe.js`.
+ * Headless turret probe (the feel probe until Stage 9). Imports the REAL src/sim modules (no
+ * copies) and measures carry / rollout / settle time / out-of-bounds for each club, terrain slope
+ * stats, and the hole checks on the authored course. `npm run probe` bundles it with a Vite SSR
+ * build (`tools/probe.vite.config.ts`) and runs the result under Node.
  */
 import { createNoise2D } from "simplex-noise";
 import { Sim, FIXED_DT } from "../src/sim/world";
@@ -13,7 +14,7 @@ import { neutralIntent } from "../src/sim/intent";
 // The driver's reference distance lives in sim/carry.ts, a leaf module (see that file's header),
 // not in course.ts, which does not re-export it.
 import { ARENA_DRIVER_CARRY_M, ARENA_DRIVER_TOTAL_M } from "../src/sim/carry";
-import { validateHole } from "../src/sim/course";
+import { validateHole } from "../src/sim/holeValidation";
 import { authoredCourse } from "../src/sim/authoredCourse";
 import { createSurfaces } from "../src/sim/surfaces";
 import { SurfaceId } from "../src/sim/surfaces";

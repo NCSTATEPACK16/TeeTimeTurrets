@@ -26,7 +26,7 @@ Ballistics.ts` (launch math, club stat table), `src/main.ts` (wiring, keyboard i
       terrain-consistent curving.
 - [x] No console errors on load or through a full swing.
 
-**Feel tuning pass — ✅ DONE.** Measured with `npm run probe` (`tools/feelProbe.ts`, a
+**Feel tuning pass — ✅ DONE.** Measured with `npm run probe` (`tools/turretProbe.ts`, a
 headless harness that imports `src/sim/**` unmodified — the first real payoff of the DOM-free
 rule). Before → after:
 

@@ -184,7 +184,7 @@ adds a penalty stroke and drops the ball at `lastSafePosition`. Combined with th
 component — not wired in, since swapping it changes validated behavior and should be a
 deliberate choice.
 
-**Verification.** `npm run probe` builds `tools/feelProbe.ts` against the real `src/sim/**`
+**Verification.** `npm run probe` builds `tools/turretProbe.ts` against the real `src/sim/**`
 and reports terrain slope statistics, the tee-pad profile, and per-club carry / roll / apex /
 settle time / out-of-bounds. Re-run it after touching any constant in `terrain.ts` or
 `world.ts`; it is the cheapest regression check in the project and it only works because

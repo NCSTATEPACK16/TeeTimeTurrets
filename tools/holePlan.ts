@@ -26,7 +26,7 @@ import { contours, corridorPolylines, surfaceRuns } from "../src/sim/mapGeometry
 import type { Surfaces } from "../src/sim/surfaces";
 
 /**
- * (Moved to src/sim/course.ts, where validateHole check 6 also needs it. Kept as a re-export
+ * (Moved to src/sim/carry.ts, where validateHole check 6 also reads it. Kept as a
  * comment anchor only.)
  *
  * The driver's carry, in metres, as distinct from REFERENCE_CARRY_M's 129 m total. Both numbers

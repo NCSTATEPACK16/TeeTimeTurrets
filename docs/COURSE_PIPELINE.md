@@ -405,7 +405,7 @@ argument for Tier 2 that nobody had evidence for until the plans existed.
 
 ## 6. The plan renderer — built
 
-`tools/holePlan.ts`, run with `npm run plan`. Follows the existing `feelProbe` pattern exactly: a
+`tools/holePlan.ts`, run with `npm run plan`. Follows the existing `turretProbe` pattern exactly: a
 vite SSR build (`tools/holePlan.vite.config.ts`) emits a Node-runnable ESM bundle, then Node runs
 it. It imports the real `src/sim` modules — no copies, no reimplementation — which is what makes
 its output authoritative rather than merely plausible.
