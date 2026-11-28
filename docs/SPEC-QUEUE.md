@@ -43,7 +43,7 @@ In priority order.
      what they do without it.
    - HUD and map elements, against `UI-SPEC.md`.
    - It moves the golden once: say which commit records it.
-2. **Stage 6, navGraph.** **Specified and built as a draft PR on 28 Nov:**
+2. **Stage 6, navGraph.** **Merged as #103 (28 Nov).** Specified and built on 28 Nov:
    `specs/2026-11-28-stage-6-navgraph-design.md`, two slices, waiting on the play-test. What the
    spec had to settle: the cell size over the zone, how a cell's passability is derived
    from the Stage 4 mobility table (the climb limit now depends on tyre and surface, so "passable"
@@ -56,9 +56,11 @@ In priority order.
    `SurfaceId.Tee` and `sim/cartPaths.ts` are sim changes. Missing: the path polylines' source, the speed bonus as a mobility resistance, how
    paths cross the zone edge, and the golden. **Merged as #102 (28 Nov).** The render parts (impostors past 250 m, sight-line
    dither, the 12 outer holes' lower LOD, the golden-hour title) need only a plan.
-4. **Stage 8, economy.** The formulas are decided. Missing: the profile's schema and its migration
-   from today's saved state, the `UPGRADES` table's actual numbers and prices, how `applyLoadout`
-   reaches every rig, and the results screen's layout.
+4. **Stage 8, economy.** **Specified and built as a draft PR on 28 Nov:**
+   `specs/2026-11-28-stage-8-economy-design.md`, four slices, waiting on the play-test. It settled
+   what was missing: the profile's schema (v1; nothing was saved before, so there is nothing to
+   migrate), the `UPGRADES` numbers and prices, how `applyLoadout` reaches the player (bots keep
+   the default kit and get a seeded look), and the results screen's earnings block.
 5. **Surveyed Caswell terrain.** The user's other project, `NCSTATEPACK16/GolfCartSimulator`, has
    a GIS pipeline (lidar heights, traced outlines, sculpting, cart paths, tree scatter) and one
    finished packet: **hole 1 only**. Holes 2–18 are not traced. Using surveyed ground here means

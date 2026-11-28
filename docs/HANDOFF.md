@@ -1,15 +1,26 @@
 # Handoff — next session
 
 Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan is `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md`. **All three slices (the flags, the player's mortar, and bots with the golden) are built together in draft #100 (27-28 Nov), stacked at the user's request, and wait on the user's play-test. Do not merge before it.** The golden is now `1822785344` (Linux x64) and hashes both sides' `teamStrokes`. Slice 3 changed two of the spec's §4 rules; see its §4.1. #100 merged on 28 Nov. **Stage 4b is built as draft #101**, waiting on the play-test; see its section below.
-- **Stage 6, the bots' navigation graph, is built as a draft PR (28 Nov), waiting on the
-  play-test.** Spec: `docs/superpowers/specs/2026-11-28-stage-6-navgraph-design.md`, every open
-  question built to its default. `sim/navGraph.ts` is a 4 m grid A* over the zone (water with a
-  3 m clearance, grades past 0.8 of the street tyre's climb limit, the clubhouse buildings and
-  the zone's edge refused). Bots steer at the next waypoint (`BotMind.steerX/Z`) and plan at most
-  once a second each, staggered. `detourAround` is gone. **The golden is now `2703140360`**
-  (Linux x64). Test time: `main` ran 64.8 s back to back with this branch's ~68 s in one cloud
-  container, both over the 60 s cap; trimming `tools/simAllocation.test.mjs` (25 s) is the
-  obvious next cut.
+- **Stage 8, the economy, is built as a draft PR (28 Nov), waiting on the play-test.** Spec:
+  `docs/superpowers/specs/2026-11-28-stage-8-economy-design.md`, every open question built to its
+  default (§8). Stage 7 was skipped: it needs a local Blender session.
+  - `sim/scoring.ts`'s `MatchTally` counts each cart's enemy kills, assists (damage within 5 s of a
+    teammate's kill), damage to enemies and site pickups; `matchEarnings` prices a match by the
+    plan's formula, coins half the score, XP all of it.
+  - `sim/upgrades.ts`: ARMOR, AMMO BAG and QUICK RELOAD, two tiers each, and the driver at level 2.
+    `applyLoadout` (through `Cart.applyKit`) is the only writer of those stats; `SimOptions.kit`
+    replaced `SimOptions.tire`. Bots keep the default kit, which is today's cart.
+  - `app/profile.ts` saves coins, level, XP, owned items, the loadout and upgrade tiers (v1). A new
+    profile has 0 coins; `?coins=N` grants coins on load for play-testing. The owned-items bug is
+    fixed: `ClubhouseState` is built from the profile.
+  - The results screen shows the match's score, coins, level and XP. Every bot wears a seeded
+    paint and skin; the player wears theirs. BACKLOG #49 is done: `sunset` and `marshal` are now
+    plum and slate.
+  - **The golden is unchanged** (`2703140360`): the tally only counts, and the default kit is
+    today's cart.
+- **Stage 6, the bots' navigation graph, merged as #103 (28 Nov).** `sim/navGraph.ts` is a 4 m
+  grid A* over the zone; bots steer at the next waypoint and plan at most once a second each.
+  **The golden is `2703140360`** (Linux x64).
 - **Stage 5's remainder (#102) merged on 28 Nov.** Spec:
   `docs/superpowers/specs/2026-11-28-stage-5-tees-cart-paths-and-woods-design.md`, every open
   question built to its default. Raised tee boxes (`sim/teeBox.ts`, `SurfaceId.Tee`); 38 cart paths
@@ -18,7 +29,14 @@ Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #
   title backdrop and `render/props.ts` deleted. **The golden is now `2080352983`** (Linux x64),
   re-recorded once for the tee boxes and paths (superseded by Stage 6's). `render/ground.ts` stays: the gate's `hole-ground`
   subject uses it.
-- **Test time:** `main` ran in 63.0 s on a fresh cloud container, over the cap. #100's Task 0 trimmed it to about 58–60 s on the same machine. Timings vary by about ±3 s between runs there, so compare back to back on one machine, never across sessions. The slowest files are `tools/simAllocation.test.mjs` (24 s, and the Rapier-read warm-up is not where its time goes), `src/sim/arenaGolden.test.ts` (15 s), `src/render/courseGround.test.ts` (18 s), `poolPressure` and `botAcceptance`.
+- **Test time:** on a cloud container `npm test` ran 75.0 s on `main` (`d475f27`) and 69.8 s on the
+  Stage 8 branch, back to back, both over the 60 s cap. Stage 8's Task 0 baked the course once in
+  `tools/simAllocation.test.mjs` (27.4 s to 18.1 s alone). Timings vary by several seconds between
+  runs there, so compare back to back on one machine, never across sessions. The slowest tests
+  now: `poolPressure`'s 50 s full match (12.6 s), `courseGround`'s drive round the course (11.4 s),
+  `botAcceptance` (11.1 s), `world.course`'s road barrier (9.5 s) and `cartPaths` (8.1 s). The
+  next cut is to share one course bake between files, or shorten `poolPressure`'s match while
+  its premise (more than 40 shots, the pool saturated) holds.
 - **Open bug, not 3.5c's:** a headless Turrets match crashes within seconds in a cloud container. Rapier's `world.step` throws "recursive use of an object detected which would lead to unsafe aliasing in rust", then the renderer segfaults. It reproduces on a clean build of `main` (`a9076f9`), from `vite preview` or `vite dev`, and at `quality: "low"`. #98 had a headless match running, so it may be a regression since then. Until it is fixed, nobody can screenshot the arena headless.
   - **Narrowed on 28 Nov.** The browser is Chrome for Testing 153.0.8010.12 (`/opt/pw-browsers/chromium-1243`, both the full binary and the headless shell).
     - With the full binary the first error is `RuntimeError: memory access out of bounds` deep in Rapier's WASM, at about tick 300, a second after FORE! when the first shots go out. Every Rapier allocation after it fails (`setLinvel` from `BallPool.applyRollingResistance`).

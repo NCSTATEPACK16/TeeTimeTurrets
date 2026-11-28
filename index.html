@@ -519,6 +519,18 @@
       .arena-results__row-name--ally { color: var(--team-ally); }
       .arena-results__row-name--enemy { color: var(--team-enemy); }
       .arena-results__row-stat { color: var(--ink-dim); letter-spacing: 0.04em; }
+      /* Stage 8: what the match earned, under the roster. */
+      .arena-results__earnings {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 18px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+      }
+      .arena-results__earned { display: flex; justify-content: center; gap: 18px; color: var(--accent); }
+      .arena-results__level { color: var(--ink-dim); }
+      .arena-results__levelup { color: var(--accent); }
       .arena-results__actions { display: flex; gap: 11px; margin-top: 8px; }
       .arena-results__actions .btn { flex: 1; }
 
@@ -549,7 +561,33 @@
       }
       .clubhouse__category-label { font-size: 12px; letter-spacing: 0.1em; }
 
-      .clubhouse__coins { position: absolute; top: 30px; right: 34px; }
+      .clubhouse__coins { position: absolute; top: 30px; right: 34px; display: flex; gap: 8px; }
+
+      /* Stage 8: stat upgrades, top left. A row each: label, tier pips, next tier, BUY. */
+      .clubhouse__upgrades {
+        position: absolute;
+        left: 34px;
+        top: 30px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 370px;
+      }
+      .upgrade {
+        display: grid;
+        grid-template-columns: 96px 30px 1fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: var(--radius-card);
+        background: var(--panel-solid);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+      }
+      .upgrade__pips { color: var(--accent); letter-spacing: 0.15em; }
+      .upgrade__note { color: var(--ink-dim); font-size: 10px; }
+      .upgrade__buy { padding: 4px 10px; font-size: 10px; }
+      .club-card__locked { font-size: 9px; color: var(--accent); letter-spacing: 0.1em; }
 
       .clubhouse__clubs {
         position: absolute;

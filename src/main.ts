@@ -8,7 +8,12 @@ import { authoredCourse } from "./sim/authoredCourse";
 import type { CourseWorld } from "./sim/courseWorld";
 import type { Sim } from "./sim/world";
 import { ARENA_BOTS, MATCH_COUNTDOWN_S } from "./sim/matchConfig";
-import { createLoadout, tireTypeFor } from "./sim/loadout";
+import { kitFor } from "./sim/upgrades";
+import { slotColorsFor } from "./sim/loadout";
+import { coinGrantFromQuery, creditMatch, loadProfile, saveProfile } from "./app/profile";
+import type { Profile } from "./app/profile";
+import { createEarnings, matchEarnings } from "./sim/scoring";
+import type { ResultsEarnings } from "./ui/screens/MatchResultsScreen";
 import type { ArenaSource } from "./render/scene";
 import { ClubhouseScreen } from "./ui/screens/ClubhouseScreen";
 import type { MatchScreen } from "./ui/screens/MatchScreen";
@@ -36,9 +41,6 @@ type MatchPath = typeof import("./app/matchPath");
 /** The course is authored; the seed drives only its seeded detail (bunkers, rough, trees). */
 const COURSE_SEED = 2026;
 const VERSION = "v0.1.0";
-
-/** Coins a new player starts with, until progression pays out per match. */
-const STARTING_COINS = 6000;
 
 type ScreenName = "title" | "match" | "matchResults" | "clubhouse" | "settings";
 
@@ -123,9 +125,18 @@ async function main(): Promise<void> {
   let courseWorld: CourseWorld | null = null;
   let arenaSource: ArenaSource | null = null;
 
-  // Page-scoped for now; persisting the player's profile is the progression work's job.
-  let loadout = createLoadout();
-  let coins = STARTING_COINS;
+  // The player's progress, saved after every purchase and every match (Stage 8, `app/profile.ts`).
+  // A new profile has 0 coins. `?coins=N` is a play-tester's grant, added on load so the shop can
+  // be tried without grinding matches; it is a dev convenience, not a feature.
+  let profile: Profile = loadProfile(pageStorage());
+  const grant = coinGrantFromQuery(window.location.search);
+  if (grant > 0) {
+    profile = { ...profile, coins: profile.coins + grant };
+    saveProfile(pageStorage(), profile);
+  }
+  // The last finished match's earnings, for the results screen. Credited once per match, in
+  // `onMatchOver`, which the match screen calls once.
+  let lastEarnings: ResultsEarnings | undefined;
 
   // 120 Hz where the display allows, held to 60 for the rest of a match that cannot keep it (Stage 4b).
   const governor = new FrameGovernor();
@@ -159,9 +170,9 @@ async function main(): Promise<void> {
     // A Rapier world lives on the WASM heap, which the garbage collector cannot see: the previous
     // match's has to be freed by hand or every rematch leaks a whole course.
     sim?.dispose();
-    // The tire the player bought is the tire the physics uses: the one purchase that is a stat.
+    // What the player bought is what the physics uses: tyre, armour, ammo, reload, the driver.
     sim = await path.Sim.create(path.arenaFromCourse(courseWorld, arenaSource?.pickupSites), {
-      tire: tireTypeFor(loadout),
+      kit: kitFor(profile.loadout, profile.upgrades, profile.level),
       botCount: ARENA_BOTS,
       matchDurationS: matchSecondsFromQuery(window.location.search),
       countdownS: MATCH_COUNTDOWN_S,
@@ -195,12 +206,20 @@ async function main(): Promise<void> {
       arena,
       hudRoot,
       nameplateRoot,
-      onMatchOver: () => screens.show("matchResults"),
+      onMatchOver: () => {
+        const earned = matchEarnings(live.tally, live.match.winningTeam(), 0, createEarnings());
+        const levelBefore = profile.level;
+        profile = creditMatch(profile, earned);
+        saveProfile(pageStorage(), profile);
+        lastEarnings = { earned, levelBefore, level: profile.level, xp: profile.xp };
+        screens.show("matchResults");
+      },
       overlayRoot: screensRoot,
       settings,
       onSettingsChange: applySettings,
       onQuit: () => screens.show("title"),
       quality: QUALITY_PRESETS[quality],
+      playerLook: slotColorsFor(profile.loadout),
     });
     return matchScreen;
   });
@@ -212,12 +231,19 @@ async function main(): Promise<void> {
     return new matchPath.MatchResultsScreen({
       root: screensRoot,
       match: live.match,
+      earnings: lastEarnings,
       // Keeps the finished match on screen under the scrim.
       drawBehind: behind ? () => behind.drawStill() : undefined,
       actions: {
         // The same Sim and the same cached course: `Sim.reset()` re-tees every cart, resets the
         // seeded streams and the clock, so a rematch replays rather than rebuilding eighteen holes.
         playAgain: () => {
+          // A level-up can unlock the driver, and a kit is applied as a Sim is built, so the
+          // rematch after one is a new match on the cached course rather than a reset.
+          if (lastEarnings && lastEarnings.level > lastEarnings.levelBefore) {
+            void startMatch();
+            return;
+          }
           live.reset();
           screens.show("match");
         },
@@ -239,11 +265,10 @@ async function main(): Promise<void> {
     return new ClubhouseScreen({
       root: screensRoot,
       renderer,
-      loadout,
-      coins,
-      onConfirm: (next, remaining) => {
-        loadout = next;
-        coins = remaining;
+      profile,
+      onChange: (next) => {
+        profile = next;
+        saveProfile(pageStorage(), profile);
       },
       onBack: () => screens.show("title"),
     });
@@ -273,7 +298,7 @@ async function main(): Promise<void> {
       return matchScreen?.scene ?? null;
     },
     get coins() {
-      return coins;
+      return profile.coins;
     },
     get screen() {
       return screens.activeName;

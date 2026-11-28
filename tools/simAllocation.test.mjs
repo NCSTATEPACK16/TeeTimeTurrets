@@ -60,6 +60,12 @@ const HEAP_NUMBER_BYTES = 16;
 /** See the header: above V8's own bookkeeping, below one small object a tick. */
 const MAX_EXTRA_BYTES_PER_TICK = 16;
 
+/**
+ * One course for both describes: a bake is several seconds, and `npm test` has a 60 s cap. Each
+ * describe still builds its own `Sim` on it, so neither sees the other's match.
+ */
+const world = buildCourseWorld(authoredCourse(2026), 2026);
+
 const isSim = (script) => /\/src\/(sim|physics)\//.test(script) && !script.includes(".test.");
 
 /**
@@ -75,7 +81,6 @@ const isSim = (script) => /\/src\/(sim|physics)\//.test(script) && !script.inclu
 describe("what the tick asks Rapier", () => {
   it("reads each live ball's position and velocity exactly once a tick", async () => {
     const RAPIER = (await import("@dimforge/rapier3d-compat")).default;
-    const world = buildCourseWorld(authoredCourse(2026), 2026);
     const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
     for (let i = 0; i < 1200; i++) sim.step();
 
@@ -169,7 +174,6 @@ describe("the fixed tick", () => {
   // Scoped here, not file-wide: the tiering cap it sets is process-wide and can't be lifted on
   // Node 22 (see "what the tick asks Rapier", which therefore runs first).
   beforeAll(async () => {
-    const world = buildCourseWorld(authoredCourse(2026), 2026);
     const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
     for (let i = 0; i < WARM_TICKS; i++) sim.step();
     // Freeze tiering for the windows (see the header, "No re-optimizing in the windows").

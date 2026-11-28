@@ -39,6 +39,9 @@ import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
+import { MatchTally } from "./scoring";
+import { DEFAULT_KIT, applyLoadout } from "./upgrades";
+import type { CartKit } from "./upgrades";
 import { CaptureField } from "./flags";
 import {
   Barrage,
@@ -235,10 +238,10 @@ export interface SimOptions {
    */
   readonly countdownS?: number;
   /**
-   * The player cart's tire. Defaults to `TireType.Street`. The one clubhouse purchase that is a
-   * stat rather than a skin: `TIRE_TUNING` scales top speed, grip and surface penalties.
+   * The player cart's purchased stats: tyre, armour, ammo capacity, reload and the driver lock
+   * (Stage 8, `sim/upgrades.ts`). Defaults to `DEFAULT_KIT`, today's cart. Bots always get that.
    */
-  readonly tire?: TireType;
+  readonly kit?: CartKit;
 }
 
 /**
@@ -285,6 +288,11 @@ export class Sim {
   currentPoolTransforms = new Float32Array(POOL_SIZE * POOL_TRANSFORM_STRIDE);
   /** The player's shot counters, for the results screen's accuracy. See sim/stats.ts. */
   readonly stats = createStats();
+  /**
+   * Every cart's kills, assists, damage and pickups this match, for the earnings (Stage 8,
+   * `sim/scoring.ts`). Counted, never read back by the sim, and cleared by `reset`.
+   */
+  readonly tally = new MatchTally();
 
   /** Collider handle -> entity, so a drained collision event can be dispatched. */
   private readonly registry = new CombatRegistry();
@@ -421,8 +429,10 @@ export class Sim {
       ground,
       options.matchDurationS ?? MATCH_DURATION_S,
       options.countdownS ?? 0,
-      options.tire ?? TireType.Street,
+      (options.kit ?? DEFAULT_KIT).tire,
     );
+    // The one place the player's purchases become stats (Stage 8).
+    applyLoadout(sim.cart, options.kit ?? DEFAULT_KIT);
 
     const botCount = options.botCount ?? 1;
     for (let i = 0; i < botCount; i++) {
@@ -438,8 +448,10 @@ export class Sim {
     sim.combatContext = {
       registry: sim.registry,
       onBallHit: (shooter, victim, damage, x, y, z) => sim.creditHit(shooter, victim, damage, x, y, z),
-      onRamDamage: (rammer, victim, damage, x, y, z) =>
-        sim.events.push("ram", sim.tickCount, rammer, victim, damage, x, y, z),
+      onRamDamage: (rammer, victim, damage, x, y, z) => {
+        sim.tally.damaged(rammer, victim, damage, sim.tickCount);
+        sim.events.push("ram", sim.tickCount, rammer, victim, damage, x, y, z);
+      },
       onCartKilled: (cart, victim, killer) => sim.killCart(cart, victim, killer),
       onShieldHit: (attacker, victim, byBall, x, y, z) => {
         if (byBall && attacker === 0) sim.stats.directHits += 1;
@@ -611,6 +623,7 @@ export class Sim {
     cart.dead = true;
     cart.respawnTimer = RESPAWN_DELAY_S;
     this.match.scoreKill(killer, victim);
+    this.tally.killed(killer, victim, this.tickCount);
     const p = cart.position;
     this.events.push("kill", this.tickCount, killer, victim, 0, p.x, p.y, p.z);
     // The streak ends with the death, however it came. An enemy kill -- the rule `scoreKill` pays a
@@ -725,6 +738,7 @@ export class Sim {
           this.events.push("plateBroken", this.tickCount, ball.firedBy, i, cart.shield, bx, by, bz);
           continue;
         }
+        this.tally.damaged(ball.firedBy, i, MORTAR_SPLASH_DAMAGE, this.tickCount);
         this.events.push("hit", this.tickCount, ball.firedBy, i, MORTAR_SPLASH_DAMAGE, bx, by, bz);
         if (applyDamage(cart.health, MORTAR_SPLASH_DAMAGE)) this.killCart(cart, i, ball.firedBy);
       }
@@ -738,6 +752,7 @@ export class Sim {
    */
   private creditHit(shooter: number, victim: number, damage: number, x: number, y: number, z: number): void {
     if (shooter === 0) this.stats.directHits += 1;
+    this.tally.damaged(shooter, victim, damage, this.tickCount);
     this.events.push("hit", this.tickCount, shooter, victim, damage, x, y, z);
   }
 
@@ -1151,6 +1166,9 @@ export class Sim {
     if (site >= 0) {
       const type = this.pickupStates[site]!.site.type;
       take(this.pickupStates, site, cart, this.simTime);
+      // A site, not a loose ball: driving over spent rounds is reloading, and at 15 points a ball
+      // it would out-earn the kills (Stage 8 spec, Q10).
+      this.tally.pickedUp(rig.index);
       if (type === "drink") {
         this.events.push("shieldGained", this.tickCount, rig.index, NO_RIG, cart.shield, c.x, c.y, c.z);
       } else {
@@ -1462,6 +1480,7 @@ export class Sim {
   reset(): void {
     this.lastShotWasStrike = false;
     this.match.reset();
+    this.tally.reset();
     this.captures.reset();
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
     this.mortarRandom = mulberry32(hashChannel(this.seed, MORTAR_CHANNEL));
