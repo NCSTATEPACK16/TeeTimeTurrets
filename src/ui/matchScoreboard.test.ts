@@ -103,6 +103,25 @@ describe("the results scoreboard", () => {
     expect(rows[3]).toEqual({ name: "BOT 3", team: 1, points: 0, strokes: 1 });
   });
 
+  it("adds a FLAGS line for a side that bled, so each side's lines sum to its total", () => {
+    const m = match();
+    m.scoreKill(1, 0);
+    m.scoreKill(0, 3);
+    m.addBleed(1);
+    m.addBleed(1);
+    m.finish();
+
+    const state = deriveScoreboard(m);
+    expect(state.flagRows).toEqual([{ team: 1, strokes: 2, text: "FLAGS +2 STROKES" }]);
+    for (const team of [0, 1]) {
+      const lines =
+        state.rows.filter((r) => r.team === team).reduce((sum, r) => sum + r.strokes, 0) +
+        state.flagRows.filter((r) => r.team === team).reduce((sum, r) => sum + r.strokes, 0);
+      expect(lines).toBe(m.teamStrokes(team));
+    }
+    expect(state.themText).toBe("THEM 3");
+  });
+
   it("lists only the roster it was given", () => {
     const m = new Match({ playerCount: 2, durationS: 10 });
     m.finish();

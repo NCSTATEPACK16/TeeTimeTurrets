@@ -315,6 +315,18 @@ stuck/unstick logic gets them off trees and walls. The flags have to work with t
 
 ---
 
+### 4.1 As built (28 Nov): two changes, found by slice 3's course check
+
+- **The runner goes whether or not an enemy is close.** The team pads are 50 m apart, so from the
+  whistle an enemy is always inside `BOT_ENGAGE_RANGE` near the clubhouse. A runner that stopped to
+  fight never left: it ended 30 s still 99 m from the nearest flag. It now always drives for its
+  flag, and still aims and shoots whatever is in range on the way and on the flag.
+- **One detour.** Team 1's straight line to flag C runs into a clubhouse building, and its runner
+  backed off and back into it for the whole match (96 m short). A flag drive whose line crosses a
+  building now aims at that building's nearest usable corner, 4 m out, then on to the flag
+  (`firstBlocking`, `obstacleCorner` in `lineOfSight.ts`). It is not routing; trees and other
+  ground still need Stage 6.
+
 ## 5. HUD, map and audio, against `docs/UI-SPEC.md`
 
 New and changed rows for UI-SPEC §2, added in the slice that builds each:

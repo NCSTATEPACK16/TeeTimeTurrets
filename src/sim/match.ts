@@ -16,6 +16,10 @@ import { MAX_PLAYERS, NO_KILLER, TEAM_COUNT, teamOf } from "./matchConfig";
  * differ by the height of the health bar: at `ARENA_MAX_HEALTH` a cart takes eight of the former
  * per one of the latter.
  *
+ * Since Stage 3.5c a side's strokes are its deaths **plus** the strokes it bled to the other
+ * side's capture flags (`flags.ts`). Those are kept per team (`bleedFor`), because they are no
+ * player's death.
+ *
  * Nothing in this file derives one from the other, and nothing should. A scoreboard that folded
  * them together would be wrong by a factor of the health bar and would look plausible at every
  * value it ever displayed.
@@ -73,6 +77,12 @@ export class Match {
    */
   private readonly points = new Int32Array(MAX_PLAYERS);
   private readonly strokes = new Int32Array(MAX_PLAYERS);
+  /**
+   * Strokes a side has bled to the other side's capture flags (`flags.ts`). Per team, not per
+   * player: a bleed stroke is nobody's death, so it belongs in no player's row and never in
+   * `strokesFor`. `teamStrokes` adds it, which is how it reaches the result.
+   */
+  private readonly bleed = new Int32Array(TEAM_COUNT);
 
   constructor(options: MatchOptions) {
     this.playerCount = options.playerCount;
@@ -150,9 +160,23 @@ export class Match {
     this.points[killer] += 1;
   }
 
-  /** Deaths across one side. The number the match is decided on. */
+  /** Strokes `team` has bled to the other side's flags. */
+  bleedFor(team: number): number {
+    return this.bleed[team] ?? 0;
+  }
+
+  /** One bleed stroke against `team`. */
+  addBleed(team: number): void {
+    if (team >= 0 && team < TEAM_COUNT) this.bleed[team] += 1;
+  }
+
+  /**
+   * Deaths across one side, plus the strokes it bled to the other side's flags. The number the
+   * match is decided on. A scoreboard that lists players' deaths must show the bleed as its own
+   * line, or its rows will not add up to this.
+   */
   teamStrokes(team: number): number {
-    let total = 0;
+    let total = this.bleed[team] ?? 0;
     for (let i = 0; i < this.playerCount; i++) {
       if (teamOf(i) === team) total += this.strokes[i]!;
     }
@@ -214,5 +238,6 @@ export class Match {
     this.over = false;
     this.points.fill(0);
     this.strokes.fill(0);
+    this.bleed.fill(0);
   }
 }

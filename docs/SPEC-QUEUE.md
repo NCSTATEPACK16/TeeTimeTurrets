@@ -31,6 +31,7 @@ In priority order.
 1. **3.5c, mortar and capture flags.** **Specified, answered and planned on 27 Nov**, so it is
    ready to build: `specs/2026-11-27-mortar-and-capture-flags-design.md` (every default
    answered yes) and `plans/2026-11-27-mortar-and-capture-flags-implementation.md`, three slices.
+   **All three slices built together in draft #100, 27-28 Nov, waiting on the play-test.**
    What the spec had to settle:
    - Mortar: how the owner aims it, the telegraph (what the target sees and for how long), the
      barrage's seeded spread, damage per ball, whether it uses the ball pool, and what a bot does

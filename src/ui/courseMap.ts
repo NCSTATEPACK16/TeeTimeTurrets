@@ -57,9 +57,12 @@ export interface MapHole {
 export interface MapMarker {
   readonly x: number;
   readonly z: number;
-  readonly kind: "self" | "ally" | "enemy" | "pickup";
+  readonly kind: "self" | "ally" | "enemy" | "pickup" | "flag" | "mortar";
   /** Radians, for the heading wedge on `self`. Ignored for every other kind. */
   readonly heading: number;
+  /** A `flag`'s letter and who holds it, as the player sees it. Ignored for every other kind. */
+  readonly label?: string;
+  readonly side?: "us" | "them" | "none";
 }
 
 const SURFACE_FILL: Readonly<Record<SurfaceId, string>> = {
@@ -76,6 +79,15 @@ const MARKER_FILL: Readonly<Record<MapMarker["kind"], string>> = {
   ally: "#6fb6ff",
   enemy: "#ff9a5c",
   pickup: "#ffd34d",
+  flag: "#f2f2ee",
+  mortar: "#ff3b2a",
+};
+
+/** A flag's disc by who holds it; the same blue and orange as the ally and enemy dots. */
+const FLAG_FILL: Readonly<Record<"us" | "them" | "none", string>> = {
+  us: "#6fb6ff",
+  them: "#ff9a5c",
+  none: "#f2f2ee",
 };
 
 /** Course-frame metres of breathing room around the fitted content. */
@@ -348,6 +360,30 @@ export class CourseMap {
         ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
         ctx.lineWidth = 1;
         ctx.stroke();
+      } else if (marker.kind === "mortar") {
+        // A barrage on its way: a red ring where it lands, for the seconds it is coming.
+        ctx.strokeStyle = MARKER_FILL.mortar;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 9, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (marker.kind === "flag") {
+        // A lettered disc, bigger than a cart's dot: the flags are what the map is read for.
+        ctx.fillStyle = FLAG_FILL[marker.side ?? "none"];
+        ctx.beginPath();
+        ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = "#1d232a";
+        ctx.font = "bold 10px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(marker.label ?? "", x, y + 0.5);
       } else {
         ctx.beginPath();
         ctx.arc(x, y, marker.kind === "pickup" ? 3 : 4, 0, Math.PI * 2);

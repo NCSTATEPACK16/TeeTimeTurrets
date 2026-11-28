@@ -325,18 +325,23 @@ describe("what a tile costs", () => {
 
 describe("near tiles over a drive around the whole course", () => {
   const { NEAR_TILE_CAP, NEAR_RADIUS_M, NEAR_HYSTERESIS_M } = COURSE_GROUND_TUNING;
+  /** The shipped course, built once for both drives below: each test makes its own ground on it. */
+  let shipped: ReturnType<typeof buildCourseWorld> | null = null;
+  const shippedWorld = () => (shipped ??= buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED));
 
   it(`keeps at most ${NEAR_TILE_CAP} resident, and still refines the ground under the camera`, () => {
-    const world = buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED);
+    const world = shippedWorld();
     const ground = createCourseGround(world.terrain, world.surfaces);
     const { minX, minZ, maxX, maxZ } = world.terrain.bounds;
     const inset = 150;
+    // Three sides of the course, not all four, to keep `npm test` under its cap. Two sides built
+    // 39 tiles, one short of the premise below (more than twice the cap), so three is the least
+    // that still proves eviction happened.
     const corners = [
       [minX + inset, minZ + inset],
       [maxX - inset, minZ + inset],
       [maxX - inset, maxZ - inset],
       [minX + inset, maxZ - inset],
-      [minX + inset, minZ + inset],
     ] as const;
     let most = 0;
     let underCamera = 0;
@@ -371,7 +376,7 @@ describe("near tiles over a drive around the whole course", () => {
    * north-east (the older), and fail this.
    */
   it("evicts the tiles wanted longest ago first", () => {
-    const world = buildCourseWorld(authoredCourse(COURSE_SEED), COURSE_SEED);
+    const world = shippedWorld();
     const ground = createCourseGround(world.terrain, world.surfaces);
     const { minX, minZ, maxX, maxZ } = world.terrain.bounds;
     const northEast = { x: maxX - 150, z: maxZ - 150 };

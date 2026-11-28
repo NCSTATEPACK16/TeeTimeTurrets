@@ -24,6 +24,12 @@ export type Cue =
   | "plate"
   | "dry"
   | "splash"
+  | "flagUp"
+  | "flagDown"
+  | "flagThunk"
+  | "clap"
+  | "whistle"
+  | "mortarReady"
   // Presentation cues, played by the UI rather than mapped from a sim event.
   | "beep"
   | "go"
@@ -52,6 +58,8 @@ export const HEARING_RANGE_M = 90;
 const NEAR_M = 6;
 
 const PLAYER = 0;
+/** The player is rig 0, and rig 0 is always on team 0 (`matchConfig.teamOf`). */
+const PLAYER_TEAM = 0;
 
 /** A fresh object per cue: sounds are rare next to frames, and the caller plays and drops it. */
 export function cueFor(e: SimEvent, listener: Listener): CuePlay | null {
@@ -82,6 +90,19 @@ export function cueFor(e: SimEvent, listener: Listener): CuePlay | null {
       return e.actor === PLAYER ? centre("splash") : placed("splash", e, listener);
     case "respawn":
       return null;
+    // Flags are the whole side's news, so they play from the centre wherever they happen.
+    case "flagCaptured":
+      return centre(e.amount === PLAYER_TEAM ? "flagUp" : "flagDown");
+    case "flagNeutral":
+      // `amount` is the side that lost it: ours going is bad news, theirs going is a thunk.
+      return centre(e.amount === PLAYER_TEAM ? "flagDown" : "flagThunk");
+    case "flagBleed":
+      return { cue: "clap", gain: 0.6, pan: 0 };
+    case "mortarEarned":
+      return e.actor === PLAYER ? centre("mortarReady") : null;
+    case "mortarCalled":
+      // Everyone hears a barrage coming, from where it will land: that is the telegraph.
+      return e.actor === PLAYER ? centre("whistle") : placed("whistle", e, listener);
   }
 }
 

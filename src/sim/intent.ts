@@ -12,6 +12,11 @@ import type { CartIntent } from "./entities/Cart";
 export interface PlayerIntent extends CartIntent {
   /** A club to switch to this tick, or null to keep the equipped one. */
   selectClub: ClubType | null;
+  /**
+   * Call in a held Mulligan Mortar this tick (Stage 3.5c): an edge, not a hold. Nothing happens
+   * without one, and the countdown drops it.
+   */
+  callMortar: boolean;
 }
 
 /** A fresh idle intent: no throttle, no steer, nothing held. */
@@ -24,5 +29,6 @@ export function neutralIntent(): PlayerIntent {
     fire: false,
     cancelCharge: false,
     selectClub: null,
+    callMortar: false,
   };
 }

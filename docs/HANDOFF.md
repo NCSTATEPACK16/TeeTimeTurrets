@@ -1,6 +1,20 @@
 # Handoff — next session
 
-Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md` starts with slice 1, the flags. Root `npm test` is at 57.7 s against the 60 s cap, so each slice trims the slowest file first (the plan's Task 0). Rewrite this file at the end of each session: it is a baton, not a log.
+Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan is `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md`. **All three slices (the flags, the player's mortar, and bots with the golden) are built together in draft #100 (27-28 Nov), stacked at the user's request, and wait on the user's play-test. Do not merge before it.** The golden is now `1822785344` (Linux x64) and hashes both sides' `teamStrokes`. Slice 3 changed two of the spec's §4 rules; see its §4.1. After #100 merges, Stage 4b (prompt C) is next.
+- **Test time:** `main` ran in 63.0 s on a fresh cloud container, over the cap. #100's Task 0 trimmed it to about 58–60 s on the same machine. Timings vary by about ±3 s between runs there, so compare back to back on one machine, never across sessions. The slowest files are `tools/simAllocation.test.mjs` (24 s, and the Rapier-read warm-up is not where its time goes), `src/sim/arenaGolden.test.ts` (15 s), `src/render/courseGround.test.ts` (18 s), `poolPressure` and `botAcceptance`.
+- **Open bug, not 3.5c's:** a headless Turrets match crashes within seconds in a cloud container. Rapier's `world.step` throws "recursive use of an object detected which would lead to unsafe aliasing in rust", then the renderer segfaults. It reproduces on a clean build of `main` (`a9076f9`), from `vite preview` or `vite dev`, and at `quality: "low"`. #98 had a headless match running, so it may be a regression since then. Until it is fixed, nobody can screenshot the arena headless.
+  - **Narrowed on 28 Nov.** The browser is Chrome for Testing 153.0.8010.12 (`/opt/pw-browsers/chromium-1243`, both the full binary and the headless shell).
+    - With the full binary the first error is `RuntimeError: memory access out of bounds` deep in Rapier's WASM, at about tick 300, a second after FORE! when the first shots go out. Every Rapier allocation after it fails (`setLinvel` from `BallPool.applyRollingResistance`).
+    - **The same match is clean without the game around it:**
+      - in Node (V8 12.4), 1,200 ticks with the same course, 7 bots, a 60 s clock and a 4 s countdown;
+      - in that Chrome, a bare page that builds the course and `Sim` and steps 2,400 ticks, both in a tight loop and yielding with a forced `gc()` every tick.
+    - **Ruled out:**
+      - the page's `sim` being replaced or disposed mid-match;
+      - UI or render code calling Rapier (none does);
+      - WASM memory growth semantics (the old buffer detaches as wasm-bindgen expects);
+      - V8 flags `--liftoff-only`, `--no-turbofan` and `--no-maglev` (each still crashes).
+    - Wrapping `sim.step` in the page (a pass-through closure) stops the crash, which points at the JIT or at timing rather than the sim's logic.
+    - Not known: whether a player's Chrome is affected. The user has played the arena without reporting it. Rewrite this file at the end of each session: it is a baton, not a log.
 
 **Also landed (2026-11-25): free drive and the shared title.** The GolfCartSimulator repo moved in as
 `drive/` (served at `/drive/`), and the title is now Clubhouse Sunset with Choose Your Ride (Turrets /

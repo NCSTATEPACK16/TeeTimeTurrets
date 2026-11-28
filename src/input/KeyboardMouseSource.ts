@@ -31,6 +31,7 @@ const SWALLOWED = new Set([
   "Digit2",
   "Digit3",
   "KeyF",
+  "KeyG",
 ]);
 
 export class KeyboardMouseSource implements InputSource {

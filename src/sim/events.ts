@@ -37,6 +37,14 @@ import { NO_KILLER } from "./matchConfig";
  *   it decayed by itself; `amount` is the plates left.
  * - `splash`: `actor`'s cart went into water.
  * - `respawn`: `actor` came back.
+ * - `flagCaptured`: capture flag `target` (0-2, A-C) is now owned by team `amount`. `actor` is
+ *   `NO_RIG`: a flag is taken by whoever is on it, not by one cart. At the cup.
+ * - `flagNeutral`: flag `target` was taken off team `amount` and is nobody's. At the cup.
+ * - `flagBleed`: team `target` lost a stroke to the other side's flags; `amount` is that team's
+ *   bleed total after it. No position.
+ * - `mortarEarned`: `actor` earned a Mulligan Mortar on its streak; `amount` is its kill streak.
+ * - `mortarCalled`: `actor` called one in. x, y, z is the target, the centre of the ring; the
+ *   first ball lands `MORTAR_TELEGRAPH_S` later.
  */
 export type SimEventKind =
   | "shot"
@@ -48,7 +56,12 @@ export type SimEventKind =
   | "shieldGained"
   | "plateBroken"
   | "splash"
-  | "respawn";
+  | "respawn"
+  | "flagCaptured"
+  | "flagNeutral"
+  | "flagBleed"
+  | "mortarEarned"
+  | "mortarCalled";
 
 /** A rig index that is no rig: the killer of a drowned cart, the target of an event without one. */
 export const NO_RIG = NO_KILLER;

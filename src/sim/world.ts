@@ -30,13 +30,28 @@ import {
 import type { PickupState } from "./pickups";
 import { clubhouseObstacles, clubhouseShapes } from "./clubhouse";
 import type { StaticShape } from "./clubhouse";
-import { clearOfObstacles } from "./lineOfSight";
+import { clearOfObstacles, firstBlocking, obstacleCorner } from "./lineOfSight";
 import type { Obstacle } from "./lineOfSight";
-import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
+import { CombatRegistry, STROKE_DAMAGE, processContacts, sameSide } from "./combat";
 import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
+import { CaptureField } from "./flags";
+import {
+  Barrage,
+  MAX_BARRAGES,
+  MORTAR_BALLS,
+  MORTAR_BALL_DAMAGE,
+  MORTAR_CHANNEL,
+  MORTAR_DROP_HEIGHT_M,
+  MORTAR_DROP_SPEED,
+  MORTAR_MAX_RANGE_M,
+  MORTAR_SPLASH_DAMAGE,
+  MORTAR_SPLASH_M,
+  MORTAR_SPREAD_M,
+  MORTAR_STREAK,
+} from "./mortar";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import type { SouthBoundary } from "./courseBarrier";
@@ -50,6 +65,7 @@ import type { ArenaZone } from "./arenaZone";
 import {
   BOT_CHANNEL,
   BOT_FIRE_RANGE,
+  BOT_FLAG_DIVERT_M,
   BOT_HEAL_FRACTION,
   BOT_HEAL_RANGE_M,
   BOT_SKILL_CHANNEL,
@@ -57,6 +73,7 @@ import {
   computeBotIntent,
   createBotMind,
   pickTarget,
+  shouldCallMortar,
 } from "./bot";
 import type { BotMind, BotTarget } from "./bot";
 import { Match } from "./match";
@@ -67,6 +84,8 @@ import {
   NO_KILLER,
   SPAWN_CHANNEL,
   SPAWN_PROTECTION_S,
+  TEAM_COUNT,
+  teamOf,
 } from "./matchConfig";
 import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnPoint } from "./spawn";
@@ -283,7 +302,7 @@ export class Sim {
   private readonly clampScratch = { x: 0, z: 0 };
   private readonly muzzleScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly previewScratch: Vec3 = { x: 0, y: 0, z: 0 };
-  private readonly botTarget = { x: 0, z: 0, dead: false, hidden: false, driveX: 0, driveZ: 0 };
+  private readonly botTarget = { x: 0, z: 0, dead: false, hidden: false, driveX: 0, driveZ: 0, holdAtDrive: false };
   private readonly seekScratch = { x: 0, z: 0 };
   /**
    * Everything that happened, for whatever reacts to it: markers, the kill feed, effects, audio.
@@ -297,6 +316,12 @@ export class Sim {
   private readonly cartTuningScratch: MutableSurfaceTuning = createSurfaceTuning();
   /** The clock and the scoreboard. Its roster is set in `create`, once every rig exists. */
   readonly match: Match;
+  /**
+   * Capture flags A, B and C (Stage 3.5c). Read-only outside the sim, like `match`: the HUD, the
+   * map and the flags on the greens read it, and only `step` changes it. No flags on a ground
+   * with no `captureSites`.
+   */
+  readonly captures: CaptureField;
   /** Seconds left on the match clock. Counts down every `step()` until it hits zero. */
   get matchTimeRemaining(): number {
     return this.match.remaining;
@@ -326,6 +351,19 @@ export class Sim {
    * genuine rerun.
    */
   private spawnRandom: () => number;
+  /**
+   * The Mulligan Mortar's spread (Stage 3.5c): one stream for the match, seeded on its own channel
+   * and rebuilt by `reset`, as `spawnRandom` is. A bot's own stream is never drawn on for a mortar,
+   * so calling one shifts no bot's later decisions.
+   */
+  private mortarRandom: () => number;
+  /** Mortars in the air, in fixed slots. See `mortar.ts`. */
+  private readonly barrages: Barrage[] = Array.from({ length: MAX_BARRAGES }, () => new Barrage());
+  /** The arc a mortar is aimed along, written by `previewTrajectory`. Made once. */
+  private readonly mortarArc: Vec3[] = Array.from({ length: PREVIEW_MAX_POINTS }, () => ({ x: 0, y: 0, z: 0 }));
+  private readonly mortarVelocity: Vec3 = { x: 0, y: -MORTAR_DROP_SPEED, z: 0 };
+  /** `flagToDefend`'s per-flag enemy counts, reused. Three flags at most. */
+  private readonly flagCounts = new Int32Array(3);
   /** See `Sim.carts`. Grown once and reused, per the no-allocation-in-the-tick rule. */
   private readonly cartsScratch: Cart[] = [];
 
@@ -341,7 +379,11 @@ export class Sim {
     this.obstacles = ground.clubhouse === null ? [] : clubhouseObstacles(ground.clubhouse, heightAt);
     this.pickupStates = createPickupStates(ground.pickupSites);
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
+    this.mortarRandom = mulberry32(hashChannel(this.seed, MORTAR_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS, countdownS });
+    this.captures = new CaptureField(
+      ground.captureSites.map((p) => ({ x: p.x, y: heightAt(p.x, p.z), z: p.z })),
+    );
     this.cart = new Cart({ maxHealth: ARENA_MAX_HEALTH, tire });
     this.currentCart = createCartTransform();
     this.previousCart = createCartTransform();
@@ -560,6 +602,122 @@ export class Sim {
     this.match.scoreKill(killer, victim);
     const p = cart.position;
     this.events.push("kill", this.tickCount, killer, victim, 0, p.x, p.y, p.z);
+    // The streak ends with the death, however it came. An enemy kill -- the rule `scoreKill` pays a
+    // point by -- adds to the killer's, and every third earns a mortar if none is held.
+    cart.killStreak = 0;
+    if (killer === NO_KILLER || killer < 0 || killer >= this.rigs.length || teamOf(killer) === teamOf(victim)) return;
+    const by = this.rigs[killer]!.cart;
+    by.killStreak += 1;
+    if (by.killStreak % MORTAR_STREAK === 0 && by.mortars === 0) {
+      by.mortars = 1;
+      const at = by.position;
+      this.events.push("mortarEarned", this.tickCount, killer, NO_RIG, by.killStreak, at.x, at.y, at.z);
+    }
+  }
+
+  /**
+   * A mortar call: where it lands, then a barrage slot with its six impact points drawn now.
+   * The player's lands where the full-charge arc of the equipped club does, along the turret,
+   * capped at `MORTAR_MAX_RANGE_M` and pulled inside the zone. Refused, keeping the mortar, only
+   * when every slot is in use.
+   */
+  private callMortar(rig: CartRig): void {
+    const cart = rig.cart;
+    let slot: Barrage | null = null;
+    for (const b of this.barrages) if (!b.active && slot === null) slot = b;
+    if (slot === null) return;
+    const target = this.mortarTarget(rig, this.clampScratch);
+    cart.mortars = 0;
+    slot.start(rig.index, this.tickCount, target.x, target.z, this.mortarRandom);
+    const y = this.playfield.heightAt(target.x, target.z);
+    this.events.push("mortarCalled", this.tickCount, rig.index, NO_RIG, 0, target.x, y, target.z);
+  }
+
+  private mortarTarget(rig: CartRig, out: { x: number; z: number }): { x: number; z: number } {
+    const cart = rig.cart;
+    const from = cart.position;
+    let dx: number;
+    let dz: number;
+    if (rig.random === null) {
+      // The player aims with the arc: `previewTrajectory` reads rig 0's cart.
+      const n = this.previewTrajectory(1, cart.turretYaw, this.mortarArc);
+      const land = this.mortarArc[Math.max(0, n - 1)]!;
+      dx = land.x - from.x;
+      dz = land.z - from.z;
+    } else {
+      // A bot aims where its target is now, with no lead, so a target that keeps moving escapes
+      // the ring as the player can (spec §3.5). `shouldCallMortar` only calls on a living one.
+      const target = rig.targetIndex === NO_TARGET ? cart : this.rigs[rig.targetIndex]!.cart;
+      dx = target.position.x - from.x;
+      dz = target.position.z - from.z;
+    }
+    const d = Math.hypot(dx, dz);
+    if (d > MORTAR_MAX_RANGE_M) {
+      dx *= MORTAR_MAX_RANGE_M / d;
+      dz *= MORTAR_MAX_RANGE_M / d;
+    }
+    out.x = from.x + dx;
+    out.z = from.z + dz;
+    if (this.zone !== null) this.zone.clampInside(out.x, out.z, out);
+    return out;
+  }
+
+  /**
+   * Drops each live barrage's balls on their ticks. A ball is a pooled body like any shot, so every
+   * rule that makes a shot hurt applies to it unchanged; one the pool cannot supply is skipped.
+   */
+  private stepBarrages(): void {
+    for (let b = 0; b < this.barrages.length; b++) {
+      const barrage = this.barrages[b]!;
+      if (!barrage.active) continue;
+      while (barrage.spawned < MORTAR_BALLS && barrage.dropTick(barrage.spawned) <= this.tickCount) {
+        const i = barrage.spawned++;
+        const pooled = this.ballPool.acquire(barrage.owner, true);
+        if (pooled === null) continue;
+        const x = barrage.impacts[i * 2]!;
+        const z = barrage.impacts[i * 2 + 1]!;
+        const at = this.muzzleScratch;
+        at.x = x;
+        at.y = this.playfield.heightAt(x, z) + MORTAR_DROP_HEIGHT_M;
+        at.z = z;
+        pooled.body.setTranslation(at, true);
+        pooled.body.setRotation(IDENTITY_ROTATION, true);
+        pooled.body.setAngvel(ZERO_VECTOR, true);
+        pooled.body.setLinvel(this.mortarVelocity, true);
+        pooled.body.setGravityScale(1, true);
+        pooled.damage = MORTAR_BALL_DAMAGE;
+        pooled.mortar = true;
+      }
+      if (barrage.spawned >= MORTAR_BALLS) barrage.clear();
+    }
+  }
+
+  /**
+   * One point to every enemy within `MORTAR_SPLASH_M` of each mortar ball that touched down this
+   * step, credited to the caller. The only splash in the game, so it repeats the guards a direct
+   * hit has in `combat.ts`: a dead, protected or same-side cart is untouched, a shield plate takes
+   * it whole, and the cart the ball already hit is spared.
+   */
+  private applySplash(): void {
+    const pool = this.ballPool;
+    const balls = pool.all;
+    for (let t = 0; t < pool.touchdownCount; t++) {
+      const ball = balls[pool.touchdowns[t]!]!;
+      const bx = ball.position[0]!;
+      const by = ball.position[1]!;
+      const bz = ball.position[2]!;
+      for (let i = 0; i < this.rigs.length; i++) {
+        const cart = this.rigs[i]!.cart;
+        if (i === ball.struck || cart.dead || cart.protectedFor > 0 || sameSide(ball.firedBy, i)) continue;
+        if (Math.hypot(cart.position.x - bx, cart.position.z - bz) > MORTAR_SPLASH_M) continue;
+        if (cart.absorbHit()) {
+          this.events.push("plateBroken", this.tickCount, ball.firedBy, i, cart.shield, bx, by, bz);
+          continue;
+        }
+        this.events.push("hit", this.tickCount, ball.firedBy, i, MORTAR_SPLASH_DAMAGE, bx, by, bz);
+        if (applyDamage(cart.health, MORTAR_SPLASH_DAMAGE)) this.killCart(cart, i, ball.firedBy);
+      }
+    }
   }
 
   /**
@@ -625,6 +783,10 @@ export class Sim {
     this.ballPool.sync();
     this.syncCurrentPool();
 
+    // Flags after contacts, so a cart killed this tick holds nothing. Live ticks only: the
+    // countdown takes no flag, and the tick that ends the match bleeds nothing.
+    if (!counting && !this.match.over) this.captures.tick(this.carts, this.match, this.events, this.tickCount);
+
     // The tick that ends the match is still a whole tick -- carts move, balls fly, a hit lands and
     // a kill scores -- and only then does the world freeze. Every previous/current pair collapses
     // onto its current value, so a renderer lerping between them holds still rather than hanging
@@ -652,6 +814,8 @@ export class Sim {
     // pickups keep recharging (against `simTime`). Only the cart is frozen.
     this.simTime += FIXED_DT;
     this.ballPool.step(FIXED_DT, this.simTime);
+    this.applySplash();
+    this.stepBarrages();
 
     for (let i = 0; i < this.rigs.length; i++) {
       const rig = this.rigs[i]!;
@@ -684,6 +848,8 @@ export class Sim {
     if (rig.cart.dead) return IDLE_INTENT;
     rig.targetIndex = pickTarget(rig.index, rig.targetIndex, this.carts);
     const target = this.botTargetScratch(rig.cart, rig.targetIndex);
+    // The same scratch `botTargetScratch` just wrote, through its writable type.
+    this.flagDrive(rig, this.botTarget);
     if (rig.mind !== null) {
       this.findAmmoFor(rig.cart, rig.mind);
       this.findHealFor(rig.cart, rig.mind, target);
@@ -696,7 +862,129 @@ export class Sim {
       rig.intentScratch,
       rig.mind,
     );
+    if (rig.cart.mortars > 0) {
+      rig.intentScratch.callMortar = shouldCallMortar(
+        rig.cart,
+        target,
+        this.sideNear(teamOf(rig.index), target.x, target.z, MORTAR_SPREAD_M),
+        MORTAR_MAX_RANGE_M,
+      );
+    }
     return rig.intentScratch;
+  }
+
+  /**
+   * Capture flags without routing (Stage 3.5c, spec §4). Each side's lowest-index bot -- rig 2 for
+   * team 0, rig 1 for team 1 -- is its flag runner: it drives to the nearest flag its side does not
+   * own, or, when its side owns all three, to the owned flag the most enemies are nearest.
+   *
+   * **It goes whether or not an enemy is close**, which is a change from the spec's "unless an
+   * enemy is within `BOT_ENGAGE_RANGE`". The team pads are 50 m apart, so from the whistle there is
+   * always an enemy inside 40 m of the clubhouse, and a runner that stopped to fight never left it
+   * (measured: 99 m from the nearest flag after 30 s). It still aims and shoots whatever is in
+   * range, on the way and on the flag; only where it drives changed. Every other bot keeps fighting, but
+   * one whose target is dead or more than `BOT_FLAG_DIVERT_M` away takes the nearest flag its side
+   * does not own on the way. Either way the bot holds on the flag (`holdAtDrive`). Straight lines,
+   * as everything a bot drives is: Stage 6's routing replaces this.
+   */
+  private flagDrive(rig: CartRig, t: Sim["botTarget"]): void {
+    t.holdAtDrive = false;
+    const captures = this.captures;
+    if (captures.sites.length === 0) return;
+    const team = teamOf(rig.index);
+    const p = rig.cart.position;
+    const away = t.dead ? Infinity : Math.hypot(t.x - p.x, t.z - p.z);
+    const runner = rig.index >= 1 && rig.index <= TEAM_COUNT;
+    let goal = -1;
+    if (runner) {
+      goal = this.nearestFlag(team, p.x, p.z, false);
+      if (goal < 0) goal = this.flagToDefend(team);
+    } else if (away > BOT_FLAG_DIVERT_M) {
+      goal = this.nearestFlag(team, p.x, p.z, false);
+    }
+    if (goal < 0) return;
+    const site = captures.sites[goal]!;
+    t.driveX = site.x;
+    t.driveZ = site.z;
+    t.holdAtDrive = true;
+    this.detourAround(p.x, p.z, t);
+  }
+
+  /**
+   * The one piece of routing flags need before Stage 6: a clubhouse building in the straight line.
+   * Without it, team 1's runner drove into a barn from its pad and backed off and back into it for
+   * the whole match. When the line to the drive point passes through a building (grown by
+   * `DETOUR_PAD_M`), the bot drives to whichever of that building's grown corners it can reach
+   * directly and that makes the shorter way round; each tick it asks again, so it heads for the
+   * flag the moment the line is clear.
+   */
+  private detourAround(x: number, z: number, t: Sim["botTarget"]): void {
+    const blocking = firstBlocking(this.obstacles, x, z, t.driveX, t.driveZ, CART_HULL.radius);
+    if (blocking < 0) return;
+    const o = this.obstacles[blocking]!;
+    const corner = this.seekScratch;
+    let bestX = 0;
+    let bestZ = 0;
+    let best = Infinity;
+    for (let k = 0; k < 4; k++) {
+      obstacleCorner(o, DETOUR_PAD_M, k, corner);
+      if (firstBlocking(this.obstacles, x, z, corner.x, corner.z, CART_HULL.radius) >= 0) continue;
+      const length = Math.hypot(corner.x - x, corner.z - z) + Math.hypot(t.driveX - corner.x, t.driveZ - corner.z);
+      if (length < best) {
+        best = length;
+        bestX = corner.x;
+        bestZ = corner.z;
+      }
+    }
+    if (best === Infinity) return;
+    t.driveX = bestX;
+    t.driveZ = bestZ;
+  }
+
+  /** The nearest flag `team` owns (`owned`) or does not, or -1 when there is none. */
+  private nearestFlag(team: number, x: number, z: number, owned: boolean): number {
+    const captures = this.captures;
+    let best = -1;
+    let bestD = Infinity;
+    for (let i = 0; i < captures.sites.length; i++) {
+      if ((captures.owner[i] === team) !== owned) continue;
+      const site = captures.sites[i]!;
+      const d = Math.hypot(site.x - x, site.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * With every flag its side's, the one most living enemies stand nearest -- the one they are
+   * likeliest to go for. A tie goes to the lower index, and with no living enemy to the first.
+   */
+  private flagToDefend(team: number): number {
+    const captures = this.captures;
+    const counts = this.flagCounts;
+    counts.fill(0);
+    for (let i = 0; i < this.rigs.length; i++) {
+      const cart = this.rigs[i]!.cart;
+      if (cart.dead || teamOf(i) === team) continue;
+      const nearest = this.nearestFlag(team, cart.position.x, cart.position.z, true);
+      if (nearest >= 0) counts[nearest]! += 1;
+    }
+    let best = 0;
+    for (let i = 1; i < captures.sites.length; i++) if (counts[i]! > counts[best]!) best = i;
+    return best;
+  }
+
+  /** Whether a living cart of `team` stands within `radius` of a point. */
+  private sideNear(team: number, x: number, z: number, radius: number): boolean {
+    for (let i = 0; i < this.rigs.length; i++) {
+      const cart = this.rigs[i]!.cart;
+      if (cart.dead || teamOf(i) !== team) continue;
+      if (Math.hypot(cart.position.x - x, cart.position.z - z) <= radius) return true;
+    }
+    return false;
   }
 
   /**
@@ -831,6 +1119,7 @@ export class Sim {
       cart.shot.fired = false;
       this.resolveShot(rig);
     }
+    if (intent.callMortar && cart.mortars > 0) this.callMortar(rig);
   }
 
   /**
@@ -1123,7 +1412,10 @@ export class Sim {
   reset(): void {
     this.lastShotWasStrike = false;
     this.match.reset();
+    this.captures.reset();
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
+    this.mortarRandom = mulberry32(hashChannel(this.seed, MORTAR_CHANNEL));
+    for (const barrage of this.barrages) barrage.clear();
     this.freePhysics();
     this.buildPhysics();
     resetPickups(this.pickupStates);
@@ -1225,6 +1517,11 @@ export function addStaticColliders(world: RAPIER.World, shapes: readonly StaticS
 const IDLE_INTENT: PlayerIntent = Object.freeze(neutralIntent());
 
 /** Handed to Rapier; read, never kept. */
+/**
+ * How far past a building's footprint a detouring bot aims its corner: the hull's radius and room
+ * to turn, so it clears the wall rather than scraping along it.
+ */
+const DETOUR_PAD_M = 4;
 const IDENTITY_ROTATION = Object.freeze({ x: 0, y: 0, z: 0, w: 1 });
 const ZERO_VECTOR = Object.freeze({ x: 0, y: 0, z: 0 });
 

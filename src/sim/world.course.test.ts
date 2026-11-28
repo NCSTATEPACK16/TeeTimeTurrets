@@ -337,6 +337,38 @@ describe("both teams spawn at the clubhouse", () => {
     expect(nearest).toBeLessThanOrEqual(BOT_ENGAGE_RANGE);
   }, 60000);
 
+  /**
+   * Stage 3.5c's flag runner, on the course as it ships: rig 2 is team 0's lowest-index bot. With
+   * no routing it drives straight lines, and this is the check that a straight line gets it onto
+   * a green at all -- the bot-stands-on-its-tee failure `TEST-AND-SPEC-PITFALLS.md` §1 instance 12
+   * was a pair of green tests that never asked.
+   */
+  it("has each side's flag runner take a capture flag within thirty seconds", async () => {
+    const world = authoredWorld();
+    const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });
+    // Rig 2 is team 0's lowest-index bot and rig 1 is team 1's.
+    const runners = [sim.bots[1]!, sim.bots[0]!];
+    expect([teamOf(2), teamOf(1)]).toEqual([0, 1]);
+    const sites = sim.captures.sites;
+    const nearestSite = (cart: { position: { x: number; z: number } }): number =>
+      Math.min(...sites.map((s) => Math.hypot(s.x - cart.position.x, s.z - cart.position.z)));
+
+    // The premise: neither opens on a flag, and nobody owns one, or a capture proves nothing.
+    expect(sites).toHaveLength(3);
+    for (const runner of runners) expect(nearestSite(runner)).toBeGreaterThan(100);
+    expect([sim.captures.ownedBy(0), sim.captures.ownedBy(1)]).toEqual([0, 0]);
+
+    // Taken, not touched: a capture is 6 s on the flag, so a bot that drove across it would not do.
+    const source = new ScriptedInputSource([{ ticks: 30 * 60, intent: {} }]);
+    const took = [false, false];
+    for (let i = 0; i < 30 * 60 && !(took[0] && took[1]); i++) {
+      sim.step(source.sample());
+      source.endTick();
+      for (const team of [0, 1]) if (sim.captures.ownedBy(team) > 0) took[team] = true;
+    }
+    expect(took).toEqual([true, true]);
+  }, 60000);
+
   it("brings a dead cart back on its own team's side with a fresh load of ammo", async () => {
     const world = authoredWorld();
     const sim = await Sim.create(arenaFromCourse(world), { botCount: ARENA_BOTS });

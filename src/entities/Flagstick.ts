@@ -179,6 +179,11 @@ export class Flagstick extends THREE.Group {
     this.mast.position.y = felled ? PIN_SHAPE.radius : 0;
   }
 
+  /** Recolours the cloth: a capture flag's shows who holds it (`render/captureFlags.ts`). */
+  setPennantColour(colour: number): void {
+    (this.pennant.material as THREE.MeshStandardMaterial).color.setHex(colour);
+  }
+
   /** Call once before this instance is discarded: frees geometries/materials, per AGENTS.md. */
   dispose(): void {
     for (const geometry of this.geometries) geometry.dispose();

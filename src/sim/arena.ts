@@ -11,6 +11,7 @@ import type { SpawnHole } from "./spawn";
 import { createSurfaces } from "./surfaces";
 import { createTerrain } from "./terrain";
 import { buildArenaZone } from "./arenaZone";
+import { toCourseFrame } from "./courseGeometry";
 import type { ArenaZone } from "./arenaZone";
 
 /**
@@ -45,6 +46,12 @@ export interface ArenaGround {
    */
   readonly zone: ArenaZone | null;
   /**
+   * Where capture flags A, B and C stand (Stage 3.5c, `flags.ts`): the cups of
+   * `CAPTURE_HOLE_INDICES`, in that order, in the course frame. Empty on a ground with none -- a
+   * single-hole or mini-course test arena -- where no flag is fought over.
+   */
+  readonly captureSites: readonly Vec2[];
+  /**
    * Root of every seeded stream in the match -- each bot's and the respawn draw. Taken from the
    * ground rather than the clock, per the AGENTS.md no-`Math.random`-in-the-sim rule, so the same
    * ground replays the same match.
@@ -53,6 +60,29 @@ export interface ArenaGround {
 }
 
 const zones = new WeakMap<CourseWorld, ArenaZone>();
+
+/**
+ * The greens capture flags A, B and C stand on, zero-based: holes 14, 10 and 9. Measured on the
+ * shipped course (`docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` §1):
+ * 14's cup is 128 m from team 0's pad and 9's is 120 m from team 1's, so each side has a near flag,
+ * and 10's, 268 m out, is the one to fight over. It is 31 m nearer team 0's pad; hole 15 would be
+ * fair to the metre but stands 480 m out. The user took 10 on 27 Nov 2026.
+ */
+export const CAPTURE_HOLE_INDICES: readonly number[] = [13, 9, 8];
+
+/**
+ * The shipped course's capture sites, A to C: each `CAPTURE_HOLE_INDICES` hole's cup in the course
+ * frame. Derived from the holes, not authored, so a moved hole moves its flag.
+ */
+export function captureSites(world: CourseWorld): Vec2[] {
+  return CAPTURE_HOLE_INDICES.map((index) => {
+    const hole = world.holes.find((h) => h.spec.index === index);
+    if (!hole) throw new Error(`captureSites: the course has no hole ${index + 1}`);
+    const at = { x: 0, z: 0 };
+    toCourseFrame(hole.placement, hole.spec.cup.x, hole.spec.cup.z, at);
+    return at;
+  });
+}
 
 /**
  * The shipped course's zone, built once per `CourseWorld` and shared. `main.ts` reads it to place
@@ -109,6 +139,7 @@ export function arenaFromCourse(
     clubhouse: AUTHORED_CLUBHOUSE,
     pickupSites,
     zone: courseArenaZone(world),
+    captureSites: captureSites(world),
     seed: first.spec.seed,
   };
 }
@@ -134,6 +165,7 @@ export function arenaFromHole(spec: HoleSpec): ArenaGround {
     // stand on it.
     pickupSites: [{ x: spec.tee.x + 10, z: spec.tee.z, type: "bucket", depot: false }],
     zone: null,
+    captureSites: [],
     seed: spec.seed,
   };
 }

@@ -148,3 +148,73 @@ export function hasLineOfSight(
   }
   return true;
 }
+
+/**
+ * The first obstacle the flat segment (ax, az) -> (bx, bz) passes through, each rectangle grown by
+ * `pad` metres on every side, or -1 when it passes through none. Heights are ignored: this is "can
+ * a cart drive straight there", not "can it see there". Allocation-free.
+ */
+export function firstBlocking(
+  obstacles: readonly Obstacle[],
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  pad: number,
+): number {
+  for (let i = 0; i < obstacles.length; i++) {
+    const o = obstacles[i]!;
+    const hx = o.halfX + pad;
+    const hz = o.halfZ + pad;
+    const px = ax - o.x;
+    const pz = az - o.z;
+    const qx = bx - o.x;
+    const qz = bz - o.z;
+    // Into the rectangle's frame, as `clearOfObstacles` does.
+    const lax = px * o.cos - pz * o.sin;
+    const laz = px * o.sin + pz * o.cos;
+    const ldx = qx * o.cos - qz * o.sin - lax;
+    const ldz = qx * o.sin + qz * o.cos - laz;
+    if (clipSlab(lax, ldx, hx) && clipSlab(laz, ldz, hz) && clipBoth(lax, ldx, hx, laz, ldz, hz)) return i;
+  }
+  return -1;
+}
+
+/** Whether the segment p + t d, t in 0..1, has any t inside -h..h on one axis. */
+function clipSlab(p: number, d: number, h: number): boolean {
+  if (Math.abs(d) < 1e-12) return p >= -h && p <= h;
+  const a = (-h - p) / d;
+  const b = (h - p) / d;
+  return Math.max(Math.min(a, b), 0) <= Math.min(Math.max(a, b), 1);
+}
+
+/** Whether the two axes' inside-intervals overlap inside 0..1: the segment enters the rectangle. */
+function clipBoth(px: number, dx: number, hx: number, pz: number, dz: number, hz: number): boolean {
+  let t0 = 0;
+  let t1 = 1;
+  if (Math.abs(dx) >= 1e-12) {
+    const a = (-hx - px) / dx;
+    const b = (hx - px) / dx;
+    t0 = Math.max(t0, Math.min(a, b));
+    t1 = Math.min(t1, Math.max(a, b));
+  }
+  if (Math.abs(dz) >= 1e-12) {
+    const a = (-hz - pz) / dz;
+    const b = (hz - pz) / dz;
+    t0 = Math.max(t0, Math.min(a, b));
+    t1 = Math.min(t1, Math.max(a, b));
+  }
+  return t0 <= t1;
+}
+
+/**
+ * Corner `k` (0..3) of obstacle `o` grown by `pad`, in world x/z, written into `out`: the way
+ * round a building for a cart that cannot drive through it.
+ */
+export function obstacleCorner(o: Obstacle, pad: number, k: number, out: { x: number; z: number }): void {
+  const lx = (k & 1 ? 1 : -1) * (o.halfX + pad);
+  const lz = (k & 2 ? 1 : -1) * (o.halfZ + pad);
+  // Back out of the rectangle's frame: the transpose of the rotation `firstBlocking` applies.
+  out.x = o.x + lx * o.cos + lz * o.sin;
+  out.z = o.z - lx * o.sin + lz * o.cos;
+}
