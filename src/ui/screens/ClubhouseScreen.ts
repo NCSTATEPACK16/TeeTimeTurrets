@@ -56,7 +56,7 @@ export class ClubhouseScreen implements Screen {
   enter(): void {
     const { root, renderer } = this.options;
 
-    this.showroom = createShowroom(this.club, this.state.previewColors);
+    this.showroom = createShowroom(this.club, this.state.previewColors, renderer);
     const size = renderer.getSize(new THREE.Vector2());
     this.showroom.resize(size.x, size.y);
 
