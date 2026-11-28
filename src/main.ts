@@ -21,6 +21,7 @@ import { matchSecondsFromQuery } from "./app/matchQuery";
 import { QUALITY_PRESETS, readDeviceSignals, resolveQuality } from "./render/quality";
 import type { QualityName } from "./render/quality";
 import { applyQuality, configureRenderer } from "./render/renderer";
+import { PadMenuNavigator } from "./ui/padMenuNavigator";
 
 type MatchPath = typeof import("./app/matchPath");
 
@@ -297,6 +298,8 @@ async function main(): Promise<void> {
 
   screens.show("title");
   loop.start();
+  // A gamepad on every menu (Stage 4b). Inert while a match is in play: nothing is focusable then.
+  new PadMenuNavigator().start();
 }
 
 main().catch((err: unknown) => {

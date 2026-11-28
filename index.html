@@ -73,6 +73,17 @@
       }
       #hud-status { min-height: 1.2em; color: var(--status); margin-top: 5px; }
       #hud-timer { font-variant-numeric: tabular-nums; }
+      .glyphs-pad { display: none; }
+      body[data-input="pad"] .glyphs-pad { display: inline; }
+      body[data-input="pad"] .glyphs-keys { display: none; }
+      /* The pad's focus ring (Stage 4b): plain :focus, because a pad press is not a key press and
+         some browsers will not show :focus-visible for it. */
+      body[data-input="pad"] button:focus,
+      body[data-input="pad"] input:focus,
+      body[data-input="pad"] select:focus {
+        outline: 4px solid #ffcf3a;
+        outline-offset: 3px;
+      }
       #hud-flags { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
       #hud-flags:empty { display: none; }
       .hud-flag {
@@ -622,8 +633,11 @@
       <!-- Empty by design, like the score spans above. -->
       <div id="hud-zone-warning"></div>
       <div id="hud-help">
-        WASD drive &middot; F or Space fire &middot; mouse/Q/E aim &middot; 1-2-3 club &middot; G mortar &middot; Shift brake &middot;
-        hold to charge, release to shoot
+        <!-- Glyphs follow the last input used (Stage 4b): padMenuNavigator.ts sets body[data-input]. -->
+        <span class="glyphs-keys">WASD drive &middot; F or Space fire &middot; mouse/Q/E aim &middot; 1-2-3 club &middot; G mortar &middot; Shift brake &middot;
+        hold to charge, release to shoot</span>
+        <span class="glyphs-pad">Left stick drive &middot; R2 fire &middot; right stick aim &middot; D-pad / L1 R1 club &middot; X mortar &middot; L2 brake &middot;
+        B cancel &middot; Start pause</span>
       </div>
     </div>
     <div id="event-banner" hidden>

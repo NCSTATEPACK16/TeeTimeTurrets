@@ -666,7 +666,7 @@ export class MatchScreen implements Screen {
   }
 
   private buildControlsCard(): HTMLElement {
-    const go = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "GOT IT" });
+    const go = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "GOT IT", attrs: { "data-pad-back": "" } });
     // Only dismisses. Clicking the canvas takes the pointer lock, as it always has, and that click
     // is guarded against firing (KeyboardMouseSource), so the player's first aim is not a shot.
     go.addEventListener("click", () => {

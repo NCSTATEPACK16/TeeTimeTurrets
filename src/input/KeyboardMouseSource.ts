@@ -45,7 +45,9 @@ export class KeyboardMouseSource implements InputSource {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (SWALLOWED.has(event.code)) event.preventDefault();
-    if (event.repeat) return;
+    // A script's key is not a key held: the pad's menu navigator sends Esc as a keydown with no
+    // keyup to follow, and counting it would hold Esc down forever.
+    if (event.repeat || !event.isTrusted) return;
     this.keysDown.add(event.code);
     this.pressedThisTick.add(event.code);
   };

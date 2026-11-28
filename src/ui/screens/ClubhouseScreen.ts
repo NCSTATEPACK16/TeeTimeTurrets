@@ -177,7 +177,7 @@ export class ClubhouseScreen implements Screen {
   }
 
   private buildActions(): HTMLElement {
-    const back = el("button", { class: "btn", type: "button", text: "BACK" });
+    const back = el("button", { class: "btn", type: "button", text: "BACK", attrs: { "data-pad-back": "" } });
     this.teardown.push(
       on(back, "click", () => {
         // BACK discards the preview rather than silently keeping it: a player who backs out of

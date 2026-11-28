@@ -17,7 +17,7 @@ export class SettingsScreen implements Screen {
   constructor(private readonly options: SettingsScreenOptions) {}
 
   enter(): void {
-    const back = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "BACK" });
+    const back = el("button", { class: "btn btn--primary btn--wide", type: "button", text: "BACK", attrs: { "data-pad-back": "" } });
     back.addEventListener("click", () => this.options.onBack());
     this.container = el("div", { class: "screen screen--scrim settings-screen" }, [
       el("div", { class: "panel settings-screen__panel" }, [
