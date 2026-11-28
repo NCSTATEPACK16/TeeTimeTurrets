@@ -10,11 +10,11 @@ What the plan asked for, and where each item lands:
 | Plan item | Here |
 |---|---|
 | `sim/scoring.ts`: score, coins, XP and `xpToNext` | §2, slice 1 |
-| `app/profile.ts`: localStorage, versioned, schema-guarded, a new profile at 0 coins | §3, slice 2 |
-| It fixes the owned-items bug in `clubhouseState.ts` | §3.3, slice 2 |
-| `UPGRADES`: armour, ammo capacity, reload, tyres, the driver at level 2; `applyLoadout` is the only place stats change | §4, slice 3 |
+| `app/profile.ts`: localStorage, versioned, schema-guarded, a new profile at 0 coins | §3, slice 3 |
+| It fixes the owned-items bug in `clubhouseState.ts` | §3.3, slice 3 |
+| `UPGRADES`: armour, ammo capacity, reload, tyres, the driver at level 2; `applyLoadout` is the only place stats change | §4, slice 2 (the clubhouse column, slice 3) |
 | Loadouts for every rig, so paint and skin render in the match | §5, slice 4 |
-| `MatchResultsScreen` after each match | §3.4, slice 2 |
+| `MatchResultsScreen` after each match | §3.4, slice 3 |
 | BACKLOG #49: no chassis paints in team hues | §5.2, slice 4 |
 
 ---
@@ -82,7 +82,7 @@ Both functions are pure, so the results screen and the test share them.
 The tally only counts. It changes nothing in the match, so the golden is unchanged in every slice
 (§4.4).
 
-## 3. The profile (slice 2)
+## 3. The profile (slice 3)
 
 ### 3.1 What it holds
 
@@ -128,7 +128,7 @@ back on CONFIRM. The free options are always owned; nothing else is assumed.
 - PLAY AGAIN replays the match (`Sim.reset`) and earns again at its end; the profile is credited
   once per finished match, never on entering the screen twice.
 
-## 4. Upgrades (slice 3)
+## 4. Upgrades (slice 2; the clubhouse column in slice 3)
 
 ### 4.1 The table
 
@@ -204,10 +204,10 @@ One file per slice, each under 15 s, each seen to fail when the code it checks i
   - A real `Sim` (with no course: the flat test arena, so no grid bake): the player's ball kills a
     bot a teammate damaged 2 s earlier. The teammate gets one assist, the player one kill, and
     damage matches the `hit` events in the log. An assist from 6 s back does not count.
-- **Slice 2, `src/app/profile.test.ts`.**
+- **Slice 3, `src/app/profile.test.ts`.**
   - Round trip; a corrupt blob, an unknown version and a wrongly typed field each fall back.
   - The owned-items bug: buy two paints in two clubhouse visits; both are still owned on the third.
-- **Slice 3, `src/sim/upgrades.test.ts`.** `kitFor` on each tier. A cart with the ammo tier holds
+- **Slice 2, `src/sim/upgrades.test.ts`.** `kitFor` on each tier. A cart with the ammo tier holds
   160 balls and not 161; reload ×0.8 fires again sooner; a locked driver ignores `selectClub`.
   The default kit equals a cart built with no kit.
 - **Slice 4, in `src/sim/loadout.test.ts`.** `botLoadout` is stable for an index and seed and
@@ -235,10 +235,27 @@ slice 1, trim the slowest file, measured on `main` and on the branch back to bac
 
 ## 9. Slices
 
+Built in this order. The upgrades' sim half came before the profile, because the profile stores
+upgrade tiers.
+
 1. **Scoring:** `MatchTally`, the formulas and `scoring.test.ts`. Golden unchanged.
-2. **Profile and results:** `profile.ts`, the clubhouse on the profile, earnings on the results
-   screen, `?coins=N`. Play-test stop.
-3. **Upgrades:** `upgrades.ts`, `applyLoadout`, the `Cart` fields, the driver lock, the clubhouse
-   column. Golden unchanged. Play-test stop.
+2. **Upgrades in the sim:** `upgrades.ts`, `applyLoadout`, the `Cart` fields, the driver lock and
+   `SimOptions.kit`. Golden unchanged.
+3. **Profile, shop and results:** `profile.ts`, the clubhouse on the profile with its upgrades
+   column, earnings on the results screen, `?coins=N`. Play-test stop.
 4. **Every rig's loadout:** paint and skin in the match, bot loadouts, the paint retune. Play-test
    stop.
+
+## 10. Built
+
+- **Task 0.** `tools/simAllocation.test.mjs` bakes the course once for both its describes: 27.4 s
+  to 18.1 s alone. The full suite ran 75.0 s on `main` and 69.8 s on the branch in one cloud
+  container, still over the cap there (`docs/HANDOFF.md`).
+- **After a level-up, PLAY AGAIN starts a new match** rather than resetting the old one, because a
+  kit is applied as a `Sim` is built and the level-up may have unlocked the driver.
+- **The player starts on the putter**, as before (`Cart`'s default club). The driver lock only
+  stops selecting it, so a locked driver changes no starting club.
+- **Not seen headless:** a Turrets match still crashes in this container's Chrome (`HANDOFF.md`),
+  so the results screen's earnings and the loadouts in the match are for the play-test. The
+  clubhouse was checked headless: the upgrades column, the level chip, the driver card's lock and
+  a purchase saved to localStorage.
