@@ -212,8 +212,8 @@ export class Flagstick extends THREE.Group {
 /**
  * Puts the drawn pin where the simulation says the hole is.
  *
- * Exported so `backdrop.ts` and the course dressing place a pin identically, from the hole's own
- * `terrain.cupPosition` rather than a copy of it.
+ * From the hole's own `terrain.cupPosition` rather than a copy of it. Its one caller, the title
+ * backdrop, went in Stage 5; kept for a one-hole view that needs a pin.
  */
 export function placeFlagstick(flagstick: Flagstick, terrain: Terrain): void {
   const cup = terrain.cupPosition;

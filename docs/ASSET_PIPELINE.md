@@ -1144,7 +1144,8 @@ border, or any 3/4 or perspective "hero" view.
 
    **An eighth prop followed, and it is the first with `length`.** `boardwalk_section` is one 2 m
    module of the causeway's deck rather than a whole crossing, because a crossing spans whatever its
-   pond is wide and no authored asset can be that long in advance. `src/render/props.ts` tiles it
+   pond is wide and no authored asset can be that long in advance. `src/render/props.ts` (removed in
+   Stage 5 with the title backdrop that was its last caller) tiled it
    along the segment `deriveCrossings` returns and `mergeGraphInstances` collapses the run to **one
    draw call**, which is why the tiling did not cost the twenty-prop budget: a thirty-metre crossing
    is one object, not fifteen. That helper is `mergeGraph` split at the seam rather than a second
