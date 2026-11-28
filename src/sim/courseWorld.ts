@@ -2,14 +2,17 @@ import type { Course } from "./course";
 import { bakeCourseGrids } from "./courseGrids";
 import type { CourseGrids } from "./courseGrids";
 import { AUTHORED_HOLES } from "./authoredCourse";
-import { AUTHORED_SOUTH_BOUNDARY, authoredCourseLayout } from "./authoredLayout";
+import { AUTHORED_CLUBHOUSE, AUTHORED_SOUTH_BOUNDARY, authoredCourseLayout } from "./authoredLayout";
+import { pathHoles, planCartPaths, stampCartPaths } from "./cartPaths";
+import type { CartPath } from "./cartPaths";
+import { clubhouseObstacles } from "./clubhouse";
 import type { SouthBoundary } from "./courseBarrier";
 import { createCourseSurfaces } from "./courseSurfaces";
 import type { CourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
 import type { CourseTerrain, PlacedHole } from "./courseTerrain";
 import { mulberry32 } from "./rng";
-import { createSurfaces } from "./surfaces";
+import { SURFACES, SURFACE_CODES, SurfaceId, createSurfaces } from "./surfaces";
 import { createTerrain } from "./terrain";
 
 /**
@@ -47,6 +50,11 @@ export interface CourseWorld {
    * however many matches it plays, and that a test which never builds a `Sim` never pays for.
    */
   readonly grids: CourseGrids;
+  /**
+   * The cart paths (`cartPaths.ts`, Stage 5), planned over the grids when they are baked and painted
+   * into them as `SurfaceId.Path`. Reading either bakes both: there is no grid without its paths.
+   */
+  readonly cartPaths: readonly CartPath[];
 }
 
 /**
@@ -93,14 +101,33 @@ export function buildCourseWorld(course: Course, seed: number): CourseWorld {
     holes.map((hole) => createSurfaces(hole.spec, hole.terrain)),
   );
   let grids: CourseGrids | null = null;
+  let cartPaths: CartPath[] = [];
+  const bake = (): CourseGrids => {
+    if (grids !== null) return grids;
+    const baked = bakeCourseGrids(terrain, surfaces);
+    // Planned on the grids before the paths are on them, then painted in.
+    cartPaths = planCartPaths({
+      ground: { bounds: baked.bounds, heightAt: baked.heightAt, surfaceAt: baked.surfaces.surfaceAt },
+      holes: pathHoles(holes),
+      clubhouse: AUTHORED_CLUBHOUSE,
+      southBoundary: AUTHORED_SOUTH_BOUNDARY,
+      obstacles: clubhouseObstacles(AUTHORED_CLUBHOUSE, baked.heightAt),
+    });
+    stampCartPaths(baked, cartPaths, SURFACE_CODES, SURFACES[SurfaceId.Path]);
+    grids = baked;
+    return grids;
+  };
   return {
     terrain,
     surfaces,
     holes,
     southBoundary: AUTHORED_SOUTH_BOUNDARY,
     get grids() {
-      grids ??= bakeCourseGrids(terrain, surfaces);
-      return grids;
+      return bake();
+    },
+    get cartPaths() {
+      bake();
+      return cartPaths;
     },
   };
 }

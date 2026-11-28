@@ -11,6 +11,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
  */
 export { Sim } from "../sim/world";
 export { buildCourseWorld } from "../sim/courseWorld";
+export { rasterizeCartPaths, withCartPaths } from "../sim/cartPaths";
 export { arenaFromCourse, captureSites, courseArenaZone, coursePickupSites } from "../sim/arena";
 export { AUTHORED_CLUBHOUSE } from "../sim/authoredLayout";
 export { MatchScreen } from "../ui/screens/MatchScreen";

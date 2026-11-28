@@ -24,6 +24,7 @@ import type { CartTransform, Vec3 } from "../sim/world";
 import type { CourseTerrain } from "../sim/courseTerrain";
 import { PARKLAND_SKY, Sky } from "./sky";
 import { createHorizon, type Horizon } from "./horizon";
+import type { CartPath } from "../sim/cartPaths";
 import { createSunShadows, type SunShadows } from "./shadows";
 import { createPostChain, type PostChain } from "./post";
 import { QUALITY_PRESETS, type QualityPreset } from "./quality";
@@ -35,7 +36,7 @@ import type { Treeline } from "./treeline";
 import type { SouthBoundary } from "../sim/courseBarrier";
 import type { CourseGround } from "./courseGround";
 import { createWaterSurface, type WaterSurface } from "./water";
-import { setTreeWindTime } from "./Trees";
+import { clearTreeSightLine, setTreeSightLine, setTreeWindTime } from "./Trees";
 import { placeCattails } from "./cattailPlacement";
 import { createCattails, type Cattails } from "./cattails";
 import { createGrassCarpet, type GrassCarpet } from "./grassCarpet";
@@ -89,6 +90,11 @@ export interface ArenaSource {
   readonly zone?: readonly GroundVec2[];
   /** Capture flags A-C (`sim/arena.ts` `captureSites`), the sim's own list. None drawn when absent. */
   readonly captureSites?: readonly GroundVec2[];
+  /**
+   * The cart paths (`sim/cartPaths.ts`), the polylines the sim painted into its grids. None drawn
+   * when absent. `surfaces` should then be `withCartPaths`, so the woods and tufts keep off them.
+   */
+  readonly cartPaths?: readonly CartPath[];
 }
 
 /**
@@ -255,6 +261,7 @@ export class RenderScene {
     this.treeline = dressing.treeline;
     for (const mesh of this.treeline?.meshes ?? []) this.scene.add(mesh);
     for (const mesh of dressing.woods.meshes) this.scene.add(mesh);
+    if (dressing.cartPaths) this.scene.add(dressing.cartPaths.mesh);
     // The woods are the course's and outlive this match, so the cap is set per match: a preset
     // changed between matches takes effect at the next PLAY.
     dressing.woods.setCap(quality.treeCap);
@@ -439,6 +446,9 @@ export class RenderScene {
     setTreeWindTime(view.elapsedSeconds);
 
     this.frameChase(view);
+    // After the camera has moved, so the trees cleared are the ones in front of this frame's view.
+    if (view.playerDead) clearTreeSightLine();
+    else setTreeSightLine(this.camera.position.x, this.camera.position.z, view.cart.position.x, view.cart.position.z);
     this.battle.update(view.frameSeconds, this.camera.position.x, this.camera.position.z, view.cart.turretYaw);
 
     // After `frameChase`, so the tiles refine toward where the camera now is rather than where it
@@ -461,6 +471,8 @@ export class RenderScene {
    */
   dispose(): void {
     window.removeEventListener("resize", this.resizeListener);
+    // The sight line is shared by every tree material; the title's woods draw whole.
+    clearTreeSightLine();
     this.cart.dispose();
     for (const bot of this.botCarts) bot.dispose();
     this.pooledBalls.dispose();

@@ -17,7 +17,10 @@ import { DECK_HALF_WIDTH, DECK_SHOULDER_RUN, deriveCrossings } from "./crossing"
 import { CART_MIN_SLOPE_SLIDE_DEG } from "./world";
 
 const SPEC = fixedHoleSpec();
-const terrain = createTerrain(SPEC);
+// The carved ground before its built structures -- the raised tee box (`teeBox.ts`) -- which is
+// the ground `validateHole` judges and what these grade and camber checks are about.
+// `teeBox.test.ts` covers the box.
+const terrain = createTerrain(SPEC, { crossings: false });
 
 /** Central-difference gradient magnitude, in the same rise-over-run units as the budgets. */
 function gradientAt(t: Terrain, x: number, z: number, h = 0.5): number {
@@ -267,7 +270,7 @@ describe("hazard shaping", () => {
   it("leaves a hazard-free hole's terrain untouched", () => {
     // The regression guard for the eleven briefs that ask for nothing: adding hazard support
     // must not move ground on a hole that has none.
-    const before = createTerrain({ ...SPEC, water: [], bunkers: [] });
+    const before = createTerrain({ ...SPEC, water: [], bunkers: [] }, { crossings: false });
     for (let x = -70; x <= 70; x += 11) {
       for (let z = -70; z <= 70; z += 11) {
         expect(before.heightAt(x, z)).toBe(terrain.heightAt(x, z));
@@ -314,7 +317,7 @@ describe("per-hole corridor width", () => {
   it("reproduces today's terrain when every control point carries HALF_WIDTH", () => {
     // The migration guard: a hole authored at the old global width must be unchanged, so a
     // corridor-width change is visible only where somebody asked for one.
-    const uniform = createTerrain({ ...SPEC, corridor: [HALF_WIDTH, HALF_WIDTH, HALF_WIDTH] });
+    const uniform = createTerrain({ ...SPEC, corridor: [HALF_WIDTH, HALF_WIDTH, HALF_WIDTH] }, { crossings: false });
     for (let x = -70; x <= 70; x += 9) {
       for (let z = -70; z <= 70; z += 9) {
         expect(uniform.heightAt(x, z)).toBe(terrain.heightAt(x, z));

@@ -52,19 +52,6 @@ export const PARKLAND_SKY: SkyLook = {
   cloudDrift: 3,
 };
 
-/** The title backdrop is the same course late in the afternoon: lower, warmer sun. */
-export const GOLDEN_HOUR_SKY: SkyLook = {
-  ...PARKLAND_SKY,
-  zenith: 0x4a86d4,
-  horizon: 0xf3dcc0,
-  below: 0xc9cfae,
-  sunColour: 0xffd9a0,
-  sunElevationDeg: 24,
-  sunAzimuthDeg: 235,
-  sunGlow: 0.6,
-  cloudCover: 0.35,
-};
-
 export interface Rgb {
   r: number;
   g: number;

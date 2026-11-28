@@ -9,6 +9,7 @@ import { BLEND_WIDTH, GREEN_BLEND, halfWidthAt, smoothstep01 } from "./terrain";
 import type { Terrain } from "./terrain";
 import { SurfaceId } from "./surfaceId";
 import { SURFACE_MOBILITY, surfaceSpeedScale } from "./mobility";
+import { TEE_BOX_EDGE_M, onTeeBox, teeBoxDistance, teeBoxOf } from "./teeBox";
 
 /**
  * Which surface is under a world position, and what that surface does to a ball and a cart.
@@ -39,6 +40,8 @@ export const SURFACE_CODES: readonly SurfaceId[] = [
   SurfaceId.Sand,
   SurfaceId.Water,
   SurfaceId.Bridge,
+  SurfaceId.Tee,
+  SurfaceId.Path,
 ];
 
 export interface SurfaceTuning {
@@ -132,7 +135,26 @@ export const SURFACES: Readonly<Record<SurfaceId, SurfaceTuning>> = {
   // Planks, not turf: harder and faster than a green, and no drag on a cart at all. A ball that
   // lands on a deck runs, which is the point -- a crossing you can putt across is a route.
   [SurfaceId.Bridge]: { rolling: 0.04, bounceScale: 0.95, cartSpeedScale: cart(SurfaceId.Bridge), isHazard: false },
+  // Mown a little tighter and firmer than fairway.
+  [SurfaceId.Tee]: { rolling: 0.09, bounceScale: 0.75, cartSpeedScale: cart(SurfaceId.Tee), isHazard: false },
+  // Concrete: a ball runs and hops on it.
+  [SurfaceId.Path]: { rolling: 0.04, bounceScale: 0.85, cartSpeedScale: cart(SurfaceId.Path), isHazard: false },
 };
+
+/**
+ * Surfaces whose tuning is the table's, never a blend: their edges are hard. Sand, water and the
+ * bridge for the reasons in `tuningAt`; the tee box and the path because they are built, and a
+ * class that says "path" must mean the path's speed (`courseGrids.ts` reads this too).
+ */
+export function isHardSurface(id: SurfaceId): boolean {
+  return (
+    id === SurfaceId.Sand ||
+    id === SurfaceId.Water ||
+    id === SurfaceId.Bridge ||
+    id === SurfaceId.Tee ||
+    id === SurfaceId.Path
+  );
+}
 
 /**
  * Channel 1 of the spec's seed. Bunker *placement* now happens in `course.ts` against a validated
@@ -168,6 +190,7 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
   // Derived once per hole, after routing. `deriveCrossings` is a pure function of the spec and is
   // not reachable from `validateHole` -- spec D9, and the reason routing does not move.
   const crossings = deriveCrossings(spec);
+  const teeBox = teeBoxOf(spec);
 
   /**
    * 0 on the green, 1 off it.
@@ -179,6 +202,19 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
    */
   function greenWeight(worldX: number, worldZ: number): number {
     return smoothstep01(ellipseEdgeDistance(worldX, worldZ, spec.green) / GREEN_BLEND);
+  }
+
+  /**
+   * `greenWeight` for the renderer's mask: the tee box is mown like a green, so it is drawn as one
+   * -- 0 inside it, rising to 1 at its edge. The soft edge is inside the box, where the class is
+   * `Tee` and the tuning the table's, so outside it the mask is still exactly what `tuningAt`
+   * blends with.
+   */
+  function drawnGreenWeight(worldX: number, worldZ: number): number {
+    const inside = -teeBoxDistance(teeBox, worldX, worldZ);
+    const green = greenWeight(worldX, worldZ);
+    if (inside <= 0) return green;
+    return Math.min(green, 1 - smoothstep01(Math.min(1, inside / TEE_BOX_EDGE_M)));
   }
 
   /**
@@ -226,6 +262,8 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
     if (isOnCauseway(crossings, worldX, worldZ)) return SurfaceId.Bridge;
     if (isWaterAt(spec, worldX, worldZ)) return SurfaceId.Water;
     if (isSand(worldX, worldZ)) return SurfaceId.Sand;
+    // After the hazards: a bunker cut into a tee box is still a bunker.
+    if (onTeeBox(teeBox, worldX, worldZ)) return SurfaceId.Tee;
     return corridorWeight(worldX, worldZ) < 0.5 ? SurfaceId.Fairway : SurfaceId.Rough;
   }
 
@@ -241,7 +279,7 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
    */
   function tuningAt(worldX: number, worldZ: number, out: MutableSurfaceTuning): void {
     const id = surfaceAt(worldX, worldZ);
-    if (id === SurfaceId.Sand || id === SurfaceId.Water || id === SurfaceId.Bridge) {
+    if (isHardSurface(id)) {
       const hard = SURFACES[id];
       out.rolling = hard.rolling;
       out.bounceScale = hard.bounceScale;
@@ -285,7 +323,7 @@ export function createSurfaces(spec: HoleSpec, terrain: Terrain): Surfaces {
     out.sand = id === SurfaceId.Sand ? 1 : 0;
     out.water = id === SurfaceId.Water ? 1 : 0;
     out.bridge = id === SurfaceId.Bridge ? 1 : 0;
-    out.green = greenWeight(worldX, worldZ);
+    out.green = drawnGreenWeight(worldX, worldZ);
     out.corridor = corridorWeight(worldX, worldZ);
   }
 

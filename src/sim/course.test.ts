@@ -268,8 +268,9 @@ describe("validateHole", () => {
         { x: -15, z: 40 },
       ])],
     });
-    // Real terrain, not FLAT: the basin is actually carved here.
-    const rejection = validateHole(spec, createTerrain(spec));
+    // Real terrain, not FLAT: the basin is actually carved here. Without built structures, as
+    // `generateHole` validates it.
+    const rejection = validateHole(spec, createTerrain(spec, { crossings: false }));
     expect(rejection?.check).not.toBe(3);
     expect(rejection?.check).not.toBe(4);
   });
@@ -327,7 +328,8 @@ describe("generateHole", () => {
 
   it("produces a hole that passes its own checks", () => {
     const spec = generateHole(4242, 3);
-    expect(validateHole(spec, createTerrain(spec))).toBeNull();
+    // As `generateHole` judged it: without the causeway and the raised tee box.
+    expect(validateHole(spec, createTerrain(spec, { crossings: false }))).toBeNull();
   });
 
   it("derives par from the corridor rather than copying the intended par", () => {
@@ -493,7 +495,7 @@ describe("generateCourse", () => {
 
   it("every hole passes all seven checks", () => {
     for (const hole of generateCourse(2026, 9).holes) {
-      expect(validateHole(hole, createTerrain(hole))).toBeNull();
+      expect(validateHole(hole, createTerrain(hole, { crossings: false }))).toBeNull();
     }
   });
 

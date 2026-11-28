@@ -8,6 +8,7 @@ import { createNearestPoint, createSpline } from "./spline";
 import { ellipseEdgeDistance, ellipseFalloff, polygonSignedDistance } from "./hazards";
 import type { Ellipse } from "./hazards";
 import type { MutableVec2, NearestPoint, Spline } from "./spline";
+import { TEE_BOX_BEVEL_M, TEE_BOX_RAISE_M, teeBoxDistance, teeBoxOf } from "./teeBox";
 
 /**
  * The height field, as a factory over one HoleSpec.
@@ -201,8 +202,8 @@ export interface TerrainSources {
    *  source -- passing the wrong RNG here silently regenerates every hole. */
   readonly height?: () => number;
   /**
-   * Shape the derived water crossings into the height field. Defaults to true, which is what a
-   * played hole wants.
+   * Shape the built structures into the height field: the derived water crossings, and the raised
+   * tee box (`teeBox.ts`). Defaults to true, which is what a played hole wants.
    *
    * **`generateHole` sets it false, and that is spec D9 made mechanical.** Crossings are derived
    * *after* a hole validates, so `validateHole` must be shown the un-bridged hole: a causeway is a
@@ -248,6 +249,9 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
   // `shapeHazards` pays nothing for it there -- and empty for `validateHole`, always. See
   // `TerrainSources.crossings`.
   const crossings = sources?.crossings === false ? [] : deriveCrossings(spec);
+  // The raised tee box is built like the causeway, after validation, and the same switch keeps it
+  // out of `validateHole`'s sight: its bevel is steeper than the fairway grade budget.
+  const teeBox = sources?.crossings === false ? null : teeBoxOf(spec);
   const noise2D = createNoise2D(random);
 
   const spline = createSpline(spec.control);
@@ -363,6 +367,12 @@ export function createTerrain(spec: HoleSpec, sources?: TerrainSources): Terrain
           : smoothstep01(ellipseFalloff(padX, padZ, pad.ellipse));
       if (weight <= 0) continue;
       height += (pad.height - height) * weight;
+    }
+
+    // The tee box stands on the flattened pad: full height on the box, falling over the bevel.
+    if (teeBox !== null) {
+      const d = teeBoxDistance(teeBox, worldX, worldZ);
+      if (d < TEE_BOX_BEVEL_M) height += TEE_BOX_RAISE_M * (d <= 0 ? 1 : 1 - smoothstep01(d / TEE_BOX_BEVEL_M));
     }
 
     return shapeHazards(worldX, worldZ, height);

@@ -629,7 +629,11 @@ describe("driving into water", () => {
     const half = s.bounds.maxX - 4;
     for (let x = -half; x <= half; x += 2) {
       for (let z = -half; z <= half; z += 2) {
-        if (s.surfaces.surfaceAt(x, z) === SurfaceId.Water) return { x, z };
+        // Water with water 2 m round it, not the first wet point: the scan's first hit is the
+        // pond's exact corner, and the controller's nanometre nudge can carry a cart placed there
+        // back out of the polygon.
+        const wet = (px: number, pz: number): boolean => s.surfaces.surfaceAt(px, pz) === SurfaceId.Water;
+        if (wet(x, z) && wet(x - 2, z) && wet(x + 2, z) && wet(x, z - 2) && wet(x, z + 2)) return { x, z };
       }
     }
     throw new Error(`no water cell found scanning [-${half}, ${half}] step 2 on both axes`);

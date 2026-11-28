@@ -272,7 +272,8 @@ describe("weightsAt", () => {
       for (const offset of [0, 6, 12, 18, 24, 30]) {
         const p = acrossCorridor(t, offset);
         const id = surfaces.surfaceAt(p.x, p.z);
-        if (id === SurfaceId.Sand || id === SurfaceId.Water) continue;
+        // The tee box is hard-edged like sand: its tuning is the table's, not a blend.
+        if (id === SurfaceId.Sand || id === SurfaceId.Water || id === SurfaceId.Tee) continue;
 
         surfaces.weightsAt(p.x, p.z, weights);
         surfaces.tuningAt(p.x, p.z, tuning);

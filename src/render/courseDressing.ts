@@ -1,6 +1,8 @@
 import { createCourseGround } from "./courseGround";
 import type { CourseGround } from "./courseGround";
 import { createTreeline } from "./treeline";
+import { createCartPathStrip } from "./cartPaths";
+import type { CartPathStrip } from "./cartPaths";
 import type { Treeline } from "./treeline";
 import { createCourseTrees } from "./Trees";
 import { buildWoodsDensity, placeCourseWoods } from "./woodsPlacement";
@@ -30,6 +32,8 @@ export interface CourseDressing {
   readonly woods: Trees;
   /** Null on a course with no road. */
   readonly treeline: Treeline | null;
+  /** The cart paths (`cartPaths.ts`); null on a course without any. */
+  readonly cartPaths: CartPathStrip | null;
   /** How wooded the ground is (`woodsPlacement.buildWoodsDensity`): pine straw, and where tufts thin. */
   readonly woodsDensity: WoodsDensity;
   /**
@@ -54,6 +58,7 @@ export function courseDressingFor(arena: ArenaSource): CourseDressing {
       seed: arena.seed ?? 0,
       southBoundary: arena.southBoundary,
       clubhouse: arena.clubhouse,
+      zone: arena.zone,
     };
     // Placed once: the trees are instanced from it and the woods floor is drawn from it.
     const placed = placeCourseWoods(arena.course, arena.surfaces, woodsOptions);
@@ -75,6 +80,7 @@ export function courseDressingFor(arena: ArenaSource): CourseDressing {
         });
       },
       woods: createCourseTrees(arena.course, arena.surfaces, woodsOptions, placed),
+      cartPaths: arena.cartPaths ? createCartPathStrip(arena.cartPaths, (x, z) => arena.course.heightAt(x, z)) : null,
       woodsDensity,
       treeline:
         arena.southBoundary === undefined

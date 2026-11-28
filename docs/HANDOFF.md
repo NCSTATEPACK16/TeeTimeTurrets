@@ -1,6 +1,14 @@
 # Handoff — next session
 
 Rewritten 2026-11-23. Slice C of the Caswell look (pine straw and grass tufts, #92) was play-tested ("looks good") and merged. **Next is slice D, loblolly pines, which needs a local Blender session: prompt A in `docs/NEXT-SESSION-PROMPT.md`.** For a cloud session, **3.5c is ready to build** (27 Nov): the spec `docs/superpowers/specs/2026-11-27-mortar-and-capture-flags-design.md` is answered (every default stands; the mortar is on G, since F already fires), and the plan is `docs/superpowers/plans/2026-11-27-mortar-and-capture-flags-implementation.md`. **All three slices (the flags, the player's mortar, and bots with the golden) are built together in draft #100 (27-28 Nov), stacked at the user's request, and wait on the user's play-test. Do not merge before it.** The golden is now `1822785344` (Linux x64) and hashes both sides' `teamStrokes`. Slice 3 changed two of the spec's §4 rules; see its §4.1. #100 merged on 28 Nov. **Stage 4b is built as draft #101**, waiting on the play-test; see its section below.
+- **Stage 5's remainder is built as a draft PR (28 Nov), waiting on the play-test.** Spec:
+  `docs/superpowers/specs/2026-11-28-stage-5-tees-cart-paths-and-woods-design.md`, every open
+  question built to its default. Raised tee boxes (`sim/teeBox.ts`, `SurfaceId.Tee`); 38 cart paths
+  planned over the baked grids and painted in as `SurfaceId.Path` (`sim/cartPaths.ts`, drawn by
+  `render/cartPaths.ts`); far trees low-poly and a sight-line dither (`render/Trees.ts`); the dead
+  title backdrop and `render/props.ts` deleted. **The golden is now `2080352983`** (Linux x64),
+  re-recorded once for the tee boxes and paths. `render/ground.ts` stays: the gate's `hole-ground`
+  subject uses it.
 - **Test time:** `main` ran in 63.0 s on a fresh cloud container, over the cap. #100's Task 0 trimmed it to about 58–60 s on the same machine. Timings vary by about ±3 s between runs there, so compare back to back on one machine, never across sessions. The slowest files are `tools/simAllocation.test.mjs` (24 s, and the Rapier-read warm-up is not where its time goes), `src/sim/arenaGolden.test.ts` (15 s), `src/render/courseGround.test.ts` (18 s), `poolPressure` and `botAcceptance`.
 - **Open bug, not 3.5c's:** a headless Turrets match crashes within seconds in a cloud container. Rapier's `world.step` throws "recursive use of an object detected which would lead to unsafe aliasing in rust", then the renderer segfaults. It reproduces on a clean build of `main` (`a9076f9`), from `vite preview` or `vite dev`, and at `quality: "low"`. #98 had a headless match running, so it may be a regression since then. Until it is fixed, nobody can screenshot the arena headless.
   - **Narrowed on 28 Nov.** The browser is Chrome for Testing 153.0.8010.12 (`/opt/pw-browsers/chromium-1243`, both the full binary and the headless shell).
@@ -320,9 +328,11 @@ did not change.
 - **A match still can't run headless here** (Rapier's WASM faults in this container's Chrome 153; see the 3.5c notes above). So the
   pad in a match is the user's first look. The menus were checked headless with a stubbed pad.
 
-## Then: Stage 5, the rest (#54–#61)
+## Stage 5, the rest
 
-The contents are in `REVAMP-PLAN.md` § Stage 5.
+Built as a draft PR (28 Nov); see the top of this file. Left from `REVAMP-PLAN.md` § Stage 5:
+cross-quad impostors past 250 m (they need a baked alpha texture per species; the low-poly stand-in
+took most of the saving), and the spawn follow-up below.
 
 - **Environment target:** `restyle-chase-01.jpg`. It shows raised bunker lips, a clear fairway/rough edge, clumps of 3–7 conifers in the rough, rolling hills and AO. Its greyscale (`restyle-chase-grey-01.jpg`) is the value structure to hit. **Don't copy its grey water;** keep shot 03's teal.
 - **#56 trees:** `Trees.ts` still sets `flatShading: true` (line 109). Raise the segment counts and drop the flag.

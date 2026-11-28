@@ -49,6 +49,10 @@ export const SURFACE_MOBILITY: Readonly<Record<SurfaceId, SurfaceMobility>> = {
   [SurfaceId.Water]: { resistance: 3.3 },
   // Planks: no drag on a cart at all.
   [SurfaceId.Bridge]: { resistance: 1.0 },
+  // Mown like a fairway.
+  [SurfaceId.Tee]: { resistance: 1.0 },
+  // Pavement: the one ground faster than fairway. 1.18x on street tyres (Stage 5 spec, §3.2).
+  [SurfaceId.Path]: { resistance: 0.85 },
 };
 
 /** Speed multiplier for a surface of this resistance, before the tyre. */

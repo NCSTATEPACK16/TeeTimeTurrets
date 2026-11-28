@@ -5,7 +5,7 @@ import { buildCourseWorld } from "./courseWorld";
 import type { CourseWorld } from "./courseWorld";
 import type { CourseGrids } from "./courseGrids";
 import { mulberry32 } from "./rng";
-import { SURFACE_CODES, SurfaceId, createSurfaceTuning } from "./surfaces";
+import { SURFACES, SURFACE_CODES, SurfaceId, createSurfaceTuning } from "./surfaces";
 
 /** The seed main.ts ships. */
 const SEED = 2026;
@@ -98,12 +98,25 @@ describe("baked course grids", () => {
     expect(errors[errors.length - 1]).toBeLessThan(MAX_HEIGHT_ERROR_M);
   });
 
-  it("classifies each vertex exactly as the blended surfaces do", () => {
+  /**
+   * The cart paths (`cartPaths.ts`) are painted over the blend after baking, on fairway and rough
+   * only, so a Path vertex is checked for that and every other vertex for the blend exactly.
+   */
+  it("classifies each vertex exactly as the blended surfaces do, cart paths painted over grass", () => {
+    let painted = 0;
     for (const v of randomVertices(2000, 13)) {
-      expect(grids.surfaces.surfaceAt(v.x, v.z), `vertex ${v.col},${v.row}`).toBe(
-        world.surfaces.surfaceAt(v.x, v.z),
-      );
+      const baked = grids.surfaces.surfaceAt(v.x, v.z);
+      const blended = world.surfaces.surfaceAt(v.x, v.z);
+      const where = `vertex ${v.col},${v.row}`;
+      if (baked === SurfaceId.Path) {
+        painted++;
+        expect([SurfaceId.Fairway, SurfaceId.Rough], where).toContain(blended);
+      } else {
+        expect(baked, where).toBe(blended);
+      }
     }
+    // A premise: the paths cover a sliver of the course, never most of it.
+    expect(painted).toBeLessThan(200);
   });
 
   it("agrees with the blended classification at 98% of points between vertices", () => {
@@ -118,9 +131,17 @@ describe("baked course grids", () => {
   it("stores the blended tuning exactly at every vertex, hazard flag included", () => {
     const baked = createSurfaceTuning();
     const blended = createSurfaceTuning();
+    const path = SURFACES[SurfaceId.Path];
     for (const v of randomVertices(2000, 15)) {
       grids.surfaces.tuningAt(v.x, v.z, baked);
       world.surfaces.tuningAt(v.x, v.z, blended);
+      // A painted vertex carries the path's own row (see the classification test above).
+      if (grids.surfaces.surfaceAt(v.x, v.z) === SurfaceId.Path) {
+        blended.rolling = path.rolling;
+        blended.bounceScale = path.bounceScale;
+        blended.cartSpeedScale = path.cartSpeedScale;
+        blended.isHazard = path.isHazard;
+      }
       const where = `vertex ${v.col},${v.row}`;
       expect(baked.rolling, where).toBeCloseTo(blended.rolling, 5);
       expect(baked.bounceScale, where).toBeCloseTo(blended.bounceScale, 5);
