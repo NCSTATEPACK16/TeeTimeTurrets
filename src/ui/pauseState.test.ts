@@ -32,6 +32,15 @@ describe("PauseState", () => {
     expect(p.panel).toBe("pause");
   });
 
+  it("pauses on a lost pointer lock only while keyboard and mouse is the input in use", () => {
+    const pad = new PauseState({ showControls: false });
+    pad.pointerLockLost(false, "pad");
+    expect(pad.paused).toBe(false);
+    const keys = new PauseState({ showControls: false });
+    keys.pointerLockLost(false, "keyboard");
+    expect(keys.panel).toBe("pause");
+  });
+
   it("does not pause a match that is over", () => {
     const p = new PauseState({ showControls: false });
     p.pointerLockLost(true);

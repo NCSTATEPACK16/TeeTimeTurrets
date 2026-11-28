@@ -110,6 +110,14 @@ results with the pad only. On iPhone, play two matches back to back and watch th
 
 ## 6. Open (VERIFY on device)
 
+Status, 28 Nov 2026 (built as draft #101). The table is also in `docs/IOS.md`, which the first device run should fill in.
+Everything below is still open, because nothing has run on a device or a Mac yet:
+- **SN30 Pro in WKWebView:** needs the device. The web build reads only `mapping === "standard"` positions.
+- **Select, Start and Home:** needs the device. Home is never bound.
+- **120 to 60 timing:** needs the device. The governor and its rules are built and tested (`frameGovernor.test.ts`).
+- **`toktx` on the Mac:** needs the Mac. `tools/textures/groundKtx2.mjs` is ready for it.
+
+
 - Does the SN30 Pro appear through `navigator.getGamepads()` in WKWebView, with `mapping === "standard"`?
 - Does iOS deliver Select/Start/Home to the page, or does the OS take them? Home is reserved, so
   never bind it.

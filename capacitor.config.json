@@ -1,0 +1,9 @@
+{
+  "appId": "com.teetimeturrets.app",
+  "appName": "TeeTimeTurrets",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false
+  }
+}

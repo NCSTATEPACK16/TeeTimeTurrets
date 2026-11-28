@@ -39,7 +39,8 @@ describe("the decorative/playable geometry boundary", () => {
   it("keeps mesh files in public/models/ only", () => {
     const meshes = walk(".")
       .filter((f) => MESH_EXTENSIONS.some((e) => f.endsWith(e)))
-      .filter((f) => !f.startsWith("dist/") && !f.startsWith("tools/."));
+      // `dist/` and the iOS shell's copy of it (`cap sync`, gitignored) are build output, not source.
+      .filter((f) => !f.startsWith("dist/") && !f.startsWith("ios/App/App/public/") && !f.startsWith("tools/."));
     for (const mesh of meshes) {
       expect(mesh.replace(/\\/g, "/"), `${mesh} is outside public/models/`).toMatch(
         /^public\/models\//,

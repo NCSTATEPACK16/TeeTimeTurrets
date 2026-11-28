@@ -52,7 +52,7 @@ export class MatchResultsScreen implements Screen {
     const buttons = el("div", { class: "arena-results__actions" });
     const playAgain = el("button", { class: "btn btn--primary", type: "button", text: "PLAY AGAIN" });
     this.teardown.push(on(playAgain, "click", actions.playAgain));
-    const mainMenu = el("button", { class: "btn", type: "button", text: "MAIN MENU" });
+    const mainMenu = el("button", { class: "btn", type: "button", text: "MAIN MENU", attrs: { "data-pad-back": "" } });
     this.teardown.push(on(mainMenu, "click", actions.mainMenu));
     buttons.append(playAgain, mainMenu);
 

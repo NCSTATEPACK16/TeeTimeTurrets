@@ -45,7 +45,9 @@ export class KeyboardMouseSource implements InputSource {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (SWALLOWED.has(event.code)) event.preventDefault();
-    if (event.repeat) return;
+    // A script's key is not a key held: the pad's menu navigator sends Esc as a keydown with no
+    // keyup to follow, and counting it would hold Esc down forever.
+    if (event.repeat || !event.isTrusted) return;
     this.keysDown.add(event.code);
     this.pressedThisTick.add(event.code);
   };
@@ -100,6 +102,14 @@ export class KeyboardMouseSource implements InputSource {
     window.addEventListener("mouseup", this.onMouseUp);
     canvas.addEventListener("contextmenu", this.onContextMenu);
     canvas.addEventListener("click", this.onCanvasClick);
+  }
+
+  /**
+   * True when a key or button is held, or the mouse moved this tick: the keyboard and mouse are
+   * the input in use. `MatchInput` reads it to tell which input the player last touched.
+   */
+  get active(): boolean {
+    return this.keysDown.size > 0 || this.pointerAimDelta !== 0;
   }
 
   sample(): PlayerIntent {

@@ -21,7 +21,7 @@ the existing files there use. Build order is unchanged: 3.5b, 3.5c, 4b, 5, 6, 8,
 
 | Work | Design | What the plan must settle |
 |---|---|---|
-| **4b gamepad, controller navigation, iOS shell** | `specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md` | There is no plan file for it. Split it into slices with a play-test stop each. Say which slices can run in a cloud session and which need a Mac with Xcode (the Capacitor shell and TestFlight do). Carry the two Stage 4 constraints in `HANDOFF.md`: the deadzone must hand the sim a clean 0, and aim assist measures from the turret's yaw. |
+| **4b gamepad, controller navigation, iOS shell** | `specs/2026-11-07-ios-gamepad-and-asset-adoption-design.md` | **Built as draft #101** (28 Nov) straight from prompt C's seven slices, without a separate plan file, at the user's direction. Waits on the play-test and the Mac steps in `docs/IOS.md`. |
 | **Stage 9 refactor** | § Stage 9 | The order of the `world.ts` split, with the golden unchanged after every step. Branch `arena-only` holds 48 unmerged commits of this work (`vec.ts`, `credit.ts`, `snapshot.ts`; merged there as #86), written before Stage 3.5a and 4 changed `world.ts`. Decide whether to rebase it or redo it. |
 
 ## Needs a spec (decisions are still missing)
@@ -31,7 +31,7 @@ In priority order.
 1. **3.5c, mortar and capture flags.** **Specified, answered and planned on 27 Nov**, so it is
    ready to build: `specs/2026-11-27-mortar-and-capture-flags-design.md` (every default
    answered yes) and `plans/2026-11-27-mortar-and-capture-flags-implementation.md`, three slices.
-   **All three slices built together in draft #100, 27-28 Nov, waiting on the play-test.**
+   **Built and merged as #100 (28 Nov).**
    What the spec had to settle:
    - Mortar: how the owner aims it, the telegraph (what the target sees and for how long), the
      barrage's seeded spread, damage per ball, whether it uses the ball pool, and what a bot does

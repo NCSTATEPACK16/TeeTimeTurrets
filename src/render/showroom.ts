@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import { GolfClub } from "../entities/GolfClub";
 import { teamColors } from "./teamColors";
 import { loadDecor } from "./decor";
@@ -41,10 +42,23 @@ export interface Showroom {
  * may ship as a mesh file.
  */
 const BACKDROP_URL = "models/clubhouse.glb";
+/**
+ * The turntable's environment map (Stage 4b, spec §4): one CC0 Poly Haven sky at 1K, for the
+ * reflections and soft fill a three-point rig alone cannot give. The clubhouse only, never the
+ * match. Decorative: if it fails to load, the room is lit as before. `LICENSES.md` records it.
+ */
+const ENVIRONMENT_URL = "hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr";
+/** Under the rig, which still does the shaping: the sky adds, it does not take over. */
+const ENVIRONMENT_INTENSITY = 0.45;
 
-export function createShowroom(initialClub: ClubType, initialColors: SlotColors = {}): Showroom {
+export function createShowroom(
+  initialClub: ClubType,
+  initialColors: SlotColors = {},
+  renderer: THREE.WebGLRenderer | null = null,
+): Showroom {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1f26);
+  let environment: THREE.WebGLRenderTarget | null = null;
 
   const cart = new GolfClub(initialClub, initialColors);
   // The player's own side: team 0 (`teamColors.ts`).
@@ -113,6 +127,27 @@ export function createShowroom(initialClub: ClubType, initialColors: SlotColors 
   // the screen is fully usable before this arrives -- and equally usable if it never does.
   let decor: Decor | null = null;
   let disposed = false;
+  if (renderer !== null) {
+    new HDRLoader().load(
+      ENVIRONMENT_URL,
+      (hdr) => {
+        if (disposed) {
+          hdr.dispose();
+          return;
+        }
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        environment = pmrem.fromEquirectangular(hdr);
+        pmrem.dispose();
+        hdr.dispose();
+        scene.environment = environment.texture;
+        scene.environmentIntensity = ENVIRONMENT_INTENSITY;
+      },
+      undefined,
+      () => {
+        // Decorative: the rig lights the room without it.
+      },
+    );
+  }
   void loadDecor(BACKDROP_URL).then((loaded) => {
     if (!loaded) return;
     if (disposed) {
@@ -151,6 +186,9 @@ export function createShowroom(initialClub: ClubType, initialColors: SlotColors 
       disposed = true;
       decor?.dispose();
       decor = null;
+      environment?.dispose();
+      environment = null;
+      scene.environment = null;
       cart.dispose();
       podiumGeo.dispose();
       podiumMat.dispose();

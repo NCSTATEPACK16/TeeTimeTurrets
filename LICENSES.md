@@ -14,10 +14,12 @@ release rather than at Phase 5.
 | `src/vendor/cot/**` (third-party, from Claude of Tanks) | MIT, notice in `src/vendor/cot/LICENSE` and `NOTICE` | `MIT` |
 | `reference/claude-of-tanks/**` (reading material, not built) | MIT, notice in that folder's `LICENSE` | `MIT` |
 | `art/textures-src/**` and `public/textures/ground/**` (ambientCG / Poly Haven, and files packed from them) | Public domain | `CC0-1.0` |
+| `public/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr` (Poly Haven, "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal, sky edits by Jarod Guest; downloaded 28 Nov 2026; the clubhouse turntable's environment only) | Public domain | `CC0-1.0` |
 | `drive/**` (free drive: its app, course pipeline and docs) | Apache License 2.0, except the rows below | `Apache-2.0` |
 | `drive/pipeline/courses/tee-time-links/**` and the packet built from it, `drive/apps/web/public/levels/tee-time-links/**` | Third-party data (NC lidar and orthoimagery, OSM); see "A note on free drive's course" and `drive/ATTRIBUTION.md` | — |
 | Shrikhand and Rubik fonts (`@fontsource/*`, bundled into the build; also in `drive/`) | SIL Open Font License 1.1 | `OFL-1.1` |
 | `art/brand/tee-time-links.svg` (the Tee Time Links logo; Shrikhand lettering converted to outlines) | First-party artwork; see "A note on the Tee Time Links logo" | — |
+| `ios/**` (the Capacitor iOS shell, Stage 4b) | Apache License 2.0 for this project's changes; generated from Capacitor's iOS template, MIT, notice in `NOTICE` | `Apache-2.0` AND `MIT` |
 | `server/**` | GNU Affero General Public License v3.0 or later | `AGPL-3.0-or-later` |
 | Human-authored assets, if any are ever added | Creative Commons BY-SA 4.0 | `CC-BY-SA-4.0` |
 | `docs/concept/**` (AI-generated reference art) | No license claimed — provenance-tracked | — |

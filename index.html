@@ -73,6 +73,26 @@
       }
       #hud-status { min-height: 1.2em; color: var(--status); margin-top: 5px; }
       #hud-timer { font-variant-numeric: tabular-nums; }
+      #connect-controller {
+        position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center;
+        background: rgba(10, 24, 16, 0.92); color: #fff; font: var(--font);
+      }
+      #connect-controller[hidden] { display: none; }
+      .connect-controller__panel { max-width: 560px; padding: 28px 32px; border-radius: 14px; background: var(--panel, #1d2a22); }
+      .connect-controller__panel h1 { margin: 0 0 14px; font-size: 28px; letter-spacing: 0.04em; }
+      .connect-controller__panel ol { margin: 0 0 14px; padding-left: 22px; line-height: 1.5; }
+      .connect-controller__panel p { margin: 0; opacity: 0.8; }
+      .glyphs-pad { display: none; }
+      body[data-input="pad"] .glyphs-pad { display: inline; }
+      body[data-input="pad"] .glyphs-keys { display: none; }
+      /* The pad's focus ring (Stage 4b): plain :focus, because a pad press is not a key press and
+         some browsers will not show :focus-visible for it. */
+      body[data-input="pad"] button:focus,
+      body[data-input="pad"] input:focus,
+      body[data-input="pad"] select:focus {
+        outline: 4px solid #ffcf3a;
+        outline-offset: 3px;
+      }
       #hud-flags { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
       #hud-flags:empty { display: none; }
       .hud-flag {
@@ -622,8 +642,23 @@
       <!-- Empty by design, like the score spans above. -->
       <div id="hud-zone-warning"></div>
       <div id="hud-help">
-        WASD drive &middot; F or Space fire &middot; mouse/Q/E aim &middot; 1-2-3 club &middot; G mortar &middot; Shift brake &middot;
-        hold to charge, release to shoot
+        <!-- Glyphs follow the last input used (Stage 4b): padMenuNavigator.ts sets body[data-input]. -->
+        <span class="glyphs-keys">WASD drive &middot; F or Space fire &middot; mouse/Q/E aim &middot; 1-2-3 club &middot; G mortar &middot; Shift brake &middot;
+        hold to charge, release to shoot</span>
+        <span class="glyphs-pad">Left stick drive &middot; R2 fire &middot; right stick aim &middot; D-pad / L1 R1 club &middot; X mortar &middot; L2 brake &middot;
+        B cancel &middot; Start pause</span>
+      </div>
+    </div>
+    <!-- Stage 4b: the iOS app needs a controller. padMenuNavigator.ts shows this until a pad sends input. -->
+    <div id="connect-controller" hidden>
+      <div class="connect-controller__panel">
+        <h1>Connect a controller</h1>
+        <ol>
+          <li>Put the controller in pairing mode. On an 8BitDo pad, check its manual for the mode Apple devices use.</li>
+          <li>On this device, open <b>Settings › Bluetooth</b> and tap the controller when it appears.</li>
+          <li>Come back here and press any button.</li>
+        </ol>
+        <p>Any controller iOS supports works: 8BitDo, Xbox, PlayStation, Backbone.</p>
       </div>
     </div>
     <div id="event-banner" hidden>
