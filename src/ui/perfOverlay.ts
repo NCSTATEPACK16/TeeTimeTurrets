@@ -9,6 +9,8 @@ export function mountPerfOverlay(
   root: HTMLElement,
   read: () => FrameReport,
   pixelRatio: () => number,
+  /** The 120/60 governor's mode (Stage 4b), when there is one. */
+  rate: () => string = () => "uncapped",
 ): void {
   const el = document.createElement("pre");
   el.className = "perf-overlay";
@@ -23,6 +25,6 @@ export function mountPerfOverlay(
       `frame ${r.frameMs.toFixed(1)} ms  p95 ${r.frameMsP95.toFixed(1)}\n` +
       `work  ${r.workMs.toFixed(1)} ms  p95 ${r.workMsP95.toFixed(1)}\n` +
       `draws ${r.drawCalls} (max ${r.drawCallsMax})  tris ${(r.triangles / 1000).toFixed(0)}k\n` +
-      `dpr   ${pixelRatio().toFixed(2)}`;
+      `dpr   ${pixelRatio().toFixed(2)}  rate ${rate()}`;
   }, 250);
 }

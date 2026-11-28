@@ -29,8 +29,28 @@ const STICK_MOVE = 0.5;
 const REPEAT_DELAY_S = 0.4;
 const REPEAT_EVERY_S = 0.15;
 
+/**
+ * Whether this build needs a pad to play: the iOS app (Capacitor), which has no keyboard and, in
+ * v1, no touch controls (spec §1). `?pad=required` asks for the same on the web, to try it.
+ */
+export function padRequired(): boolean {
+  const capacitor = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  if (capacitor?.isNativePlatform?.() === true) return true;
+  return new URLSearchParams(window.location.search).get("pad") === "required";
+}
+
 export class PadMenuNavigator {
   private readonly pad = new GamepadSource();
+  /** The "Connect a controller" card (`index.html`), shown while a required pad has not spoken. */
+  private readonly connectCard: HTMLElement | null;
+  private readonly required: boolean;
+  /** True once the connected pad has sent input. Cleared when it disconnects. */
+  private heard = false;
+
+  constructor(options: { required?: boolean } = {}) {
+    this.required = options.required ?? padRequired();
+    this.connectCard = document.getElementById("connect-controller");
+  }
   private frame = 0;
   private held: FocusDirection | null = null;
   private heldFor = 0;
@@ -61,6 +81,17 @@ export class PadMenuNavigator {
     window.removeEventListener("pointerdown", this.onKeyboard);
   }
 
+  /**
+   * Spec §1: with no controller the game shows how to connect one, and goes on once a pad sends
+   * input. A pad that disconnects brings the card back. It covers everything, the match included.
+   */
+  private showConnectCard(show: boolean): void {
+    const card = this.connectCard;
+    if (card === null || card.hidden === !show) return;
+    card.hidden = !show;
+    if (show) this.setInput("pad");
+  }
+
   private setInput(input: "pad" | "keyboard"): void {
     if (document.body.dataset.input !== input) document.body.dataset.input = input;
   }
@@ -68,6 +99,9 @@ export class PadMenuNavigator {
   private update(dt: number): void {
     const pad = this.pad;
     pad.poll();
+    if (!pad.connected) this.heard = false;
+    else if (pad.active) this.heard = true;
+    this.showConnectCard(this.required && !this.heard);
     if (!pad.connected) return;
     if (pad.active) this.setInput("pad");
 

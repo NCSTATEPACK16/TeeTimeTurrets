@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { ScreenManager } from "./app/ScreenManager";
 import { GameLoop } from "./engine/GameLoop";
 import { FrameStats, createFrameReport } from "./engine/frameStats";
+import { FrameGovernor } from "./engine/frameGovernor";
 import { FIXED_DT } from "./sim/tickConstants";
 import { authoredCourse } from "./sim/authoredCourse";
 import type { CourseWorld } from "./sim/courseWorld";
@@ -126,7 +127,13 @@ async function main(): Promise<void> {
   let loadout = createLoadout();
   let coins = STARTING_COINS;
 
+  // 120 Hz where the display allows, held to 60 for the rest of a match that cannot keep it (Stage 4b).
+  const governor = new FrameGovernor();
+  let lastDrawMs = -1;
+
   const startMatch = async (): Promise<void> => {
+    // Every match tries 120 again.
+    governor.reset();
     const path = await loadMatchPath();
     if (courseWorld === null) {
       courseWorld = path.buildCourseWorld(course, COURSE_SEED);
@@ -247,7 +254,7 @@ async function main(): Promise<void> {
   const frameReport = createFrameReport();
   renderer.info.autoReset = false;
   if (new URLSearchParams(window.location.search).has("perf")) {
-    mountPerfOverlay(document.body, () => frameStats.report(frameReport), () => renderer.getPixelRatio());
+    mountPerfOverlay(document.body, () => frameStats.report(frameReport), () => renderer.getPixelRatio(), () => governor.mode);
   }
 
   // Dev-only inspection hook for manual tuning in the browser console, and what tools/smoke.mjs
@@ -288,6 +295,9 @@ async function main(): Promise<void> {
       // The interval is taken at the draw, once a frame, so it follows the display; the work
       // starts at the frame's first step when it had one.
       const drawAt = performance.now();
+      if (!governor.shouldDraw(drawAt)) return;
+      if (lastDrawMs >= 0) governor.record(drawAt, drawAt - lastDrawMs);
+      lastDrawMs = drawAt;
       const workFrom = frameStartMs < 0 ? drawAt : frameStartMs;
       renderer.info.reset();
       screens.draw(alpha);
