@@ -10,6 +10,7 @@ import { BASE_FOV_DEG, CameraTrauma, fovForSpeed } from "./cameraTrauma";
 import { GolfClub, WHEEL_RADIUS, placeCart, wheelSteer } from "../entities/GolfClub";
 import { teamOf } from "../sim/matchConfig";
 import { TEAM_CANOPY, teamColors } from "./teamColors";
+import { botLoadout, slotColorsFor } from "../sim/loadout";
 import { createClubhouseKit, type ClubhouseKit } from "./clubhouse";
 import { createTeeSigns, type TeeSigns } from "./teeSigns";
 import { createPickupView, type PickupView } from "./pickups";
@@ -220,6 +221,11 @@ export class RenderScene {
    * a hard browser limit and a guaranteed leak across transitions. `ScreenManager` owns its
    * lifetime; this class only borrows it, and `dispose()` below deliberately does not free it.
    */
+  /** The player's cart in the player's equipped paint and skin (Stage 8). */
+  setPlayerLook(colors: Readonly<Record<string, number>>): void {
+    this.cart.setSlotColors(colors);
+  }
+
   constructor(
     renderer: THREE.WebGLRenderer,
     arena: ArenaSource,
@@ -300,6 +306,11 @@ export class RenderScene {
       this.botCarts.push(bot);
       this.scene.add(bot);
     }
+
+    // Stage 8: every rig wears a loadout. The player's comes from the profile (`setCartLook`, from
+    // `MatchScreen`); each bot's is picked from its index and the course seed, so it keeps its look
+    // through a rematch. Paint and skin only: the canopy and shirt above stay the team's.
+    for (let i = 0; i < botCount; i++) this.botCarts[i]!.setSlotColors(slotColorsFor(botLoadout(i + 1, arena.seed ?? 0)));
 
     this.wheelPrev = new Float64Array(3 * (botCount + 1));
     this.wheelSpin = new Float64Array(botCount + 1);

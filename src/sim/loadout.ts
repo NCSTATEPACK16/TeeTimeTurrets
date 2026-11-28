@@ -1,4 +1,5 @@
 import { TireType } from "./entities/Cart";
+import { hashChannel } from "./rng";
 
 /**
  * The cosmetics taxonomy behind image 11: turret skin, chassis paint, tire type.
@@ -43,12 +44,15 @@ export const CHASSIS_PAINTS: readonly CosmeticOption[] = [
     swatch: 0xefecdf,
     slots: { chassis: 0xefecdf },
   },
+  // `sunset` and `marshal` were orange and blue, close enough to the team canopies (blue
+  // 0x2f7be0, orange 0xf07a1a) to blur which side a cart was on (BACKLOG #49). Retuned in Stage 8;
+  // the ids and prices are kept so a saved profile still owns them.
   {
     id: "sunset",
-    label: "SUNSET ORANGE",
+    label: "SUNSET PLUM",
     price: 900,
-    swatch: 0xef8a2b,
-    slots: { chassis: 0xef8a2b },
+    swatch: 0x7a3b69,
+    slots: { chassis: 0x7a3b69 },
   },
   {
     id: "fairway",
@@ -59,10 +63,10 @@ export const CHASSIS_PAINTS: readonly CosmeticOption[] = [
   },
   {
     id: "marshal",
-    label: "MARSHAL BLUE",
+    label: "MARSHAL SLATE",
     price: 1400,
-    swatch: 0x2d5fa8,
-    slots: { chassis: 0x2d5fa8 },
+    swatch: 0x55606b,
+    slots: { chassis: 0x55606b },
   },
 ];
 
@@ -142,6 +146,23 @@ export function slotColorsFor(loadout: Loadout): Record<string, number> {
   const skin = TURRET_SKINS.find((s) => s.id === loadout.skin) ?? TURRET_SKINS[0]!;
   return { ...paint.slots, ...skin.slots };
 }
+
+/**
+ * A bot's look: a paint and a skin picked from the cart's index and the match seed, so a bot
+ * keeps its look through a match and its rematch (Stage 8). Render-only: a bot's stats are the
+ * default kit whatever it wears. The tyre stays the default, which is what bots drive on.
+ */
+export function botLoadout(index: number, seed: number): Loadout {
+  const h = hashChannel(seed, BOT_LOOK_CHANNEL, index);
+  return {
+    paint: CHASSIS_PAINTS[h % CHASSIS_PAINTS.length]!.id,
+    skin: TURRET_SKINS[(h >>> 8) % TURRET_SKINS.length]!.id,
+    tire: TIRE_OPTIONS[0]!.id,
+  };
+}
+
+/** `hashChannel`'s channel for bot looks. Distinct from the sim's streams; it never feeds the sim. */
+const BOT_LOOK_CHANNEL = 0x100c;
 
 /** The sim-facing half: what `CartOptions.tire` should be set to. */
 export function tireTypeFor(loadout: Loadout): TireType {

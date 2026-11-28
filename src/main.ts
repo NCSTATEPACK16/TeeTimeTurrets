@@ -9,6 +9,7 @@ import type { CourseWorld } from "./sim/courseWorld";
 import type { Sim } from "./sim/world";
 import { ARENA_BOTS, MATCH_COUNTDOWN_S } from "./sim/matchConfig";
 import { kitFor } from "./sim/upgrades";
+import { slotColorsFor } from "./sim/loadout";
 import { coinGrantFromQuery, creditMatch, loadProfile, saveProfile } from "./app/profile";
 import type { Profile } from "./app/profile";
 import { createEarnings, matchEarnings } from "./sim/scoring";
@@ -218,6 +219,7 @@ async function main(): Promise<void> {
       onSettingsChange: applySettings,
       onQuit: () => screens.show("title"),
       quality: QUALITY_PRESETS[quality],
+      playerLook: slotColorsFor(profile.loadout),
     });
     return matchScreen;
   });

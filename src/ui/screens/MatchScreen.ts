@@ -68,6 +68,8 @@ export interface MatchScreenOptions {
   readonly onQuit: () => void;
   /** The graphics preset this match is drawn at. A change in the pause menu applies next match. */
   readonly quality?: QualityPreset;
+  /** The player's equipped paint and skin, as slot colours (Stage 8). Absent: the graph's defaults. */
+  readonly playerLook?: Readonly<Record<string, number>>;
 }
 
 export class MatchScreen implements Screen {
@@ -229,6 +231,7 @@ export class MatchScreen implements Screen {
     const { renderer, sim, hudRoot, nameplateRoot, arena } = this.options;
 
     this.render = new RenderScene(renderer, arena, sim.bots.length, this.options.quality);
+    if (this.options.playerLook) this.render.setPlayerLook(this.options.playerLook);
     this.render.onPropKnock = (x, z) => {
       const d = Math.hypot(x - sim.cart.position.x, z - sim.cart.position.z);
       if (d < CLATTER_RANGE_M) gameAudio.play({ cue: "clatter", gain: 1 - d / CLATTER_RANGE_M, pan: 0 });

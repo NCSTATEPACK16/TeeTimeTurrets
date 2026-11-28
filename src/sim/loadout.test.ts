@@ -3,11 +3,13 @@ import {
   CHASSIS_PAINTS,
   TIRE_OPTIONS,
   TURRET_SKINS,
+  botLoadout,
   createLoadout,
   slotColorsFor,
 } from "./loadout";
 import { TireType } from "./entities/Cart";
 import { CART_GRAPH } from "../entities/cartGraph";
+import { TEAM_CANOPY } from "../render/teamColors";
 
 /**
  * The cosmetics taxonomy. DOM-free and Rapier-free like everything under src/sim/**.
@@ -92,3 +94,39 @@ describe("slotColorsFor", () => {
     expect(colors["chassis"]).toBe(CHASSIS_PAINTS[0]!.slots["chassis"]);
   });
 });
+
+/** Stage 8 slice 4's smoke check: bot looks, and no paint in a team's hue (BACKLOG #49). */
+describe("every rig's loadout", () => {
+  it("gives a bot the same real look for the same index and seed, and varies across bots", () => {
+    const looks = [1, 2, 3, 4, 5, 6, 7].map((i) => botLoadout(i, 2026));
+    expect(looks).toEqual([1, 2, 3, 4, 5, 6, 7].map((i) => botLoadout(i, 2026)));
+    for (const look of looks) {
+      expect(CHASSIS_PAINTS.some((p) => p.id === look.paint)).toBe(true);
+      expect(TURRET_SKINS.some((s) => s.id === look.skin)).toBe(true);
+      expect(look.tire).toBe(TIRE_OPTIONS[0]!.id);
+    }
+    expect(new Set(looks.map((l) => `${l.paint}/${l.skin}`)).size).toBeGreaterThan(2);
+  });
+
+  it("keeps every chassis paint well away from both team canopies", () => {
+    const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+    const distance = (a: number, b: number): number => {
+      const [ar, ag, ab] = rgb(a);
+      const [br, bg, bb] = rgb(b);
+      return Math.hypot(ar - br, ag - bg, ab - bb);
+    };
+    // The control: the old orange paint sat 23 from the orange canopy and the old blue 63 from the blue one.
+    expect(distance(0xef8a2b, TEAM_CANOPY[1])).toBeLessThan(MIN_TEAM_DISTANCE);
+    expect(distance(0x2d5fa8, TEAM_CANOPY[0])).toBeLessThan(MIN_TEAM_DISTANCE);
+    for (const paint of CHASSIS_PAINTS) {
+      for (const canopy of TEAM_CANOPY) {
+        expect(distance(paint.slots.chassis!, canopy), `${paint.id} vs ${canopy.toString(16)}`).toBeGreaterThanOrEqual(
+          MIN_TEAM_DISTANCE,
+        );
+      }
+    }
+  });
+});
+
+/** RGB distance below which a paint reads as a team's colour at a glance. */
+const MIN_TEAM_DISTANCE = 120;
