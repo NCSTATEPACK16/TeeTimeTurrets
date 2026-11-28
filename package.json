@@ -6,7 +6,7 @@
   "scripts": {
     "postinstall": "puppeteer browsers install chrome",
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node tools/buildDrive.mjs",
+    "build": "tsc --noEmit && vite build && node tools/buildDrive.mjs && node tools/sizeBudget.mjs",
     "preview": "vite preview",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
