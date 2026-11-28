@@ -3,6 +3,8 @@ import type { PlayerIntent } from "./intent";
 import type { Cart } from "./entities/Cart";
 import { teamOf } from "./matchConfig";
 import { solveShot } from "./aimSolver";
+import { createNavRoute } from "./navGraph";
+import type { NavRoute } from "./navGraph";
 
 /**
  * The AI opponent, as one pure function of exactly the state it needs: its own cart, and where
@@ -91,6 +93,11 @@ const MIN_RELEASE_CHARGE = 0.01;
  *   bot with an empty magazine drives to instead of at the enemy.
  * - `hasHealTarget`/`healX`/`healZ`: a hot dog for a hurt bot out of the fight to drive to,
  *   written by `world.ts` each tick (`BOT_HEAL_FRACTION`, `BOT_HEAL_RANGE_M`). Ammo comes first.
+ * - `hasSteer`/`steerX`/`steerZ`: where to *point* the cart this tick, when that is not the place it
+ *   is going -- the next waypoint of a route round a pond or a building (Stage 6, `navGraph.ts`).
+ *   Written by `world.ts`; distances, holding and firing are still measured to the real goal.
+ * - `route`/`routeAt`/`routeOn`/`routeGoalX`/`routeGoalZ`/`replanNow`: `world.ts`'s route-following
+ *   state. The route buffer is allocated here, once per bot, never in the tick.
  */
 export interface BotMind {
   skill: number;
@@ -104,6 +111,16 @@ export interface BotMind {
   hasHealTarget: boolean;
   healX: number;
   healZ: number;
+  hasSteer: boolean;
+  steerX: number;
+  steerZ: number;
+  readonly route: NavRoute;
+  routeAt: number;
+  routeOn: boolean;
+  routeGoalX: number;
+  routeGoalZ: number;
+  /** Plan at the next chance, off the bot's schedule: just respawned, or just backed off. */
+  replanNow: boolean;
 }
 
 /** A bot at or below this fraction of its health goes for a hot dog, if it is out of the fight. */
@@ -124,6 +141,15 @@ export function createBotMind(skill: number): BotMind {
     hasHealTarget: false,
     healX: 0,
     healZ: 0,
+    hasSteer: false,
+    steerX: 0,
+    steerZ: 0,
+    route: createNavRoute(),
+    routeAt: 0,
+    routeOn: false,
+    routeGoalX: 0,
+    routeGoalZ: 0,
+    replanNow: true,
   };
 }
 
@@ -245,6 +271,7 @@ export function computeBotIntent(
     out.steer = 1;
     if (mind.unstickFor <= 1e-9) {
       mind.unstickFor = 0;
+      mind.replanNow = true;
       resetProgress(bot, mind);
     }
     return;
@@ -253,9 +280,7 @@ export function computeBotIntent(
   // An empty magazine sends the bot to the nearest ammo, all the way onto it: a bot that holds
   // station at its enemy with nothing to shoot is a target, not an opponent.
   if (mind !== null && bot.ammo <= 0 && mind.hasAmmoTarget) {
-    const ax = mind.ammoX - bot.position.x;
-    const az = mind.ammoZ - bot.position.z;
-    out.steer = clampSigned(wrapAngle(Math.atan2(az, ax) - bot.heading) / BOT_STEER_FULL);
+    out.steer = steerToward(bot, mind, mind.ammoX, mind.ammoZ);
     out.throttle = 1;
     trackProgress(bot, mind, dt, out);
     return;
@@ -263,9 +288,7 @@ export function computeBotIntent(
 
   // A hurt bot out of the fight goes for a hot dog; `world.ts` only offers one when that holds.
   if (mind !== null && mind.hasHealTarget) {
-    const hx = mind.healX - bot.position.x;
-    const hz = mind.healZ - bot.position.z;
-    out.steer = clampSigned(wrapAngle(Math.atan2(hz, hx) - bot.heading) / BOT_STEER_FULL);
+    out.steer = steerToward(bot, mind, mind.healX, mind.healZ);
     out.throttle = 1;
     trackProgress(bot, mind, dt, out);
     return;
@@ -290,8 +313,7 @@ export function computeBotIntent(
   const driveDx = (target.driveX ?? target.x) - bot.position.x;
   const driveDz = (target.driveZ ?? target.z) - bot.position.z;
   const driveDistance = Math.hypot(driveDx, driveDz);
-  const headingError = wrapAngle(Math.atan2(driveDz, driveDx) - bot.heading);
-  out.steer = clampSigned(headingError / BOT_STEER_FULL);
+  out.steer = steerToward(bot, mind, bot.position.x + driveDx, bot.position.z + driveDz);
   if (target.holdAtDrive === true || driveDistance < distance - 1e-6) {
     // A drive point short of the target is the zone's edge: the bot drives to it and holds there,
     // braking inside `BOT_EDGE_HOLD_M` -- about its stopping distance from top speed -- so it neither
@@ -333,6 +355,13 @@ export function computeBotIntent(
   if (wantsToFire && !out.fire) {
     out.aimDelta += applyAimSpread(0, bot.equippedClub, random) * spreadScale;
   }
+}
+
+/** Full-lock-scaled steering at a point, or at the mind's steer point when it has one. */
+function steerToward(bot: Cart, mind: BotMind | null, x: number, z: number): number {
+  const sx = mind !== null && mind.hasSteer ? mind.steerX : x;
+  const sz = mind !== null && mind.hasSteer ? mind.steerZ : z;
+  return clampSigned(wrapAngle(Math.atan2(sz - bot.position.z, sx - bot.position.x) - bot.heading) / BOT_STEER_FULL);
 }
 
 /**
