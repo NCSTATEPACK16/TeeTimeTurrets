@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createCourseSurfaces } from "./courseSurfaces";
 import { createCourseTerrain } from "./courseTerrain";
 import type { PlacedHole } from "./courseTerrain";
-import { generateCourse } from "./course";
+import { authoredCourse } from "./authoredCourse";
 import type { HoleSpec } from "./course";
 import { createTerrain } from "./terrain";
 import { createSurfaces, SURFACES, SurfaceId, createSurfaceTuning, createSurfaceWeights } from "./surfaces";
@@ -23,7 +23,7 @@ function fixture(pick: (spec: HoleSpec) => boolean = () => true): {
   course: ReturnType<typeof createCourseSurfaces>;
   terrain: ReturnType<typeof createCourseTerrain>;
 } {
-  const generated = generateCourse(COURSE_SEED, 18);
+  const generated = authoredCourse(COURSE_SEED);
   const spec = generated.holes.find(pick)!;
   const holeTerrain = createTerrain(spec);
   const hole: PlacedHole = { placement: PLACEMENT, spec, terrain: holeTerrain };
@@ -60,7 +60,7 @@ describe("classification", () => {
     // needs and the test went red for a reason that had nothing to do with classification. Which
     // two holes happen to cross is an accident of the card; that the rule holds when they do is
     // the property.
-    const generated = generateCourse(COURSE_SEED, 18);
+    const generated = authoredCourse(COURSE_SEED);
 
     let tested = 0;
     let usedPair = "";

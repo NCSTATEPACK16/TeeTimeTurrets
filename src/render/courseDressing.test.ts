@@ -1,23 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { courseDressingFor } from "./courseDressing";
 import type { ArenaSource } from "./scene";
-import { generateCourse } from "../sim/course";
-import { solveCourseLayout } from "../sim/courseLayout";
+import { AUTHORED_SOUTH_BOUNDARY, authoredCourseLayout } from "../sim/authoredLayout";
+import { authoredCourse } from "../sim/authoredCourse";
 import { createCourseSurfaces } from "../sim/courseSurfaces";
 import { createCourseTerrain } from "../sim/courseTerrain";
 import type { PlacedHole } from "../sim/courseTerrain";
 import { createSurfaces } from "../sim/surfaces";
 import { createTerrain } from "../sim/terrain";
 import { mulberry32 } from "../sim/rng";
-import { AUTHORED_SOUTH_BOUNDARY } from "../sim/authoredLayout";
 
 /** A two-hole course, as `courseGround.test.ts` builds one, with the authored road so it has trees. */
 function arena(): ArenaSource {
-  const generated = generateCourse(2026, 2);
-  const layout = solveCourseLayout(
-    generated.holes.map((h) => ({ index: h.index, tee: h.tee, cup: h.cup, control: h.control })),
-  );
-  const placed: PlacedHole[] = layout.placements.map((placement) => {
+  // The first holes of the authored course: the generator these tests once drew from is gone.
+  const generated = authoredCourse(2026);
+  const placed: PlacedHole[] = authoredCourseLayout().placements.slice(0, 2).map((placement) => {
     const spec = generated.holes[placement.index]!;
     return { placement, spec, terrain: createTerrain(spec) };
   });

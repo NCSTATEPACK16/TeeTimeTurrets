@@ -13,13 +13,8 @@ import { neutralIntent } from "../src/sim/intent";
 // The driver's reference distance lives in sim/carry.ts, a leaf module (see that file's header),
 // not in course.ts, which does not re-export it.
 import { ARENA_DRIVER_CARRY_M, ARENA_DRIVER_TOTAL_M } from "../src/sim/carry";
-import {
-  derivePar,
-  draftHole,
-  generateCourse,
-  parForIndex,
-  validateHole,
-} from "../src/sim/course";
+import { validateHole } from "../src/sim/course";
+import { authoredCourse } from "../src/sim/authoredCourse";
 import { createSurfaces } from "../src/sim/surfaces";
 import { SurfaceId } from "../src/sim/surfaces";
 import { CLUB_STATS, ClubType, computeLaunchVelocity } from "../src/physics/Ballistics";
@@ -295,12 +290,16 @@ async function driverDistanceCheck(sim: Sim): Promise<void> {
   );
 }
 
-/** 3. The generator's own criteria, re-run from outside it against a full nine. */
+/**
+ * 3. The hole checks, run against every hole of the authored course the game ships. Its holes were
+ *    laid out to a real card, not to the old generator's drafting limits (checks 2 and 7), so
+ *    those two are skipped and the playing surface is judged: grade, camber, green and water.
+ */
 function coursePlayabilityCheck(): void {
   let failures = 0;
-  const course = generateCourse(PROBE_COURSE_SEED, 9);
+  const course = authoredCourse(PROBE_COURSE_SEED);
   for (const hole of course.holes) {
-    const rejection = validateHole(hole, createTerrain(hole));
+    const rejection = validateHole(hole, createTerrain(hole, { crossings: false }), { draftingLimits: false });
     if (rejection === null) continue;
     failures++;
     console.log(`    hole ${hole.index}: check ${rejection.check} - ${rejection.reason}`);
@@ -311,34 +310,6 @@ function coursePlayabilityCheck(): void {
     failures === 0,
     `${course.holes.length} holes, pars ${pars} (total ${course.holes.reduce((s, h) => s + h.par, 0)}), ` +
       `${failures} failing`,
-  );
-}
-
-/**
- * 4. Reports rather than asserts. The research claims 80-85%, computed from its miscalibrated
- *    amplitudes; that figure carries no weight here and the real number is what this run
- *    records. The per-check breakdown is the useful part -- it names which threshold is
- *    actually binding.
- */
-function acceptanceReport(): void {
-  const samples = 200;
-  let accepted = 0;
-  const byCheck = new Map<number, number>();
-  for (let i = 0; i < samples; i++) {
-    const candidate = draftHole(PROBE_COURSE_SEED, i, parForIndex(i), 0);
-    const terrain = createTerrain(candidate);
-    const spec = { ...candidate, par: derivePar(terrain.spline.length) };
-    const rejection = validateHole(spec, terrain);
-    if (rejection === null) accepted++;
-    else byCheck.set(rejection.check, (byCheck.get(rejection.check) ?? 0) + 1);
-  }
-  const breakdown = [...byCheck.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([check, n]) => `check ${check}: ${n}`)
-    .join(", ");
-  console.log(
-    `  acceptance rate         ${((accepted / samples) * 100).toFixed(1)}% ` +
-      `(${accepted}/${samples})${breakdown ? ` - rejections by ${breakdown}` : ""}`,
   );
 }
 
@@ -396,7 +367,6 @@ async function main(): Promise<void> {
       `the three full-power shots and the driver check (limit -${TUNNEL_TOLERANCE_M} m)`,
   );
   coursePlayabilityCheck();
-  acceptanceReport();
 
   if (probeFailed) {
     console.error("\nprobe: one or more course checks failed");

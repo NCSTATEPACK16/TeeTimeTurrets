@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { COURSE_GROUND_TUNING, createCourseGround } from "./courseGround";
-import { generateCourse } from "../sim/course";
-import { solveCourseLayout } from "../sim/courseLayout";
+import { authoredCourseLayout } from "../sim/authoredLayout";
 import { createCourseSurfaces } from "../sim/courseSurfaces";
 import { createCourseTerrain } from "../sim/courseTerrain";
 import type { CourseTerrain, PlacedHole } from "../sim/courseTerrain";
@@ -25,11 +24,9 @@ function build(holes = TEST_HOLES): {
   terrain: CourseTerrain;
   ground: ReturnType<typeof createCourseGround>;
 } {
-  const generated = generateCourse(COURSE_SEED, holes);
-  const layout = solveCourseLayout(
-    generated.holes.map((h) => ({ index: h.index, tee: h.tee, cup: h.cup, control: h.control })),
-  );
-  const placed: PlacedHole[] = layout.placements.map((placement) => {
+  // The first holes of the authored course: the generator these tests once drew from is gone.
+  const generated = authoredCourse(COURSE_SEED);
+  const placed: PlacedHole[] = authoredCourseLayout().placements.slice(0, holes).map((placement) => {
     const spec = generated.holes[placement.index]!;
     return { placement, spec, terrain: createTerrain(spec) };
   });
@@ -167,33 +164,38 @@ describe("level of detail", () => {
 describe("what the shader is handed", () => {
   it("gives every vertex biome weights and a mow direction", () => {
     const { ground } = build();
-    const mesh = meshes(ground)[0]!;
-    const biome = mesh.geometry.getAttribute("aBiome") as THREE.BufferAttribute;
-    const mow = mesh.geometry.getAttribute("aMow") as THREE.BufferAttribute;
-    const positions = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
-
-    expect(biome.count).toBe(positions.count);
-    expect(mow.count).toBe(positions.count);
-
+    // Every tile, not the first: on the authored layout the first tile is open rough with no hole
+    // on it, which would leave the "claimed" branch below unexercised.
     let mown = 0;
     let claimed = 0;
-    for (let i = 0; i < biome.count; i++) {
-      const sum = biome.getX(i) + biome.getY(i) + biome.getZ(i);
-      expect(sum).toBeGreaterThanOrEqual(0);
-      // Stored as bytes, each rounded to the nearest 1/255.
-      expect(sum).toBeLessThanOrEqual(1 + 1.5 / 255);
-      if (sum > 0) claimed++;
-      const length = Math.hypot(mow.getX(i), mow.getY(i));
-      // Either a unit direction or nothing at all -- the shader reads a zero as "unmown". Stored as
-      // signed bytes, so unit to within 1/127 on each axis.
-      expect(length < 1e-6 || Math.abs(length - 1) < 0.02).toBe(true);
-      if (length > 0.5) mown++;
+    let vertices = 0;
+    for (const mesh of meshes(ground)) {
+      const biome = mesh.geometry.getAttribute("aBiome") as THREE.BufferAttribute;
+      const mow = mesh.geometry.getAttribute("aMow") as THREE.BufferAttribute;
+      const positions = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
+
+      expect(biome.count).toBe(positions.count);
+      expect(mow.count).toBe(positions.count);
+      vertices += biome.count;
+
+      for (let i = 0; i < biome.count; i++) {
+        const sum = biome.getX(i) + biome.getY(i) + biome.getZ(i);
+        expect(sum).toBeGreaterThanOrEqual(0);
+        // Stored as bytes, each rounded to the nearest 1/255.
+        expect(sum).toBeLessThanOrEqual(1 + 1.5 / 255);
+        if (sum > 0) claimed++;
+        const length = Math.hypot(mow.getX(i), mow.getY(i));
+        // Either a unit direction or nothing at all -- the shader reads a zero as "unmown". Stored as
+        // signed bytes, so unit to within 1/127 on each axis.
+        expect(length < 1e-6 || Math.abs(length - 1) < 0.02).toBe(true);
+        if (length > 0.5) mown++;
+      }
     }
-    // Both controls: some of this tile is a hole's ground and some of it is open rough, so
-    // neither branch above went unexercised.
+    // Both controls: some of the ground is a hole's and some of it is open rough, so neither
+    // branch above went unexercised.
     expect(claimed).toBeGreaterThan(0);
     expect(mown).toBeGreaterThan(0);
-    expect(mown).toBeLessThan(biome.count);
+    expect(mown).toBeLessThan(vertices);
     ground.dispose();
   });
 

@@ -7,10 +7,9 @@
  * rather than a level file, and rejection sampling still guarantees playability -- while giving
  * real design control over what each hole *is*.
  *
- * Nothing reads this yet. `generateHole` consumes it at step 6 of the section 9 build order; the
- * point of landing it first is that design intent becomes reviewable before any generator work,
- * and Tier 2 (water polygons, placed bunkers) has something to be checked against instead of
- * polygons hand-tuned against nothing.
+ `authoredCourse.ts` reads it for each hole's corridor widths and hazard placements (it was
+ * written for the procedural generator, deleted in Stage 9), so design intent stays reviewable as
+ * data rather than as code.
  *
  * Plain data: DOM-free, no Rapier, no Three, same as the rest of src/sim.
  */
@@ -124,8 +123,8 @@ function bunkers(...placement: BunkerPlacement[]): HazardSchema["bunkers"] {
  *
  * Transcribed from the table in docs/COURSE_PIPELINE.md section 4. Four properties of that table
  * are asserted in briefs.test.ts against independent sources rather than trusted here: par against
- * `PAR_MIX`, biome against `BIOME_ROUTING`, the adjacent-dogleg rule, and whether an authored
- * corridor width still leaves room for its par band.
+ * the authored course's card, biome against `BIOME_ROUTING`, the adjacent-dogleg rule, and that
+ * corridor widths come from the cover setting.
  *
  * **Declarative, never geometric.** A brief says `placement: 'fairway-elbow'` and the generator
  * resolves that to coordinates from the seed. A brief that named a coordinate would have defeated

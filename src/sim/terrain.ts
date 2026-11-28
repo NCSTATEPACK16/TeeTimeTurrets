@@ -205,7 +205,7 @@ export interface TerrainSources {
    * Shape the built structures into the height field: the derived water crossings, and the raised
    * tee box (`teeBox.ts`). Defaults to true, which is what a played hole wants.
    *
-   * **`generateHole` sets it false, and that is spec D9 made mechanical.** Crossings are derived
+   * **Validation sets it false (`tools/feelProbe.ts`), and that is spec D9 made mechanical.** Crossings are derived
    * *after* a hole validates, so `validateHole` must be shown the un-bridged hole: a causeway is a
    * built structure crossing a pond, its shoulders are far steeper than the fairway grade budget,
    * and terrain carrying one fails check 3 on the very hole the crossing exists to make playable.

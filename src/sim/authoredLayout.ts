@@ -1,10 +1,10 @@
 /**
  * Where the eighteen authored holes sit in the course frame, and where the clubhouse is.
  *
- * **Why this module exists.** `solveCourseLayout` discovers a layout: it fits nine chords to a
- * circle, relaxes them, and falls back when the relaxation crosses a line. That is the right shape
- * for a course nobody has drawn. This course has been drawn, so its placements are data, and the
- * solver comes off the shipped path (see its own doc comment).
+ * **Why this module exists.** The layout solver it replaced (deleted in Stage 9) discovered a
+ * layout: it fitted nine chords to a circle, relaxed them, and fell back when the relaxation
+ * crossed a line. That is the right shape for a course nobody has drawn. This course has been
+ * drawn, so its placements are data.
  *
  * **Frame.** Course `+x` is east and `+z` is north. Each hole's own frame runs along its local `+x`
  * from tee to cup with the dog-leg apex offset in `z` (`authoredCourse.ts`); `rotation` turns that
