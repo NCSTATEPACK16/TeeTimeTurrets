@@ -30,9 +30,10 @@ describe("a full 4v4 and a 32-ball pool", () => {
     let refused = 0;
     let shots = 0;
     let saturatedTicks = 0;
-    // 40 s, not 60: the premises below still hold (the pool fills, and over 40 shots go out), and
-    // the shorter match keeps `npm test` under its 60 s cap.
-    for (let tick = 0; tick < 40 * TPS; tick++) {
+    // 50 s, not 60, for `npm test`'s 60 s cap. 40 s was enough until bots began running for flags
+    // (Stage 3.5c): the player then died more, and only 37 shots went out against the 40 the
+    // premise below needs. Lower the time again only with that premise still holding.
+    for (let tick = 0; tick < 50 * TPS; tick++) {
       // Hold the trigger for 6 ticks, then release: one putter shot every 45 ticks (0.75 s).
       intent.fire = tick % 45 < 6;
       const hadAmmo = sim.cart.ammo > 0 && !sim.cart.dead;

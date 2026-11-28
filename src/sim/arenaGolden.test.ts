@@ -80,6 +80,10 @@ function playScript(sim: Sim): number {
     print.add(sim.match.strokesFor(i));
     print.add(sim.match.pointsFor(i));
   }
+  // Each side's total, which since Stage 3.5c also counts strokes bled to capture flags: no
+  // player's row holds those, so without this a bleed regression could never move the number.
+  print.add(sim.match.teamStrokes(0));
+  print.add(sim.match.teamStrokes(1));
   return print.value;
 }
 
@@ -125,6 +129,6 @@ describe("arena determinism fingerprint", () => {
   }, 60_000);
 
   it("matches the recorded fingerprint", () => {
-    expect(fresh).toBe(4165176536);
+    expect(fresh).toBe(1822785344);
   });
 });

@@ -94,13 +94,19 @@ describe("what the tick asks Rapier", () => {
     // ball struck, once. Those are the only reads the tick is allowed.
     let syncedBalls = 0;
     let hits = 0;
+    // A shield plate that takes a ball whole also reads where the ball struck, once, as a hit
+    // does. A ram's plate reads nothing, and the event does not say which it was, so plates broken
+    // by a cart bound the reads from above rather than being counted exactly.
+    let platesByCart = 0;
     const cursor = sim.events.cursor();
     try {
       for (let i = 0; i < 600; i++) {
         sim.step();
         syncedBalls += sim.ballPool.all.filter((b) => b.state !== "idle").length;
         for (let s = cursor.begin(); s < sim.events.total; s++) {
-          if (sim.events.at(s).kind === "hit") hits++;
+          const e = sim.events.at(s);
+          if (e.kind === "hit") hits++;
+          if (e.kind === "plateBroken" && e.actor >= 0) platesByCart++;
         }
         cursor.end();
       }
@@ -111,7 +117,10 @@ describe("what the tick asks Rapier", () => {
     }
     // The premise: balls were in play, so there was something to over-read.
     expect(syncedBalls).toBeGreaterThan(600);
-    expect(calls.translation).toBe(syncedBalls + hits);
+    // At least once per live ball per tick; a mortar's splash is a `hit` that reads nothing, so
+    // the hits cannot go in the floor. One read too many each tick would be 600 over the ceiling.
+    expect(calls.translation).toBeGreaterThanOrEqual(syncedBalls);
+    expect(calls.translation).toBeLessThanOrEqual(syncedBalls + hits + platesByCart);
     expect(calls.linvel).toBe(syncedBalls);
   }, 120_000);
 });

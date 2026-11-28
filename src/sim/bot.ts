@@ -50,6 +50,12 @@ export const BOT_EDGE_HOLD_M = 8;
  * to, so every trigger pull is a shot that can connect.
  */
 export const BOT_FIRE_RANGE = 35;
+/**
+ * Metres. A bot that is not its side's flag runner leaves a target this far away, or a dead one,
+ * for the nearest capture flag its side does not own (Stage 3.5c): one that would otherwise cross
+ * the course for a kill takes a flag on the way.
+ */
+export const BOT_FLAG_DIVERT_M = 120;
 /** Radians per second of turret slew. Bounded so the bot's aim is not instant and omniscient. */
 export const BOT_AIM_RATE = 1.2;
 /** Radians. Inside this bearing error the bot considers itself on target and starts charging. */
@@ -151,6 +157,12 @@ export interface BotTarget {
    */
   readonly driveX?: number;
   readonly driveZ?: number;
+  /**
+   * The drive point is a place to go and sit, not a way to the target: a capture flag
+   * (Stage 3.5c). The bot holds there, as it does at the zone's edge, however far its target is,
+   * and goes there even with no living target to fight. Optional, and false when left out.
+   */
+  readonly holdAtDrive?: boolean;
 }
 
 /** `pickTarget`'s answer when there is no living enemy to fight. */
@@ -224,6 +236,7 @@ export function computeBotIntent(
   out.fire = false;
   out.cancelCharge = false;
   out.selectClub = null;
+  out.callMortar = false;
 
   // Backing off an obstacle overrides everything else until it is done.
   if (mind !== null && mind.unstickFor > 0) {
@@ -261,7 +274,7 @@ export function computeBotIntent(
   const dx = target.x - bot.position.x;
   const dz = target.z - bot.position.z;
   const distance = Math.hypot(dx, dz);
-  if (target.dead || distance < 1e-6) {
+  if ((target.dead && target.holdAtDrive !== true) || distance < 1e-6) {
     if (mind !== null) resetProgress(bot, mind);
     // Idle means stopped: a bot left coasting at speed when its enemy dies rolls on for 25 m,
     // out of the zone as often as not.
@@ -279,7 +292,7 @@ export function computeBotIntent(
   const driveDistance = Math.hypot(driveDx, driveDz);
   const headingError = wrapAngle(Math.atan2(driveDz, driveDx) - bot.heading);
   out.steer = clampSigned(headingError / BOT_STEER_FULL);
-  if (driveDistance < distance - 1e-6) {
+  if (target.holdAtDrive === true || driveDistance < distance - 1e-6) {
     // A drive point short of the target is the zone's edge: the bot drives to it and holds there,
     // braking inside `BOT_EDGE_HOLD_M` -- about its stopping distance from top speed -- so it neither
     // orbits the point nor rolls out past it.
@@ -292,8 +305,9 @@ export function computeBotIntent(
   if (mind !== null && trackProgress(bot, mind, dt, out)) return;
 
   // Beyond the tracking range the bot only drives -- no aim, no fire. Closing changed where the
-  // bot goes (see `BOT_ENGAGE_RANGE`), not what it can hit.
-  if (distance > BOT_ENGAGE_RANGE) return;
+  // bot goes (see `BOT_ENGAGE_RANGE`), not what it can hit. A dead target is never shot at: only a
+  // bot driving to a flag gets this far with one.
+  if (distance > BOT_ENGAGE_RANGE || target.dead) return;
 
   // Skill 0.5 is exactly the untuned bot: both scales are 1 there.
   const skill = mind === null ? 0.5 : mind.skill;
@@ -358,4 +372,21 @@ function wrapAngle(radians: number): number {
 
 function clampSigned(v: number): number {
   return Math.min(1, Math.max(-1, v));
+}
+
+/**
+ * Whether a bot holding a Mulligan Mortar calls it in now (Stage 3.5c, spec §3.5): on a living,
+ * visible target between `BOT_FIRE_RANGE` and `maxRange` away, with no cart of its own side
+ * standing in the ring. Friendly fire is off, so the last is about looks: a barrage into its own
+ * melee reads as a mistake. Draws no randomness, so it shifts no stream.
+ */
+export function shouldCallMortar(
+  bot: { readonly mortars: number; readonly position: { readonly x: number; readonly z: number } },
+  target: BotTarget,
+  allyNearTarget: boolean,
+  maxRange: number,
+): boolean {
+  if (bot.mortars <= 0 || target.dead || target.hidden === true || allyNearTarget) return false;
+  const d = Math.hypot(target.x - bot.position.x, target.z - bot.position.z);
+  return d >= BOT_FIRE_RANGE && d <= maxRange;
 }
