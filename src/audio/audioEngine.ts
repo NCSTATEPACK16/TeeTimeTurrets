@@ -241,6 +241,17 @@ const SYNTHS: Record<Cue, Synth> = {
     burst(ctx, out, noise, t, 0.03, "bandpass", 2200, 0.4);
     burst(ctx, out, noise, t + 0.05, 0.025, "bandpass", 1900, 0.25);
   },
+  // A mortar on the way: a falling whistle over the two-second telegraph.
+  whistle: (ctx, out, _noise, t) => {
+    tone(ctx, out, "sine", 1900, 520, t, 2.0, 0.16);
+    tone(ctx, out, "triangle", 1910, 530, t, 2.0, 0.05);
+  },
+  // A mortar earned: the pickup arpeggio, then a low brass hit.
+  mortarReady: (ctx, out, noise, t) => {
+    tone(ctx, out, "sawtooth", 196, 196, t, 0.18, 0.18);
+    tone(ctx, out, "sawtooth", 294, 294, t + 0.12, 0.3, 0.2);
+    burst(ctx, out, noise, t + 0.12, 0.2, "lowpass", 600, 0.3);
+  },
   // A countdown beat: a short, clean start-light tone.
   beep: (ctx, out, _noise, t) => {
     tone(ctx, out, "square", 660, 660, t, 0.16, 0.18);

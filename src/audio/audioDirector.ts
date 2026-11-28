@@ -28,6 +28,8 @@ export type Cue =
   | "flagDown"
   | "flagThunk"
   | "clap"
+  | "whistle"
+  | "mortarReady"
   // Presentation cues, played by the UI rather than mapped from a sim event.
   | "beep"
   | "go"
@@ -96,6 +98,11 @@ export function cueFor(e: SimEvent, listener: Listener): CuePlay | null {
       return centre(e.amount === PLAYER_TEAM ? "flagDown" : "flagThunk");
     case "flagBleed":
       return { cue: "clap", gain: 0.6, pan: 0 };
+    case "mortarEarned":
+      return e.actor === PLAYER ? centre("mortarReady") : null;
+    case "mortarCalled":
+      // Everyone hears a barrage coming, from where it will land: that is the telegraph.
+      return e.actor === PLAYER ? centre("whistle") : placed("whistle", e, listener);
   }
 }
 

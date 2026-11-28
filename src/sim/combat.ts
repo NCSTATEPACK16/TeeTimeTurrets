@@ -173,6 +173,7 @@ function ballHitsCart(ball: PooledBall, victim: { cart: Cart; index: number }, c
   if (sameSide(ball.firedBy, victim.index)) return;
 
   ball.spent = true;
+  ball.struck = victim.index;
   const at = ball.body.translation();
   // A shield plate takes the shot whole, with the same guards as a hit: a protected or dead cart
   // never gets this far, so it never loses a plate to a shot that could not have hurt it.
@@ -255,6 +256,6 @@ function cartsShunt(
 }
 
 /** Whether two rigs are on the same side, a rig counting as on its own. */
-function sameSide(a: number, b: number): boolean {
+export function sameSide(a: number, b: number): boolean {
   return a === b || (a >= 0 && b >= 0 && teamOf(a) === teamOf(b));
 }

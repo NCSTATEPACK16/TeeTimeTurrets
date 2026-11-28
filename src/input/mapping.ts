@@ -52,6 +52,9 @@ export function intentFromKeys(
   // Edge-triggered: a held right button cancels once, and the cart then waits for the trigger to
   // be let go before charging again.
   out.cancelCharge = keysPressedThisTick.has("Mouse2");
+  // G calls in a held Mulligan Mortar (Stage 3.5c), on the press only. F would have been the
+  // obvious key, but F already fires.
+  out.callMortar = keysPressedThisTick.has("KeyG");
 
   const keyTurn = (bool(keysDown.has("KeyE")) - bool(keysDown.has("KeyQ"))) * TURRET_KEY_STEP;
   out.aimDelta = pointerAimDelta + keyTurn;

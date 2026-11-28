@@ -632,6 +632,7 @@ export class MatchScreen implements Screen {
           row("1  2  3", "Putter · iron · driver"),
           row("SHIFT", "Brake"),
           row("M", "Course map"),
+          row("G", "Call in a Mulligan Mortar (earned at 3 kills)"),
           row("H", "Honk the horn"),
           row("ESC", "Pause"),
         ]),

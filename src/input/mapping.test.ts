@@ -86,6 +86,13 @@ describe("intentFromKeys held actions", () => {
   it("also fires on F, so a hand already on WASD can shoot while driving", () => {
     expect(intentFromKeys(held("KeyF"), NONE, 0).fire).toBe(true);
   });
+
+  it("calls a mortar on the tick G goes down, not while it is held, and G does not fire", () => {
+    const pressed = intentFromKeys(held("KeyG"), held("KeyG"), 0);
+    expect(pressed.callMortar).toBe(true);
+    expect(pressed.fire).toBe(false);
+    expect(intentFromKeys(held("KeyG"), NONE, 0, pressed).callMortar).toBe(false);
+  });
 });
 
 describe("intentFromKeys edge-triggered actions", () => {

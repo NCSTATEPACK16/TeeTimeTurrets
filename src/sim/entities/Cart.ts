@@ -291,6 +291,16 @@ export class Cart {
   /** Seconds until the next plate decays. Meaningful only while `shield > 0`. */
   shieldDecayIn: number;
   /**
+   * Enemy kills since this cart last died (Stage 3.5c). `Sim.killCart` counts it and zeroes it,
+   * and a rematch's `rearm` clears it; a respawn does not, because the death already did.
+   */
+  killStreak: number;
+  /**
+   * Mulligan Mortars held, 0 or 1: earned at every third kill of a streak, spent by calling one.
+   * Kept through a death (`revive` leaves it), cleared by a rematch's `rearm`.
+   */
+  mortars: number;
+  /**
    * True while this cart is standing on a hazard surface. The edge into water is what costs a
    * stroke, not the state -- a cart parked in the shallows must not be drained every tick.
    * Owned here rather than in a parallel array in `world.ts` so it cannot fall out of step with
@@ -341,6 +351,8 @@ export class Cart {
     this.dead = false;
     this.respawnTimer = 0;
     this.protectedFor = 0;
+    this.killStreak = 0;
+    this.mortars = 0;
     this.shield = 0;
     this.shieldDecayIn = 0;
     this.wasInWater = false;
@@ -424,6 +436,8 @@ export class Cart {
    */
   rearm(): void {
     this.club = this.startingClub;
+    this.killStreak = 0;
+    this.mortars = 0;
     this.ammo = STARTING_AMMO;
     this.reload = 0;
     this.chargeHeld = 0;

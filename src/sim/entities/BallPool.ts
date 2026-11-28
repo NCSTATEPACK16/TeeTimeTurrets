@@ -36,6 +36,13 @@ export interface PooledBall {
   /** Health points this ball takes off a cart: its club's `damage`, stamped when it is fired. */
   damage: number;
   /**
+   * True for a Mulligan Mortar round (Stage 3.5c). Its first touchdown splashes (`world.ts`), so the
+   * pool reports it in `touchdowns`. Set by the caller after `acquire`, cleared on release.
+   */
+  mortar: boolean;
+  /** The cart this flight hit directly, or `NO_KILLER`; a mortar's splash spares it. */
+  struck: number;
+  /**
    * True once this flight has come down onto the ground. A ball that has touched down is rolling,
    * not flying at anyone, so `acquire` may recycle it before it has come fully to rest.
    */
@@ -96,6 +103,12 @@ const ZERO = Object.freeze({ x: 0, y: 0, z: 0 });
 
 export class BallPool {
   private readonly balls: PooledBall[];
+  /**
+   * Indices of the mortar rounds that touched down on this `step`, the first `touchdownCount` of
+   * them: the splash `world.ts` applies. Fixed length, rewritten every step.
+   */
+  readonly touchdowns: Int32Array;
+  touchdownCount = 0;
   /** Reused per `setLinvel` in the fixed tick. */
   private readonly velocityScratch = { x: 0, y: 0, z: 0 };
   private readonly ground: PoolGround;
@@ -106,6 +119,7 @@ export class BallPool {
   constructor(world: RAPIER.World, ground: PoolGround, poolSize: number = POOL_SIZE) {
     this.ground = ground;
     this.balls = [];
+    this.touchdowns = new Int32Array(poolSize);
     for (let i = 0; i < poolSize; i++) {
       const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(PARKED_POSITION.x, PARKED_POSITION.y, PARKED_POSITION.z)
@@ -134,6 +148,8 @@ export class BallPool {
         firedAt: 0,
         spent: false,
         damage: 1,
+        mortar: false,
+        struck: NO_KILLER,
         touchedDown: false,
         restTicks: 0,
         position: new Float64Array([PARKED_POSITION.x, PARKED_POSITION.y, PARKED_POSITION.z]),
@@ -185,6 +201,8 @@ export class BallPool {
     ball.firedBy = firedBy;
     ball.firedAt = this.now;
     ball.spent = false;
+    ball.mortar = false;
+    ball.struck = NO_KILLER;
     ball.touchedDown = false;
     ball.body.setEnabled(true);
     ball.body.collider(0).setEnabled(true);
@@ -198,6 +216,8 @@ export class BallPool {
   release(ball: PooledBall): void {
     ball.state = "idle";
     ball.firedBy = NO_KILLER;
+    ball.mortar = false;
+    ball.struck = NO_KILLER;
     ball.body.setTranslation(PARKED_POSITION, true);
     ball.body.setLinvel(ZERO, true);
     ball.body.setAngvel(ZERO, true);
@@ -225,6 +245,7 @@ export class BallPool {
    */
   step(dt: number, simTime: number): void {
     this.now = simTime;
+    this.touchdownCount = 0;
     for (let i = 0; i < this.balls.length; i++) {
       const ball = this.balls[i]!;
       if (ball.state === "flying") {
@@ -235,6 +256,7 @@ export class BallPool {
         const p = ball.position;
         const grounded = p[1]! - this.ground.heightAt(p[0]!, p[2]!) < POOLED_BALL_RADIUS * 2;
         if (grounded) {
+          if (ball.mortar && !ball.touchedDown) this.touchdowns[this.touchdownCount++] = i;
           ball.touchedDown = true;
           this.applyRollingResistance(ball, dt);
         }

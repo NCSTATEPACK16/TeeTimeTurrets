@@ -32,12 +32,25 @@ import { clubhouseObstacles, clubhouseShapes } from "./clubhouse";
 import type { StaticShape } from "./clubhouse";
 import { clearOfObstacles } from "./lineOfSight";
 import type { Obstacle } from "./lineOfSight";
-import { CombatRegistry, STROKE_DAMAGE, processContacts } from "./combat";
+import { CombatRegistry, STROKE_DAMAGE, processContacts, sameSide } from "./combat";
 import { CART_GROUPS, HULL_GROUPS } from "./collisionGroups";
 import type { CombatContext } from "./combat";
 import { applyDamage } from "./health";
 import { createStats } from "./stats";
 import { CaptureField } from "./flags";
+import {
+  Barrage,
+  MAX_BARRAGES,
+  MORTAR_BALLS,
+  MORTAR_BALL_DAMAGE,
+  MORTAR_CHANNEL,
+  MORTAR_DROP_HEIGHT_M,
+  MORTAR_DROP_SPEED,
+  MORTAR_MAX_RANGE_M,
+  MORTAR_SPLASH_DAMAGE,
+  MORTAR_SPLASH_M,
+  MORTAR_STREAK,
+} from "./mortar";
 import type { Vec3 } from "./course";
 import { clampToPlayable } from "./courseBarrier";
 import type { SouthBoundary } from "./courseBarrier";
@@ -68,6 +81,7 @@ import {
   NO_KILLER,
   SPAWN_CHANNEL,
   SPAWN_PROTECTION_S,
+  teamOf,
 } from "./matchConfig";
 import { createSpawnSet, createTeamPads, openingSpawn, padSpawn, respawnPoint } from "./spawn";
 import type { SpawnPoint } from "./spawn";
@@ -333,6 +347,17 @@ export class Sim {
    * genuine rerun.
    */
   private spawnRandom: () => number;
+  /**
+   * The Mulligan Mortar's spread (Stage 3.5c): one stream for the match, seeded on its own channel
+   * and rebuilt by `reset`, as `spawnRandom` is. A bot's own stream is never drawn on for a mortar,
+   * so calling one shifts no bot's later decisions.
+   */
+  private mortarRandom: () => number;
+  /** Mortars in the air, in fixed slots. See `mortar.ts`. */
+  private readonly barrages: Barrage[] = Array.from({ length: MAX_BARRAGES }, () => new Barrage());
+  /** The arc a mortar is aimed along, written by `previewTrajectory`. Made once. */
+  private readonly mortarArc: Vec3[] = Array.from({ length: PREVIEW_MAX_POINTS }, () => ({ x: 0, y: 0, z: 0 }));
+  private readonly mortarVelocity: Vec3 = { x: 0, y: -MORTAR_DROP_SPEED, z: 0 };
   /** See `Sim.carts`. Grown once and reused, per the no-allocation-in-the-tick rule. */
   private readonly cartsScratch: Cart[] = [];
 
@@ -348,6 +373,7 @@ export class Sim {
     this.obstacles = ground.clubhouse === null ? [] : clubhouseObstacles(ground.clubhouse, heightAt);
     this.pickupStates = createPickupStates(ground.pickupSites);
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
+    this.mortarRandom = mulberry32(hashChannel(this.seed, MORTAR_CHANNEL));
     this.match = new Match({ playerCount: 1, durationS: matchDurationS, countdownS });
     this.captures = new CaptureField(
       ground.captureSites.map((p) => ({ x: p.x, y: heightAt(p.x, p.z), z: p.z })),
@@ -570,6 +596,112 @@ export class Sim {
     this.match.scoreKill(killer, victim);
     const p = cart.position;
     this.events.push("kill", this.tickCount, killer, victim, 0, p.x, p.y, p.z);
+    // The streak ends with the death, however it came. An enemy kill -- the rule `scoreKill` pays a
+    // point by -- adds to the killer's, and every third earns a mortar if none is held.
+    cart.killStreak = 0;
+    if (killer === NO_KILLER || killer < 0 || killer >= this.rigs.length || teamOf(killer) === teamOf(victim)) return;
+    const by = this.rigs[killer]!.cart;
+    by.killStreak += 1;
+    if (by.killStreak % MORTAR_STREAK === 0 && by.mortars === 0) {
+      by.mortars = 1;
+      const at = by.position;
+      this.events.push("mortarEarned", this.tickCount, killer, NO_RIG, by.killStreak, at.x, at.y, at.z);
+    }
+  }
+
+  /**
+   * A mortar call: where it lands, then a barrage slot with its six impact points drawn now.
+   * The player's lands where the full-charge arc of the equipped club does, along the turret,
+   * capped at `MORTAR_MAX_RANGE_M` and pulled inside the zone. Refused, keeping the mortar, only
+   * when every slot is in use.
+   */
+  private callMortar(rig: CartRig): void {
+    const cart = rig.cart;
+    let slot: Barrage | null = null;
+    for (const b of this.barrages) if (!b.active && slot === null) slot = b;
+    if (slot === null) return;
+    const target = this.mortarTarget(rig, this.clampScratch);
+    cart.mortars = 0;
+    slot.start(rig.index, this.tickCount, target.x, target.z, this.mortarRandom);
+    const y = this.playfield.heightAt(target.x, target.z);
+    this.events.push("mortarCalled", this.tickCount, rig.index, NO_RIG, 0, target.x, y, target.z);
+  }
+
+  private mortarTarget(rig: CartRig, out: { x: number; z: number }): { x: number; z: number } {
+    const cart = rig.cart;
+    const from = cart.position;
+    // Only the player aims with the arc: `previewTrajectory` reads rig 0's cart.
+    const n = this.previewTrajectory(1, cart.turretYaw, this.mortarArc);
+    const land = this.mortarArc[Math.max(0, n - 1)]!;
+    let dx = land.x - from.x;
+    let dz = land.z - from.z;
+    const d = Math.hypot(dx, dz);
+    if (d > MORTAR_MAX_RANGE_M) {
+      dx *= MORTAR_MAX_RANGE_M / d;
+      dz *= MORTAR_MAX_RANGE_M / d;
+    }
+    out.x = from.x + dx;
+    out.z = from.z + dz;
+    if (this.zone !== null) this.zone.clampInside(out.x, out.z, out);
+    return out;
+  }
+
+  /**
+   * Drops each live barrage's balls on their ticks. A ball is a pooled body like any shot, so every
+   * rule that makes a shot hurt applies to it unchanged; one the pool cannot supply is skipped.
+   */
+  private stepBarrages(): void {
+    for (let b = 0; b < this.barrages.length; b++) {
+      const barrage = this.barrages[b]!;
+      if (!barrage.active) continue;
+      while (barrage.spawned < MORTAR_BALLS && barrage.dropTick(barrage.spawned) <= this.tickCount) {
+        const i = barrage.spawned++;
+        const pooled = this.ballPool.acquire(barrage.owner, true);
+        if (pooled === null) continue;
+        const x = barrage.impacts[i * 2]!;
+        const z = barrage.impacts[i * 2 + 1]!;
+        const at = this.muzzleScratch;
+        at.x = x;
+        at.y = this.playfield.heightAt(x, z) + MORTAR_DROP_HEIGHT_M;
+        at.z = z;
+        pooled.body.setTranslation(at, true);
+        pooled.body.setRotation(IDENTITY_ROTATION, true);
+        pooled.body.setAngvel(ZERO_VECTOR, true);
+        pooled.body.setLinvel(this.mortarVelocity, true);
+        pooled.body.setGravityScale(1, true);
+        pooled.damage = MORTAR_BALL_DAMAGE;
+        pooled.mortar = true;
+      }
+      if (barrage.spawned >= MORTAR_BALLS) barrage.clear();
+    }
+  }
+
+  /**
+   * One point to every enemy within `MORTAR_SPLASH_M` of each mortar ball that touched down this
+   * step, credited to the caller. The only splash in the game, so it repeats the guards a direct
+   * hit has in `combat.ts`: a dead, protected or same-side cart is untouched, a shield plate takes
+   * it whole, and the cart the ball already hit is spared.
+   */
+  private applySplash(): void {
+    const pool = this.ballPool;
+    const balls = pool.all;
+    for (let t = 0; t < pool.touchdownCount; t++) {
+      const ball = balls[pool.touchdowns[t]!]!;
+      const bx = ball.position[0]!;
+      const by = ball.position[1]!;
+      const bz = ball.position[2]!;
+      for (let i = 0; i < this.rigs.length; i++) {
+        const cart = this.rigs[i]!.cart;
+        if (i === ball.struck || cart.dead || cart.protectedFor > 0 || sameSide(ball.firedBy, i)) continue;
+        if (Math.hypot(cart.position.x - bx, cart.position.z - bz) > MORTAR_SPLASH_M) continue;
+        if (cart.absorbHit()) {
+          this.events.push("plateBroken", this.tickCount, ball.firedBy, i, cart.shield, bx, by, bz);
+          continue;
+        }
+        this.events.push("hit", this.tickCount, ball.firedBy, i, MORTAR_SPLASH_DAMAGE, bx, by, bz);
+        if (applyDamage(cart.health, MORTAR_SPLASH_DAMAGE)) this.killCart(cart, i, ball.firedBy);
+      }
+    }
   }
 
   /**
@@ -666,6 +798,8 @@ export class Sim {
     // pickups keep recharging (against `simTime`). Only the cart is frozen.
     this.simTime += FIXED_DT;
     this.ballPool.step(FIXED_DT, this.simTime);
+    this.applySplash();
+    this.stepBarrages();
 
     for (let i = 0; i < this.rigs.length; i++) {
       const rig = this.rigs[i]!;
@@ -845,6 +979,7 @@ export class Sim {
       cart.shot.fired = false;
       this.resolveShot(rig);
     }
+    if (intent.callMortar && cart.mortars > 0) this.callMortar(rig);
   }
 
   /**
@@ -1139,6 +1274,8 @@ export class Sim {
     this.match.reset();
     this.captures.reset();
     this.spawnRandom = mulberry32(hashChannel(this.seed, SPAWN_CHANNEL));
+    this.mortarRandom = mulberry32(hashChannel(this.seed, MORTAR_CHANNEL));
+    for (const barrage of this.barrages) barrage.clear();
     this.freePhysics();
     this.buildPhysics();
     resetPickups(this.pickupStates);
